@@ -38,91 +38,95 @@ except ImportError:
     sys.exit(1)
 
 
+def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
+    """Scan AppSync GraphQL APIs in a single region."""
+    regional_apis = []
+
+    try:
+        appsync_client = utils.get_boto3_client('appsync', region_name=region)
+        paginator = appsync_client.get_paginator('list_graphql_apis')
+        for page in paginator.paginate():
+            apis = page.get('graphqlApis', [])
+
+            for api in apis:
+                api_id = api.get('apiId', 'N/A')
+                name = api.get('name', 'N/A')
+                authentication_type = api.get('authenticationType', 'N/A')
+
+                # Endpoint URLs
+                uris = api.get('uris', {})
+                graphql_url = uris.get('GRAPHQL', 'N/A') if uris else 'N/A'
+                realtime_url = uris.get('REALTIME', 'N/A') if uris else 'N/A'
+
+                # ARN
+                arn = api.get('arn', 'N/A')
+
+                # X-Ray tracing
+                xray_enabled = api.get('xrayEnabled', False)
+
+                # WAF Web ACL ARN
+                waf_web_acl_arn = api.get('wafWebAclArn', 'N/A')
+
+                # Additional authentication providers
+                additional_auth_providers = api.get('additionalAuthenticationProviders', [])
+                additional_auth_types = [provider.get('authenticationType', '')
+                                        for provider in additional_auth_providers]
+                additional_auth_str = ', '.join(additional_auth_types) if additional_auth_types else 'None'
+
+                # Log config
+                log_config = api.get('logConfig', {})
+                logging_enabled = bool(log_config)
+                field_log_level = log_config.get('fieldLogLevel', 'NONE') if log_config else 'NONE'
+                cloudwatch_logs_role_arn = log_config.get('cloudWatchLogsRoleArn', 'N/A') if log_config else 'N/A'
+
+                # Extract role name
+                log_role_name = 'N/A'
+                if cloudwatch_logs_role_arn != 'N/A' and '/' in cloudwatch_logs_role_arn:
+                    log_role_name = cloudwatch_logs_role_arn.split('/')[-1]
+
+                # User pool config (for Cognito auth)
+                user_pool_config = api.get('userPoolConfig', {})
+                user_pool_id = user_pool_config.get('userPoolId', 'N/A') if user_pool_config else 'N/A'
+
+                # OpenID Connect config
+                openid_connect_config = api.get('openIDConnectConfig', {})
+                oidc_issuer = openid_connect_config.get('issuer', 'N/A') if openid_connect_config else 'N/A'
+
+                # Tags
+                tags = api.get('tags', {})
+                tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
+
+                regional_apis.append({
+                    'Region': region,
+                    'API Name': name,
+                    'API ID': api_id,
+                    'Authentication Type': authentication_type,
+                    'Additional Auth': additional_auth_str,
+                    'GraphQL Endpoint': graphql_url,
+                    'Realtime Endpoint': realtime_url,
+                    'X-Ray Tracing': 'Enabled' if xray_enabled else 'Disabled',
+                    'Logging': field_log_level,
+                    'Log Role': log_role_name,
+                    'WAF Web ACL': 'Associated' if waf_web_acl_arn != 'N/A' else 'None',
+                    'Cognito User Pool': user_pool_id,
+                    'OIDC Issuer': oidc_issuer,
+                    'Tags': tags_str,
+                    'ARN': arn,
+                })
+
+    except Exception as e:
+        utils.log_error(f"Error collecting AppSync GraphQL APIs in {region}", e)
+
+    return regional_apis
+
+
 @utils.aws_error_handler("Collecting AppSync GraphQL APIs", default_return=[])
 def collect_graphql_apis(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect AppSync GraphQL API information from AWS regions."""
-    all_apis = []
-
-    for region in regions:
-        utils.log_info(f"Scanning AppSync GraphQL APIs in {region}...")
-        appsync_client = utils.get_boto3_client('appsync', region_name=region)
-
-        try:
-            paginator = appsync_client.get_paginator('list_graphql_apis')
-            for page in paginator.paginate():
-                apis = page.get('graphqlApis', [])
-
-                for api in apis:
-                    api_id = api.get('apiId', 'N/A')
-                    name = api.get('name', 'N/A')
-                    authentication_type = api.get('authenticationType', 'N/A')
-
-                    # Endpoint URLs
-                    uris = api.get('uris', {})
-                    graphql_url = uris.get('GRAPHQL', 'N/A') if uris else 'N/A'
-                    realtime_url = uris.get('REALTIME', 'N/A') if uris else 'N/A'
-
-                    # ARN
-                    arn = api.get('arn', 'N/A')
-
-                    # X-Ray tracing
-                    xray_enabled = api.get('xrayEnabled', False)
-
-                    # WAF Web ACL ARN
-                    waf_web_acl_arn = api.get('wafWebAclArn', 'N/A')
-
-                    # Additional authentication providers
-                    additional_auth_providers = api.get('additionalAuthenticationProviders', [])
-                    additional_auth_types = [provider.get('authenticationType', '')
-                                            for provider in additional_auth_providers]
-                    additional_auth_str = ', '.join(additional_auth_types) if additional_auth_types else 'None'
-
-                    # Log config
-                    log_config = api.get('logConfig', {})
-                    logging_enabled = bool(log_config)
-                    field_log_level = log_config.get('fieldLogLevel', 'NONE') if log_config else 'NONE'
-                    cloudwatch_logs_role_arn = log_config.get('cloudWatchLogsRoleArn', 'N/A') if log_config else 'N/A'
-
-                    # Extract role name
-                    log_role_name = 'N/A'
-                    if cloudwatch_logs_role_arn != 'N/A' and '/' in cloudwatch_logs_role_arn:
-                        log_role_name = cloudwatch_logs_role_arn.split('/')[-1]
-
-                    # User pool config (for Cognito auth)
-                    user_pool_config = api.get('userPoolConfig', {})
-                    user_pool_id = user_pool_config.get('userPoolId', 'N/A') if user_pool_config else 'N/A'
-
-                    # OpenID Connect config
-                    openid_connect_config = api.get('openIDConnectConfig', {})
-                    oidc_issuer = openid_connect_config.get('issuer', 'N/A') if openid_connect_config else 'N/A'
-
-                    # Tags
-                    tags = api.get('tags', {})
-                    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
-
-                    all_apis.append({
-                        'Region': region,
-                        'API Name': name,
-                        'API ID': api_id,
-                        'Authentication Type': authentication_type,
-                        'Additional Auth': additional_auth_str,
-                        'GraphQL Endpoint': graphql_url,
-                        'Realtime Endpoint': realtime_url,
-                        'X-Ray Tracing': 'Enabled' if xray_enabled else 'Disabled',
-                        'Logging': field_log_level,
-                        'Log Role': log_role_name,
-                        'WAF Web ACL': 'Associated' if waf_web_acl_arn != 'N/A' else 'None',
-                        'Cognito User Pool': user_pool_id,
-                        'OIDC Issuer': oidc_issuer,
-                        'Tags': tags_str,
-                        'ARN': arn,
-                    })
-
-        except Exception as e:
-            utils.log_warning(f"Could not list AppSync GraphQL APIs in {region}: {str(e)}")
-
-        utils.log_success(f"Collected {len([a for a in all_apis if a['Region'] == region])} AppSync GraphQL APIs from {region}")
-
+    print("\n=== COLLECTING APPSYNC GRAPHQL APIS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_graphql_apis_region)
+    all_apis = [api for result in results for api in result]
+    utils.log_success(f"Total AppSync GraphQL APIs collected: {len(all_apis)}")
     return all_apis
 
 

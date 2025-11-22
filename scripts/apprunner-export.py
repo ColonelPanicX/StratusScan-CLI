@@ -38,261 +38,273 @@ except ImportError:
     sys.exit(1)
 
 
+def _scan_apprunner_services_region(region: str) -> List[Dict[str, Any]]:
+    """Scan App Runner services in a single region."""
+    regional_services = []
+
+    try:
+        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
+        paginator = apprunner_client.get_paginator('list_services')
+        for page in paginator.paginate():
+            service_summaries = page.get('ServiceSummaryList', [])
+
+            for service_summary in service_summaries:
+                service_arn = service_summary.get('ServiceArn', 'N/A')
+                service_name = service_summary.get('ServiceName', 'N/A')
+                service_id = service_summary.get('ServiceId', 'N/A')
+                service_url = service_summary.get('ServiceUrl', 'N/A')
+                status = service_summary.get('Status', 'N/A')
+
+                # Get detailed service information
+                try:
+                    service_response = apprunner_client.describe_service(ServiceArn=service_arn)
+                    service = service_response.get('Service', {})
+
+                    # Source configuration
+                    source_config = service.get('SourceConfiguration', {})
+
+                    # Image repository or code repository
+                    image_repo = source_config.get('ImageRepository', {})
+                    code_repo = source_config.get('CodeRepository', {})
+
+                    if image_repo:
+                        source_type = 'Container Image'
+                        image_identifier = image_repo.get('ImageIdentifier', 'N/A')
+                        image_repo_type = image_repo.get('ImageRepositoryType', 'N/A')
+                        source_details = f"{image_repo_type}: {image_identifier}"
+                    elif code_repo:
+                        source_type = 'Source Code'
+                        repo_url = code_repo.get('RepositoryUrl', 'N/A')
+                        source_code_version = code_repo.get('SourceCodeVersion', {})
+                        branch = source_code_version.get('Value', 'N/A')
+                        source_details = f"Branch: {branch}"
+                    else:
+                        source_type = 'Unknown'
+                        source_details = 'N/A'
+
+                    # Auto deployment
+                    auto_deploy_enabled = source_config.get('AutoDeploymentsEnabled', False)
+
+                    # Instance configuration
+                    instance_config = service.get('InstanceConfiguration', {})
+                    cpu = instance_config.get('Cpu', 'N/A')
+                    memory = instance_config.get('Memory', 'N/A')
+                    instance_role_arn = instance_config.get('InstanceRoleArn', 'N/A')
+
+                    # Extract role name
+                    instance_role = 'N/A'
+                    if instance_role_arn != 'N/A' and '/' in instance_role_arn:
+                        instance_role = instance_role_arn.split('/')[-1]
+
+                    # Health check configuration
+                    health_check_config = service.get('HealthCheckConfiguration', {})
+                    health_check_protocol = health_check_config.get('Protocol', 'N/A')
+                    health_check_path = health_check_config.get('Path', 'N/A')
+                    health_check_interval = health_check_config.get('Interval', 'N/A')
+                    health_check_timeout = health_check_config.get('Timeout', 'N/A')
+
+                    # Auto scaling configuration ARN
+                    auto_scaling_config_arn = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationArn', 'N/A')
+                    auto_scaling_config_name = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationName', 'N/A')
+
+                    # Network configuration
+                    network_config = service.get('NetworkConfiguration', {})
+                    egress_config = network_config.get('EgressConfiguration', {})
+                    egress_type = egress_config.get('EgressType', 'DEFAULT')  # DEFAULT or VPC
+                    vpc_connector_arn = egress_config.get('VpcConnectorArn', 'N/A') if egress_type == 'VPC' else 'N/A'
+
+                    # Encryption configuration
+                    encryption_config = service.get('EncryptionConfiguration', {})
+                    kms_key = encryption_config.get('KmsKey', 'AWS Managed')
+
+                    # Created and updated timestamps
+                    created_at = service.get('CreatedAt')
+                    if created_at:
+                        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        created_at_str = 'N/A'
+
+                    updated_at = service.get('UpdatedAt')
+                    if updated_at:
+                        updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        updated_at_str = 'N/A'
+
+                    regional_services.append({
+                        'Region': region,
+                        'Service Name': service_name,
+                        'Service ID': service_id,
+                        'Status': status,
+                        'Service URL': service_url,
+                        'Source Type': source_type,
+                        'Source Details': source_details,
+                        'Auto Deploy': 'Enabled' if auto_deploy_enabled else 'Disabled',
+                        'CPU': cpu,
+                        'Memory': memory,
+                        'Instance Role': instance_role,
+                        'Health Check Protocol': health_check_protocol,
+                        'Health Check Path': health_check_path,
+                        'Health Check Interval (s)': health_check_interval,
+                        'Health Check Timeout (s)': health_check_timeout,
+                        'Auto Scaling Config': auto_scaling_config_name,
+                        'Egress Type': egress_type,
+                        'VPC Connector': vpc_connector_arn if egress_type == 'VPC' else 'N/A',
+                        'KMS Key': kms_key,
+                        'Created': created_at_str,
+                        'Updated': updated_at_str,
+                        'Service ARN': service_arn,
+                    })
+
+                except Exception as e:
+                    utils.log_warning(f"Could not get details for service {service_name}: {str(e)}")
+                    continue
+
+    except Exception as e:
+        utils.log_error(f"Error collecting App Runner services in {region}", e)
+
+    return regional_services
+
+
 @utils.aws_error_handler("Collecting App Runner services", default_return=[])
 def collect_apprunner_services(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect App Runner service information from AWS regions."""
-    all_services = []
-
-    for region in regions:
-        utils.log_info(f"Scanning App Runner services in {region}...")
-        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-
-        try:
-            paginator = apprunner_client.get_paginator('list_services')
-            for page in paginator.paginate():
-                service_summaries = page.get('ServiceSummaryList', [])
-
-                for service_summary in service_summaries:
-                    service_arn = service_summary.get('ServiceArn', 'N/A')
-                    service_name = service_summary.get('ServiceName', 'N/A')
-                    service_id = service_summary.get('ServiceId', 'N/A')
-                    service_url = service_summary.get('ServiceUrl', 'N/A')
-                    status = service_summary.get('Status', 'N/A')
-
-                    # Get detailed service information
-                    try:
-                        service_response = apprunner_client.describe_service(ServiceArn=service_arn)
-                        service = service_response.get('Service', {})
-
-                        # Source configuration
-                        source_config = service.get('SourceConfiguration', {})
-
-                        # Image repository or code repository
-                        image_repo = source_config.get('ImageRepository', {})
-                        code_repo = source_config.get('CodeRepository', {})
-
-                        if image_repo:
-                            source_type = 'Container Image'
-                            image_identifier = image_repo.get('ImageIdentifier', 'N/A')
-                            image_repo_type = image_repo.get('ImageRepositoryType', 'N/A')
-                            source_details = f"{image_repo_type}: {image_identifier}"
-                        elif code_repo:
-                            source_type = 'Source Code'
-                            repo_url = code_repo.get('RepositoryUrl', 'N/A')
-                            source_code_version = code_repo.get('SourceCodeVersion', {})
-                            branch = source_code_version.get('Value', 'N/A')
-                            source_details = f"Branch: {branch}"
-                        else:
-                            source_type = 'Unknown'
-                            source_details = 'N/A'
-
-                        # Auto deployment
-                        auto_deploy_enabled = source_config.get('AutoDeploymentsEnabled', False)
-
-                        # Instance configuration
-                        instance_config = service.get('InstanceConfiguration', {})
-                        cpu = instance_config.get('Cpu', 'N/A')
-                        memory = instance_config.get('Memory', 'N/A')
-                        instance_role_arn = instance_config.get('InstanceRoleArn', 'N/A')
-
-                        # Extract role name
-                        instance_role = 'N/A'
-                        if instance_role_arn != 'N/A' and '/' in instance_role_arn:
-                            instance_role = instance_role_arn.split('/')[-1]
-
-                        # Health check configuration
-                        health_check_config = service.get('HealthCheckConfiguration', {})
-                        health_check_protocol = health_check_config.get('Protocol', 'N/A')
-                        health_check_path = health_check_config.get('Path', 'N/A')
-                        health_check_interval = health_check_config.get('Interval', 'N/A')
-                        health_check_timeout = health_check_config.get('Timeout', 'N/A')
-
-                        # Auto scaling configuration ARN
-                        auto_scaling_config_arn = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationArn', 'N/A')
-                        auto_scaling_config_name = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationName', 'N/A')
-
-                        # Network configuration
-                        network_config = service.get('NetworkConfiguration', {})
-                        egress_config = network_config.get('EgressConfiguration', {})
-                        egress_type = egress_config.get('EgressType', 'DEFAULT')  # DEFAULT or VPC
-                        vpc_connector_arn = egress_config.get('VpcConnectorArn', 'N/A') if egress_type == 'VPC' else 'N/A'
-
-                        # Encryption configuration
-                        encryption_config = service.get('EncryptionConfiguration', {})
-                        kms_key = encryption_config.get('KmsKey', 'AWS Managed')
-
-                        # Created and updated timestamps
-                        created_at = service.get('CreatedAt')
-                        if created_at:
-                            created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            created_at_str = 'N/A'
-
-                        updated_at = service.get('UpdatedAt')
-                        if updated_at:
-                            updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            updated_at_str = 'N/A'
-
-                        all_services.append({
-                            'Region': region,
-                            'Service Name': service_name,
-                            'Service ID': service_id,
-                            'Status': status,
-                            'Service URL': service_url,
-                            'Source Type': source_type,
-                            'Source Details': source_details,
-                            'Auto Deploy': 'Enabled' if auto_deploy_enabled else 'Disabled',
-                            'CPU': cpu,
-                            'Memory': memory,
-                            'Instance Role': instance_role,
-                            'Health Check Protocol': health_check_protocol,
-                            'Health Check Path': health_check_path,
-                            'Health Check Interval (s)': health_check_interval,
-                            'Health Check Timeout (s)': health_check_timeout,
-                            'Auto Scaling Config': auto_scaling_config_name,
-                            'Egress Type': egress_type,
-                            'VPC Connector': vpc_connector_arn if egress_type == 'VPC' else 'N/A',
-                            'KMS Key': kms_key,
-                            'Created': created_at_str,
-                            'Updated': updated_at_str,
-                            'Service ARN': service_arn,
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for service {service_name}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Could not list App Runner services in {region}: {str(e)}")
-
-        utils.log_success(f"Collected {len([s for s in all_services if s['Region'] == region])} App Runner services from {region}")
-
+    print("\n=== COLLECTING APP RUNNER SERVICES ===")
+    results = utils.scan_regions_concurrent(regions, _scan_apprunner_services_region)
+    all_services = [svc for result in results for svc in result]
+    utils.log_success(f"Total App Runner services collected: {len(all_services)}")
     return all_services
+
+
+def _scan_auto_scaling_configs_region(region: str) -> List[Dict[str, Any]]:
+    """Scan App Runner auto scaling configs in a single region."""
+    regional_configs = []
+
+    try:
+        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
+        paginator = apprunner_client.get_paginator('list_auto_scaling_configurations')
+        for page in paginator.paginate():
+            config_summaries = page.get('AutoScalingConfigurationSummaryList', [])
+
+            for config_summary in config_summaries:
+                config_arn = config_summary.get('AutoScalingConfigurationArn', 'N/A')
+                config_name = config_summary.get('AutoScalingConfigurationName', 'N/A')
+                config_revision = config_summary.get('AutoScalingConfigurationRevision', 'N/A')
+
+                # Get detailed configuration
+                try:
+                    config_response = apprunner_client.describe_auto_scaling_configuration(
+                        AutoScalingConfigurationArn=config_arn
+                    )
+                    config = config_response.get('AutoScalingConfiguration', {})
+
+                    max_concurrency = config.get('MaxConcurrency', 'N/A')
+                    min_size = config.get('MinSize', 'N/A')
+                    max_size = config.get('MaxSize', 'N/A')
+                    status = config.get('Status', 'N/A')
+
+                    # Creation timestamp
+                    created_at = config.get('CreatedAt')
+                    if created_at:
+                        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        created_at_str = 'N/A'
+
+                    regional_configs.append({
+                        'Region': region,
+                        'Config Name': config_name,
+                        'Revision': config_revision,
+                        'Status': status,
+                        'Max Concurrency': max_concurrency,
+                        'Min Size': min_size,
+                        'Max Size': max_size,
+                        'Created': created_at_str,
+                        'Config ARN': config_arn,
+                    })
+
+                except Exception as e:
+                    utils.log_warning(f"Could not get details for auto scaling config {config_name}: {str(e)}")
+                    continue
+
+    except Exception as e:
+        utils.log_error(f"Error collecting App Runner auto scaling configs in {region}", e)
+
+    return regional_configs
 
 
 @utils.aws_error_handler("Collecting App Runner auto scaling configs", default_return=[])
 def collect_auto_scaling_configs(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect App Runner auto scaling configuration information from AWS regions."""
-    all_configs = []
-
-    for region in regions:
-        utils.log_info(f"Scanning App Runner auto scaling configs in {region}...")
-        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-
-        try:
-            paginator = apprunner_client.get_paginator('list_auto_scaling_configurations')
-            for page in paginator.paginate():
-                config_summaries = page.get('AutoScalingConfigurationSummaryList', [])
-
-                for config_summary in config_summaries:
-                    config_arn = config_summary.get('AutoScalingConfigurationArn', 'N/A')
-                    config_name = config_summary.get('AutoScalingConfigurationName', 'N/A')
-                    config_revision = config_summary.get('AutoScalingConfigurationRevision', 'N/A')
-
-                    # Get detailed configuration
-                    try:
-                        config_response = apprunner_client.describe_auto_scaling_configuration(
-                            AutoScalingConfigurationArn=config_arn
-                        )
-                        config = config_response.get('AutoScalingConfiguration', {})
-
-                        max_concurrency = config.get('MaxConcurrency', 'N/A')
-                        min_size = config.get('MinSize', 'N/A')
-                        max_size = config.get('MaxSize', 'N/A')
-                        status = config.get('Status', 'N/A')
-
-                        # Creation timestamp
-                        created_at = config.get('CreatedAt')
-                        if created_at:
-                            created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            created_at_str = 'N/A'
-
-                        all_configs.append({
-                            'Region': region,
-                            'Config Name': config_name,
-                            'Revision': config_revision,
-                            'Status': status,
-                            'Max Concurrency': max_concurrency,
-                            'Min Size': min_size,
-                            'Max Size': max_size,
-                            'Created': created_at_str,
-                            'Config ARN': config_arn,
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for auto scaling config {config_name}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Could not list App Runner auto scaling configs in {region}: {str(e)}")
-
-        utils.log_success(f"Collected {len([c for c in all_configs if c['Region'] == region])} App Runner auto scaling configs from {region}")
-
+    print("\n=== COLLECTING APP RUNNER AUTO SCALING CONFIGS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_auto_scaling_configs_region)
+    all_configs = [cfg for result in results for cfg in result]
+    utils.log_success(f"Total App Runner auto scaling configs collected: {len(all_configs)}")
     return all_configs
+
+
+def _scan_vpc_connectors_region(region: str) -> List[Dict[str, Any]]:
+    """Scan App Runner VPC connectors in a single region."""
+    regional_connectors = []
+
+    try:
+        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
+        paginator = apprunner_client.get_paginator('list_vpc_connectors')
+        for page in paginator.paginate():
+            connector_summaries = page.get('VpcConnectors', [])
+
+            for connector_summary in connector_summaries:
+                connector_arn = connector_summary.get('VpcConnectorArn', 'N/A')
+                connector_name = connector_summary.get('VpcConnectorName', 'N/A')
+                status = connector_summary.get('Status', 'N/A')
+
+                # Get detailed connector information
+                try:
+                    connector_response = apprunner_client.describe_vpc_connector(
+                        VpcConnectorArn=connector_arn
+                    )
+                    connector = connector_response.get('VpcConnector', {})
+
+                    vpc_connector_revision = connector.get('VpcConnectorRevision', 'N/A')
+                    subnets = connector.get('Subnets', [])
+                    subnets_str = ', '.join(subnets) if subnets else 'N/A'
+
+                    security_groups = connector.get('SecurityGroups', [])
+                    security_groups_str = ', '.join(security_groups) if security_groups else 'N/A'
+
+                    # Creation timestamp
+                    created_at = connector.get('CreatedAt')
+                    if created_at:
+                        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        created_at_str = 'N/A'
+
+                    regional_connectors.append({
+                        'Region': region,
+                        'Connector Name': connector_name,
+                        'Revision': vpc_connector_revision,
+                        'Status': status,
+                        'Subnets': subnets_str,
+                        'Security Groups': security_groups_str,
+                        'Created': created_at_str,
+                        'Connector ARN': connector_arn,
+                    })
+
+                except Exception as e:
+                    utils.log_warning(f"Could not get details for VPC connector {connector_name}: {str(e)}")
+                    continue
+
+    except Exception as e:
+        utils.log_error(f"Error collecting App Runner VPC connectors in {region}", e)
+
+    return regional_connectors
 
 
 @utils.aws_error_handler("Collecting App Runner VPC connectors", default_return=[])
 def collect_vpc_connectors(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect App Runner VPC connector information from AWS regions."""
-    all_connectors = []
-
-    for region in regions:
-        utils.log_info(f"Scanning App Runner VPC connectors in {region}...")
-        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-
-        try:
-            paginator = apprunner_client.get_paginator('list_vpc_connectors')
-            for page in paginator.paginate():
-                connector_summaries = page.get('VpcConnectors', [])
-
-                for connector_summary in connector_summaries:
-                    connector_arn = connector_summary.get('VpcConnectorArn', 'N/A')
-                    connector_name = connector_summary.get('VpcConnectorName', 'N/A')
-                    status = connector_summary.get('Status', 'N/A')
-
-                    # Get detailed connector information
-                    try:
-                        connector_response = apprunner_client.describe_vpc_connector(
-                            VpcConnectorArn=connector_arn
-                        )
-                        connector = connector_response.get('VpcConnector', {})
-
-                        vpc_connector_revision = connector.get('VpcConnectorRevision', 'N/A')
-                        subnets = connector.get('Subnets', [])
-                        subnets_str = ', '.join(subnets) if subnets else 'N/A'
-
-                        security_groups = connector.get('SecurityGroups', [])
-                        security_groups_str = ', '.join(security_groups) if security_groups else 'N/A'
-
-                        # Creation timestamp
-                        created_at = connector.get('CreatedAt')
-                        if created_at:
-                            created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            created_at_str = 'N/A'
-
-                        all_connectors.append({
-                            'Region': region,
-                            'Connector Name': connector_name,
-                            'Revision': vpc_connector_revision,
-                            'Status': status,
-                            'Subnets': subnets_str,
-                            'Security Groups': security_groups_str,
-                            'Created': created_at_str,
-                            'Connector ARN': connector_arn,
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for VPC connector {connector_name}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Could not list App Runner VPC connectors in {region}: {str(e)}")
-
-        utils.log_success(f"Collected {len([c for c in all_connectors if c['Region'] == region])} App Runner VPC connectors from {region}")
-
+    print("\n=== COLLECTING APP RUNNER VPC CONNECTORS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_vpc_connectors_region)
+    all_connectors = [conn for result in results for conn in result]
+    utils.log_success(f"Total App Runner VPC connectors collected: {len(all_connectors)}")
     return all_connectors
 
 

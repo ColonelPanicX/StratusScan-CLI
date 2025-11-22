@@ -57,6 +57,65 @@ utils.setup_logging("directconnect-export")
 utils.log_script_start("directconnect-export.py", "AWS Direct Connect Export Tool")
 
 
+def _scan_connections_region(region: str) -> List[Dict[str, Any]]:
+    """Scan Direct Connect connections in a single region."""
+    regional_connections = []
+
+    try:
+        dx = utils.get_boto3_client('directconnect', region_name=region)
+
+        # Get Direct Connect connections
+        response = dx.describe_connections()
+        connections = response.get('connections', [])
+
+        for conn in connections:
+            connection_id = conn.get('connectionId', 'N/A')
+
+            # Extract connection details
+            connection_name = conn.get('connectionName', 'N/A')
+            connection_state = conn.get('connectionState', 'N/A')
+            location = conn.get('location', 'N/A')
+            bandwidth = conn.get('bandwidth', 'N/A')
+            vlan = conn.get('vlan', 'N/A')
+            partner_name = conn.get('partnerName', 'N/A')
+            lag_id = conn.get('lagId', 'N/A')
+            aws_device = conn.get('awsDevice', 'N/A')
+            aws_device_v2 = conn.get('awsDeviceV2', 'N/A')
+            provider_name = conn.get('providerName', 'N/A')
+            owner_account = conn.get('ownerAccount', 'N/A')
+            has_logical_redundancy = conn.get('hasLogicalRedundancy', 'unknown')
+            jumbo_frame_capable = conn.get('jumboFrameCapable', False)
+            aws_logical_device_id = conn.get('awsLogicalDeviceId', 'N/A')
+
+            # Get tags
+            tags = conn.get('tags', [])
+            tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
+
+            regional_connections.append({
+                'Region': region,
+                'Connection ID': connection_id,
+                'Connection Name': connection_name,
+                'State': connection_state,
+                'Location': location,
+                'Bandwidth': bandwidth,
+                'VLAN': vlan,
+                'Partner Name': partner_name,
+                'Provider Name': provider_name,
+                'LAG ID': lag_id,
+                'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
+                'AWS Logical Device ID': aws_logical_device_id,
+                'Owner Account': owner_account,
+                'Has Logical Redundancy': has_logical_redundancy,
+                'Jumbo Frame Capable': jumbo_frame_capable,
+                'Tags': tag_string
+            })
+
+    except Exception as e:
+        utils.log_error(f"Error collecting Direct Connect connections in {region}", e)
+
+    return regional_connections
+
+
 def print_title():
     """Print the title and header of the script to the console."""
     print("====================================================================")
@@ -102,72 +161,82 @@ def collect_connections(regions: List[str]) -> List[Dict[str, Any]]:
         list: List of dictionaries with connection information
     """
     print("\n=== COLLECTING DIRECT CONNECT CONNECTIONS ===")
-    all_connections = []
-
-    for region in regions:
-        if not utils.validate_aws_region(region):
-            utils.log_error(f"Skipping invalid AWS region: {region}")
-            continue
-
-        print(f"\nProcessing region: {region}")
-
-        try:
-            dx = utils.get_boto3_client('directconnect', region_name=region)
-
-            # Get Direct Connect connections
-            response = dx.describe_connections()
-            connections = response.get('connections', [])
-
-            print(f"  Found {len(connections)} connections")
-
-            for conn in connections:
-                connection_id = conn.get('connectionId', 'N/A')
-                print(f"  Processing connection: {connection_id}")
-
-                # Extract connection details
-                connection_name = conn.get('connectionName', 'N/A')
-                connection_state = conn.get('connectionState', 'N/A')
-                location = conn.get('location', 'N/A')
-                bandwidth = conn.get('bandwidth', 'N/A')
-                vlan = conn.get('vlan', 'N/A')
-                partner_name = conn.get('partnerName', 'N/A')
-                lag_id = conn.get('lagId', 'N/A')
-                aws_device = conn.get('awsDevice', 'N/A')
-                aws_device_v2 = conn.get('awsDeviceV2', 'N/A')
-                provider_name = conn.get('providerName', 'N/A')
-                owner_account = conn.get('ownerAccount', 'N/A')
-                has_logical_redundancy = conn.get('hasLogicalRedundancy', 'unknown')
-                jumbo_frame_capable = conn.get('jumboFrameCapable', False)
-                aws_logical_device_id = conn.get('awsLogicalDeviceId', 'N/A')
-
-                # Get tags
-                tags = conn.get('tags', [])
-                tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
-
-                all_connections.append({
-                    'Region': region,
-                    'Connection ID': connection_id,
-                    'Connection Name': connection_name,
-                    'State': connection_state,
-                    'Location': location,
-                    'Bandwidth': bandwidth,
-                    'VLAN': vlan,
-                    'Partner Name': partner_name,
-                    'Provider Name': provider_name,
-                    'LAG ID': lag_id,
-                    'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
-                    'AWS Logical Device ID': aws_logical_device_id,
-                    'Owner Account': owner_account,
-                    'Has Logical Redundancy': has_logical_redundancy,
-                    'Jumbo Frame Capable': jumbo_frame_capable,
-                    'Tags': tag_string
-                })
-
-        except Exception as e:
-            utils.log_error(f"Error processing region {region} for Direct Connect connections", e)
-
-    utils.log_success(f"Total connections collected: {len(all_connections)}")
+    results = utils.scan_regions_concurrent(regions, _scan_connections_region)
+    all_connections = [conn for result in results for conn in result]
+    utils.log_success(f"Total Direct Connect connections collected: {len(all_connections)}")
     return all_connections
+
+
+def _scan_virtual_interfaces_region(region: str) -> List[Dict[str, Any]]:
+    """Scan Direct Connect virtual interfaces in a single region."""
+    regional_vifs = []
+
+    try:
+        dx = utils.get_boto3_client('directconnect', region_name=region)
+
+        # Get Virtual Interfaces
+        response = dx.describe_virtual_interfaces()
+        vifs = response.get('virtualInterfaces', [])
+
+        for vif in vifs:
+            vif_id = vif.get('virtualInterfaceId', 'N/A')
+
+            # Extract VIF details
+            vif_name = vif.get('virtualInterfaceName', 'N/A')
+            vif_type = vif.get('virtualInterfaceType', 'N/A')
+            vif_state = vif.get('virtualInterfaceState', 'N/A')
+            connection_id = vif.get('connectionId', 'N/A')
+            vlan = vif.get('vlan', 'N/A')
+            asn = vif.get('asn', 'N/A')
+            amazon_side_asn = vif.get('amazonSideAsn', 'N/A')
+            bgp_peers = vif.get('bgpPeers', [])
+            amazon_address = vif.get('amazonAddress', 'N/A')
+            customer_address = vif.get('customerAddress', 'N/A')
+            virtual_gateway_id = vif.get('virtualGatewayId', 'N/A')
+            directconnect_gateway_id = vif.get('directConnectGatewayId', 'N/A')
+            location = vif.get('location', 'N/A')
+            mtu = vif.get('mtu', 'N/A')
+            jumbo_frame_capable = vif.get('jumboFrameCapable', False)
+            owner_account = vif.get('ownerAccount', 'N/A')
+
+            # BGP Peer details (extract first peer if multiple)
+            bgp_peer_state = 'N/A'
+            bgp_status = 'N/A'
+            if bgp_peers:
+                bgp_peer_state = bgp_peers[0].get('bgpPeerState', 'N/A')
+                bgp_status = bgp_peers[0].get('bgpStatus', 'N/A')
+
+            # Get tags
+            tags = vif.get('tags', [])
+            tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
+
+            regional_vifs.append({
+                'Region': region,
+                'Virtual Interface ID': vif_id,
+                'Virtual Interface Name': vif_name,
+                'Type': vif_type,
+                'State': vif_state,
+                'Connection ID': connection_id,
+                'VLAN': vlan,
+                'BGP ASN': asn,
+                'Amazon Side ASN': amazon_side_asn,
+                'Amazon Address': amazon_address,
+                'Customer Address': customer_address,
+                'Virtual Gateway ID': virtual_gateway_id,
+                'Direct Connect Gateway ID': directconnect_gateway_id,
+                'BGP Peer State': bgp_peer_state,
+                'BGP Status': bgp_status,
+                'Location': location,
+                'MTU Size': mtu,
+                'Jumbo Frame Capable': jumbo_frame_capable,
+                'Owner Account': owner_account,
+                'Tags': tag_string
+            })
+
+    except Exception as e:
+        utils.log_error(f"Error collecting Virtual Interfaces in {region}", e)
+
+    return regional_vifs
 
 
 @utils.aws_error_handler("Collecting Virtual Interfaces", default_return=[])
@@ -182,85 +251,77 @@ def collect_virtual_interfaces(regions: List[str]) -> List[Dict[str, Any]]:
         list: List of dictionaries with virtual interface information
     """
     print("\n=== COLLECTING VIRTUAL INTERFACES ===")
-    all_vifs = []
-
-    for region in regions:
-        if not utils.validate_aws_region(region):
-            utils.log_error(f"Skipping invalid AWS region: {region}")
-            continue
-
-        print(f"\nProcessing region: {region}")
-
-        try:
-            dx = utils.get_boto3_client('directconnect', region_name=region)
-
-            # Get Virtual Interfaces
-            response = dx.describe_virtual_interfaces()
-            vifs = response.get('virtualInterfaces', [])
-
-            print(f"  Found {len(vifs)} virtual interfaces")
-
-            for vif in vifs:
-                vif_id = vif.get('virtualInterfaceId', 'N/A')
-                print(f"  Processing VIF: {vif_id}")
-
-                # Extract VIF details
-                vif_name = vif.get('virtualInterfaceName', 'N/A')
-                vif_type = vif.get('virtualInterfaceType', 'N/A')
-                vif_state = vif.get('virtualInterfaceState', 'N/A')
-                connection_id = vif.get('connectionId', 'N/A')
-                vlan = vif.get('vlan', 'N/A')
-                asn = vif.get('asn', 'N/A')
-                amazon_side_asn = vif.get('amazonSideAsn', 'N/A')
-                bgp_peers = vif.get('bgpPeers', [])
-                amazon_address = vif.get('amazonAddress', 'N/A')
-                customer_address = vif.get('customerAddress', 'N/A')
-                virtual_gateway_id = vif.get('virtualGatewayId', 'N/A')
-                directconnect_gateway_id = vif.get('directConnectGatewayId', 'N/A')
-                location = vif.get('location', 'N/A')
-                mtu = vif.get('mtu', 'N/A')
-                jumbo_frame_capable = vif.get('jumboFrameCapable', False)
-                owner_account = vif.get('ownerAccount', 'N/A')
-
-                # BGP Peer details (extract first peer if multiple)
-                bgp_peer_state = 'N/A'
-                bgp_status = 'N/A'
-                if bgp_peers:
-                    bgp_peer_state = bgp_peers[0].get('bgpPeerState', 'N/A')
-                    bgp_status = bgp_peers[0].get('bgpStatus', 'N/A')
-
-                # Get tags
-                tags = vif.get('tags', [])
-                tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
-
-                all_vifs.append({
-                    'Region': region,
-                    'Virtual Interface ID': vif_id,
-                    'Virtual Interface Name': vif_name,
-                    'Type': vif_type,
-                    'State': vif_state,
-                    'Connection ID': connection_id,
-                    'VLAN': vlan,
-                    'BGP ASN': asn,
-                    'Amazon Side ASN': amazon_side_asn,
-                    'Amazon Address': amazon_address,
-                    'Customer Address': customer_address,
-                    'Virtual Gateway ID': virtual_gateway_id,
-                    'Direct Connect Gateway ID': directconnect_gateway_id,
-                    'BGP Peer State': bgp_peer_state,
-                    'BGP Status': bgp_status,
-                    'Location': location,
-                    'MTU Size': mtu,
-                    'Jumbo Frame Capable': jumbo_frame_capable,
-                    'Owner Account': owner_account,
-                    'Tags': tag_string
-                })
-
-        except Exception as e:
-            utils.log_error(f"Error processing region {region} for Virtual Interfaces", e)
-
+    results = utils.scan_regions_concurrent(regions, _scan_virtual_interfaces_region)
+    all_vifs = [vif for result in results for vif in result]
     utils.log_success(f"Total virtual interfaces collected: {len(all_vifs)}")
     return all_vifs
+
+
+def _scan_lags_region(region: str) -> List[Dict[str, Any]]:
+    """Scan Direct Connect LAGs in a single region."""
+    regional_lags = []
+
+    try:
+        dx = utils.get_boto3_client('directconnect', region_name=region)
+
+        # Get LAGs
+        response = dx.describe_lags()
+        lags = response.get('lags', [])
+
+        for lag in lags:
+            lag_id = lag.get('lagId', 'N/A')
+
+            # Extract LAG details
+            lag_name = lag.get('lagName', 'N/A')
+            lag_state = lag.get('lagState', 'N/A')
+            location = lag.get('location', 'N/A')
+            connections = lag.get('connections', [])
+            connections_bandwidth = lag.get('connectionsBandwidth', 'N/A')
+            number_of_connections = lag.get('numberOfConnections', 0)
+            minimum_links = lag.get('minimumLinks', 0)
+            allow_auto_negotiation = lag.get('allowsHostedConnections', False)
+            jumbo_frame_capable = lag.get('jumboFrameCapable', False)
+            has_logical_redundancy = lag.get('hasLogicalRedundancy', 'unknown')
+            owner_account = lag.get('ownerAccount', 'N/A')
+            aws_device = lag.get('awsDevice', 'N/A')
+            aws_device_v2 = lag.get('awsDeviceV2', 'N/A')
+            aws_logical_device_id = lag.get('awsLogicalDeviceId', 'N/A')
+
+            # Count connections by state
+            connection_states = {}
+            for conn in connections:
+                state = conn.get('connectionState', 'unknown')
+                connection_states[state] = connection_states.get(state, 0) + 1
+
+            connection_state_summary = ', '.join([f"{state}: {count}" for state, count in connection_states.items()]) if connection_states else 'No connections'
+
+            # Get tags
+            tags = lag.get('tags', [])
+            tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
+
+            regional_lags.append({
+                'Region': region,
+                'LAG ID': lag_id,
+                'LAG Name': lag_name,
+                'State': lag_state,
+                'Location': location,
+                'Bandwidth': connections_bandwidth,
+                'Number of Connections': number_of_connections,
+                'Minimum Links': minimum_links,
+                'Connection States': connection_state_summary,
+                'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
+                'AWS Logical Device ID': aws_logical_device_id,
+                'Allows Hosted Connections': allow_auto_negotiation,
+                'Has Logical Redundancy': has_logical_redundancy,
+                'Jumbo Frame Capable': jumbo_frame_capable,
+                'Owner Account': owner_account,
+                'Tags': tag_string
+            })
+
+    except Exception as e:
+        utils.log_error(f"Error collecting LAGs in {region}", e)
+
+    return regional_lags
 
 
 @utils.aws_error_handler("Collecting LAGs", default_return=[])
@@ -275,78 +336,8 @@ def collect_lags(regions: List[str]) -> List[Dict[str, Any]]:
         list: List of dictionaries with LAG information
     """
     print("\n=== COLLECTING LINK AGGREGATION GROUPS (LAGs) ===")
-    all_lags = []
-
-    for region in regions:
-        if not utils.validate_aws_region(region):
-            utils.log_error(f"Skipping invalid AWS region: {region}")
-            continue
-
-        print(f"\nProcessing region: {region}")
-
-        try:
-            dx = utils.get_boto3_client('directconnect', region_name=region)
-
-            # Get LAGs
-            response = dx.describe_lags()
-            lags = response.get('lags', [])
-
-            print(f"  Found {len(lags)} LAGs")
-
-            for lag in lags:
-                lag_id = lag.get('lagId', 'N/A')
-                print(f"  Processing LAG: {lag_id}")
-
-                # Extract LAG details
-                lag_name = lag.get('lagName', 'N/A')
-                lag_state = lag.get('lagState', 'N/A')
-                location = lag.get('location', 'N/A')
-                connections = lag.get('connections', [])
-                connections_bandwidth = lag.get('connectionsBandwidth', 'N/A')
-                number_of_connections = lag.get('numberOfConnections', 0)
-                minimum_links = lag.get('minimumLinks', 0)
-                allow_auto_negotiation = lag.get('allowsHostedConnections', False)
-                jumbo_frame_capable = lag.get('jumboFrameCapable', False)
-                has_logical_redundancy = lag.get('hasLogicalRedundancy', 'unknown')
-                owner_account = lag.get('ownerAccount', 'N/A')
-                aws_device = lag.get('awsDevice', 'N/A')
-                aws_device_v2 = lag.get('awsDeviceV2', 'N/A')
-                aws_logical_device_id = lag.get('awsLogicalDeviceId', 'N/A')
-
-                # Count connections by state
-                connection_states = {}
-                for conn in connections:
-                    state = conn.get('connectionState', 'unknown')
-                    connection_states[state] = connection_states.get(state, 0) + 1
-
-                connection_state_summary = ', '.join([f"{state}: {count}" for state, count in connection_states.items()]) if connection_states else 'No connections'
-
-                # Get tags
-                tags = lag.get('tags', [])
-                tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
-
-                all_lags.append({
-                    'Region': region,
-                    'LAG ID': lag_id,
-                    'LAG Name': lag_name,
-                    'State': lag_state,
-                    'Location': location,
-                    'Bandwidth': connections_bandwidth,
-                    'Number of Connections': number_of_connections,
-                    'Minimum Links': minimum_links,
-                    'Connection States': connection_state_summary,
-                    'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
-                    'AWS Logical Device ID': aws_logical_device_id,
-                    'Allows Hosted Connections': allow_auto_negotiation,
-                    'Has Logical Redundancy': has_logical_redundancy,
-                    'Jumbo Frame Capable': jumbo_frame_capable,
-                    'Owner Account': owner_account,
-                    'Tags': tag_string
-                })
-
-        except Exception as e:
-            utils.log_error(f"Error processing region {region} for LAGs", e)
-
+    results = utils.scan_regions_concurrent(regions, _scan_lags_region)
+    all_lags = [lag for result in results for lag in result]
     utils.log_success(f"Total LAGs collected: {len(all_lags)}")
     return all_lags
 
