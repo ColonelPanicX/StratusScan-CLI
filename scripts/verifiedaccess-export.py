@@ -562,36 +562,39 @@ def main():
         print("export will create a report indicating the service is not in use.")
         print("====================================================================\n")
 
-        # Collect data across all regions
-        all_instances = []
-        all_trust_providers = []
-        all_groups = []
-        all_endpoints = []
+        # Collect data across all regions using concurrent scanning
+        print("\n=== COLLECTING VERIFIED ACCESS RESOURCES ===")
+
+        # Collect instances, trust providers, groups, and endpoints concurrently
+        print("Collecting Verified Access Instances...")
+        instances_results = utils.scan_regions_concurrent(regions, collect_verified_access_instances)
+        all_instances = [inst for result in instances_results for inst in result]
+        utils.log_success(f"Total instances collected: {len(all_instances)}")
+
+        print("Collecting Trust Providers...")
+        tp_results = utils.scan_regions_concurrent(regions, collect_trust_providers)
+        all_trust_providers = [tp for result in tp_results for tp in result]
+        utils.log_success(f"Total trust providers collected: {len(all_trust_providers)}")
+
+        print("Collecting Verified Access Groups...")
+        groups_results = utils.scan_regions_concurrent(regions, collect_verified_access_groups)
+        all_groups = [grp for result in groups_results for grp in result]
+        utils.log_success(f"Total groups collected: {len(all_groups)}")
+
+        print("Collecting Verified Access Endpoints...")
+        endpoints_results = utils.scan_regions_concurrent(regions, collect_verified_access_endpoints)
+        all_endpoints = [ep for result in endpoints_results for ep in result]
+        utils.log_success(f"Total endpoints collected: {len(all_endpoints)}")
+
+        # Collect access logs configurations (depends on instances per region)
+        print("Collecting Access Logs Configurations...")
         all_logs_configs = []
-
         for region in regions:
-            utils.log_section(f"Scanning region: {region}")
-
-            # Collect instances
-            instances = collect_verified_access_instances(region)
-            all_instances.extend(instances)
-
-            # Collect trust providers
-            trust_providers = collect_trust_providers(region)
-            all_trust_providers.extend(trust_providers)
-
-            # Collect groups
-            groups = collect_verified_access_groups(region)
-            all_groups.extend(groups)
-
-            # Collect endpoints
-            endpoints = collect_verified_access_endpoints(region)
-            all_endpoints.extend(endpoints)
-
-            # Collect access logs configurations (only if instances exist)
-            if instances:
-                logs_configs = collect_access_logs_config(region, instances)
+            region_instances = [inst for inst in all_instances if inst['Region'] == region]
+            if region_instances:
+                logs_configs = collect_access_logs_config(region, region_instances)
                 all_logs_configs.extend(logs_configs)
+        utils.log_success(f"Total access logs configurations collected: {len(all_logs_configs)}")
 
         print("\n====================================================================")
         print("COLLECTION COMPLETE")

@@ -585,18 +585,11 @@ def main():
 
         utils.log_info(f"Will scan Security Hub in regions: {', '.join(available_regions)}")
 
-        # Collect findings from all available regions
-        all_findings_data = []
-
-        for region in available_regions:
-            utils.log_info(f"Collecting Security Hub findings from {region}...")
-            region_findings = collect_security_hub_findings(region)
-            all_findings_data.extend(region_findings)
-
-            if region_findings:
-                utils.log_success(f"Collected {len(region_findings)} findings from {region}")
-            else:
-                utils.log_info(f"No active findings found in {region}")
+        # Collect findings from all available regions using concurrent scanning
+        print("\n=== COLLECTING SECURITY HUB FINDINGS ===")
+        results = utils.scan_regions_concurrent(available_regions, collect_security_hub_findings)
+        all_findings_data = [finding for result in results for finding in result]
+        utils.log_success(f"Total Security Hub findings collected: {len(all_findings_data)}")
 
         if not all_findings_data:
             utils.log_warning("No Security Hub findings collected from any region. Exiting.")

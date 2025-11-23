@@ -68,13 +68,11 @@ def check_dependencies():
     utils.log_success("All dependencies are installed")
 
 
-@utils.aws_error_handler("Collecting SageMaker notebook instances", default_return=[])
-def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker notebook instance information from AWS regions."""
-    all_notebooks = []
+def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
+    """Scan SageMaker notebook instances in a single region."""
+    regional_notebooks = []
 
-    for region in regions:
-        utils.log_info(f"Collecting notebook instances in {region}...")
+    try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
         try:
@@ -133,7 +131,7 @@ def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = notebook_response.get('FailureReason', 'N/A')
 
-                        all_notebooks.append({
+                        regional_notebooks.append({
                             'Region': region,
                             'Notebook Name': notebook_name,
                             'ARN': arn,
@@ -160,19 +158,28 @@ def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
 
         except Exception as e:
             utils.log_warning(f"Error listing notebook instances in {region}: {str(e)}")
-            continue
 
-    utils.log_info(f"Collected {len(all_notebooks)} notebook instances")
+    except Exception as e:
+        utils.log_error(f"Error collecting notebook instances in {region}", e)
+
+    return regional_notebooks
+
+
+@utils.aws_error_handler("Collecting SageMaker notebook instances", default_return=[])
+def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect SageMaker notebook instance information from AWS regions."""
+    print("\n=== COLLECTING SAGEMAKER NOTEBOOK INSTANCES ===")
+    results = utils.scan_regions_concurrent(regions, _scan_notebook_instances_region)
+    all_notebooks = [nb for result in results for nb in result]
+    utils.log_success(f"Total notebook instances collected: {len(all_notebooks)}")
     return all_notebooks
 
 
-@utils.aws_error_handler("Collecting SageMaker training jobs", default_return=[])
-def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker training job information (limited to recent 50 per region)."""
-    all_jobs = []
+def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
+    """Scan SageMaker training jobs in a single region (limited to 50 most recent)."""
+    regional_jobs = []
 
-    for region in regions:
-        utils.log_info(f"Collecting training jobs in {region}...")
+    try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
         try:
@@ -255,7 +262,7 @@ def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = job_response.get('FailureReason', 'N/A')
 
-                        all_jobs.append({
+                        regional_jobs.append({
                             'Region': region,
                             'Job Name': job_name,
                             'ARN': arn,
@@ -286,19 +293,28 @@ def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 
         except Exception as e:
             utils.log_warning(f"Error listing training jobs in {region}: {str(e)}")
-            continue
 
-    utils.log_info(f"Collected {len(all_jobs)} training jobs (limited to 50 most recent per region)")
+    except Exception as e:
+        utils.log_error(f"Error collecting training jobs in {region}", e)
+
+    return regional_jobs
+
+
+@utils.aws_error_handler("Collecting SageMaker training jobs", default_return=[])
+def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect SageMaker training job information (limited to recent 50 per region)."""
+    print("\n=== COLLECTING SAGEMAKER TRAINING JOBS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_training_jobs_region)
+    all_jobs = [job for result in results for job in result]
+    utils.log_success(f"Total training jobs collected: {len(all_jobs)} (limited to 50 per region)")
     return all_jobs
 
 
-@utils.aws_error_handler("Collecting SageMaker models", default_return=[])
-def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker model information."""
-    all_models = []
+def _scan_models_region(region: str) -> List[Dict[str, Any]]:
+    """Scan SageMaker models in a single region."""
+    regional_models = []
 
-    for region in regions:
-        utils.log_info(f"Collecting models in {region}...")
+    try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
         try:
@@ -339,7 +355,7 @@ def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
                         containers = model_response.get('Containers', [])
                         container_count = len(containers) if containers else (1 if primary_container else 0)
 
-                        all_models.append({
+                        regional_models.append({
                             'Region': region,
                             'Model Name': model_name,
                             'ARN': arn,
@@ -359,19 +375,28 @@ def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
 
         except Exception as e:
             utils.log_warning(f"Error listing models in {region}: {str(e)}")
-            continue
 
-    utils.log_info(f"Collected {len(all_models)} models")
+    except Exception as e:
+        utils.log_error(f"Error collecting models in {region}", e)
+
+    return regional_models
+
+
+@utils.aws_error_handler("Collecting SageMaker models", default_return=[])
+def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect SageMaker model information."""
+    print("\n=== COLLECTING SAGEMAKER MODELS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_models_region)
+    all_models = [model for result in results for model in result]
+    utils.log_success(f"Total models collected: {len(all_models)}")
     return all_models
 
 
-@utils.aws_error_handler("Collecting SageMaker endpoints", default_return=[])
-def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker endpoint information."""
-    all_endpoints = []
+def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
+    """Scan SageMaker endpoints in a single region."""
+    regional_endpoints = []
 
-    for region in regions:
-        utils.log_info(f"Collecting endpoints in {region}...")
+    try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
         try:
@@ -422,7 +447,7 @@ def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = endpoint_response.get('FailureReason', 'N/A')
 
-                        all_endpoints.append({
+                        regional_endpoints.append({
                             'Region': region,
                             'Endpoint Name': endpoint_name,
                             'ARN': arn,
@@ -444,19 +469,28 @@ def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
 
         except Exception as e:
             utils.log_warning(f"Error listing endpoints in {region}: {str(e)}")
-            continue
 
-    utils.log_info(f"Collected {len(all_endpoints)} endpoints")
+    except Exception as e:
+        utils.log_error(f"Error collecting endpoints in {region}", e)
+
+    return regional_endpoints
+
+
+@utils.aws_error_handler("Collecting SageMaker endpoints", default_return=[])
+def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect SageMaker endpoint information."""
+    print("\n=== COLLECTING SAGEMAKER ENDPOINTS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_endpoints_region)
+    all_endpoints = [ep for result in results for ep in result]
+    utils.log_success(f"Total endpoints collected: {len(all_endpoints)}")
     return all_endpoints
 
 
-@utils.aws_error_handler("Collecting SageMaker processing jobs", default_return=[])
-def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker processing job information (limited to recent 30 per region)."""
-    all_jobs = []
+def _scan_processing_jobs_region(region: str) -> List[Dict[str, Any]]:
+    """Scan SageMaker processing jobs in a single region (limited to 30 most recent)."""
+    regional_jobs = []
 
-    for region in regions:
-        utils.log_info(f"Collecting processing jobs in {region}...")
+    try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
         try:
@@ -486,7 +520,7 @@ def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
                     # Get additional details if needed
                     failure_reason = job.get('FailureReason', 'N/A')
 
-                    all_jobs.append({
+                    regional_jobs.append({
                         'Region': region,
                         'Job Name': job_name,
                         'ARN': arn,
@@ -502,9 +536,20 @@ def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 
         except Exception as e:
             utils.log_warning(f"Error listing processing jobs in {region}: {str(e)}")
-            continue
 
-    utils.log_info(f"Collected {len(all_jobs)} processing jobs (limited to 30 most recent per region)")
+    except Exception as e:
+        utils.log_error(f"Error collecting processing jobs in {region}", e)
+
+    return regional_jobs
+
+
+@utils.aws_error_handler("Collecting SageMaker processing jobs", default_return=[])
+def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect SageMaker processing job information (limited to recent 30 per region)."""
+    print("\n=== COLLECTING SAGEMAKER PROCESSING JOBS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_processing_jobs_region)
+    all_jobs = [job for result in results for job in result]
+    utils.log_success(f"Total processing jobs collected: {len(all_jobs)} (limited to 30 per region)")
     return all_jobs
 
 
