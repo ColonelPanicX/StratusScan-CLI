@@ -72,8 +72,9 @@ def collect_global_networks() -> List[Dict[str, Any]]:
     """Collect Network Manager global network information (global service)."""
     print("\n=== COLLECTING GLOBAL NETWORKS ===")
     all_networks = []
-    # Network Manager is a global service - use us-west-2
-    nm_client = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    # Network Manager is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    nm_client = utils.get_boto3_client('networkmanager', region_name=home_region)
 
     try:
         paginator = nm_client.get_paginator('describe_global_networks')
@@ -115,7 +116,8 @@ def collect_devices(global_networks: List[Dict[str, Any]]) -> List[Dict[str, Any
     """Collect device information for all global networks."""
     print("\n=== COLLECTING NETWORK DEVICES ===")
     all_devices = []
-    nm_client = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    home_region = utils.get_partition_default_region()
+    nm_client = utils.get_boto3_client('networkmanager', region_name=home_region)
 
     for network in global_networks:
         global_network_id = network.get('Global Network ID', 'N/A')
@@ -178,7 +180,8 @@ def collect_sites(global_networks: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     """Collect site information for all global networks."""
     print("\n=== COLLECTING SITES ===")
     all_sites = []
-    nm_client = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    home_region = utils.get_partition_default_region()
+    nm_client = utils.get_boto3_client('networkmanager', region_name=home_region)
 
     for network in global_networks:
         global_network_id = network.get('Global Network ID', 'N/A')
@@ -231,7 +234,8 @@ def collect_links(global_networks: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     """Collect link information for all global networks."""
     print("\n=== COLLECTING LINKS ===")
     all_links = []
-    nm_client = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    home_region = utils.get_partition_default_region()
+    nm_client = utils.get_boto3_client('networkmanager', region_name=home_region)
 
     for network in global_networks:
         global_network_id = network.get('Global Network ID', 'N/A')

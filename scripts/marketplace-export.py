@@ -71,8 +71,9 @@ def collect_agreements() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING MARKETPLACE AGREEMENTS ===")
     all_agreements = []
 
-    # Marketplace Agreement API is a global service - use us-east-1
-    mp_client = utils.get_boto3_client('marketplace-agreement', region_name='us-east-1')
+    # Marketplace Agreement API is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    mp_client = utils.get_boto3_client('marketplace-agreement', region_name=home_region)
 
     try:
         # Search for all agreements (active and expired)
@@ -145,7 +146,8 @@ def collect_agreement_terms(agreements: List[Dict[str, Any]]) -> List[Dict[str, 
     print("\n=== COLLECTING AGREEMENT TERMS ===")
     all_terms = []
 
-    mp_client = utils.get_boto3_client('marketplace-agreement', region_name='us-east-1')
+    home_region = utils.get_partition_default_region()
+    mp_client = utils.get_boto3_client('marketplace-agreement', region_name=home_region)
 
     for agreement in agreements:
         agreement_id = agreement.get('Agreement ID', 'N/A')
