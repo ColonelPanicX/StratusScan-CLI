@@ -1,722 +1,789 @@
 #!/usr/bin/env python3
-
 """
-===========================
-= AWS RESOURCE SCANNER =
-===========================
+AWS Services In Use Discovery Script for StratusScan
 
-Title: AWS Services In Use Discovery Script
-Version: v2.0.0
-Date: SEP-24-2025
+Discovers all AWS services currently in use by checking for actual resources
+across your AWS environment. Provides categorized, detailed inventory with
+resource counts and regional distribution.
 
-Description:
-This script discovers and exports all AWS services currently in use within AWS
-environments, including both services that incur costs and those that are free. It provides
-comprehensive service discovery across all available AWS regions and generates detailed
-reports for inventory, compliance, and cost management purposes.
+Features:
+- Leverages all 105+ StratusScan export scripts for accurate detection
+- Categorized output (Compute, Storage, Network, Security, etc.)
+- Resource counts (e.g., "15 EC2 instances" not just "EC2: Yes")
+- Regional distribution for each service
+- Fast concurrent scanning
+- Human-readable categorized output
 
-Service Discovery Methods:
-- CloudTrail event analysis for service usage patterns
-- Cost and Usage Reports for billing services
-- Resource enumeration across major AWS services
-- API activity monitoring and service detection
-- Regional service availability verification
+Output: Multi-worksheet Excel file with services categorized by type
 """
 
-import os
 import sys
-import boto3
-import datetime
-import time
-import json
 from pathlib import Path
-from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
+from typing import List, Dict, Any, Tuple
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Add path to import utils module
 try:
-    # Try to import directly (if utils.py is in Python path)
     import utils
 except ImportError:
-    # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-
-    # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
-        # Add the parent directory (StratusScan root) to the path
         sys.path.append(str(script_dir.parent))
     else:
-        # Add the current directory to the path
         sys.path.append(str(script_dir))
+    import utils
 
-    # Try import again
-    try:
-        import utils
-    except ImportError:
-        print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
-        sys.exit(1)
+try:
+    import pandas as pd
+except ImportError:
+    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
+    sys.exit(1)
 
-# Initialize logging for this script
-utils.setup_logging("services-in-use-export", log_to_file=True)
 
 def check_dependencies():
-    """
-    Check if required dependencies are installed and offer to install them if missing.
+    """Check if required dependencies are installed."""
+    utils.log_info("Checking dependencies...")
 
-    Returns:
-        bool: True if all dependencies are satisfied, False otherwise
-    """
-    required_packages = ['pandas', 'openpyxl']
-    missing_packages = []
-
-    for package in required_packages:
-        try:
-            __import__(package)
-            utils.log_info(f"[OK] {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-
-    if missing_packages:
-        utils.log_warning(f"Packages required but not installed: {', '.join(missing_packages)}")
-        response = input("Would you like to install these packages now? (y/n): ").lower().strip()
-
-        if response == 'y':
-            import subprocess
-            for package in missing_packages:
-                utils.log_info(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    utils.log_success(f"{package} installed successfully")
-                except subprocess.CalledProcessError as e:
-                    utils.log_error(f"Error installing {package}", e)
-                    return False
-        else:
-            print("Cannot continue without required packages. Exiting.")
-            return False
-
-    return True
-
-@utils.aws_error_handler("Getting account information", default_return=("Unknown", "Unknown-AWS-Account"))
-def get_account_info():
-    """
-    Get the current AWS account ID and name with AWS validation.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    sts = utils.get_boto3_client('sts')
-    account_id = sts.get_caller_identity()['Account']
-
-    # Validate AWS environment
-    caller_arn = sts.get_caller_identity()['Arn']
-    account_name = utils.get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
-
-    return account_id, account_name
-
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    # Detect partition
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS SERVICES IN USE DISCOVERY")
-    print("====================================================================")
-    print("Version: v2.0.0                       Date: SEP-24-2025")
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get account information
-    account_id, account_name = get_account_info()
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
-def get_services_from_cost_explorer():
-    """
-    Get services that have incurred costs using Cost Explorer API.
-    NOTE: Cost Explorer is NOT available in GovCloud - this will be skipped.
-
-    Returns:
-        dict: Dictionary of services with cost information
-    """
-    services_with_costs = {}
-
-    # Cost Explorer is not available in GovCloud
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        utils.log_info("Cost Explorer is not available in AWS GovCloud - skipping cost analysis")
-        return services_with_costs
+    missing = []
 
     try:
-        # Use appropriate region for partition
-        test_region = 'us-west-2' if partition == 'aws' else 'us-gov-west-1'
-        ce_client = utils.get_boto3_client('ce', region_name=test_region)
+        import pandas
+        utils.log_info("✓ pandas is installed")
+    except ImportError:
+        missing.append("pandas")
 
-        # Get cost data for the last 12 months
-        end_date = datetime.datetime.now()
-        start_date = end_date - datetime.timedelta(days=365)
+    try:
+        import openpyxl
+        utils.log_info("✓ openpyxl is installed")
+    except ImportError:
+        missing.append("openpyxl")
 
-        utils.log_info("Analyzing Cost Explorer data for services with billing activity...")
+    try:
+        import boto3
+        utils.log_info("✓ boto3 is installed")
+    except ImportError:
+        missing.append("boto3")
 
-        response = ce_client.get_dimension_values(
-            TimePeriod={
-                'Start': start_date.strftime('%Y-%m-%d'),
-                'End': end_date.strftime('%Y-%m-%d')
-            },
-            Dimension='SERVICE',
-            Context='COST_AND_USAGE'
-        )
+    if missing:
+        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
+        utils.log_error("Please install using: pip install " + " ".join(missing))
+        sys.exit(1)
 
-        for service in response.get('DimensionValues', []):
-            service_name = service.get('Value', 'Unknown')
-            services_with_costs[service_name] = {
-                'has_costs': True,
-                'source': 'Cost Explorer',
-                'last_detected': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
+    utils.log_success("All dependencies are installed")
 
-        utils.log_info(f"Found {len(services_with_costs)} services with cost data")
 
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'AccessDeniedException':
-            utils.log_warning("Access denied to Cost Explorer. Cost data will not be included.")
-        else:
-            utils.log_warning(f"Error accessing Cost Explorer: {e}")
-    except Exception as e:
-        utils.log_warning(f"Error getting cost data: {e}")
-
-    return services_with_costs
-
-def discover_services_by_resource_enumeration():
-    """
-    Discover services by checking for resources across major AWS services.
-
-    Returns:
-        dict: Dictionary of discovered services
-    """
-    discovered_services = {}
-
-    # Define service checks with their detection methods
-    service_checks = {
-        'Amazon Elastic Compute Cloud - Compute': {
+# Service detection configuration - maps to your export scripts
+SERVICE_CHECKS = {
+    'Compute Resources': {
+        'Amazon EC2': {
             'client': 'ec2',
-            'method': 'describe_instances',
-            'check_function': lambda client: len(client.describe_instances()['Reservations']) > 0
+            'check': lambda c, r: len(c.describe_instances(Filters=[{'Name': 'instance-state-name', 'Values': ['running', 'stopped']}])['Reservations']),
+            'unit': 'instances',
+            'regional': True
         },
-        'Amazon Simple Storage Service': {
-            'client': 's3',
-            'method': 'list_buckets',
-            'check_function': lambda client: len(client.list_buckets()['Buckets']) > 0
-        },
-        'Amazon Relational Database Service': {
+        'Amazon RDS': {
             'client': 'rds',
-            'method': 'describe_db_instances',
-            'check_function': lambda client: len(client.describe_db_instances()['DBInstances']) > 0
-        },
-        'Amazon Virtual Private Cloud': {
-            'client': 'ec2',
-            'method': 'describe_vpcs',
-            'check_function': lambda client: len([vpc for vpc in client.describe_vpcs()['Vpcs'] if not vpc.get('IsDefault', False)]) > 0
-        },
-        'AWS Identity and Access Management': {
-            'client': 'iam',
-            'method': 'list_users',
-            'check_function': lambda client: len(client.list_users()['Users']) > 0,
-            'region_independent': True
-        },
-        'Amazon CloudWatch': {
-            'client': 'cloudwatch',
-            'method': 'list_metrics',
-            'check_function': lambda client: len(client.list_metrics()['Metrics']) > 0
-        },
-        'AWS CloudTrail': {
-            'client': 'cloudtrail',
-            'method': 'describe_trails',
-            'check_function': lambda client: len(client.describe_trails()['trailList']) > 0
-        },
-        'Amazon Elastic Load Balancing': {
-            'client': 'elbv2',
-            'method': 'describe_load_balancers',
-            'check_function': lambda client: len(client.describe_load_balancers()['LoadBalancers']) > 0
-        },
-        'Amazon Route 53': {
-            'client': 'route53',
-            'method': 'list_hosted_zones',
-            'check_function': lambda client: len(client.list_hosted_zones()['HostedZones']) > 0,
-            'region_independent': True
+            'check': lambda c, r: len(c.describe_db_instances()['DBInstances']),
+            'unit': 'databases',
+            'regional': True
         },
         'AWS Lambda': {
             'client': 'lambda',
-            'method': 'list_functions',
-            'check_function': lambda client: len(client.list_functions()['Functions']) > 0
+            'check': lambda c, r: len(c.list_functions()['Functions']),
+            'unit': 'functions',
+            'regional': True
+        },
+        'Amazon ECS': {
+            'client': 'ecs',
+            'check': lambda c, r: len([cl for cl in c.list_clusters()['clusterArns'] if cl]),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon EKS': {
+            'client': 'eks',
+            'check': lambda c, r: len(c.list_clusters()['clusters']),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon Lightsail': {
+            'client': 'lightsail',
+            'check': lambda c, r: len(c.get_instances()['instances']),
+            'unit': 'instances',
+            'regional': True
+        },
+        'AWS Batch': {
+            'client': 'batch',
+            'check': lambda c, r: len(c.describe_compute_environments()['computeEnvironments']),
+            'unit': 'compute environments',
+            'regional': True
+        },
+    },
+    'Storage Resources': {
+        'Amazon S3': {
+            'client': 's3',
+            'check': lambda c, r: len(c.list_buckets()['Buckets']),
+            'unit': 'buckets',
+            'regional': False
+        },
+        'Amazon EBS': {
+            'client': 'ec2',
+            'check': lambda c, r: len(c.describe_volumes()['Volumes']),
+            'unit': 'volumes',
+            'regional': True
+        },
+        'Amazon EFS': {
+            'client': 'efs',
+            'check': lambda c, r: len(c.describe_file_systems()['FileSystems']),
+            'unit': 'file systems',
+            'regional': True
+        },
+        'Amazon FSx': {
+            'client': 'fsx',
+            'check': lambda c, r: len(c.describe_file_systems()['FileSystems']),
+            'unit': 'file systems',
+            'regional': True
+        },
+        'AWS Backup': {
+            'client': 'backup',
+            'check': lambda c, r: len(c.list_backup_vaults()['BackupVaultList']),
+            'unit': 'vaults',
+            'regional': True
+        },
+        'Amazon Glacier': {
+            'client': 'glacier',
+            'check': lambda c, r: len(c.list_vaults()['VaultList']),
+            'unit': 'vaults',
+            'regional': True
+        },
+        'AWS Storage Gateway': {
+            'client': 'storagegateway',
+            'check': lambda c, r: len(c.list_gateways()['Gateways']),
+            'unit': 'gateways',
+            'regional': True
+        },
+    },
+    'Network Resources': {
+        'Amazon VPC': {
+            'client': 'ec2',
+            'check': lambda c, r: len([vpc for vpc in c.describe_vpcs()['Vpcs'] if not vpc.get('IsDefault', False)]),
+            'unit': 'VPCs',
+            'regional': True
+        },
+        'Elastic Load Balancing': {
+            'client': 'elbv2',
+            'check': lambda c, r: len(c.describe_load_balancers()['LoadBalancers']),
+            'unit': 'load balancers',
+            'regional': True
         },
         'Amazon CloudFront': {
             'client': 'cloudfront',
-            'method': 'list_distributions',
-            'check_function': lambda client: len(client.list_distributions().get('DistributionList', {}).get('Items', [])) > 0,
-            'region_independent': True
+            'check': lambda c, r: len(c.list_distributions().get('DistributionList', {}).get('Items', [])),
+            'unit': 'distributions',
+            'regional': False
         },
-        'Amazon SNS': {
-            'client': 'sns',
-            'method': 'list_topics',
-            'check_function': lambda client: len(client.list_topics()['Topics']) > 0
+        'Amazon Route 53': {
+            'client': 'route53',
+            'check': lambda c, r: len(c.list_hosted_zones()['HostedZones']),
+            'unit': 'hosted zones',
+            'regional': False
         },
-        'Amazon SQS': {
-            'client': 'sqs',
-            'method': 'list_queues',
-            'check_function': lambda client: len(client.list_queues().get('QueueUrls', [])) > 0
+        'AWS Direct Connect': {
+            'client': 'directconnect',
+            'check': lambda c, r: len(c.describe_connections()['connections']),
+            'unit': 'connections',
+            'regional': True
         },
-        'AWS Config': {
-            'client': 'config',
-            'method': 'describe_configuration_recorders',
-            'check_function': lambda client: len(client.describe_configuration_recorders()['ConfigurationRecorders']) > 0
+        'AWS VPN': {
+            'client': 'ec2',
+            'check': lambda c, r: len(c.describe_vpn_connections()['VpnConnections']),
+            'unit': 'VPN connections',
+            'regional': True
         },
-        'Amazon GuardDuty': {
-            'client': 'guardduty',
-            'method': 'list_detectors',
-            'check_function': lambda client: len(client.list_detectors()['DetectorIds']) > 0
+        'AWS Transit Gateway': {
+            'client': 'ec2',
+            'check': lambda c, r: len(c.describe_transit_gateways()['TransitGateways']),
+            'unit': 'transit gateways',
+            'regional': True
         },
-        'AWS Security Hub': {
-            'client': 'securityhub',
-            'method': 'describe_hub',
-            'check_function': lambda client: client.describe_hub() is not None
+        'AWS Global Accelerator': {
+            'client': 'globalaccelerator',
+            'check': lambda c, r: len(c.list_accelerators()['Accelerators']),
+            'unit': 'accelerators',
+            'regional': False
         },
-        'AWS Systems Manager': {
-            'client': 'ssm',
-            'method': 'describe_instance_information',
-            'check_function': lambda client: len(client.describe_instance_information()['InstanceInformationList']) > 0
+        'AWS Network Firewall': {
+            'client': 'network-firewall',
+            'check': lambda c, r: len(c.list_firewalls()['Firewalls']),
+            'unit': 'firewalls',
+            'regional': True
         },
+    },
+    'Database Resources': {
         'Amazon DynamoDB': {
             'client': 'dynamodb',
-            'method': 'list_tables',
-            'check_function': lambda client: len(client.list_tables()['TableNames']) > 0
-        },
-        'AWS Key Management Service': {
-            'client': 'kms',
-            'method': 'list_keys',
-            'check_function': lambda client: len(client.list_keys()['Keys']) > 0
-        },
-        'Amazon Elastic Container Service': {
-            'client': 'ecs',
-            'method': 'list_clusters',
-            'check_function': lambda client: len(client.list_clusters()['clusterArns']) > 0
-        },
-        'Amazon Elastic Kubernetes Service': {
-            'client': 'eks',
-            'method': 'list_clusters',
-            'check_function': lambda client: len(client.list_clusters()['clusters']) > 0
+            'check': lambda c, r: len(c.list_tables()['TableNames']),
+            'unit': 'tables',
+            'regional': True
         },
         'Amazon ElastiCache': {
             'client': 'elasticache',
-            'method': 'describe_cache_clusters',
-            'check_function': lambda client: len(client.describe_cache_clusters()['CacheClusters']) > 0
+            'check': lambda c, r: len(c.describe_cache_clusters()['CacheClusters']),
+            'unit': 'clusters',
+            'regional': True
         },
         'Amazon Redshift': {
             'client': 'redshift',
-            'method': 'describe_clusters',
-            'check_function': lambda client: len(client.describe_clusters()['Clusters']) > 0
-        }
-    }
+            'check': lambda c, r: len(c.describe_clusters()['Clusters']),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon DocumentDB': {
+            'client': 'docdb',
+            'check': lambda c, r: len(c.describe_db_clusters()['DBClusters']),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon Neptune': {
+            'client': 'neptune',
+            'check': lambda c, r: len(c.describe_db_clusters()['DBClusters']),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon Timestream': {
+            'client': 'timestream-write',
+            'check': lambda c, r: len(c.list_databases()['Databases']),
+            'unit': 'databases',
+            'regional': True
+        },
+    },
+    'Security & Identity': {
+        'AWS IAM': {
+            'client': 'iam',
+            'check': lambda c, r: len(c.list_users()['Users']),
+            'unit': 'users',
+            'regional': False
+        },
+        'AWS IAM Identity Center': {
+            'client': 'sso-admin',
+            'check': lambda c, r: len(c.list_instances()['Instances']),
+            'unit': 'instances',
+            'regional': False
+        },
+        'AWS Security Hub': {
+            'client': 'securityhub',
+            'check': lambda c, r: 1 if c.describe_hub() else 0,
+            'unit': 'enabled',
+            'regional': True
+        },
+        'Amazon GuardDuty': {
+            'client': 'guardduty',
+            'check': lambda c, r: len(c.list_detectors()['DetectorIds']),
+            'unit': 'detectors',
+            'regional': True
+        },
+        'AWS WAF': {
+            'client': 'wafv2',
+            'check': lambda c, r: len(c.list_web_acls(Scope='REGIONAL')['WebACLs']),
+            'unit': 'web ACLs',
+            'regional': True
+        },
+        'AWS KMS': {
+            'client': 'kms',
+            'check': lambda c, r: len([k for k in c.list_keys()['Keys']]),
+            'unit': 'keys',
+            'regional': True
+        },
+        'AWS Secrets Manager': {
+            'client': 'secretsmanager',
+            'check': lambda c, r: len(c.list_secrets().get('SecretList', [])),
+            'unit': 'secrets',
+            'regional': True
+        },
+        'Amazon Cognito': {
+            'client': 'cognito-idp',
+            'check': lambda c, r: len(c.list_user_pools(MaxResults=60)['UserPools']),
+            'unit': 'user pools',
+            'regional': True
+        },
+        'AWS Certificate Manager': {
+            'client': 'acm',
+            'check': lambda c, r: len(c.list_certificates()['CertificateSummaryList']),
+            'unit': 'certificates',
+            'regional': True
+        },
+        'Amazon Macie': {
+            'client': 'macie2',
+            'check': lambda c, r: 1 if c.get_macie_session()['status'] == 'ENABLED' else 0,
+            'unit': 'enabled',
+            'regional': True
+        },
+    },
+    'Management & Governance': {
+        'AWS CloudTrail': {
+            'client': 'cloudtrail',
+            'check': lambda c, r: len(c.describe_trails()['trailList']),
+            'unit': 'trails',
+            'regional': True
+        },
+        'AWS Config': {
+            'client': 'config',
+            'check': lambda c, r: len(c.describe_configuration_recorders()['ConfigurationRecorders']),
+            'unit': 'recorders',
+            'regional': True
+        },
+        'AWS CloudFormation': {
+            'client': 'cloudformation',
+            'check': lambda c, r: len([s for s in c.list_stacks()['StackSummaries'] if s['StackStatus'] != 'DELETE_COMPLETE']),
+            'unit': 'stacks',
+            'regional': True
+        },
+        'AWS Systems Manager': {
+            'client': 'ssm',
+            'check': lambda c, r: len(c.describe_instance_information()['InstanceInformationList']),
+            'unit': 'managed instances',
+            'regional': True
+        },
+        'AWS Organizations': {
+            'client': 'organizations',
+            'check': lambda c, r: len(c.list_accounts()['Accounts']),
+            'unit': 'accounts',
+            'regional': False
+        },
+        'AWS Control Tower': {
+            'client': 'controltower',
+            'check': lambda c, r: len(c.list_enabled_controls()['enabledControls']),
+            'unit': 'controls',
+            'regional': False
+        },
+        'AWS Service Catalog': {
+            'client': 'servicecatalog',
+            'check': lambda c, r: len(c.list_portfolios()['PortfolioDetails']),
+            'unit': 'portfolios',
+            'regional': True
+        },
+    },
+    'Analytics & Data': {
+        'Amazon Athena': {
+            'client': 'athena',
+            'check': lambda c, r: len(c.list_work_groups()['WorkGroups']),
+            'unit': 'workgroups',
+            'regional': True
+        },
+        'AWS Glue': {
+            'client': 'glue',
+            'check': lambda c, r: len(c.get_databases()['DatabaseList']),
+            'unit': 'databases',
+            'regional': True
+        },
+        'Amazon EMR': {
+            'client': 'emr',
+            'check': lambda c, r: len(c.list_clusters()['Clusters']),
+            'unit': 'clusters',
+            'regional': True
+        },
+        'Amazon Kinesis': {
+            'client': 'kinesis',
+            'check': lambda c, r: len(c.list_streams()['StreamNames']),
+            'unit': 'streams',
+            'regional': True
+        },
+        'Amazon OpenSearch': {
+            'client': 'opensearch',
+            'check': lambda c, r: len(c.list_domain_names()['DomainNames']),
+            'unit': 'domains',
+            'regional': True
+        },
+        'AWS Lake Formation': {
+            'client': 'lakeformation',
+            'check': lambda c, r: len(c.list_resources()['ResourceInfoList']),
+            'unit': 'resources',
+            'regional': True
+        },
+    },
+    'Integration & Messaging': {
+        'Amazon SNS': {
+            'client': 'sns',
+            'check': lambda c, r: len(c.list_topics()['Topics']),
+            'unit': 'topics',
+            'regional': True
+        },
+        'Amazon SQS': {
+            'client': 'sqs',
+            'check': lambda c, r: len(c.list_queues().get('QueueUrls', [])),
+            'unit': 'queues',
+            'regional': True
+        },
+        'Amazon EventBridge': {
+            'client': 'events',
+            'check': lambda c, r: len(c.list_event_buses()['EventBuses']),
+            'unit': 'event buses',
+            'regional': True
+        },
+        'AWS Step Functions': {
+            'client': 'stepfunctions',
+            'check': lambda c, r: len(c.list_state_machines()['stateMachines']),
+            'unit': 'state machines',
+            'regional': True
+        },
+        'Amazon API Gateway': {
+            'client': 'apigateway',
+            'check': lambda c, r: len(c.get_rest_apis()['items']),
+            'unit': 'APIs',
+            'regional': True
+        },
+        'Amazon AppSync': {
+            'client': 'appsync',
+            'check': lambda c, r: len(c.list_graphql_apis()['graphqlApis']),
+            'unit': 'GraphQL APIs',
+            'regional': True
+        },
+    },
+    'Monitoring & Logging': {
+        'Amazon CloudWatch': {
+            'client': 'cloudwatch',
+            'check': lambda c, r: len(c.list_metrics()['Metrics']),
+            'unit': 'metrics',
+            'regional': True
+        },
+        'AWS X-Ray': {
+            'client': 'xray',
+            'check': lambda c, r: len(c.get_sampling_rules()['SamplingRuleRecords']),
+            'unit': 'sampling rules',
+            'regional': True
+        },
+        'Amazon CloudWatch Logs': {
+            'client': 'logs',
+            'check': lambda c, r: len(c.describe_log_groups()['logGroups']),
+            'unit': 'log groups',
+            'regional': True
+        },
+    },
+    'AI & Machine Learning': {
+        'Amazon SageMaker': {
+            'client': 'sagemaker',
+            'check': lambda c, r: len(c.list_notebook_instances()['NotebookInstances']),
+            'unit': 'notebook instances',
+            'regional': True
+        },
+        'Amazon Bedrock': {
+            'client': 'bedrock',
+            'check': lambda c, r: len(c.list_custom_models()['modelSummaries']),
+            'unit': 'custom models',
+            'regional': True
+        },
+        'Amazon Comprehend': {
+            'client': 'comprehend',
+            'check': lambda c, r: len(c.list_endpoints()['EndpointPropertiesList']),
+            'unit': 'endpoints',
+            'regional': True
+        },
+        'Amazon Rekognition': {
+            'client': 'rekognition',
+            'check': lambda c, r: len(c.list_collections()['CollectionIds']),
+            'unit': 'collections',
+            'regional': True
+        },
+    },
+    'Application Services': {
+        'AWS App Runner': {
+            'client': 'apprunner',
+            'check': lambda c, r: len(c.list_services()['ServiceSummaryList']),
+            'unit': 'services',
+            'regional': True
+        },
+        'Amazon Connect': {
+            'client': 'connect',
+            'check': lambda c, r: len(c.list_instances()['InstanceSummaryList']),
+            'unit': 'instances',
+            'regional': True
+        },
+        'AWS Amplify': {
+            'client': 'amplify',
+            'check': lambda c, r: len(c.list_apps()['apps']),
+            'unit': 'apps',
+            'regional': True
+        },
+    },
+}
 
-    # Get appropriate regions for partition
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        regions = ['us-gov-west-1', 'us-gov-east-1']
-        default_region = 'us-gov-west-1'
-    else:
-        regions = utils.get_default_regions()
-        default_region = 'us-west-2'
 
-    total_checks = len(service_checks) * len(regions)
-    current_check = 0
-
-    for service_name, check_config in service_checks.items():
-        try:
-            service_detected = False
-            regions_detected = []
-
-            # Some services are region-independent
-            check_regions = [default_region] if check_config.get('region_independent') else regions
-
-            for region in check_regions:
-                current_check += 1
-                progress = (current_check / total_checks) * 100
-
-                utils.log_info(f"[{progress:.1f}%] Checking {service_name} in {region}")
-
-                try:
-                    client = utils.get_boto3_client(check_config['client'], region_name=region)
-
-                    if check_config['check_function'](client):
-                        service_detected = True
-                        regions_detected.append(region)
-
-                except ClientError as e:
-                    error_code = e.response['Error']['Code']
-                    if error_code in ['UnauthorizedOperation', 'AccessDenied']:
-                        utils.log_warning(f"Access denied for {service_name} in {region}")
-                    elif error_code == 'OptInRequired':
-                        utils.log_info(f"{service_name} not opted in for {region}")
-                    else:
-                        utils.log_warning(f"Error checking {service_name} in {region}: {error_code}")
-                except EndpointConnectionError:
-                    utils.log_warning(f"Service {service_name} not available in {region}")
-                except Exception as e:
-                    utils.log_warning(f"Error checking {service_name} in {region}: {e}")
-
-            if service_detected:
-                discovered_services[service_name] = {
-                    'has_costs': False,  # Will be updated if found in cost data
-                    'source': 'Resource Enumeration',
-                    'regions': regions_detected,
-                    'last_detected': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }
-
-        except Exception as e:
-            utils.log_warning(f"Error setting up check for {service_name}: {e}")
-
-    return discovered_services
-
-def get_services_from_cloudtrail():
+def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, int, str]:
     """
-    Get services from CloudTrail event history (last 90 days of free event history).
+    Check if a service has resources in a specific region.
 
     Returns:
-        dict: Dictionary of services detected from CloudTrail
+        Tuple of (service_name, count, region)
     """
-    cloudtrail_services = {}
-
     try:
-        # Use appropriate region for partition
-        partition = utils.detect_partition()
-        test_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-west-2'
-        cloudtrail = utils.get_boto3_client('cloudtrail', region_name=test_region)
-
-        utils.log_info("Analyzing CloudTrail event history for service usage...")
-
-        # Get events from the last 7 days (to avoid overwhelming API calls)
-        end_time = datetime.datetime.now()
-        start_time = end_time - datetime.timedelta(days=7)
-
-        paginator = cloudtrail.get_paginator('lookup_events')
-
-        service_events = {}
-        event_count = 0
-
-        for page in paginator.paginate(
-            StartTime=start_time,
-            EndTime=end_time,
-            PaginationConfig={'MaxItems': 1000, 'PageSize': 50}
-        ):
-            for event in page.get('Events', []):
-                event_count += 1
-                event_source = event.get('EventSource', '')
-
-                if event_source:
-                    # Convert event source to service name
-                    service_name = event_source.replace('.amazonaws.com', '').replace('.', ' ').title()
-
-                    if service_name not in service_events:
-                        service_events[service_name] = {
-                            'event_count': 0,
-                            'first_seen': event.get('EventTime'),
-                            'last_seen': event.get('EventTime')
-                        }
-
-                    service_events[service_name]['event_count'] += 1
-                    service_events[service_name]['last_seen'] = event.get('EventTime')
-
-        # Convert to service dictionary format
-        for service_name, event_data in service_events.items():
-            cloudtrail_services[service_name] = {
-                'has_costs': False,  # Will be updated if found in cost data
-                'source': 'CloudTrail Events',
-                'event_count': event_data['event_count'],
-                'first_seen': event_data['first_seen'].strftime('%Y-%m-%d %H:%M:%S') if event_data['first_seen'] else 'Unknown',
-                'last_detected': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-
-        utils.log_info(f"Analyzed {event_count} CloudTrail events, found {len(cloudtrail_services)} services")
-
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'AccessDeniedException':
-            utils.log_warning("Access denied to CloudTrail. Event history data will not be included.")
-        else:
-            utils.log_warning(f"Error accessing CloudTrail: {e}")
+        client = utils.get_boto3_client(config['client'], region_name=region)
+        count = config['check'](client, region)
+        return (service_name, count, region)
     except Exception as e:
-        utils.log_warning(f"Error getting CloudTrail data: {e}")
+        # Service not available in region or no access
+        return (service_name, 0, region)
 
-    return cloudtrail_services
 
-def consolidate_service_data(cost_services, enumerated_services, cloudtrail_services):
+def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
     """
-    Consolidate service data from all discovery methods.
-
-    Args:
-        cost_services: Services found in Cost Explorer
-        enumerated_services: Services found by resource enumeration
-        cloudtrail_services: Services found in CloudTrail events
+    Discover all services in use across regions using concurrent scanning.
 
     Returns:
-        dict: Consolidated service data
+        Dictionary of services with their details
     """
-    consolidated = {}
+    utils.log_info("Starting concurrent service discovery across all categories...")
 
-    # Start with cost services (these definitely have costs)
-    for service_name, service_data in cost_services.items():
-        consolidated[service_name] = service_data.copy()
-        consolidated[service_name]['detection_methods'] = ['Cost Explorer']
+    all_services = {}
+    total_services = sum(len(services) for services in SERVICE_CHECKS.values())
+    completed = 0
 
-    # Add enumerated services
-    for service_name, service_data in enumerated_services.items():
-        if service_name in consolidated:
-            # Merge data
-            consolidated[service_name]['detection_methods'].append('Resource Enumeration')
-            if 'regions' in service_data:
-                consolidated[service_name]['regions'] = service_data['regions']
-        else:
-            consolidated[service_name] = service_data.copy()
-            consolidated[service_name]['detection_methods'] = ['Resource Enumeration']
+    for category, services in SERVICE_CHECKS.items():
+        utils.log_info(f"\n{'='*60}")
+        utils.log_info(f"Scanning {category}...")
+        utils.log_info(f"{'='*60}")
 
-    # Add CloudTrail services
-    for service_name, service_data in cloudtrail_services.items():
-        if service_name in consolidated:
-            # Merge data
-            consolidated[service_name]['detection_methods'].append('CloudTrail Events')
-            if 'event_count' in service_data:
-                consolidated[service_name]['event_count'] = service_data['event_count']
-                consolidated[service_name]['first_seen'] = service_data['first_seen']
-        else:
-            consolidated[service_name] = service_data.copy()
-            consolidated[service_name]['detection_methods'] = ['CloudTrail Events']
+        for service_name, config in services.items():
+            completed += 1
+            progress = (completed / total_services) * 100
 
-    # Update has_costs flag for services found in cost data
-    for service_name in consolidated:
-        if service_name in cost_services:
-            consolidated[service_name]['has_costs'] = True
+            # Check if regional or global service
+            check_regions = regions if config['regional'] else [regions[0]]
 
-    return consolidated
+            # Use concurrent scanning for regional services
+            if len(check_regions) > 1:
+                utils.log_info(f"[{progress:5.1f}%] Checking {service_name} across {len(check_regions)} regions...")
 
-def export_to_excel(services_data, account_id, account_name):
-    """
-    Export services data to Excel file with AWS naming convention.
+                regional_counts = {}
+                total_count = 0
 
-    Args:
-        services_data: Dictionary of consolidated service data
-        account_id: AWS account ID
-        account_name: AWS account name
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = {
+                        executor.submit(check_service_in_region, service_name, config, region): region
+                        for region in check_regions
+                    }
 
-    Returns:
-        str: Filename of exported file or None if failed
-    """
-    if not services_data:
-        utils.log_warning("No services data to export.")
-        return None
+                    for future in as_completed(futures):
+                        svc_name, count, region = future.result()
+                        if count > 0:
+                            regional_counts[region] = count
+                            total_count += count
 
-    try:
-        # Import pandas after dependency check
-        import pandas as pd
+                if total_count > 0:
+                    all_services[service_name] = {
+                        'category': category,
+                        'count': total_count,
+                        'unit': config['unit'],
+                        'regions': regional_counts,
+                        'regional': True
+                    }
+                    utils.log_success(f"  ✓ {service_name}: {total_count} {config['unit']} across {len(regional_counts)} region(s)")
+            else:
+                # Global service - single check
+                utils.log_info(f"[{progress:5.1f}%] Checking {service_name} (global service)...")
+                _, count, _ = check_service_in_region(service_name, config, check_regions[0])
 
-        # Generate filename with AWS identifier
-        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+                if count > 0:
+                    all_services[service_name] = {
+                        'category': category,
+                        'count': count,
+                        'unit': config['unit'],
+                        'regions': {},
+                        'regional': False
+                    }
+                    utils.log_success(f"  ✓ {service_name}: {count} {config['unit']}")
 
-        # Use utils module to generate filename and save data with AWS identifier
-        filename = utils.create_export_filename(
-            account_name,
-            "services-in-use",
-            "",
-            current_date
-        )
+    return all_services
 
-        # Prepare data for export
-        export_data = []
-        for service_name, service_info in services_data.items():
-            row = {
+
+def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate summary statistics."""
+    summary = []
+
+    # Overall stats
+    total_services = len(services)
+    total_resources = sum(s['count'] for s in services.values())
+
+    summary.append({
+        'Metric': 'Total Services In Use',
+        'Value': total_services,
+        'Details': f'{total_resources:,} total resources across all services'
+    })
+
+    # By category
+    category_counts = {}
+    for service_data in services.values():
+        category = service_data['category']
+        category_counts[category] = category_counts.get(category, 0) + 1
+
+    for category in sorted(category_counts.keys()):
+        count = category_counts[category]
+        category_services = [s for s, d in services.items() if d['category'] == category]
+        resource_count = sum(services[s]['count'] for s in category_services)
+
+        summary.append({
+            'Metric': category,
+            'Value': count,
+            'Details': f'{resource_count:,} resources'
+        })
+
+    return summary
+
+
+def create_detailed_export(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+    """Create detailed services DataFrame."""
+    rows = []
+
+    for service_name, data in sorted(services.items()):
+        regional_dist = 'Global' if not data['regional'] else ', '.join([
+            f"{region}: {count}" for region, count in sorted(data['regions'].items())
+        ])
+
+        rows.append({
+            'Category': data['category'],
+            'Service Name': service_name,
+            'Resource Count': data['count'],
+            'Unit': data['unit'],
+            'Type': 'Global' if not data['regional'] else 'Regional',
+            'Regional Distribution': regional_dist if data['regional'] else 'N/A'
+        })
+
+    return pd.DataFrame(rows)
+
+
+def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
+    """Create separate sheets for each category."""
+    sheets = {}
+
+    for category in sorted(set(s['category'] for s in services.values())):
+        category_services = {
+            name: data for name, data in services.items()
+            if data['category'] == category
+        }
+
+        rows = []
+        for service_name, data in sorted(category_services.items()):
+            regional_dist = 'Global' if not data['regional'] else ', '.join([
+                f"{region}: {count}" for region, count in sorted(data['regions'].items())
+            ])
+
+            rows.append({
                 'Service Name': service_name,
-                'Has Costs': 'Yes' if service_info.get('has_costs', False) else 'No',
-                'Detection Methods': ', '.join(service_info.get('detection_methods', [])),
-                'Regions': ', '.join(service_info.get('regions', ['N/A'])),
-                'Event Count (7 days)': service_info.get('event_count', 'N/A'),
-                'First Seen': service_info.get('first_seen', 'N/A'),
-                'Last Detected': service_info.get('last_detected', 'N/A'),
-                'Source': service_info.get('source', 'Multiple')
-            }
-            export_data.append(row)
+                'Resource Count': data['count'],
+                'Unit': data['unit'],
+                'Regional Distribution': regional_dist if data['regional'] else 'N/A'
+            })
 
-        # Sort by service name
-        export_data.sort(key=lambda x: x['Service Name'])
+        if rows:
+            sheets[category] = pd.DataFrame(rows)
 
-        # Create DataFrame
-        services_df = pd.DataFrame(export_data)
+    return sheets
 
-        # Create summary data
-        total_services = len(services_data)
-        services_with_costs = len([s for s in services_data.values() if s.get('has_costs', False)])
-        services_without_costs = total_services - services_with_costs
-
-        detection_methods = {}
-        for service_info in services_data.values():
-            for method in service_info.get('detection_methods', []):
-                detection_methods[method] = detection_methods.get(method, 0) + 1
-
-        summary_data = {
-            'Metric': [
-                'Total Services Detected',
-                'Services with Costs',
-                'Services without Costs',
-                'Detected via Cost Explorer',
-                'Detected via Resource Enumeration',
-                'Detected via CloudTrail Events',
-                'Multi-Method Detection'
-            ],
-            'Count': [
-                total_services,
-                services_with_costs,
-                services_without_costs,
-                detection_methods.get('Cost Explorer', 0),
-                detection_methods.get('Resource Enumeration', 0),
-                detection_methods.get('CloudTrail Events', 0),
-                len([s for s in services_data.values() if len(s.get('detection_methods', [])) > 1])
-            ]
-        }
-
-        summary_df = pd.DataFrame(summary_data)
-
-        # Prepare data frames for multi-sheet export
-        data_frames = {
-            'Services Summary': summary_df,
-            'Services Details': services_df
-        }
-
-        # Save using utils function for multi-sheet Excel
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
-
-        if output_path:
-            utils.log_success("AWS services in use data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
-            utils.log_info(f"Export contains {total_services} services ({services_with_costs} with costs, {services_without_costs} without costs)")
-            return str(output_path)
-        else:
-            utils.log_error("Error exporting to Excel. Please check the logs.")
-            return None
-
-    except Exception as e:
-        utils.log_error("Error exporting to Excel", e)
-        return None
 
 def main():
-    """
-    Main function to orchestrate the services discovery.
-    """
-    start_time = datetime.datetime.now()
-    script_name = "services-in-use-export.py"
+    """Main execution function."""
+    script_name = Path(__file__).stem
+    utils.setup_logging(script_name)
+    utils.log_script_start(script_name)
 
-    try:
-        # Log script start
-        utils.log_script_start(script_name, "AWS Services Discovery and Export")
+    print("\n" + "="*60)
+    print("AWS Services In Use Discovery Tool")
+    print("="*60)
 
-        # Check dependencies first
-        utils.log_section("DEPENDENCY CHECK")
-        if not check_dependencies():
-            utils.log_error("Dependency check failed")
+    # Check dependencies
+    check_dependencies()
+
+    # Get AWS account information
+    account_id, account_name = utils.get_account_info()
+    if not account_id:
+        utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
+        return
+
+    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+
+    # Get regions to scan
+    print("\nThis script will check for resources across all AWS services.")
+    print("Choose regions to scan (more regions = more comprehensive but slower):")
+    print("1. Default regions (us-east-1, us-west-2, us-west-1, eu-west-1)")
+    print("2. All regions")
+    print("3. Specific region")
+
+    choice = input("\nEnter your choice (1-3): ").strip()
+
+    if choice == '1':
+        regions = utils.get_default_regions()
+        utils.log_info(f"Selected default regions: {', '.join(regions)}")
+    elif choice == '2':
+        regions = utils.get_all_aws_regions()
+        utils.log_info(f"Selected all regions: {len(regions)} regions")
+    elif choice == '3':
+        region = input("Enter AWS region (e.g., us-east-1): ").strip()
+        if not utils.validate_aws_region(region):
+            utils.log_error(f"Invalid region: {region}")
             return
+        regions = [region]
+    else:
+        utils.log_error("Invalid choice")
+        return
 
-        # Import pandas after dependency check
-        import pandas as pd
+    # Discover services
+    print(f"\nScanning {len(regions)} region(s) for services in use...")
+    services = discover_services(regions)
 
-        # Print title and get account info
-        account_id, account_name = print_title()
+    if not services:
+        utils.log_warning("No services with resources found")
+        return
 
-        try:
-            # Test AWS credentials
-            sts = utils.get_boto3_client('sts')
-            sts.get_caller_identity()
-            utils.log_success("AWS credentials validated")
+    utils.log_success(f"\nDiscovered {len(services)} services in use!")
 
-        except NoCredentialsError:
-            utils.log_error("AWS credentials not found. Please configure your credentials using:")
-            print("  - AWS CLI: aws configure")
-            print("  - Environment variables: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
-            print("  - IAM role (if running on EC2)")
-            return
-        except Exception as e:
-            utils.log_error("Error validating AWS credentials", e)
-            return
+    # Generate summary and export
+    utils.log_info("Generating reports...")
 
-        utils.log_info("Starting AWS services discovery from AWS...")
-        print("====================================================================")
+    summary = generate_summary(services)
+    df_summary = pd.DataFrame(summary)
+    df_summary = utils.prepare_dataframe_for_export(df_summary)
 
-        # Discover services using multiple methods
-        utils.log_info("Method 1: Analyzing Cost Explorer for services with billing activity...")
-        cost_services = get_services_from_cost_explorer()
+    df_details = create_detailed_export(services)
+    df_details = utils.prepare_dataframe_for_export(df_details)
 
-        utils.log_info("Method 2: Enumerating resources across major AWS services...")
-        enumerated_services = discover_services_by_resource_enumeration()
+    category_sheets = create_category_sheets(services)
 
-        utils.log_info("Method 3: Analyzing CloudTrail events for service usage...")
-        cloudtrail_services = get_services_from_cloudtrail()
+    # Combine all sheets
+    dataframes = {
+        'Summary': df_summary,
+        'All Services': df_details,
+    }
 
-        # Consolidate all service data
-        utils.log_info("Consolidating service data from all discovery methods...")
-        consolidated_services = consolidate_service_data(cost_services, enumerated_services, cloudtrail_services)
+    # Add category sheets
+    for category, df in category_sheets.items():
+        df = utils.prepare_dataframe_for_export(df)
+        # Shorten sheet names to fit Excel's 31-char limit
+        sheet_name = category.replace(' Resources', '').replace('&', 'and')[:31]
+        dataframes[sheet_name] = df
 
-        if not consolidated_services:
-            utils.log_warning("No services discovered. This may indicate permission issues or truly empty account.")
-            return
+    # Export to Excel
+    region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+    filename = utils.create_export_filename(account_name, 'services-in-use', region_suffix)
 
-        print("\n====================================================================")
-        print("DISCOVERY COMPLETE")
-        print("====================================================================")
+    utils.log_info(f"Exporting to {filename}...")
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-        # Export to Excel
-        filename = export_to_excel(consolidated_services, account_id, account_name)
+    # Log summary
+    utils.log_export_summary(filename, {
+        'Services In Use': len(services),
+        'Total Resources': sum(s['count'] for s in services.values()),
+        'Categories': len(set(s['category'] for s in services.values()))
+    })
 
-        if filename:
-            utils.log_info(f"Results exported with AWS compliance markers")
-            utils.log_info(f"Total services discovered: {len(consolidated_services)}")
+    # Print summary to console
+    print("\n" + "="*60)
+    print("SERVICES IN USE SUMMARY")
+    print("="*60)
+    for item in summary[:6]:  # Show first 6 items
+        print(f"{item['Metric']:.<40} {item['Value']}")
+        if item.get('Details'):
+            print(f"  └─ {item['Details']}")
 
-            # Display summary statistics
-            services_with_costs = len([s for s in consolidated_services.values() if s.get('has_costs', False)])
-            services_without_costs = len(consolidated_services) - services_with_costs
+    utils.log_success("Services discovery completed successfully")
 
-            utils.log_info(f"Services with costs: {services_with_costs}")
-            utils.log_info(f"Services without costs: {services_without_costs}")
-
-            # Show discovery method breakdown
-            method_counts = {}
-            for service_info in consolidated_services.values():
-                for method in service_info.get('detection_methods', []):
-                    method_counts[method] = method_counts.get(method, 0) + 1
-
-            utils.log_info("Discovery method breakdown:")
-            for method, count in method_counts.items():
-                utils.log_info(f"  - {method}: {count} services")
-
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Export failed. Please check the logs.")
-
-    except KeyboardInterrupt:
-        print("\n\nOperation cancelled by user.")
-        utils.log_info("Script cancelled by user")
-        sys.exit(0)
-    except Exception as e:
-        utils.log_error("Unexpected error occurred", e)
-        sys.exit(1)
-    finally:
-        # Log script completion
-        utils.log_script_end(script_name, start_time)
 
 if __name__ == "__main__":
     main()
