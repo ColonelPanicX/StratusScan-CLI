@@ -74,8 +74,9 @@ def collect_landing_zone() -> Dict[str, Any]:
     """Collect AWS Control Tower landing zone information (global service)."""
     print("\n=== COLLECTING LANDING ZONE INFORMATION ===")
 
-    # Control Tower is a global service - use us-east-1
-    ct_client = utils.get_boto3_client('controltower', region_name='us-east-1')
+    # Control Tower is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ct_client = utils.get_boto3_client('controltower', region_name=home_region)
 
     try:
         # List landing zones
@@ -137,8 +138,8 @@ def collect_organizational_units() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ORGANIZATIONAL UNITS ===")
     all_ous = []
 
-    # Organizations is a global service
-    org_client = utils.get_boto3_client('organizations', region_name='us-east-1')
+    # Organizations is a global service - partition-aware
+    org_client = utils.get_boto3_client('organizations')
 
     try:
         # Get organization root
@@ -195,7 +196,9 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ENABLED CONTROLS ===")
     all_controls = []
 
-    ct_client = utils.get_boto3_client('controltower', region_name='us-east-1')
+    # Control Tower is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ct_client = utils.get_boto3_client('controltower', region_name=home_region)
 
     total_ous = len(ous)
     for idx, ou in enumerate(ous, 1):
@@ -410,10 +413,19 @@ def main():
 
     utils.log_info(f"AWS Account: {account_name} ({account_id})")
 
-    # Note about Control Tower
-    print("\nNote: AWS Control Tower is a global service accessed via the management account.")
+    # Detect partition and display appropriate messaging
+    partition = utils.detect_partition()
+    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
+
+    print(f"\nNote: AWS Control Tower is a global service in {partition_name}.")
     print("This script requires Control Tower to be set up and must be run from the management account.")
     print("Ensure you have proper IAM permissions to access Control Tower APIs.")
+
+    if partition == 'aws-us-gov':
+        print("\nGovCloud Limitations:")
+        print("  - Audit and Log Archive accounts must pre-exist before Landing Zone setup")
+        print("  - Account creation only via CreateGovCloudAccount API from Commercial region")
+        print("  - Some controls have limited functionality in GovCloud")
 
     # Collect data
     print("\nCollecting AWS Control Tower configuration...")
