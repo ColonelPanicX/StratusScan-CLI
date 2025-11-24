@@ -799,14 +799,14 @@ def get_menu_structure():
                     "description": "Export SQS queues and SNS topics with subscriptions and configurations"
                 },
                 "4": {
-                    "name": "Service Discovery (Cloud Map)",
-                    "file": scripts_dir / "servicediscovery-export.py",
-                    "description": "Export Service Discovery namespaces, services, instances, and health check configurations"
+                    "name": "Cloud Map (Service Discovery)",
+                    "file": scripts_dir / "cloudmap-export.py",
+                    "description": "Export Cloud Map namespaces, services, instances, and health check configurations for microservices discovery"
                 },
                 "5": {
-                    "name": "SES & Pinpoint",
-                    "file": scripts_dir / "ses-pinpoint-export.py",
-                    "description": "Export SES email identities, configuration sets, Pinpoint applications, campaigns, and segments"
+                    "name": "SES (Simple Email Service)",
+                    "file": scripts_dir / "ses-export.py",
+                    "description": "Export SES email identities, configuration sets, templates, sending quotas, and suppression lists"
                 },
                 "6": {
                     "name": "Return to Main Menu",

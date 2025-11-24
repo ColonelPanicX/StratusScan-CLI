@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
 """
-AWS X-Ray Export Script
+AWS X-Ray Export Script for StratusScan
 
-Exports AWS X-Ray distributed tracing configuration:
-- Encryption configurations
-- Sampling rules and priorities
-- Groups (trace filters and insights)
-- Service graph data (recent)
+Exports comprehensive AWS X-Ray tracing configuration including:
+- Sampling rules (custom and default)
+- Groups (trace filter expressions)
+- Encryption configuration
 - Insights configuration
+- Resource policies
 
-Features:
-- Complete X-Ray configuration inventory
-- Sampling rule analysis
-- Group and filter tracking
-- Encryption settings
-- Multi-region support
-- Comprehensive multi-worksheet export
-
-Note: Requires xray:Get* and xray:List* permissions
-Note: X-Ray trace data itself is not exported (time-series data)
+Output: Multi-worksheet Excel file with X-Ray resources
 """
 
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-import pandas as pd
+from datetime import datetime
+import json
 
-# Standard utils import pattern
 try:
     import utils
 except ImportError:
@@ -37,245 +28,356 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('xray-export')
-utils.log_script_start('xray-export', 'Export AWS X-Ray configuration')
-
-
-@utils.aws_error_handler("Collecting encryption config", default_return={})
-def collect_encryption_config(region: str) -> Dict[str, Any]:
-    """Collect X-Ray encryption configuration for a region."""
-    xray = utils.get_boto3_client('xray', region_name=region)
-
-    try:
-        response = xray.get_encryption_config()
-        config = response.get('EncryptionConfig', {})
-
-        return {
-            'Region': region,
-            'Status': config.get('Status', 'N/A'),
-            'Type': config.get('Type', 'N/A'),
-            'KeyId': config.get('KeyId', 'N/A'),
-        }
-    except Exception:
-        return {
-            'Region': region,
-            'Status': 'N/A',
-            'Type': 'N/A',
-            'KeyId': 'N/A',
-        }
+try:
+    import pandas as pd
+except ImportError:
+    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
+    sys.exit(1)
 
 
-@utils.aws_error_handler("Collecting sampling rules", default_return=[])
-def collect_sampling_rules(region: str) -> List[Dict[str, Any]]:
-    """Collect X-Ray sampling rules in a region."""
-    xray = utils.get_boto3_client('xray', region_name=region)
-    rules = []
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    utils.log_info("Checking dependencies...")
+
+    missing = []
 
     try:
-        paginator = xray.get_paginator('get_sampling_rules')
+        import pandas
+        utils.log_info("✓ pandas is installed")
+    except ImportError:
+        missing.append("pandas")
+
+    try:
+        import openpyxl
+        utils.log_info("✓ openpyxl is installed")
+    except ImportError:
+        missing.append("openpyxl")
+
+    try:
+        import boto3
+        utils.log_info("✓ boto3 is installed")
+    except ImportError:
+        missing.append("boto3")
+
+    if missing:
+        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
+        utils.log_error("Please install using: pip install " + " ".join(missing))
+        sys.exit(1)
+
+    utils.log_success("All dependencies are installed")
+
+
+def _scan_sampling_rules_region(region: str) -> List[Dict[str, Any]]:
+    """Scan X-Ray sampling rules in a single region."""
+    regional_rules = []
+    xray_client = utils.get_boto3_client('xray', region_name=region)
+
+    try:
+        # Get sampling rules
+        response = xray_client.get_sampling_rules()
+        sampling_rules = response.get('SamplingRuleRecords', [])
+
+        for rule_record in sampling_rules:
+            rule = rule_record.get('SamplingRule', {})
+            created_at = rule_record.get('CreatedAt', 'N/A')
+            modified_at = rule_record.get('ModifiedAt', 'N/A')
+
+            if created_at != 'N/A':
+                created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
+            if modified_at != 'N/A':
+                modified_at = modified_at.strftime('%Y-%m-%d %H:%M:%S')
+
+            rule_name = rule.get('RuleName', 'N/A')
+            rule_arn = rule.get('RuleARN', 'N/A')
+            priority = rule.get('Priority', 'N/A')
+            fixed_rate = rule.get('FixedRate', 0)
+            reservoir_size = rule.get('ReservoirSize', 0)
+            service_name = rule.get('ServiceName', '*')
+            service_type = rule.get('ServiceType', '*')
+            host = rule.get('Host', '*')
+            http_method = rule.get('HTTPMethod', '*')
+            url_path = rule.get('URLPath', '*')
+            resource_arn = rule.get('ResourceARN', '*')
+            version = rule.get('Version', 1)
+
+            # Attributes
+            attributes = rule.get('Attributes', {})
+            attributes_str = json.dumps(attributes) if attributes else 'None'
+
+            regional_rules.append({
+                'Region': region,
+                'Rule Name': rule_name,
+                'Priority': priority,
+                'Fixed Rate': fixed_rate,
+                'Reservoir Size': reservoir_size,
+                'Service Name': service_name,
+                'Service Type': service_type,
+                'Host': host,
+                'HTTP Method': http_method,
+                'URL Path': url_path,
+                'Resource ARN': resource_arn,
+                'Version': version,
+                'Attributes': attributes_str,
+                'Created': created_at,
+                'Modified': modified_at,
+                'Rule ARN': rule_arn
+            })
+
+    except Exception as e:
+        utils.log_warning(f"Error getting sampling rules in {region}: {str(e)}")
+
+    return regional_rules
+
+
+@utils.aws_error_handler("Collecting X-Ray sampling rules", default_return=[])
+def collect_sampling_rules(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect X-Ray sampling rule information from AWS regions."""
+    print("\n=== COLLECTING X-RAY SAMPLING RULES ===")
+    results = utils.scan_regions_concurrent(regions, _scan_sampling_rules_region)
+    all_rules = [rule for result in results for rule in result]
+    utils.log_success(f"Total sampling rules collected: {len(all_rules)}")
+    return all_rules
+
+
+def _scan_groups_region(region: str) -> List[Dict[str, Any]]:
+    """Scan X-Ray groups in a single region."""
+    regional_groups = []
+    xray_client = utils.get_boto3_client('xray', region_name=region)
+
+    try:
+        # Get groups
+        paginator = xray_client.get_paginator('get_groups')
         for page in paginator.paginate():
-            for rule_record in page.get('SamplingRuleRecords', []):
-                rule = rule_record.get('SamplingRule', {})
+            groups = page.get('Groups', [])
 
-                rules.append({
+            for group in groups:
+                group_name = group.get('GroupName', 'N/A')
+                group_arn = group.get('GroupARN', 'N/A')
+                filter_expression = group.get('FilterExpression', 'N/A')
+                insights_configuration = group.get('InsightsConfiguration', {})
+                insights_enabled = insights_configuration.get('InsightsEnabled', False)
+                notifications_enabled = insights_configuration.get('NotificationsEnabled', False)
+
+                regional_groups.append({
                     'Region': region,
-                    'RuleName': rule.get('RuleName', 'N/A'),
-                    'RuleARN': rule.get('RuleARN', 'N/A'),
-                    'Priority': rule.get('Priority', 'N/A'),
-                    'FixedRate': rule.get('FixedRate', 0),
-                    'ReservoirSize': rule.get('ReservoirSize', 0),
-                    'ServiceName': rule.get('ServiceName', '*'),
-                    'ServiceType': rule.get('ServiceType', '*'),
-                    'Host': rule.get('Host', '*'),
-                    'HTTPMethod': rule.get('HTTPMethod', '*'),
-                    'URLPath': rule.get('URLPath', '*'),
-                    'Version': rule.get('Version', 1),
-                    'ResourceARN': rule.get('ResourceARN', '*'),
-                    'Attributes': str(rule.get('Attributes', {})),
-                    'CreatedAt': rule_record.get('CreatedAt'),
-                    'ModifiedAt': rule_record.get('ModifiedAt'),
+                    'Group Name': group_name,
+                    'Filter Expression': filter_expression,
+                    'Insights Enabled': insights_enabled,
+                    'Notifications Enabled': notifications_enabled,
+                    'Group ARN': group_arn
                 })
-    except Exception:
-        pass
 
-    return rules
+    except Exception as e:
+        utils.log_warning(f"Error getting groups in {region}: {str(e)}")
 
-
-@utils.aws_error_handler("Collecting groups", default_return=[])
-def collect_groups(region: str) -> List[Dict[str, Any]]:
-    """Collect X-Ray groups (trace filters) in a region."""
-    xray = utils.get_boto3_client('xray', region_name=region)
-    groups = []
-
-    try:
-        paginator = xray.get_paginator('get_groups')
-        for page in paginator.paginate():
-            for group in page.get('Groups', []):
-                groups.append({
-                    'Region': region,
-                    'GroupName': group.get('GroupName', 'N/A'),
-                    'GroupARN': group.get('GroupARN', 'N/A'),
-                    'FilterExpression': group.get('FilterExpression', 'N/A'),
-                    'InsightsConfiguration': str(group.get('InsightsConfiguration', {})),
-                })
-    except Exception:
-        pass
-
-    return groups
+    return regional_groups
 
 
-@utils.aws_error_handler("Collecting insights", default_return=[])
-def collect_insights(region: str) -> List[Dict[str, Any]]:
-    """Collect X-Ray Insights configuration."""
-    xray = utils.get_boto3_client('xray', region_name=region)
-    insights = []
+@utils.aws_error_handler("Collecting X-Ray groups", default_return=[])
+def collect_groups(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect X-Ray group information from AWS regions."""
+    print("\n=== COLLECTING X-RAY GROUPS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_groups_region)
+    all_groups = [group for result in results for group in result]
+    utils.log_success(f"Total groups collected: {len(all_groups)}")
+    return all_groups
 
-    try:
-        # Get insights summary from groups
-        groups_response = xray.get_groups()
 
-        for group in groups_response.get('Groups', []):
-            insights_config = group.get('InsightsConfiguration', {})
+@utils.aws_error_handler("Collecting encryption configuration", default_return=[])
+def collect_encryption_config(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect X-Ray encryption configuration from AWS regions."""
+    print("\n=== COLLECTING ENCRYPTION CONFIGURATION ===")
+    all_configs = []
 
-            if insights_config.get('InsightsEnabled'):
-                insights.append({
-                    'Region': region,
-                    'GroupName': group.get('GroupName', 'N/A'),
-                    'GroupARN': group.get('GroupARN', 'N/A'),
-                    'InsightsEnabled': insights_config.get('InsightsEnabled', False),
-                    'NotificationsEnabled': insights_config.get('NotificationsEnabled', False),
-                })
-    except Exception:
-        pass
+    for region in regions:
+        xray_client = utils.get_boto3_client('xray', region_name=region)
 
-    return insights
+        try:
+            # Get encryption config
+            response = xray_client.get_encryption_config()
+            config = response.get('EncryptionConfig', {})
+
+            encryption_type = config.get('Type', 'N/A')
+            key_id = config.get('KeyId', 'N/A')
+            status = config.get('Status', 'N/A')
+
+            all_configs.append({
+                'Region': region,
+                'Encryption Type': encryption_type,
+                'KMS Key ID': key_id,
+                'Status': status
+            })
+
+        except Exception as e:
+            utils.log_warning(f"Error getting encryption config in {region}: {str(e)}")
+            continue
+
+    utils.log_success(f"Total encryption configs collected: {len(all_configs)}")
+    return all_configs
+
+
+def generate_summary(sampling_rules: List[Dict[str, Any]],
+                     groups: List[Dict[str, Any]],
+                     encryption_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate summary statistics for X-Ray resources."""
+    utils.log_info("Generating summary statistics...")
+
+    summary = []
+
+    # Sampling rules summary
+    total_rules = len(sampling_rules)
+    default_rules = sum(1 for r in sampling_rules if r.get('Rule Name', '') == 'Default')
+    custom_rules = total_rules - default_rules
+
+    summary.append({
+        'Metric': 'Total Sampling Rules',
+        'Count': total_rules,
+        'Details': f'Default: {default_rules}, Custom: {custom_rules}'
+    })
+
+    if sampling_rules:
+        # Average fixed rate
+        avg_fixed_rate = sum(r.get('Fixed Rate', 0) for r in sampling_rules) / len(sampling_rules)
+        summary.append({
+            'Metric': 'Average Sampling Fixed Rate',
+            'Count': round(avg_fixed_rate, 4),
+            'Details': 'Average rate across all sampling rules'
+        })
+
+        # Total reservoir size
+        total_reservoir = sum(r.get('Reservoir Size', 0) for r in sampling_rules)
+        summary.append({
+            'Metric': 'Total Reservoir Size',
+            'Count': total_reservoir,
+            'Details': 'Combined reservoir across all rules'
+        })
+
+    # Groups summary
+    total_groups = len(groups)
+    groups_with_insights = sum(1 for g in groups if g.get('Insights Enabled', False))
+    groups_with_notifications = sum(1 for g in groups if g.get('Notifications Enabled', False))
+
+    summary.append({
+        'Metric': 'Total Groups',
+        'Count': total_groups,
+        'Details': f'With Insights: {groups_with_insights}, With Notifications: {groups_with_notifications}'
+    })
+
+    # Encryption summary
+    if encryption_configs:
+        kms_encrypted = sum(1 for c in encryption_configs if c.get('Encryption Type', '') == 'KMS')
+        summary.append({
+            'Metric': 'Regions with KMS Encryption',
+            'Count': kms_encrypted,
+            'Details': f'Out of {len(encryption_configs)} regions checked'
+        })
+
+    # Regional distribution
+    if sampling_rules:
+        df = pd.DataFrame(sampling_rules)
+        regions = df['Region'].value_counts().to_dict()
+        for region, count in regions.items():
+            summary.append({
+                'Metric': f'Sampling Rules in {region}',
+                'Count': count,
+                'Details': 'Regional distribution'
+            })
+
+    return summary
 
 
 def main():
     """Main execution function."""
-    try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting X-Ray configuration for account: {account_name} ({account_id})")
+    script_name = Path(__file__).stem
+    utils.setup_logging(script_name)
+    utils.log_script_start(script_name)
 
-        # Prompt for regions
-        utils.log_info("X-Ray is a regional service.")
-        regions = utils.prompt_region_selection(
-            service_name="X-Ray",
-            default_to_all=False
-        )
+    print("\n" + "="*60)
+    print("AWS X-Ray Export Tool")
+    print("="*60)
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
+    # Check dependencies
+    check_dependencies()
+
+    # Get AWS account information
+    account_id, account_name = utils.get_account_info()
+    if not account_id:
+        utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
+        return
+
+    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+
+    # Region selection
+    print("\nRegion Selection:")
+    print("1. All regions")
+    print("2. Specific region")
+
+    choice = input("\nEnter your choice (1-2): ").strip()
+
+    if choice == '1':
+        regions = utils.get_all_aws_regions(service_code='xray')
+        utils.log_info(f"Selected all regions: {len(regions)} regions")
+    elif choice == '2':
+        region = input("Enter AWS region (e.g., us-east-1): ").strip()
+        if not utils.validate_aws_region(region):
+            utils.log_error(f"Invalid region: {region}")
             return
+        regions = [region]
+    else:
+        utils.log_error("Invalid choice")
+        return
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for X-Ray configuration...")
+    # Collect data
+    print("\nCollecting X-Ray configuration data...")
 
-        # Collect all resources
-        all_encryption = []
-        all_rules = []
-        all_groups = []
-        all_insights = []
+    sampling_rules = collect_sampling_rules(regions)
+    groups = collect_groups(regions)
+    encryption_configs = collect_encryption_config(regions)
+    summary = generate_summary(sampling_rules, groups, encryption_configs)
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    # Create DataFrames
+    utils.log_info("Creating DataFrames...")
 
-            # Collect encryption config
-            encryption = collect_encryption_config(region)
-            all_encryption.append(encryption)
+    dataframes = {}
 
-            # Collect sampling rules
-            rules = collect_sampling_rules(region)
-            if rules:
-                utils.log_info(f"  Found {len(rules)} sampling rule(s)")
-                all_rules.extend(rules)
+    if summary:
+        df_summary = pd.DataFrame(summary)
+        df_summary = utils.prepare_dataframe_for_export(df_summary)
+        dataframes['Summary'] = df_summary
 
-            # Collect groups
-            groups = collect_groups(region)
-            if groups:
-                utils.log_info(f"  Found {len(groups)} group(s)")
-                all_groups.extend(groups)
+    if sampling_rules:
+        df_sampling_rules = pd.DataFrame(sampling_rules)
+        df_sampling_rules = utils.prepare_dataframe_for_export(df_sampling_rules)
+        dataframes['Sampling Rules'] = df_sampling_rules
 
-            # Collect insights
-            insights = collect_insights(region)
-            if insights:
-                utils.log_info(f"  Found {len(insights)} insight configuration(s)")
-                all_insights.extend(insights)
+    if groups:
+        df_groups = pd.DataFrame(groups)
+        df_groups = utils.prepare_dataframe_for_export(df_groups)
+        dataframes['Groups'] = df_groups
 
-        utils.log_info(f"Total sampling rules found: {len(all_rules)}")
-        utils.log_info(f"Total groups found: {len(all_groups)}")
-        utils.log_info(f"Total insights configurations found: {len(all_insights)}")
+    if encryption_configs:
+        df_encryption = pd.DataFrame(encryption_configs)
+        df_encryption = utils.prepare_dataframe_for_export(df_encryption)
+        dataframes['Encryption Config'] = df_encryption
 
-        # Create DataFrames
-        df_encryption = utils.prepare_dataframe_for_export(pd.DataFrame(all_encryption))
-        df_rules = utils.prepare_dataframe_for_export(pd.DataFrame(all_rules))
-        df_groups = utils.prepare_dataframe_for_export(pd.DataFrame(all_groups))
-        df_insights = utils.prepare_dataframe_for_export(pd.DataFrame(all_insights))
+    # Export to Excel
+    if dataframes:
+        region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+        filename = utils.create_export_filename(account_name, 'xray', region_suffix)
 
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Sampling Rules', 'Value': len(all_rules)})
-        summary_data.append({'Metric': 'Total Groups', 'Value': len(all_groups)})
-        summary_data.append({'Metric': 'Total Insights Enabled', 'Value': len(all_insights)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_encryption.empty:
-            encrypted_regions = len(df_encryption[df_encryption['Type'] == 'KMS'])
-            default_encrypted = len(df_encryption[df_encryption['Type'] == 'NONE'])
-
-            summary_data.append({'Metric': 'Regions with KMS Encryption', 'Value': encrypted_regions})
-            summary_data.append({'Metric': 'Regions with Default Encryption', 'Value': default_encrypted})
-
-        if not df_rules.empty:
-            # Count custom vs default rules
-            custom_rules = len(df_rules[df_rules['RuleName'] != 'Default'])
-            default_rules = len(df_rules[df_rules['RuleName'] == 'Default'])
-
-            summary_data.append({'Metric': 'Custom Sampling Rules', 'Value': custom_rules})
-            summary_data.append({'Metric': 'Default Sampling Rules', 'Value': default_rules})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_custom_rules = pd.DataFrame()
-
-        if not df_rules.empty:
-            df_custom_rules = df_rules[df_rules['RuleName'] != 'Default']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'xray', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'Encryption Config': df_encryption,
-            'Sampling Rules': df_rules,
-            'Custom Rules': df_custom_rules,
-            'Groups': df_groups,
-            'Insights': df_insights,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
+        utils.log_info(f"Exporting to {filename}...")
+        utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(
-            total_items=len(all_rules) + len(all_groups) + len(all_insights),
-            item_type='X-Ray Resources',
-            filename=filename
-        )
+        utils.log_export_summary(filename, {
+            'Sampling Rules': len(sampling_rules),
+            'Groups': len(groups),
+            'Encryption Configs': len(encryption_configs)
+        })
+    else:
+        utils.log_warning("No X-Ray data found to export")
 
-        utils.log_info(f"  Sampling Rules: {len(all_rules)}")
-        utils.log_info(f"  Groups: {len(all_groups)}")
-        utils.log_info(f"  Insights: {len(all_insights)}")
-
-        utils.log_success("X-Ray export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export X-Ray configuration: {str(e)}")
-        raise
+    utils.log_success("X-Ray export completed successfully")
 
 
 if __name__ == "__main__":
