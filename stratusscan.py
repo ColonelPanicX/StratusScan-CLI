@@ -548,7 +548,7 @@ def get_menu_structure():
                 },
                 "13": {
                     "name": "Network Manager",
-                    "file": scripts_dir / "network-manager-export.py",
+                    "file": scripts_dir / "networkmanager-export.py",
                     "description": "Export Network Manager global networks, sites, links, devices, and SD-WAN topology"
                 },
                 "14": {

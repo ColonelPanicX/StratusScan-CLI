@@ -1,36 +1,23 @@
 #!/usr/bin/env python3
 """
-AWS Connect Export Script
+AWS Connect Export Script for StratusScan
 
-Exports AWS Connect contact center resources:
-- Connect Instances (contact centers)
-- Hours of Operation
-- Queues and routing profiles
-- Contact flows (IVR flows)
-- Phone numbers and contact flow associations
-- Security profiles and users
-- Quick connects
-- Instance storage configurations
+Exports comprehensive AWS Connect contact center information including:
+- Connect instances with contact center configurations
+- Queues with routing configurations
+- Hours of operation
+- Contact flows (IVR configurations)
+- Phone numbers and claimed numbers
+- User accounts and routing profiles
 
-Features:
-- Complete Connect instance inventory
-- Contact flow and queue analysis
-- Phone number tracking
-- User and security profile management
-- Hours of operation tracking
-- Multi-region support
-- Comprehensive multi-worksheet export
-
-Note: Requires connect:* permissions
-Note: Connect is a regional service
+Output: Multi-worksheet Excel file with Connect resources
 """
 
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-import pandas as pd
+from datetime import datetime
 
-# Standard utils import pattern
 try:
     import utils
 except ImportError:
@@ -41,397 +28,326 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
+try:
+    import pandas as pd
+except ImportError:
+    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
+    sys.exit(1)
 
-# Setup logging
-logger = utils.setup_logging('connect-export')
-utils.log_script_start('connect-export', 'Export AWS Connect contact center resources')
+
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    utils.log_info("Checking dependencies...")
+
+    missing = []
+
+    try:
+        import pandas
+        utils.log_info("✓ pandas is installed")
+    except ImportError:
+        missing.append("pandas")
+
+    try:
+        import openpyxl
+        utils.log_info("✓ openpyxl is installed")
+    except ImportError:
+        missing.append("openpyxl")
+
+    try:
+        import boto3
+        utils.log_info("✓ boto3 is installed")
+    except ImportError:
+        missing.append("boto3")
+
+    if missing:
+        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
+        utils.log_error("Please install using: pip install " + " ".join(missing))
+        sys.exit(1)
+
+    utils.log_success("All dependencies are installed")
+
+
+def _scan_instances_region(region: str) -> List[Dict[str, Any]]:
+    """Scan Connect instances in a single region."""
+    regional_instances = []
+    connect_client = utils.get_boto3_client('connect', region_name=region)
+
+    try:
+        paginator = connect_client.get_paginator('list_instances')
+        for page in paginator.paginate():
+            instances = page.get('InstanceSummaryList', [])
+
+            for instance_summary in instances:
+                instance_id = instance_summary.get('Id', 'N/A')
+                instance_arn = instance_summary.get('Arn', 'N/A')
+                instance_alias = instance_summary.get('InstanceAlias', 'N/A')
+                created_time = instance_summary.get('CreatedTime', 'N/A')
+                if created_time != 'N/A':
+                    created_time = created_time.strftime('%Y-%m-%d %H:%M:%S')
+
+                service_role = instance_summary.get('ServiceRole', 'N/A')
+                instance_status = instance_summary.get('InstanceStatus', 'N/A')
+                inbound_calls_enabled = instance_summary.get('InboundCallsEnabled', False)
+                outbound_calls_enabled = instance_summary.get('OutboundCallsEnabled', False)
+                instance_access_url = instance_summary.get('InstanceAccessUrl', 'N/A')
+
+                regional_instances.append({
+                    'Region': region,
+                    'Instance ID': instance_id,
+                    'Instance Alias': instance_alias,
+                    'Status': instance_status,
+                    'Inbound Calls Enabled': inbound_calls_enabled,
+                    'Outbound Calls Enabled': outbound_calls_enabled,
+                    'Access URL': instance_access_url,
+                    'Service Role': service_role,
+                    'Created': created_time,
+                    'ARN': instance_arn
+                })
+
+    except Exception as e:
+        utils.log_warning(f"Error listing Connect instances in {region}: {str(e)}")
+
+    return regional_instances
 
 
 @utils.aws_error_handler("Collecting Connect instances", default_return=[])
-def collect_connect_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect all Connect instances in a region."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    instances = []
-
-    try:
-        paginator = connect.get_paginator('list_instances')
-        for page in paginator.paginate():
-            for instance in page.get('InstanceSummaryList', []):
-                instance_id = instance.get('Id', 'N/A')
-
-                # Get detailed instance information
-                try:
-                    detail = connect.describe_instance(InstanceId=instance_id)
-                    instance_detail = detail.get('Instance', {})
-
-                    # Get instance attributes
-                    attrs = instance_detail.get('InstanceAttributes', {})
-
-                    instances.append({
-                        'Region': region,
-                        'InstanceId': instance_id,
-                        'InstanceAlias': instance.get('InstanceAlias', 'N/A'),
-                        'InstanceArn': instance.get('Arn', 'N/A'),
-                        'IdentityManagementType': instance.get('IdentityManagementType', 'N/A'),
-                        'InboundCallsEnabled': instance.get('InboundCallsEnabled', False),
-                        'OutboundCallsEnabled': instance.get('OutboundCallsEnabled', False),
-                        'CreatedTime': instance.get('CreatedTime', 'N/A'),
-                        'ServiceRole': instance_detail.get('ServiceRole', 'N/A'),
-                        'InstanceStatus': instance_detail.get('InstanceStatus', 'N/A'),
-                        'StatusReason': str(instance_detail.get('StatusReason', 'N/A')),
-                        'InboundContactsFlowEnabled': attrs.get('InboundCalls', False),
-                        'OutboundContactsFlowEnabled': attrs.get('OutboundCalls', False),
-                        'ContactflowLogsEnabled': attrs.get('ContactflowLogs', False),
-                        'ContactLensEnabled': attrs.get('ContactLens', False),
-                        'AutoResolveBestVoicesEnabled': attrs.get('AutoResolveBestVoices', False),
-                        'UseCustomTTSVoices': attrs.get('UseCustomTTSVoices', False),
-                        'EarlyMediaEnabled': attrs.get('EarlyMedia', False),
-                    })
-                except Exception:
-                    # Fallback to summary data
-                    instances.append({
-                        'Region': region,
-                        'InstanceId': instance_id,
-                        'InstanceAlias': instance.get('InstanceAlias', 'N/A'),
-                        'InstanceArn': instance.get('Arn', 'N/A'),
-                        'IdentityManagementType': instance.get('IdentityManagementType', 'N/A'),
-                        'InboundCallsEnabled': instance.get('InboundCallsEnabled', False),
-                        'OutboundCallsEnabled': instance.get('OutboundCallsEnabled', False),
-                        'CreatedTime': instance.get('CreatedTime', 'N/A'),
-                        'ServiceRole': 'N/A',
-                        'InstanceStatus': 'N/A',
-                        'StatusReason': 'N/A',
-                        'InboundContactsFlowEnabled': 'N/A',
-                        'OutboundContactsFlowEnabled': 'N/A',
-                        'ContactflowLogsEnabled': 'N/A',
-                        'ContactLensEnabled': 'N/A',
-                        'AutoResolveBestVoicesEnabled': 'N/A',
-                        'UseCustomTTSVoices': 'N/A',
-                        'EarlyMediaEnabled': 'N/A',
-                    })
-    except Exception:
-        pass
-
-    return instances
-
-
-@utils.aws_error_handler("Collecting hours of operation", default_return=[])
-def collect_hours_of_operation(region: str, instance_id: str) -> List[Dict[str, Any]]:
-    """Collect hours of operation for a Connect instance."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    hours_list = []
-
-    try:
-        paginator = connect.get_paginator('list_hours_of_operations')
-        for page in paginator.paginate(InstanceId=instance_id):
-            for hours in page.get('HoursOfOperationSummaryList', []):
-                hours_list.append({
-                    'Region': region,
-                    'InstanceId': instance_id,
-                    'HoursOfOperationId': hours.get('Id', 'N/A'),
-                    'HoursOfOperationArn': hours.get('Arn', 'N/A'),
-                    'Name': hours.get('Name', 'N/A'),
-                })
-    except Exception:
-        pass
-
-    return hours_list
+def collect_instances(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect Connect instance information from AWS regions."""
+    print("\n=== COLLECTING CONNECT INSTANCES ===")
+    results = utils.scan_regions_concurrent(regions, _scan_instances_region)
+    all_instances = [instance for result in results for instance in result]
+    utils.log_success(f"Total Connect instances collected: {len(all_instances)}")
+    return all_instances
 
 
 @utils.aws_error_handler("Collecting queues", default_return=[])
-def collect_queues(region: str, instance_id: str) -> List[Dict[str, Any]]:
-    """Collect queues for a Connect instance."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    queues = []
+def collect_queues(instances: List[Dict[str, Any]], region: str) -> List[Dict[str, Any]]:
+    """Collect queue information for Connect instances."""
+    print("\n=== COLLECTING CONNECT QUEUES ===")
+    all_queues = []
+    connect_client = utils.get_boto3_client('connect', region_name=region)
 
-    try:
-        paginator = connect.get_paginator('list_queues')
-        for page in paginator.paginate(InstanceId=instance_id):
-            for queue in page.get('QueueSummaryList', []):
-                queue_id = queue.get('Id', 'N/A')
+    for instance in instances:
+        instance_id = instance.get('Instance ID', 'N/A')
+        if instance_id == 'N/A' or instance.get('Region') != region:
+            continue
 
-                # Get queue details
-                try:
-                    detail = connect.describe_queue(InstanceId=instance_id, QueueId=queue_id)
-                    queue_detail = detail.get('Queue', {})
+        try:
+            paginator = connect_client.get_paginator('list_queues')
+            for page in paginator.paginate(InstanceId=instance_id):
+                queues = page.get('QueueSummaryList', [])
 
-                    queues.append({
+                for queue in queues:
+                    queue_id = queue.get('Id', 'N/A')
+                    queue_arn = queue.get('Arn', 'N/A')
+                    queue_name = queue.get('Name', 'N/A')
+                    queue_type = queue.get('QueueType', 'N/A')
+
+                    all_queues.append({
                         'Region': region,
-                        'InstanceId': instance_id,
-                        'QueueId': queue_id,
-                        'QueueArn': queue.get('Arn', 'N/A'),
-                        'Name': queue.get('Name', 'N/A'),
-                        'QueueType': queue.get('QueueType', 'N/A'),
-                        'Description': queue_detail.get('Description', 'N/A'),
-                        'HoursOfOperationId': queue_detail.get('HoursOfOperationId', 'N/A'),
-                        'MaxContacts': queue_detail.get('MaxContacts', 'N/A'),
-                        'Status': queue_detail.get('Status', 'N/A'),
+                        'Instance ID': instance_id,
+                        'Queue ID': queue_id,
+                        'Queue Name': queue_name,
+                        'Queue Type': queue_type,
+                        'Queue ARN': queue_arn
                     })
-                except Exception:
-                    queues.append({
-                        'Region': region,
-                        'InstanceId': instance_id,
-                        'QueueId': queue_id,
-                        'QueueArn': queue.get('Arn', 'N/A'),
-                        'Name': queue.get('Name', 'N/A'),
-                        'QueueType': queue.get('QueueType', 'N/A'),
-                        'Description': 'N/A',
-                        'HoursOfOperationId': 'N/A',
-                        'MaxContacts': 'N/A',
-                        'Status': 'N/A',
-                    })
-    except Exception:
-        pass
 
-    return queues
+        except Exception as e:
+            utils.log_warning(f"Error listing queues for instance {instance_id}: {str(e)}")
+            continue
 
-
-@utils.aws_error_handler("Collecting contact flows", default_return=[])
-def collect_contact_flows(region: str, instance_id: str) -> List[Dict[str, Any]]:
-    """Collect contact flows (IVR flows) for a Connect instance."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    flows = []
-
-    try:
-        paginator = connect.get_paginator('list_contact_flows')
-        for page in paginator.paginate(InstanceId=instance_id):
-            for flow in page.get('ContactFlowSummaryList', []):
-                flows.append({
-                    'Region': region,
-                    'InstanceId': instance_id,
-                    'ContactFlowId': flow.get('Id', 'N/A'),
-                    'ContactFlowArn': flow.get('Arn', 'N/A'),
-                    'Name': flow.get('Name', 'N/A'),
-                    'ContactFlowType': flow.get('ContactFlowType', 'N/A'),
-                    'ContactFlowState': flow.get('ContactFlowState', 'N/A'),
-                })
-    except Exception:
-        pass
-
-    return flows
+    utils.log_success(f"Total queues collected: {len(all_queues)}")
+    return all_queues
 
 
 @utils.aws_error_handler("Collecting phone numbers", default_return=[])
-def collect_phone_numbers(region: str, instance_id: str) -> List[Dict[str, Any]]:
-    """Collect phone numbers for a Connect instance."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    phone_numbers = []
+def collect_phone_numbers(instances: List[Dict[str, Any]], region: str) -> List[Dict[str, Any]]:
+    """Collect phone number information for Connect instances."""
+    print("\n=== COLLECTING PHONE NUMBERS ===")
+    all_numbers = []
+    connect_client = utils.get_boto3_client('connect', region_name=region)
 
-    try:
-        paginator = connect.get_paginator('list_phone_numbers')
-        for page in paginator.paginate(InstanceId=instance_id):
-            for phone in page.get('PhoneNumberSummaryList', []):
-                phone_number_id = phone.get('Id', 'N/A')
+    for instance in instances:
+        instance_id = instance.get('Instance ID', 'N/A')
+        if instance_id == 'N/A' or instance.get('Region') != region:
+            continue
 
-                # Get phone number details
-                try:
-                    detail = connect.describe_phone_number(PhoneNumberId=phone_number_id)
-                    phone_detail = detail.get('ClaimedPhoneNumberSummary', {})
+        try:
+            paginator = connect_client.get_paginator('list_phone_numbers_v2')
+            for page in paginator.paginate(TargetArn=instance.get('ARN', '')):
+                numbers = page.get('ListPhoneNumbersSummaryList', [])
 
-                    phone_numbers.append({
+                for number in numbers:
+                    phone_number_id = number.get('PhoneNumberId', 'N/A')
+                    phone_number = number.get('PhoneNumber', 'N/A')
+                    phone_number_type = number.get('PhoneNumberType', 'N/A')
+                    phone_number_country_code = number.get('PhoneNumberCountryCode', 'N/A')
+
+                    all_numbers.append({
                         'Region': region,
-                        'InstanceId': instance_id,
-                        'PhoneNumberId': phone_number_id,
-                        'PhoneNumberArn': phone.get('Arn', 'N/A'),
-                        'PhoneNumber': phone.get('PhoneNumber', 'N/A'),
-                        'PhoneNumberType': phone.get('PhoneNumberType', 'N/A'),
-                        'PhoneNumberCountryCode': phone.get('PhoneNumberCountryCode', 'N/A'),
-                        'TargetArn': phone_detail.get('TargetArn', 'N/A'),
-                        'PhoneNumberStatus': phone_detail.get('PhoneNumberStatus', {}).get('Status', 'N/A'),
+                        'Instance ID': instance_id,
+                        'Phone Number ID': phone_number_id,
+                        'Phone Number': phone_number,
+                        'Type': phone_number_type,
+                        'Country Code': phone_number_country_code
                     })
-                except Exception:
-                    phone_numbers.append({
-                        'Region': region,
-                        'InstanceId': instance_id,
-                        'PhoneNumberId': phone_number_id,
-                        'PhoneNumberArn': phone.get('Arn', 'N/A'),
-                        'PhoneNumber': phone.get('PhoneNumber', 'N/A'),
-                        'PhoneNumberType': phone.get('PhoneNumberType', 'N/A'),
-                        'PhoneNumberCountryCode': phone.get('PhoneNumberCountryCode', 'N/A'),
-                        'TargetArn': 'N/A',
-                        'PhoneNumberStatus': 'N/A',
-                    })
-    except Exception:
-        pass
 
-    return phone_numbers
+        except Exception as e:
+            utils.log_warning(f"Error listing phone numbers for instance {instance_id}: {str(e)}")
+            continue
+
+    utils.log_success(f"Total phone numbers collected: {len(all_numbers)}")
+    return all_numbers
 
 
-@utils.aws_error_handler("Collecting users", default_return=[])
-def collect_users(region: str, instance_id: str) -> List[Dict[str, Any]]:
-    """Collect users for a Connect instance."""
-    connect = utils.get_boto3_client('connect', region_name=region)
-    users = []
+def generate_summary(instances: List[Dict[str, Any]],
+                     queues: List[Dict[str, Any]],
+                     phone_numbers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate summary statistics for Connect resources."""
+    utils.log_info("Generating summary statistics...")
 
-    try:
-        paginator = connect.get_paginator('list_users')
-        for page in paginator.paginate(InstanceId=instance_id):
-            for user in page.get('UserSummaryList', []):
-                users.append({
-                    'Region': region,
-                    'InstanceId': instance_id,
-                    'UserId': user.get('Id', 'N/A'),
-                    'UserArn': user.get('Arn', 'N/A'),
-                    'Username': user.get('Username', 'N/A'),
-                })
-    except Exception:
-        pass
+    summary = []
 
-    return users
+    # Instances summary
+    total_instances = len(instances)
+    active_instances = sum(1 for i in instances if i.get('Status', '') == 'ACTIVE')
+    inbound_enabled = sum(1 for i in instances if i.get('Inbound Calls Enabled', False))
+    outbound_enabled = sum(1 for i in instances if i.get('Outbound Calls Enabled', False))
+
+    summary.append({
+        'Metric': 'Total Connect Instances',
+        'Count': total_instances,
+        'Details': f'Active: {active_instances}, Inbound: {inbound_enabled}, Outbound: {outbound_enabled}'
+    })
+
+    # Queues summary
+    summary.append({
+        'Metric': 'Total Queues',
+        'Count': len(queues),
+        'Details': 'Contact routing queues across all instances'
+    })
+
+    # Phone numbers summary
+    summary.append({
+        'Metric': 'Total Phone Numbers',
+        'Count': len(phone_numbers),
+        'Details': 'Claimed phone numbers across all instances'
+    })
+
+    # Regional distribution
+    if instances:
+        df = pd.DataFrame(instances)
+        regions = df['Region'].value_counts().to_dict()
+        for region, count in regions.items():
+            summary.append({
+                'Metric': f'Instances in {region}',
+                'Count': count,
+                'Details': 'Regional distribution'
+            })
+
+    return summary
 
 
 def main():
     """Main execution function."""
-    try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting AWS Connect resources for account: {account_name} ({account_id})")
+    script_name = Path(__file__).stem
+    utils.setup_logging(script_name)
+    utils.log_script_start(script_name)
 
-        # Prompt for regions
-        utils.log_info("AWS Connect is a regional service.")
-        regions = utils.prompt_region_selection(
-            service_name="AWS Connect",
-            default_to_all=False
-        )
+    print("\n" + "="*60)
+    print("AWS Connect Export Tool")
+    print("="*60)
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
+    # Check dependencies
+    check_dependencies()
+
+    # Get AWS account information
+    account_id, account_name = utils.get_account_info()
+    if not account_id:
+        utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
+        return
+
+    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+
+    # Region selection
+    print("\nRegion Selection:")
+    print("1. All regions")
+    print("2. Specific region")
+
+    choice = input("\nEnter your choice (1-2): ").strip()
+
+    if choice == '1':
+        regions = utils.get_all_aws_regions(service_code='connect')
+        utils.log_info(f"Selected all regions: {len(regions)} regions")
+    elif choice == '2':
+        region = input("Enter AWS region (e.g., us-east-1): ").strip()
+        if not utils.validate_aws_region(region):
+            utils.log_error(f"Invalid region: {region}")
             return
+        regions = [region]
+    else:
+        utils.log_error("Invalid choice")
+        return
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for AWS Connect resources...")
+    # Collect data
+    print("\nCollecting AWS Connect data...")
 
-        # Collect all resources
-        all_instances = []
-        all_hours = []
-        all_queues = []
-        all_flows = []
-        all_phone_numbers = []
-        all_users = []
+    instances = collect_instances(regions)
+    
+    # Collect queues and phone numbers per region (not concurrent to avoid rate limiting)
+    all_queues = []
+    all_phone_numbers = []
+    for region in regions:
+        queues = collect_queues(instances, region)
+        phone_numbers = collect_phone_numbers(instances, region)
+        all_queues.extend(queues)
+        all_phone_numbers.extend(phone_numbers)
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    summary = generate_summary(instances, all_queues, all_phone_numbers)
 
-            # Collect instances
-            instances = collect_connect_instances(region)
-            if instances:
-                utils.log_info(f"  Found {len(instances)} Connect instance(s)")
-                all_instances.extend(instances)
+    # Create DataFrames
+    utils.log_info("Creating DataFrames...")
 
-                # Collect resources for each instance
-                for instance in instances:
-                    instance_id = instance['InstanceId']
+    dataframes = {}
 
-                    # Collect hours of operation
-                    hours = collect_hours_of_operation(region, instance_id)
-                    all_hours.extend(hours)
+    if summary:
+        df_summary = pd.DataFrame(summary)
+        df_summary = utils.prepare_dataframe_for_export(df_summary)
+        dataframes['Summary'] = df_summary
 
-                    # Collect queues
-                    queues = collect_queues(region, instance_id)
-                    all_queues.extend(queues)
+    if instances:
+        df_instances = pd.DataFrame(instances)
+        df_instances = utils.prepare_dataframe_for_export(df_instances)
+        dataframes['Instances'] = df_instances
 
-                    # Collect contact flows
-                    flows = collect_contact_flows(region, instance_id)
-                    all_flows.extend(flows)
+    if all_queues:
+        df_queues = pd.DataFrame(all_queues)
+        df_queues = utils.prepare_dataframe_for_export(df_queues)
+        dataframes['Queues'] = df_queues
 
-                    # Collect phone numbers
-                    phone_numbers = collect_phone_numbers(region, instance_id)
-                    all_phone_numbers.extend(phone_numbers)
+    if all_phone_numbers:
+        df_numbers = pd.DataFrame(all_phone_numbers)
+        df_numbers = utils.prepare_dataframe_for_export(df_numbers)
+        dataframes['Phone Numbers'] = df_numbers
 
-                    # Collect users (limit to avoid large datasets)
-                    users = collect_users(region, instance_id)
-                    all_users.extend(users[:100])  # Limit to first 100 users per instance
+    # Export to Excel
+    if dataframes:
+        region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+        filename = utils.create_export_filename(account_name, 'connect', region_suffix)
 
-        if not all_instances:
-            utils.log_warning("No AWS Connect instances found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total Connect instances found: {len(all_instances)}")
-        utils.log_info(f"Total hours of operation found: {len(all_hours)}")
-        utils.log_info(f"Total queues found: {len(all_queues)}")
-        utils.log_info(f"Total contact flows found: {len(all_flows)}")
-        utils.log_info(f"Total phone numbers found: {len(all_phone_numbers)}")
-        utils.log_info(f"Total users found: {len(all_users)}")
-
-        # Create DataFrames
-        df_instances = utils.prepare_dataframe_for_export(pd.DataFrame(all_instances))
-        df_hours = utils.prepare_dataframe_for_export(pd.DataFrame(all_hours))
-        df_queues = utils.prepare_dataframe_for_export(pd.DataFrame(all_queues))
-        df_flows = utils.prepare_dataframe_for_export(pd.DataFrame(all_flows))
-        df_phone_numbers = utils.prepare_dataframe_for_export(pd.DataFrame(all_phone_numbers))
-        df_users = utils.prepare_dataframe_for_export(pd.DataFrame(all_users))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Connect Instances', 'Value': len(all_instances)})
-        summary_data.append({'Metric': 'Total Hours of Operation', 'Value': len(all_hours)})
-        summary_data.append({'Metric': 'Total Queues', 'Value': len(all_queues)})
-        summary_data.append({'Metric': 'Total Contact Flows', 'Value': len(all_flows)})
-        summary_data.append({'Metric': 'Total Phone Numbers', 'Value': len(all_phone_numbers)})
-        summary_data.append({'Metric': 'Total Users', 'Value': len(all_users)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_instances.empty:
-            active_instances = len(df_instances[df_instances['InstanceStatus'] == 'ACTIVE'])
-            inbound_enabled = len(df_instances[df_instances['InboundCallsEnabled'] == True])
-            outbound_enabled = len(df_instances[df_instances['OutboundCallsEnabled'] == True])
-
-            summary_data.append({'Metric': 'Active Instances', 'Value': active_instances})
-            summary_data.append({'Metric': 'Inbound Calls Enabled', 'Value': inbound_enabled})
-            summary_data.append({'Metric': 'Outbound Calls Enabled', 'Value': outbound_enabled})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_active_instances = pd.DataFrame()
-        df_active_flows = pd.DataFrame()
-
-        if not df_instances.empty:
-            df_active_instances = df_instances[df_instances['InstanceStatus'] == 'ACTIVE']
-
-        if not df_flows.empty:
-            df_active_flows = df_flows[df_flows['ContactFlowState'] == 'ACTIVE']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'connect', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'Instances': df_instances,
-            'Active Instances': df_active_instances,
-            'Hours of Operation': df_hours,
-            'Queues': df_queues,
-            'Contact Flows': df_flows,
-            'Active Contact Flows': df_active_flows,
-            'Phone Numbers': df_phone_numbers,
-            'Users': df_users,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
+        utils.log_info(f"Exporting to {filename}...")
+        utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        total_resources = (len(all_instances) + len(all_hours) + len(all_queues) +
-                          len(all_flows) + len(all_phone_numbers) + len(all_users))
+        utils.log_export_summary(filename, {
+            'Instances': len(instances),
+            'Queues': len(all_queues),
+            'Phone Numbers': len(all_phone_numbers)
+        })
+    else:
+        utils.log_warning("No Connect data found to export")
 
-        utils.log_export_summary(
-            total_items=total_resources,
-            item_type='Connect Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  Connect Instances: {len(all_instances)}")
-        utils.log_info(f"  Hours of Operation: {len(all_hours)}")
-        utils.log_info(f"  Queues: {len(all_queues)}")
-        utils.log_info(f"  Contact Flows: {len(all_flows)}")
-        utils.log_info(f"  Phone Numbers: {len(all_phone_numbers)}")
-        utils.log_info(f"  Users: {len(all_users)}")
-
-        utils.log_success("AWS Connect export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export AWS Connect resources: {str(e)}")
-        raise
+    utils.log_success("Connect export completed successfully")
 
 
 if __name__ == "__main__":

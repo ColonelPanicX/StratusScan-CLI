@@ -1,33 +1,21 @@
 #!/usr/bin/env python3
 """
-AWS Marketplace Subscriptions Export Script
+AWS Marketplace Subscriptions Export Script for StratusScan
 
-Exports AWS Marketplace subscription and entitlement resources:
-- Private Marketplace configurations
-- Procurement policies and allowed products
-- Experience configurations
+Exports comprehensive AWS Marketplace subscription information including:
+- Active and historical agreements (private offers, public subscriptions)
+- Agreement terms (pricing, legal, support, renewal details)
+- Cost and payment tracking
 
-Note: AWS Marketplace Catalog and Entitlement services are for sellers
-This script focuses on buyer/consumer subscriptions visible through
-the AWS Marketplace console and Private Marketplace configurations.
-
-Features:
-- Private Marketplace settings
-- Procurement policy tracking
-- Experience and branding configurations
-- Multi-region support (global service)
-- Comprehensive export
-
-Note: Requires aws-marketplace:* permissions
-Note: Marketplace configuration is accessed through us-east-1
+Output: Multi-worksheet Excel file with Marketplace resources
 """
 
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-import pandas as pd
+from datetime import datetime
+import json
 
-# Standard utils import pattern
 try:
     import utils
 except ImportError:
@@ -38,120 +26,319 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('marketplace-export')
-utils.log_script_start('marketplace-export', 'Export AWS Marketplace subscriptions and configurations')
-
-
-@utils.aws_error_handler("Collecting Private Marketplace configuration", default_return={})
-def collect_private_marketplace_config() -> Dict[str, Any]:
-    """Collect Private Marketplace configuration."""
-    # Marketplace Catalog is accessed through us-east-1
-    mp_catalog = utils.get_boto3_client('marketplace-catalog', region_name='us-east-1')
-
-    config_data = {
-        'Status': 'N/A',
-        'Note': 'Private Marketplace APIs require specific permissions. Check AWS Console for full details.'
-    }
-
-    return config_data
+try:
+    import pandas as pd
+except ImportError:
+    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
+    sys.exit(1)
 
 
-@utils.aws_error_handler("Collecting Marketplace procurement policies", default_return=[])
-def collect_procurement_policies() -> List[Dict[str, Any]]:
-    """Collect procurement system policies (if accessible)."""
-    # Note: This uses the marketplace-procurement service if available
-    policies = []
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    utils.log_info("Checking dependencies...")
+
+    missing = []
 
     try:
-        procurement = utils.get_boto3_client('marketplace-procurement', region_name='us-east-1')
-        # The procurement service may not be directly accessible via standard APIs
-        # This is a placeholder for when such APIs become available
-        utils.log_info("Marketplace procurement policies require console access or specific API permissions.")
-    except Exception:
-        pass
+        import pandas
+        utils.log_info("✓ pandas is installed")
+    except ImportError:
+        missing.append("pandas")
 
-    return policies
+    try:
+        import openpyxl
+        utils.log_info("✓ openpyxl is installed")
+    except ImportError:
+        missing.append("openpyxl")
+
+    try:
+        import boto3
+        utils.log_info("✓ boto3 is installed")
+    except ImportError:
+        missing.append("boto3")
+
+    if missing:
+        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
+        utils.log_error("Please install using: pip install " + " ".join(missing))
+        sys.exit(1)
+
+    utils.log_success("All dependencies are installed")
+
+
+@utils.aws_error_handler("Collecting Marketplace agreements", default_return=[])
+def collect_agreements() -> List[Dict[str, Any]]:
+    """Collect AWS Marketplace agreement information (global service)."""
+    print("\n=== COLLECTING MARKETPLACE AGREEMENTS ===")
+    all_agreements = []
+
+    # Marketplace Agreement API is a global service - use us-east-1
+    mp_client = utils.get_boto3_client('marketplace-agreement', region_name='us-east-1')
+
+    try:
+        # Search for all agreements (active and expired)
+        paginator = mp_client.get_paginator('search_agreements')
+
+        # Search without filters to get all agreements
+        for page in paginator.paginate():
+            agreements = page.get('agreementViewSummaries', [])
+
+            for agreement_summary in agreements:
+                agreement_id = agreement_summary.get('agreementId', 'N/A')
+
+                try:
+                    # Get detailed agreement information
+                    agreement_response = mp_client.describe_agreement(
+                        agreementId=agreement_id
+                    )
+
+                    agreement_details = agreement_response
+
+                    proposer = agreement_details.get('proposer', {})
+                    acceptor = agreement_details.get('acceptor', {})
+
+                    agreement_type = agreement_details.get('agreementType', 'N/A')
+                    status = agreement_details.get('status', 'N/A')
+
+                    acceptance_time = agreement_details.get('acceptanceTime', 'N/A')
+                    if acceptance_time != 'N/A':
+                        acceptance_time = acceptance_time.strftime('%Y-%m-%d %H:%M:%S')
+
+                    start_time = agreement_details.get('startTime', 'N/A')
+                    if start_time != 'N/A':
+                        start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
+
+                    end_time = agreement_details.get('endTime', 'N/A')
+                    if end_time != 'N/A':
+                        end_time = end_time.strftime('%Y-%m-%d %H:%M:%S')
+
+                    estimated_charges = agreement_details.get('estimatedCharges', {})
+                    agreement_amount = estimated_charges.get('agreementValue', 'N/A')
+                    currency_code = estimated_charges.get('currencyCode', 'N/A')
+
+                    all_agreements.append({
+                        'Agreement ID': agreement_id,
+                        'Agreement Type': agreement_type,
+                        'Status': status,
+                        'Proposer Account ID': proposer.get('accountId', 'N/A'),
+                        'Acceptor Account ID': acceptor.get('accountId', 'N/A'),
+                        'Acceptance Time': acceptance_time,
+                        'Start Time': start_time,
+                        'End Time': end_time,
+                        'Agreement Amount': agreement_amount,
+                        'Currency': currency_code
+                    })
+
+                except Exception as e:
+                    utils.log_warning(f"Could not get details for agreement {agreement_id}: {str(e)}")
+                    continue
+
+    except Exception as e:
+        utils.log_warning(f"Error searching agreements: {str(e)}")
+
+    utils.log_success(f"Total agreements collected: {len(all_agreements)}")
+    return all_agreements
+
+
+@utils.aws_error_handler("Collecting agreement terms", default_return=[])
+def collect_agreement_terms(agreements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collect detailed terms for each agreement."""
+    print("\n=== COLLECTING AGREEMENT TERMS ===")
+    all_terms = []
+
+    mp_client = utils.get_boto3_client('marketplace-agreement', region_name='us-east-1')
+
+    for agreement in agreements:
+        agreement_id = agreement.get('Agreement ID', 'N/A')
+        if agreement_id == 'N/A':
+            continue
+
+        try:
+            # Get agreement terms
+            paginator = mp_client.get_paginator('get_agreement_terms')
+            for page in paginator.paginate(agreementId=agreement_id):
+                accepted_terms = page.get('acceptedTerms', [])
+
+                for term in accepted_terms:
+                    term_type = term.get('type', 'N/A')
+
+                    # Extract pricing information if available
+                    pricing_info = 'N/A'
+                    legal_info = 'N/A'
+                    support_info = 'N/A'
+                    renewal_info = 'N/A'
+
+                    # ConfigurableUpfrontPricingTerm
+                    if 'configurableUpfrontPricingTerm' in term:
+                        pricing_term = term['configurableUpfrontPricingTerm']
+                        pricing_info = f"Upfront: {pricing_term.get('currencyCode', 'USD')} {pricing_term.get('rateCards', [{}])[0].get('price', 'N/A')}"
+
+                    # RecurringPaymentTerm
+                    elif 'recurringPaymentTerm' in term:
+                        payment_term = term['recurringPaymentTerm']
+                        billing_period = payment_term.get('billingPeriod', 'N/A')
+                        pricing_info = f"Recurring: {billing_period}"
+
+                    # LegalTerm
+                    elif 'legalTerm' in term:
+                        legal_term = term['legalTerm']
+                        legal_info = legal_term.get('type', 'N/A')
+
+                    # SupportTerm
+                    elif 'supportTerm' in term:
+                        support_term = term['supportTerm']
+                        support_info = support_term.get('type', 'N/A')
+
+                    # RenewalTerm
+                    elif 'renewalTerm' in term:
+                        renewal_term = term['renewalTerm']
+                        renewal_info = f"Type: {renewal_term.get('type', 'N/A')}"
+
+                    all_terms.append({
+                        'Agreement ID': agreement_id,
+                        'Term Type': term_type,
+                        'Pricing Details': pricing_info,
+                        'Legal Details': legal_info,
+                        'Support Details': support_info,
+                        'Renewal Details': renewal_info
+                    })
+
+        except Exception as e:
+            utils.log_warning(f"Could not get terms for agreement {agreement_id}: {str(e)}")
+            continue
+
+    utils.log_success(f"Total agreement terms collected: {len(all_terms)}")
+    return all_terms
+
+
+def generate_summary(agreements: List[Dict[str, Any]],
+                     terms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate summary statistics for Marketplace resources."""
+    utils.log_info("Generating summary statistics...")
+
+    summary = []
+
+    # Agreements summary
+    total_agreements = len(agreements)
+    active_agreements = sum(1 for a in agreements if a.get('Status', '') == 'ACTIVE')
+    expired_agreements = sum(1 for a in agreements if a.get('Status', '') == 'EXPIRED')
+
+    summary.append({
+        'Metric': 'Total Agreements',
+        'Count': total_agreements,
+        'Details': f'Active: {active_agreements}, Expired: {expired_agreements}'
+    })
+
+    # Calculate total spend (active agreements only)
+    if agreements:
+        total_spend = 0
+        currency = 'USD'
+        for agreement in agreements:
+            if agreement.get('Status', '') == 'ACTIVE':
+                amount = agreement.get('Agreement Amount', 'N/A')
+                curr = agreement.get('Currency', 'USD')
+                if amount != 'N/A' and isinstance(amount, (int, float, str)):
+                    try:
+                        total_spend += float(amount)
+                        currency = curr
+                    except (ValueError, TypeError):
+                        pass
+
+        if total_spend > 0:
+            summary.append({
+                'Metric': 'Active Agreement Value',
+                'Count': f'{currency} {total_spend:,.2f}',
+                'Details': 'Total estimated charges for active agreements'
+            })
+
+    # Agreement types
+    if agreements:
+        df = pd.DataFrame(agreements)
+        agreement_types = df['Agreement Type'].value_counts().to_dict()
+        for atype, count in agreement_types.items():
+            summary.append({
+                'Metric': f'{atype} Agreements',
+                'Count': count,
+                'Details': 'Agreement type distribution'
+            })
+
+    # Terms summary
+    summary.append({
+        'Metric': 'Total Agreement Terms',
+        'Count': len(terms),
+        'Details': 'Pricing, legal, support, and renewal terms'
+    })
+
+    return summary
 
 
 def main():
     """Main execution function."""
-    try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting AWS Marketplace configuration for account: {account_name} ({account_id})")
+    script_name = Path(__file__).stem
+    utils.setup_logging(script_name)
+    utils.log_script_start(script_name)
 
-        utils.log_info("AWS Marketplace is a global service accessed through us-east-1.")
-        utils.log_info("Note: Full marketplace subscription details require AWS Console access.")
-        utils.log_info("This export captures configuration available via APIs.")
+    print("\n" + "="*60)
+    print("AWS Marketplace Subscriptions Export Tool")
+    print("="*60)
 
-        # Collect Private Marketplace configuration
-        pm_config = collect_private_marketplace_config()
+    # Check dependencies
+    check_dependencies()
 
-        # Collect procurement policies (if available)
-        procurement_policies = collect_procurement_policies()
+    # Get AWS account information
+    account_id, account_name = utils.get_account_info()
+    if not account_id:
+        utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
+        return
 
-        utils.log_info("Marketplace configuration collection completed.")
-        utils.log_info("Note: Many marketplace features require AWS Console or Marketplace APIs.")
+    utils.log_info(f"AWS Account: {account_name} ({account_id})")
 
-        # Create summary data
-        summary_data = []
-        summary_data.append({'Metric': 'Account ID', 'Value': account_id})
-        summary_data.append({'Metric': 'Account Name', 'Value': account_name})
-        summary_data.append({'Metric': 'Private Marketplace Status', 'Value': pm_config.get('Status', 'N/A')})
-        summary_data.append({'Metric': 'Procurement Policies Found', 'Value': len(procurement_policies)})
-        summary_data.append({
-            'Metric': 'Note',
-            'Value': 'AWS Marketplace subscriptions are primarily managed through the AWS Console. API access is limited for buyer accounts.'
-        })
+    # Note: Marketplace APIs are global services
+    print("\nNote: AWS Marketplace is a global service (not region-specific)")
+    print("Data will be collected from all your Marketplace agreements and subscriptions.")
 
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+    # Collect data
+    print("\nCollecting AWS Marketplace data...")
 
-        # Create config DataFrame
-        config_data = []
-        config_data.append({
-            'Configuration': 'Private Marketplace',
-            'Status': pm_config.get('Status', 'N/A'),
-            'Details': pm_config.get('Note', 'N/A'),
-        })
+    agreements = collect_agreements()
+    terms = collect_agreement_terms(agreements)
+    summary = generate_summary(agreements, terms)
 
-        df_config = utils.prepare_dataframe_for_export(pd.DataFrame(config_data))
+    # Create DataFrames
+    utils.log_info("Creating DataFrames...")
 
-        # Create procurement policies DataFrame
-        df_procurement = utils.prepare_dataframe_for_export(pd.DataFrame(procurement_policies))
+    dataframes = {}
 
-        # Export to Excel
+    if summary:
+        df_summary = pd.DataFrame(summary)
+        df_summary = utils.prepare_dataframe_for_export(df_summary)
+        dataframes['Summary'] = df_summary
+
+    if agreements:
+        df_agreements = pd.DataFrame(agreements)
+        df_agreements = utils.prepare_dataframe_for_export(df_agreements)
+        dataframes['Agreements'] = df_agreements
+
+    if terms:
+        df_terms = pd.DataFrame(terms)
+        df_terms = utils.prepare_dataframe_for_export(df_terms)
+        dataframes['Agreement Terms'] = df_terms
+
+    # Export to Excel
+    if dataframes:
         filename = utils.create_export_filename(account_name, 'marketplace', 'global')
 
-        sheets = {
-            'Summary': df_summary,
-            'Configuration': df_config,
-            'Procurement Policies': df_procurement,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
+        utils.log_info(f"Exporting to {filename}...")
+        utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(
-            total_items=1,
-            item_type='Marketplace Configuration',
-            filename=filename
-        )
+        utils.log_export_summary(filename, {
+            'Agreements': len(agreements),
+            'Agreement Terms': len(terms)
+        })
+    else:
+        utils.log_warning("No Marketplace data found to export")
 
-        utils.log_info("IMPORTANT: AWS Marketplace subscription management is primarily console-based.")
-        utils.log_info("For complete subscription details:")
-        utils.log_info("  1. Visit AWS Marketplace Console: https://console.aws.amazon.com/marketplace")
-        utils.log_info("  2. Navigate to 'Manage subscriptions' for active products")
-        utils.log_info("  3. Check 'Private Marketplace' for procurement policies")
-
-        utils.log_success("Marketplace export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export Marketplace configuration: {str(e)}")
-        raise
+    utils.log_success("Marketplace export completed successfully")
 
 
 if __name__ == "__main__":
