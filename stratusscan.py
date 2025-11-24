@@ -1059,6 +1059,11 @@ def get_menu_structure():
                     "description": "Export AWS Marketplace configuration and Private Marketplace settings"
                 },
                 "6": {
+                    "name": "AWS Control Tower",
+                    "file": scripts_dir / "controltower-export.py",
+                    "description": "Export Control Tower landing zone, enabled controls, OUs, and compliance status"
+                },
+                "7": {
                     "name": "Return to Main Menu",
                     "file": None,
                     "description": "Return to the main menu"
