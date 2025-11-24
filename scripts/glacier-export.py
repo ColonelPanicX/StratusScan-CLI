@@ -1,34 +1,23 @@
 #!/usr/bin/env python3
 """
-AWS Glacier Export Script
+AWS Glacier Vaults Export Script for StratusScan
 
-Exports AWS Glacier vault resources (separate from S3 Glacier):
-- Glacier Vaults with location and creation date
-- Vault configurations and policies
+Exports comprehensive AWS Glacier vault information including:
+- Vaults with inventory metadata (archives, size)
 - Vault access policies and lock policies
 - Vault notifications (SNS topic configurations)
-- Vault inventory metadata
+- Vault tags
 
-Features:
-- Complete Glacier vault inventory
-- Vault policy tracking
-- Access control analysis
-- Notification configuration
-- Multi-region support
-- Comprehensive multi-worksheet export
+Note: This is for the original Glacier vault service, separate from S3 Glacier storage classes.
 
-Note: Requires glacier:* permissions
-Note: Glacier is regional, separate from S3 Glacier storage class
-Note: Vault inventories are not real-time (updated every 24 hours)
+Output: Multi-worksheet Excel file with Glacier resources
 """
 
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-import pandas as pd
-import json
+from datetime import datetime
 
-# Standard utils import pattern
 try:
     import utils
 except ImportError:
@@ -39,30 +28,63 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
+try:
+    import pandas as pd
+except ImportError:
+    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
+    sys.exit(1)
 
-# Setup logging
-logger = utils.setup_logging('glacier-export')
-utils.log_script_start('glacier-export', 'Export AWS Glacier vaults and configurations')
 
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    utils.log_info("Checking dependencies...")
 
-@utils.aws_error_handler("Collecting Glacier vaults", default_return=[])
-def collect_glacier_vaults(region: str) -> List[Dict[str, Any]]:
-    """Collect all Glacier vaults in a region."""
-    glacier = utils.get_boto3_client('glacier', region_name=region)
-    vaults = []
+    missing = []
 
     try:
-        paginator = glacier.get_paginator('list_vaults')
+        import pandas
+        utils.log_info("✓ pandas is installed")
+    except ImportError:
+        missing.append("pandas")
+
+    try:
+        import openpyxl
+        utils.log_info("✓ openpyxl is installed")
+    except ImportError:
+        missing.append("openpyxl")
+
+    try:
+        import boto3
+        utils.log_info("✓ boto3 is installed")
+    except ImportError:
+        missing.append("boto3")
+
+    if missing:
+        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
+        utils.log_error("Please install using: pip install " + " ".join(missing))
+        sys.exit(1)
+
+    utils.log_success("All dependencies are installed")
+
+
+def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
+    """Scan Glacier vaults in a single region."""
+    regional_vaults = []
+    glacier_client = utils.get_boto3_client('glacier', region_name=region)
+
+    try:
+        paginator = glacier_client.get_paginator('list_vaults')
         for page in paginator.paginate():
-            for vault in page.get('VaultList', []):
+            vaults = page.get('VaultList', [])
+
+            for vault in vaults:
                 vault_name = vault.get('VaultName', 'N/A')
+                vault_arn = vault.get('VaultARN', 'N/A')
 
                 # Get vault access policy
                 vault_policy = 'N/A'
                 try:
-                    policy_response = glacier.get_vault_access_policy(vaultName=vault_name)
+                    policy_response = glacier_client.get_vault_access_policy(vaultName=vault_name)
                     vault_policy = policy_response.get('policy', {}).get('Policy', 'N/A')
                 except Exception:
                     pass
@@ -71,7 +93,7 @@ def collect_glacier_vaults(region: str) -> List[Dict[str, Any]]:
                 lock_policy = 'N/A'
                 lock_state = 'N/A'
                 try:
-                    lock_response = glacier.get_vault_lock(vaultName=vault_name)
+                    lock_response = glacier_client.get_vault_lock(vaultName=vault_name)
                     lock_policy = lock_response.get('Policy', 'N/A')
                     lock_state = lock_response.get('State', 'N/A')
                 except Exception:
@@ -80,186 +102,232 @@ def collect_glacier_vaults(region: str) -> List[Dict[str, Any]]:
                 # Get vault notifications
                 notification_config = 'N/A'
                 sns_topic = 'N/A'
+                events_str = 'N/A'
                 try:
-                    notif_response = glacier.get_vault_notifications(vaultName=vault_name)
-                    notification_config = notif_response.get('vaultNotificationConfig', {})
-                    sns_topic = notification_config.get('SNSTopic', 'N/A')
-                    events = notification_config.get('Events', [])
-                    notification_config = f"Topic: {sns_topic}, Events: {', '.join(events)}" if events else sns_topic
+                    notif_response = glacier_client.get_vault_notifications(vaultName=vault_name)
+                    notification_cfg = notif_response.get('vaultNotificationConfig', {})
+                    sns_topic = notification_cfg.get('SNSTopic', 'N/A')
+                    events = notification_cfg.get('Events', [])
+                    events_str = ', '.join(events) if events else 'N/A'
+                    notification_config = f"Topic: {sns_topic}, Events: {events_str}" if events else 'None'
                 except Exception:
                     pass
 
-                vaults.append({
+                # Get vault tags
+                tags_str = 'None'
+                try:
+                    tags_response = glacier_client.list_tags_for_vault(vaultName=vault_name)
+                    tags = tags_response.get('Tags', {})
+                    if tags:
+                        tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()])
+                except Exception:
+                    pass
+
+                creation_date = vault.get('CreationDate', 'N/A')
+                if creation_date != 'N/A':
+                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
+
+                last_inventory = vault.get('LastInventoryDate', 'N/A')
+                if last_inventory != 'N/A':
+                    last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
+
+                size_bytes = vault.get('SizeInBytes', 0)
+                size_gb = round(size_bytes / (1024**3), 2) if size_bytes else 0
+
+                regional_vaults.append({
                     'Region': region,
-                    'VaultName': vault_name,
-                    'VaultARN': vault.get('VaultARN', 'N/A'),
-                    'CreationDate': vault.get('CreationDate', 'N/A'),
-                    'LastInventoryDate': vault.get('LastInventoryDate', 'N/A'),
-                    'NumberOfArchives': vault.get('NumberOfArchives', 0),
-                    'SizeInBytes': vault.get('SizeInBytes', 0),
-                    'SizeInGB': round(vault.get('SizeInBytes', 0) / (1024**3), 2) if vault.get('SizeInBytes') else 0,
-                    'HasAccessPolicy': 'Yes' if vault_policy != 'N/A' else 'No',
-                    'VaultAccessPolicy': vault_policy if len(str(vault_policy)) < 500 else f"{str(vault_policy)[:500]}...",
-                    'HasLockPolicy': 'Yes' if lock_policy != 'N/A' else 'No',
-                    'LockPolicyState': lock_state,
-                    'VaultLockPolicy': lock_policy if len(str(lock_policy)) < 500 else f"{str(lock_policy)[:500]}...",
-                    'NotificationConfig': notification_config,
-                    'SNSTopic': sns_topic,
+                    'Vault Name': vault_name,
+                    'Number of Archives': vault.get('NumberOfArchives', 0),
+                    'Size (GB)': size_gb,
+                    'Size (Bytes)': size_bytes,
+                    'Created': creation_date,
+                    'Last Inventory': last_inventory,
+                    'Has Access Policy': 'Yes' if vault_policy != 'N/A' else 'No',
+                    'Has Lock Policy': 'Yes' if lock_policy != 'N/A' else 'No',
+                    'Lock State': lock_state,
+                    'Has Notifications': 'Yes' if sns_topic != 'N/A' else 'No',
+                    'SNS Topic': sns_topic,
+                    'Notification Events': events_str,
+                    'Tags': tags_str,
+                    'ARN': vault_arn
                 })
-    except Exception:
-        pass
 
-    return vaults
+    except Exception as e:
+        utils.log_warning(f"Error listing vaults in {region}: {str(e)}")
+
+    return regional_vaults
 
 
-@utils.aws_error_handler("Collecting vault tags", default_return=[])
-def collect_vault_tags(region: str, vault_arns: List[str]) -> List[Dict[str, Any]]:
-    """Collect tags for Glacier vaults."""
-    glacier = utils.get_boto3_client('glacier', region_name=region)
-    vault_tags = []
+@utils.aws_error_handler("Collecting Glacier vaults", default_return=[])
+def collect_vaults(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect Glacier vault information from AWS regions."""
+    print("\n=== COLLECTING GLACIER VAULTS ===")
+    results = utils.scan_regions_concurrent(regions, _scan_vaults_region)
+    all_vaults = [vault for result in results for vault in result]
+    utils.log_success(f"Total vaults collected: {len(all_vaults)}")
+    return all_vaults
 
-    for vault_arn in vault_arns:
-        try:
-            # Extract vault name from ARN
-            vault_name = vault_arn.split('/')[-1]
 
-            response = glacier.list_tags_for_vault(vaultName=vault_name)
-            tags = response.get('Tags', {})
+def generate_summary(vaults: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate summary statistics for Glacier resources."""
+    utils.log_info("Generating summary statistics...")
 
-            if tags:
-                # Format tags
-                tag_list = [f"{k}={v}" for k, v in tags.items()]
+    summary = []
 
-                vault_tags.append({
-                    'Region': region,
-                    'VaultName': vault_name,
-                    'VaultARN': vault_arn,
-                    'Tags': ', '.join(tag_list),
-                })
-            else:
-                vault_tags.append({
-                    'Region': region,
-                    'VaultName': vault_name,
-                    'VaultARN': vault_arn,
-                    'Tags': 'No tags',
-                })
-        except Exception:
-            pass
+    # Vaults summary
+    total_vaults = len(vaults)
+    total_archives = sum(v.get('Number of Archives', 0) for v in vaults)
+    total_size_gb = sum(v.get('Size (GB)', 0) for v in vaults)
 
-    return vault_tags
+    vaults_with_policies = sum(1 for v in vaults if v.get('Has Access Policy', '') == 'Yes')
+    vaults_with_locks = sum(1 for v in vaults if v.get('Has Lock Policy', '') == 'Yes')
+    vaults_with_notifications = sum(1 for v in vaults if v.get('Has Notifications', '') == 'Yes')
+
+    summary.append({
+        'Metric': 'Total Glacier Vaults',
+        'Count': total_vaults,
+        'Details': f'Policies: {vaults_with_policies}, Locks: {vaults_with_locks}, Notifications: {vaults_with_notifications}'
+    })
+
+    summary.append({
+        'Metric': 'Total Archives',
+        'Count': total_archives,
+        'Details': 'Combined across all vaults'
+    })
+
+    summary.append({
+        'Metric': 'Total Storage (GB)',
+        'Count': round(total_size_gb, 2),
+        'Details': 'Combined vault storage size'
+    })
+
+    summary.append({
+        'Metric': 'Vaults with Access Policies',
+        'Count': vaults_with_policies,
+        'Details': 'Vaults with resource-based access policies'
+    })
+
+    summary.append({
+        'Metric': 'Vaults with Lock Policies',
+        'Count': vaults_with_locks,
+        'Details': 'Vaults with compliance lock policies'
+    })
+
+    summary.append({
+        'Metric': 'Vaults with SNS Notifications',
+        'Count': vaults_with_notifications,
+        'Details': 'Vaults configured for job completion notifications'
+    })
+
+    # Regional distribution
+    if vaults:
+        df = pd.DataFrame(vaults)
+        regions = df['Region'].value_counts().to_dict()
+        for region, count in regions.items():
+            summary.append({
+                'Metric': f'Vaults in {region}',
+                'Count': count,
+                'Details': 'Regional distribution'
+            })
+
+    return summary
 
 
 def main():
     """Main execution function."""
-    try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Glacier vaults for account: {account_name} ({account_id})")
+    script_name = Path(__file__).stem
+    utils.setup_logging(script_name)
+    utils.log_script_start(script_name)
 
-        # Prompt for regions
-        utils.log_info("Glacier is a regional service (separate from S3 Glacier storage class).")
-        regions = utils.prompt_region_selection(
-            service_name="Glacier",
-            default_to_all=False
-        )
+    print("\n" + "="*60)
+    print("AWS Glacier Vaults Export Tool")
+    print("="*60)
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
+    # Check dependencies
+    check_dependencies()
+
+    # Get AWS account information
+    account_id, account_name = utils.get_account_info()
+    if not account_id:
+        utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
+        return
+
+    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+
+    # Note about Glacier service
+    print("\nNote: This exports original Glacier vaults (separate from S3 Glacier storage classes)")
+    print("Glacier is a regional service. Vault inventories are updated every 24 hours.")
+
+    # Region selection
+    print("\nRegion Selection:")
+    print("1. All regions")
+    print("2. Specific region")
+
+    choice = input("\nEnter your choice (1-2): ").strip()
+
+    if choice == '1':
+        regions = utils.get_all_aws_regions(service_code='glacier')
+        utils.log_info(f"Selected all regions: {len(regions)} regions")
+    elif choice == '2':
+        region = input("Enter AWS region (e.g., us-east-1): ").strip()
+        if not utils.validate_aws_region(region):
+            utils.log_error(f"Invalid region: {region}")
             return
+        regions = [region]
+    else:
+        utils.log_error("Invalid choice")
+        return
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for Glacier vaults...")
+    # Collect data
+    print("\nCollecting Glacier vault data...")
 
-        # Collect all resources
-        all_vaults = []
-        all_vault_tags = []
+    vaults = collect_vaults(regions)
+    summary = generate_summary(vaults)
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    # Create DataFrames
+    utils.log_info("Creating DataFrames...")
 
-            # Collect vaults
-            vaults = collect_glacier_vaults(region)
-            if vaults:
-                utils.log_info(f"  Found {len(vaults)} Glacier vault(s)")
-                all_vaults.extend(vaults)
+    dataframes = {}
 
-                # Collect vault tags
-                vault_arns = [v['VaultARN'] for v in vaults if v['VaultARN'] != 'N/A']
-                if vault_arns:
-                    vault_tags = collect_vault_tags(region, vault_arns)
-                    all_vault_tags.extend(vault_tags)
+    if summary:
+        df_summary = pd.DataFrame(summary)
+        df_summary = utils.prepare_dataframe_for_export(df_summary)
+        dataframes['Summary'] = df_summary
 
-        if not all_vaults:
-            utils.log_warning("No Glacier vaults found in any selected region.")
-            utils.log_info("Creating empty export file...")
+    if vaults:
+        df_vaults = pd.DataFrame(vaults)
+        df_vaults = utils.prepare_dataframe_for_export(df_vaults)
+        dataframes['All Vaults'] = df_vaults
 
-        utils.log_info(f"Total Glacier vaults found: {len(all_vaults)}")
-        utils.log_info(f"Total vault tags found: {len(all_vault_tags)}")
+        # Filtered views
+        df_with_policies = df_vaults[df_vaults['Has Access Policy'] == 'Yes']
+        if not df_with_policies.empty:
+            dataframes['Vaults with Policies'] = df_with_policies
 
-        # Create DataFrames
-        df_vaults = utils.prepare_dataframe_for_export(pd.DataFrame(all_vaults))
-        df_vault_tags = utils.prepare_dataframe_for_export(pd.DataFrame(all_vault_tags))
+        df_with_locks = df_vaults[df_vaults['Has Lock Policy'] == 'Yes']
+        if not df_with_locks.empty:
+            dataframes['Vaults with Locks'] = df_with_locks
 
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Glacier Vaults', 'Value': len(all_vaults)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+        df_with_notifications = df_vaults[df_vaults['Has Notifications'] == 'Yes']
+        if not df_with_notifications.empty:
+            dataframes['Vaults with Notifications'] = df_with_notifications
 
-        if not df_vaults.empty:
-            total_archives = df_vaults['NumberOfArchives'].sum()
-            total_size_gb = df_vaults['SizeInGB'].sum()
-            vaults_with_policies = len(df_vaults[df_vaults['HasAccessPolicy'] == 'Yes'])
-            vaults_with_locks = len(df_vaults[df_vaults['HasLockPolicy'] == 'Yes'])
-            vaults_with_notifications = len(df_vaults[df_vaults['SNSTopic'] != 'N/A'])
+    # Export to Excel
+    if dataframes:
+        region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+        filename = utils.create_export_filename(account_name, 'glacier', region_suffix)
 
-            summary_data.append({'Metric': 'Total Archives', 'Value': int(total_archives)})
-            summary_data.append({'Metric': 'Total Size (GB)', 'Value': round(total_size_gb, 2)})
-            summary_data.append({'Metric': 'Vaults with Access Policies', 'Value': vaults_with_policies})
-            summary_data.append({'Metric': 'Vaults with Lock Policies', 'Value': vaults_with_locks})
-            summary_data.append({'Metric': 'Vaults with Notifications', 'Value': vaults_with_notifications})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_with_policies = pd.DataFrame()
-        df_with_locks = pd.DataFrame()
-        df_with_notifications = pd.DataFrame()
-
-        if not df_vaults.empty:
-            df_with_policies = df_vaults[df_vaults['HasAccessPolicy'] == 'Yes']
-            df_with_locks = df_vaults[df_vaults['HasLockPolicy'] == 'Yes']
-            df_with_notifications = df_vaults[df_vaults['SNSTopic'] != 'N/A']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'glacier', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'All Vaults': df_vaults,
-            'Vaults with Policies': df_with_policies,
-            'Vaults with Locks': df_with_locks,
-            'Vaults with Notifications': df_with_notifications,
-            'Vault Tags': df_vault_tags,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
+        utils.log_info(f"Exporting to {filename}...")
+        utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(
-            total_items=len(all_vaults),
-            item_type='Glacier Vaults',
-            filename=filename
-        )
+        utils.log_export_summary(filename, {
+            'Glacier Vaults': len(vaults)
+        })
+    else:
+        utils.log_warning("No Glacier vaults found to export")
 
-        utils.log_info(f"  Glacier Vaults: {len(all_vaults)}")
-        if not df_vaults.empty:
-            utils.log_info(f"  Total Archives: {int(df_vaults['NumberOfArchives'].sum())}")
-            utils.log_info(f"  Total Size: {round(df_vaults['SizeInGB'].sum(), 2)} GB")
-
-        utils.log_success("Glacier export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export Glacier vaults: {str(e)}")
-        raise
+    utils.log_success("Glacier export completed successfully")
 
 
 if __name__ == "__main__":
