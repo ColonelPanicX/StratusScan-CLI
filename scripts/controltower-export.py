@@ -3,15 +3,19 @@
 AWS Control Tower Export Script for StratusScan
 
 Exports comprehensive AWS Control Tower configuration including:
-- Landing zone details and drift status
-- Enabled controls across all OUs with compliance status
-- Control parameters and configuration
 - Organizational units under Control Tower management
-- Drift detection and remediation status
+- Enabled controls with detailed metadata (service, name, description, behavior)
+- Control drift detection and compliance status
+- Failed and drifted controls in separate tabs
 
 Note: Control Tower is a global service accessed via the management account.
+      Requires controlcatalog:GetControl permission for full control metadata.
 
-Output: Multi-worksheet Excel file with Control Tower configuration
+Output: Multi-worksheet Excel file with:
+  - Organizational Units: Complete OU hierarchy
+  - Enabled Controls: All enabled controls with metadata and status
+  - Drifted Controls: Controls with detected drift
+  - Failed Controls: Controls that failed to enable
 """
 
 import sys
@@ -190,6 +194,76 @@ def collect_organizational_units() -> List[Dict[str, Any]]:
     return all_ous
 
 
+def extract_service_from_control_identifier(control_id: str) -> str:
+    """
+    Extract service name from control identifier.
+
+    Examples:
+        - arn:aws:controltower:us-east-1::control/AWS-GR_CLOUDTRAIL_ENABLED -> CloudTrail
+        - arn:aws:controlcatalog:::control/abc123 with alias CT.S3.PR.1 -> S3
+        - Control identifier like AWS-GR_EC2_INSTANCE_NO_PUBLIC_IP -> EC2
+    """
+    # Try extracting from control identifier patterns
+    if 'CLOUDTRAIL' in control_id.upper():
+        return 'CloudTrail'
+    elif 'EC2' in control_id.upper():
+        return 'EC2'
+    elif 'S3' in control_id.upper():
+        return 'S3'
+    elif 'IAM' in control_id.upper():
+        return 'IAM'
+    elif 'LAMBDA' in control_id.upper():
+        return 'Lambda'
+    elif 'RDS' in control_id.upper():
+        return 'RDS'
+    elif 'VPC' in control_id.upper():
+        return 'VPC'
+    elif 'KMS' in control_id.upper():
+        return 'KMS'
+    elif 'CLOUDWATCH' in control_id.upper():
+        return 'CloudWatch'
+    elif 'CONFIG' in control_id.upper():
+        return 'Config'
+    elif 'SNS' in control_id.upper():
+        return 'SNS'
+    elif 'SQS' in control_id.upper():
+        return 'SQS'
+    elif 'BACKUP' in control_id.upper():
+        return 'Backup'
+    elif 'DYNAMODB' in control_id.upper():
+        return 'DynamoDB'
+    elif 'EBS' in control_id.upper():
+        return 'EBS'
+    elif 'ELB' in control_id.upper():
+        return 'ELB'
+    elif 'ELASTICLOADBALANCING' in control_id.upper():
+        return 'ELB'
+    elif 'REDSHIFT' in control_id.upper():
+        return 'Redshift'
+    elif 'SAGEMAKER' in control_id.upper():
+        return 'SageMaker'
+    elif 'SECRETSMANAGER' in control_id.upper():
+        return 'Secrets Manager'
+    elif 'ECS' in control_id.upper():
+        return 'ECS'
+    elif 'EKS' in control_id.upper():
+        return 'EKS'
+    elif 'APIGATEWAY' in control_id.upper() or 'API_GW' in control_id.upper():
+        return 'API Gateway'
+    elif 'CODEBUILD' in control_id.upper():
+        return 'CodeBuild'
+    elif 'CODEPIPELINE' in control_id.upper():
+        return 'CodePipeline'
+    elif 'OPENSEARCH' in control_id.upper() or 'ELASTICSEARCH' in control_id.upper():
+        return 'OpenSearch'
+    elif 'GUARDDUTY' in control_id.upper():
+        return 'GuardDuty'
+    elif 'SECURITYHUB' in control_id.upper():
+        return 'Security Hub'
+    else:
+        return 'Other'
+
+
 @utils.aws_error_handler("Collecting enabled controls", default_return=[])
 def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Collect enabled controls for all organizational units."""
@@ -200,12 +274,21 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     home_region = utils.get_partition_default_region()
     ct_client = utils.get_boto3_client('controltower', region_name=home_region)
 
+    # Create controlcatalog client for getting control metadata
+    catalog_client = utils.get_boto3_client('controlcatalog', region_name=home_region)
+
     total_ous = len(ous)
     for idx, ou in enumerate(ous, 1):
         ou_arn = ou.get('OU ARN', '')
         ou_name = ou.get('OU Name', '')
+        ou_type = ou.get('Type', '')
 
         if not ou_arn:
+            continue
+
+        # Skip Root OU - Control Tower doesn't apply controls to Root
+        if ou_type == 'Root':
+            utils.log_info(f"[{idx}/{total_ous}] Skipping OU: {ou_name} (controls cannot be applied to Root)")
             continue
 
         utils.log_info(f"[{idx}/{total_ous}] Checking controls for OU: {ou_name}")
@@ -235,14 +318,16 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     inheritance_drift = drift_types.get('inheritance', {}).get('status', 'N/A')
                     resource_drift = drift_types.get('resource', {}).get('status', 'N/A')
 
-                    # Try to get detailed control information
-                    control_name = 'N/A'
+                    # Initialize control metadata
+                    control_name = control_id  # Default to identifier
                     control_description = 'N/A'
                     control_behavior = 'N/A'
                     control_guidance = 'N/A'
+                    service_name = 'N/A'
+                    params_str = 'None'
 
                     try:
-                        # Get control details from GetEnabledControl
+                        # Get control details from GetEnabledControl for parameters
                         enabled_control_details = ct_client.get_enabled_control(
                             enabledControlIdentifier=control_arn
                         )
@@ -251,7 +336,6 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
                         # Get parameters if available
                         parameters = enabled_control.get('parameters', [])
-                        params_str = 'None'
                         if parameters:
                             params_list = []
                             for param in parameters:
@@ -261,26 +345,48 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                                     params_list.append(f"{key}: {value}")
                             params_str = ', '.join(params_list) if params_list else 'None'
 
-                        # Try to get control metadata from control catalog
-                        try:
-                            control_catalog = ct_client.get_control(controlIdentifier=control_id)
-                            control_metadata = control_catalog.get('control', {})
-                            control_name = control_metadata.get('name', control_id)
-                            control_description = control_metadata.get('description', 'N/A')
-                            control_behavior = control_metadata.get('behavior', 'N/A')
-                            control_guidance = control_metadata.get('guidance', 'N/A')
-                        except Exception:
-                            # Control catalog API might not be available or control not found
-                            control_name = control_id
+                    except Exception as e:
+                        utils.log_warning(f"Could not get enabled control details for {control_id}: {str(e)}")
+
+                    # Try to get control metadata from control catalog
+                    try:
+                        # Use controlcatalog client to get full metadata
+                        catalog_response = catalog_client.get_control(ControlArn=control_id)
+
+                        # Extract metadata from control catalog response
+                        control_name = catalog_response.get('Name', control_id)
+                        control_description = catalog_response.get('Description', 'N/A')
+                        control_behavior = catalog_response.get('Behavior', 'N/A')
+
+                        # Control catalog doesn't have "Guidance" field - this is Control Tower specific
+                        # We'll need to infer it or mark as N/A
+                        control_guidance = 'N/A'
+
+                        # Extract service from aliases if available
+                        aliases = catalog_response.get('Aliases', [])
+                        if aliases:
+                            # Aliases often have format like "CT.S3.PR.1" or "SH.S3.1"
+                            for alias in aliases:
+                                if '.' in alias:
+                                    parts = alias.split('.')
+                                    if len(parts) >= 2:
+                                        service_name = parts[1]  # e.g., "S3" from "CT.S3.PR.1"
+                                        break
+
+                        # If service not found from alias, try extracting from control identifier
+                        if service_name == 'N/A':
+                            service_name = extract_service_from_control_identifier(control_id)
 
                     except Exception as e:
-                        utils.log_warning(f"Could not get details for control {control_id}: {str(e)}")
-                        params_str = 'N/A'
+                        # Fallback: try extracting service from identifier even if catalog call fails
+                        service_name = extract_service_from_control_identifier(control_id)
+                        utils.log_warning(f"Could not get catalog details for control {control_id}: {str(e)}")
 
                     all_controls.append({
                         'OU Name': ou_name,
                         'OU ARN': ou_arn,
                         'Control Identifier': control_id,
+                        'Service': service_name,
                         'Control Name': control_name,
                         'Control ARN': control_arn,
                         'Status': status,
@@ -290,7 +396,7 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         'Behavior': control_behavior,
                         'Guidance': control_guidance,
                         'Description': control_description,
-                        'Parameters': params_str if 'params_str' in locals() else 'N/A',
+                        'Parameters': params_str,
                         'Last Operation ID': last_operation
                     })
 
@@ -419,7 +525,11 @@ def main():
 
     print(f"\nNote: AWS Control Tower is a global service in {partition_name}.")
     print("This script requires Control Tower to be set up and must be run from the management account.")
-    print("Ensure you have proper IAM permissions to access Control Tower APIs.")
+    print("\nRequired IAM Permissions:")
+    print("  - controltower:ListLandingZones, controltower:GetLandingZone")
+    print("  - controltower:ListEnabledControls, controltower:GetEnabledControl")
+    print("  - controlcatalog:GetControl (for detailed control metadata)")
+    print("  - organizations:ListRoots, organizations:ListOrganizationalUnitsForParent")
 
     if partition == 'aws-us-gov':
         print("\nGovCloud Limitations:")
@@ -445,32 +555,37 @@ def main():
 
     dataframes = {}
 
-    if summary:
-        df_summary = pd.DataFrame(summary)
-        df_summary = utils.prepare_dataframe_for_export(df_summary)
-        dataframes['Summary'] = df_summary
-
-    if landing_zone:
-        # Convert landing zone dict to single-row DataFrame
-        df_lz = pd.DataFrame([landing_zone])
-        df_lz = utils.prepare_dataframe_for_export(df_lz)
-        dataframes['Landing Zone'] = df_lz
-
-    if ous:
-        df_ous = pd.DataFrame(ous)
-        df_ous = utils.prepare_dataframe_for_export(df_ous)
-        dataframes['Organizational Units'] = df_ous
-
+    # Add Enabled Controls first (user preference)
     if controls:
         df_controls = pd.DataFrame(controls)
+
+        # Reorder columns for better readability
+        column_order = [
+            'OU Name',
+            'OU ARN',
+            'Control Identifier',
+            'Control ARN',
+            'Control Name',
+            'Description',
+            'Service',
+            'Behavior',
+            'Guidance',
+            'Status',
+            'Drift Status',
+            'Inheritance Drift',
+            'Resource Drift',
+            'Parameters',
+            'Last Operation ID'
+        ]
+
+        # Reorder columns (only include columns that exist)
+        existing_columns = [col for col in column_order if col in df_controls.columns]
+        df_controls = df_controls[existing_columns]
+
         df_controls = utils.prepare_dataframe_for_export(df_controls)
         dataframes['Enabled Controls'] = df_controls
 
-        # Create filtered views
-        df_succeeded = df_controls[df_controls['Status'] == 'SUCCEEDED']
-        if not df_succeeded.empty:
-            dataframes['Successful Controls'] = df_succeeded
-
+        # Create filtered views for drifted and failed controls only
         df_drifted = df_controls[df_controls['Drift Status'] == 'DRIFTED']
         if not df_drifted.empty:
             dataframes['Drifted Controls'] = df_drifted
@@ -479,6 +594,12 @@ def main():
         if not df_failed.empty:
             dataframes['Failed Controls'] = df_failed
 
+    # Add Organizational Units second (user preference)
+    if ous:
+        df_ous = pd.DataFrame(ous)
+        df_ous = utils.prepare_dataframe_for_export(df_ous)
+        dataframes['Organizational Units'] = df_ous
+
     # Export to Excel
     if dataframes:
         filename = utils.create_export_filename(account_name, 'controltower', 'global')
@@ -486,12 +607,9 @@ def main():
         utils.log_info(f"Exporting to {filename}...")
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-        # Log summary
-        utils.log_export_summary(filename, {
-            'Landing Zones': 1 if landing_zone else 0,
-            'Organizational Units': len(ous),
-            'Enabled Controls': len(controls)
-        })
+        # Log summary using correct function signature
+        total_resources = len(controls)
+        utils.log_export_summary('Control Tower Resources', total_resources, filename)
     else:
         utils.log_warning("No Control Tower data found to export")
 

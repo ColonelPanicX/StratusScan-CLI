@@ -548,7 +548,7 @@ def get_menu_structure():
                 },
                 "13": {
                     "name": "Network Manager",
-                    "file": scripts_dir / "networkmanager-export.py",
+                    "file": scripts_dir / "network-manager-export.py",
                     "description": "Export Network Manager global networks, sites, links, devices, and SD-WAN topology"
                 },
                 "14": {
@@ -809,6 +809,11 @@ def get_menu_structure():
                     "description": "Export SES email identities, configuration sets, templates, sending quotas, and suppression lists"
                 },
                 "6": {
+                    "name": "SES & Pinpoint (Combined)",
+                    "file": scripts_dir / "ses-pinpoint-export.py",
+                    "description": "Export SES and Pinpoint combined: email campaigns, templates, analytics, sending statistics, and SMS channels"
+                },
+                "7": {
                     "name": "Return to Main Menu",
                     "file": None,
                     "description": "Return to the main menu"
