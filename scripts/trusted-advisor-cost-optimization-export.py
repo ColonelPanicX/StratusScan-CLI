@@ -126,9 +126,9 @@ def get_trusted_advisor_checks():
         list: List of Trusted Advisor check results
     """
     try:
-        # Create a Support client (requires Business or Enterprise Support plan)
-        # Trusted Advisor is only available in us-east-1
-        support_client = utils.get_boto3_client('support', region_name='us-east-1')
+        # Support/Trusted Advisor is a global service - use partition-aware home region
+        home_region = utils.get_partition_default_region()
+        support_client = utils.get_boto3_client('support', region_name=home_region)
 
         # Get all Trusted Advisor checks
         response = support_client.describe_trusted_advisor_checks(language='en')
@@ -155,8 +155,9 @@ def get_check_result(check_id):
     Returns:
         dict: The detailed results of the check
     """
-    # Create a Support client - Trusted Advisor is only available in us-east-1
-    support_client = utils.get_boto3_client('support', region_name='us-east-1')
+    # Support/Trusted Advisor is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    support_client = utils.get_boto3_client('support', region_name=home_region)
 
     # Get the check result
     response = support_client.describe_trusted_advisor_check_result(

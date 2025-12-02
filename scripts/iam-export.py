@@ -324,7 +324,11 @@ def collect_iam_user_information():
     try:
         # IAM is a global service but we need to specify a region for the client
         # In AWS, IAM endpoints are region-specific but the service is still global
-        iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+        # IAM is a global service - use partition-aware home region
+
+        home_region = utils.get_partition_default_region()
+
+        iam_client = utils.get_boto3_client('iam', region_name=home_region)
     except Exception as e:
         utils.log_error("Error creating IAM client", e)
         return []

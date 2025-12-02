@@ -53,7 +53,9 @@ utils.log_script_start('network-manager-export', 'Export AWS Network Manager glo
 def collect_global_networks() -> List[Dict[str, Any]]:
     """Collect all Network Manager global networks."""
     # Network Manager is a global service, use us-west-2
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    # Networkmanager is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     networks = []
 
     try:
@@ -82,7 +84,7 @@ def collect_global_networks() -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting sites", default_return=[])
 def collect_sites(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect sites for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     sites = []
 
     try:
@@ -117,7 +119,7 @@ def collect_sites(global_network_id: str) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting links", default_return=[])
 def collect_links(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect links for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     links = []
 
     try:
@@ -154,7 +156,7 @@ def collect_links(global_network_id: str) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting devices", default_return=[])
 def collect_devices(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect devices for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     devices = []
 
     try:
@@ -197,7 +199,7 @@ def collect_devices(global_network_id: str) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting connections", default_return=[])
 def collect_connections(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect connections for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     connections = []
 
     try:
@@ -231,7 +233,7 @@ def collect_connections(global_network_id: str) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting transit gateway registrations", default_return=[])
 def collect_tgw_registrations(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect Transit Gateway registrations for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     registrations = []
 
     try:
@@ -255,7 +257,7 @@ def collect_tgw_registrations(global_network_id: str) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting customer gateway associations", default_return=[])
 def collect_cgw_associations(global_network_id: str) -> List[Dict[str, Any]]:
     """Collect Customer Gateway Associations for a global network."""
-    nm = utils.get_boto3_client('networkmanager', region_name='us-west-2')
+    nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     associations = []
 
     try:

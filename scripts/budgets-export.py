@@ -97,8 +97,9 @@ def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING AWS BUDGETS ===")
     all_budgets = []
 
-    # Budgets is a global service but requires us-east-1
-    budgets_client = utils.get_boto3_client('budgets', region_name='us-east-1')
+    # Budgets is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    budgets_client = utils.get_boto3_client('budgets', region_name=home_region)
 
     try:
         paginator = budgets_client.get_paginator('describe_budgets')
@@ -208,7 +209,9 @@ def collect_budget_notifications(account_id: str, budget_names: List[str]) -> Li
     print("\n=== COLLECTING BUDGET NOTIFICATIONS ===")
     all_notifications = []
 
-    budgets_client = utils.get_boto3_client('budgets', region_name='us-east-1')
+    # Budgets is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    budgets_client = utils.get_boto3_client('budgets', region_name=home_region)
 
     for budget_name in budget_names:
         print(f"  Processing notifications for budget: {budget_name}")

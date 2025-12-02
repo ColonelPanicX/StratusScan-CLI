@@ -102,7 +102,9 @@ def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
 
     # CloudFront is global, but we need to specify a region for the client
     # us-east-1 is the standard region for global services
-    cloudfront = utils.get_boto3_client('cloudfront', region_name='us-east-1')
+    # Cloudfront is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    cloudfront = utils.get_boto3_client('cloudfront', region_name=home_region)
 
     # Use paginator to handle large numbers of distributions
     paginator = cloudfront.get_paginator('list_distributions')
@@ -252,7 +254,7 @@ def collect_origin_details() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ORIGIN DETAILS ===")
 
     origins_data = []
-    cloudfront = utils.get_boto3_client('cloudfront', region_name='us-east-1')
+    cloudfront = utils.get_boto3_client('cloudfront', region_name=home_region)
 
     paginator = cloudfront.get_paginator('list_distributions')
 
@@ -336,7 +338,7 @@ def collect_cache_behaviors() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING CACHE BEHAVIOR DETAILS ===")
 
     behaviors_data = []
-    cloudfront = utils.get_boto3_client('cloudfront', region_name='us-east-1')
+    cloudfront = utils.get_boto3_client('cloudfront', region_name=home_region)
 
     paginator = cloudfront.get_paginator('list_distributions')
 

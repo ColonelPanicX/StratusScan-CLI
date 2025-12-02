@@ -49,8 +49,9 @@ utils.log_script_start('cost-anomaly-detection-export', 'Export AWS Cost Anomaly
 @utils.aws_error_handler("Retrieving Anomaly Monitors", default_return=[])
 def get_anomaly_monitors() -> List[Dict[str, Any]]:
     """Get all anomaly monitors."""
-    # Cost Explorer is accessed via us-east-1
-    ce = utils.get_boto3_client('ce', region_name='us-east-1')
+    # Cost Explorer is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ce = utils.get_boto3_client('ce', region_name=home_region)
 
     monitors = []
     next_token = None
@@ -75,7 +76,9 @@ def get_anomaly_monitors() -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Retrieving Anomaly Subscriptions", default_return=[])
 def get_anomaly_subscriptions() -> List[Dict[str, Any]]:
     """Get all anomaly subscriptions."""
-    ce = utils.get_boto3_client('ce', region_name='us-east-1')
+    # Cost Explorer is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ce = utils.get_boto3_client('ce', region_name=home_region)
 
     subscriptions = []
     next_token = None
@@ -100,7 +103,9 @@ def get_anomaly_subscriptions() -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Retrieving Anomalies", default_return=[])
 def get_anomalies(start_date: str, end_date: str, monitor_arn: str = None) -> List[Dict[str, Any]]:
     """Get anomalies for a time period."""
-    ce = utils.get_boto3_client('ce', region_name='us-east-1')
+    # Cost Explorer is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ce = utils.get_boto3_client('ce', region_name=home_region)
 
     anomalies = []
     next_token = None

@@ -293,7 +293,11 @@ def collect_iam_role_information():
     utils.log_info("Collecting IAM role information from AWS environment...")
 
     # IAM is a global service but we need to specify a region for the client
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # iam is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     role_data = []
 

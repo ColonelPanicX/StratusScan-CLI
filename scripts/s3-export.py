@@ -173,7 +173,9 @@ def check_storage_lens_availability():
     """
     try:
         # Create S3 Control client in a AWS region
-        s3control_client = utils.get_boto3_client('s3control', region_name='us-east-1')
+        # S3Control is a global service - use partition-aware home region
+        home_region = utils.get_partition_default_region()
+        s3control_client = utils.get_boto3_client('s3control', region_name=home_region)
         
         # Get caller identity for Account ID
         account_id = utils.get_boto3_client('sts').get_caller_identity()["Account"]
@@ -207,7 +209,7 @@ def get_latest_storage_lens_data(account_id):
     """
     try:
         # Create S3 Control client in AWS region
-        s3control_client = utils.get_boto3_client('s3control', region_name='us-east-1')
+        s3control_client = utils.get_boto3_client('s3control', region_name=home_region)
         
         # List Storage Lens configurations
         configurations = s3control_client.list_storage_lens_configurations(

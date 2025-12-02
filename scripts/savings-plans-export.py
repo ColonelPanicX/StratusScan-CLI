@@ -99,7 +99,9 @@ def collect_savings_plans(states: List[str]) -> List[Dict[str, Any]]:
     all_plans = []
 
     # Savings Plans is a global service but requires a region
-    sp_client = utils.get_boto3_client('savingsplans', region_name='us-east-1')
+    # Savings Plans is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    sp_client = utils.get_boto3_client('savingsplans', region_name=home_region)
 
     for state in states:
         print(f"\nProcessing state: {state}")

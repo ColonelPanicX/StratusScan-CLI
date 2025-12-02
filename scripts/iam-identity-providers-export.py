@@ -73,7 +73,11 @@ def collect_saml_providers() -> List[Dict[str, Any]]:
     all_saml_providers = []
 
     # IAM is global, use us-west-2 as the region
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # iam is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     try:
         # List all SAML providers
@@ -166,7 +170,11 @@ def collect_oidc_providers() -> List[Dict[str, Any]]:
     all_oidc_providers = []
 
     # IAM is global, use us-west-2 as the region
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # iam is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     try:
         # List all OIDC providers
@@ -284,7 +292,11 @@ def collect_roles_using_providers(saml_providers: List[Dict[str, Any]],
         provider_arns.add(provider.get('ARN', ''))
 
     # IAM is global, use us-west-2 as the region
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # iam is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     try:
         # List all roles

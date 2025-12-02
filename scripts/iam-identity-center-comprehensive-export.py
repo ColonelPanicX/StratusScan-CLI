@@ -87,7 +87,11 @@ def get_identity_center_instance():
     Returns:
         tuple: (instance_arn, identity_store_id) or (None, None) if not configured
     """
-    sso_admin_client = utils.get_boto3_client('sso-admin', region_name='us-west-2')
+    # IAM Identity Center is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
 
     # List Identity Center instances
     response = sso_admin_client.list_instances()
@@ -123,8 +127,18 @@ def collect_comprehensive_users(identity_store_id, instance_arn):
 
     users_data = []
 
-    identitystore_client = utils.get_boto3_client('identitystore', region_name='us-west-2')
-    sso_admin_client = utils.get_boto3_client('sso-admin', region_name='us-west-2')
+    # IAM Identity Center is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    identitystore_client = utils.get_boto3_client('identitystore', region_name=home_region)
+    # IAM Identity Center is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
 
     # Get all users using pagination
     paginator = identitystore_client.get_paginator('list_users')
@@ -236,8 +250,18 @@ def collect_comprehensive_groups(identity_store_id, instance_arn):
 
     groups_data = []
 
-    identitystore_client = utils.get_boto3_client('identitystore', region_name='us-west-2')
-    sso_admin_client = utils.get_boto3_client('sso-admin', region_name='us-west-2')
+    # IAM Identity Center is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    identitystore_client = utils.get_boto3_client('identitystore', region_name=home_region)
+    # IAM Identity Center is a global service - use partition-aware home region
+
+    home_region = utils.get_partition_default_region()
+
+    sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
 
     # Get all groups using pagination
     paginator = identitystore_client.get_paginator('list_groups')
@@ -303,7 +327,13 @@ def collect_comprehensive_permission_sets(instance_arn):
 
     permission_sets_data = []
 
-    sso_admin_client = utils.get_boto3_client('sso-admin', region_name='us-west-2')
+    # IAM Identity Center is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
 
     # Get all permission sets using pagination
     paginator = sso_admin_client.get_paginator('list_permission_sets')

@@ -306,7 +306,11 @@ def export_permission_sets_to_text():
     try:
         # Initialize SSO Admin client
         utils.log_info("Initializing AWS SSO Admin client for AWS")
-        sso_admin_client = utils.get_boto3_client('sso-admin', region_name='us-west-2')
+        # sso-admin is a global service - use partition-aware home region
+
+        home_region = utils.get_partition_default_region()
+
+        sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
 
         # Get SSO instance
         utils.log_info("Retrieving SSO instance information")

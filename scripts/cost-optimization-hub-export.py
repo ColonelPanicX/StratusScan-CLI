@@ -360,8 +360,9 @@ def main():
             print("  4. Wait 24 hours for initial data population")
             return
 
-        # Create Cost Optimization Hub client (always use us-east-1)
-        client = utils.get_boto3_client('cost-optimization-hub', region_name='us-east-1')
+        # Cost Optimization Hub is a global service - use partition-aware home region
+        home_region = utils.get_partition_default_region()
+        client = utils.get_boto3_client('cost-optimization-hub', region_name=home_region)
 
         # Check enrollment status
         utils.log_info("Checking Cost Optimization Hub enrollment status...")

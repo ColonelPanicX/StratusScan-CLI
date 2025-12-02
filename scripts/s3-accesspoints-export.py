@@ -189,7 +189,9 @@ def collect_multi_region_access_points(account_id: str) -> List[Dict[str, Any]]:
         List of dictionaries containing MRAP information
     """
     # Multi-Region Access Points are always accessed via us-west-2
-    s3control = utils.get_boto3_client('s3control', region_name='us-west-2')
+    # S3Control is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    s3control = utils.get_boto3_client('s3control', region_name=home_region)
 
     mraps = []
     next_token = None

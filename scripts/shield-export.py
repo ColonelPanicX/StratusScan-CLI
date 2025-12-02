@@ -96,7 +96,9 @@ def check_subscription() -> Dict[str, Any]:
         dict: Subscription information or None if not subscribed
     """
     # Shield is a global service - always use us-east-1
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    # Shield is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         response = client.describe_subscription()
@@ -128,7 +130,7 @@ def collect_protections() -> List[Dict[str, Any]]:
         list: List of protection information dictionaries
     """
     protections_data = []
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         # List protections using paginator
@@ -202,7 +204,7 @@ def collect_attacks() -> List[Dict[str, Any]]:
         list: List of attack information dictionaries
     """
     attacks_data = []
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         # Get attacks from last 90 days
@@ -279,7 +281,7 @@ def collect_emergency_contacts() -> List[Dict[str, Any]]:
         list: List of emergency contact dictionaries
     """
     contacts_data = []
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         response = client.describe_emergency_contact_settings()
@@ -315,7 +317,7 @@ def collect_protection_groups() -> List[Dict[str, Any]]:
         list: List of protection group dictionaries
     """
     groups_data = []
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         # List protection groups
@@ -356,7 +358,7 @@ def collect_drt_access() -> Dict[str, Any]:
     Returns:
         dict: DRT access information
     """
-    client = utils.get_boto3_client('shield', region_name='us-east-1')
+    client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
         response = client.describe_drt_access()

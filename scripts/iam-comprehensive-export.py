@@ -213,7 +213,9 @@ def collect_iam_users():
     """Collect IAM user information from AWS."""
     utils.log_info("Collecting IAM users from AWS environment...")
 
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # IAM is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
     user_data = []
 
     # Get all IAM users
@@ -447,7 +449,9 @@ def collect_iam_roles():
     """Collect IAM role information from AWS."""
     utils.log_info("Collecting IAM roles from AWS environment...")
 
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # IAM is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
     role_data = []
 
     # Get all IAM roles
@@ -676,7 +680,9 @@ def collect_managed_policies(include_aws_managed=False):
     """Collect customer managed and optionally AWS managed policies."""
     policies_data = []
 
-    iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+    # IAM is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     # Get customer managed policies
     utils.log_info("Collecting customer managed policies...")

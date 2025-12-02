@@ -91,8 +91,9 @@ def parse_expression(expression: Dict, prefix: str = "") -> str:
 @utils.aws_error_handler("Listing Cost Category Definitions", default_return=[])
 def list_cost_category_definitions() -> List[Dict[str, Any]]:
     """List all Cost Category definitions."""
-    # Cost Explorer is accessed via us-east-1
-    ce = utils.get_boto3_client('ce', region_name='us-east-1')
+    # Cost Explorer is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ce = utils.get_boto3_client('ce', region_name=home_region)
 
     cost_categories = []
     next_token = None
@@ -117,7 +118,9 @@ def list_cost_category_definitions() -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Describing Cost Category Definition", default_return=None)
 def describe_cost_category(cost_category_arn: str) -> Dict[str, Any]:
     """Get detailed Cost Category definition."""
-    ce = utils.get_boto3_client('ce', region_name='us-east-1')
+    # Cost Explorer is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    ce = utils.get_boto3_client('ce', region_name=home_region)
 
     response = ce.describe_cost_category_definition(
         CostCategoryArn=cost_category_arn

@@ -196,7 +196,7 @@ All policies have been validated for:
 
 For issues or questions:
 1. Review GovCloud service availability: https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/using-services.html
-2. Check GovCloud service analysis: `/govcloud-service-analysis.json`
+2. Check GovCloud service analysis: `.collab/reference/govcloud-service-analysis.json`
 3. Open an issue in the StratusScan repository
 
 ## Version History

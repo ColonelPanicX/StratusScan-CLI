@@ -1,0 +1,28 @@
+# Handoff board is Codex-owned. Gemini/Claude should request updates via Codex.
+#
+# Fields:
+# - id: short unique slug (e.g., HX-01)
+# - title: brief description
+# - owner: codex|gemini|claude
+# - status: todo|in-progress|blocked|done
+# - waiting_on: optional note on dependency or person
+# - created_at / updated_at: MM.DD.YYYY (EST)
+# - notes: freeform updates / next steps
+
+- id: HX-01
+  title: "Multi-Partition Compliance Audit - Audit all 111 scripts for hardcoded regions"
+  owner: claude
+  status: todo
+  waiting_on: null
+  created_at: 12.01.2025
+  updated_at: 12.01.2025
+  notes: "HIGH PRIORITY: Search for hardcoded us-east-1, us-west-2 in scripts. Replace with utils.get_partition_default_region() for global services. Ensure GovCloud compatibility. Est. 4-6 hours. Create tracker: .collab/.audit/partition-compliance-audit.md"
+
+- id: HX-02
+  title: "Resource Dependency Mapping - Define requirements and scope"
+  owner: codex
+  status: todo
+  waiting_on: user
+  created_at: 12.01.2025
+  updated_at: 12.01.2025
+  notes: "MEDIUM PRIORITY: User mentioned wanting this feature. Need to gather requirements, define scope, and design dependency graph infrastructure before implementation."

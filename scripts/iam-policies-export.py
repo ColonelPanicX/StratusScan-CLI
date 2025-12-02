@@ -764,7 +764,11 @@ def main():
         print("====================================================================")
 
         # Create IAM client
-        iam_client = utils.get_boto3_client('iam', region_name='us-west-2')
+        # iam is a global service - use partition-aware home region
+
+        home_region = utils.get_partition_default_region()
+
+        iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
         # Collect managed policies
         managed_policies = collect_managed_policies(iam_client, include_aws_managed)

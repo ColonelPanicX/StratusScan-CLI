@@ -78,7 +78,13 @@ def collect_trust_anchors() -> List[Dict[str, Any]]:
     """Collect IAM Roles Anywhere Trust Anchors."""
     utils.log_info("Collecting IAM Roles Anywhere Trust Anchors...")
 
-    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name='us-west-2')
+    # IAM Roles Anywhere is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name=home_region)
     trust_anchors = []
 
     try:
@@ -148,7 +154,13 @@ def collect_profiles() -> List[Dict[str, Any]]:
     """Collect IAM Roles Anywhere Profiles."""
     utils.log_info("Collecting IAM Roles Anywhere Profiles...")
 
-    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name='us-west-2')
+    # IAM Roles Anywhere is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name=home_region)
     profiles = []
 
     try:
@@ -233,7 +245,13 @@ def collect_crls() -> List[Dict[str, Any]]:
     """Collect IAM Roles Anywhere Certificate Revocation Lists (CRLs)."""
     utils.log_info("Collecting IAM Roles Anywhere CRLs...")
 
-    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name='us-west-2')
+    # IAM Roles Anywhere is a global service - use partition-aware home region
+
+
+    home_region = utils.get_partition_default_region()
+
+
+    rolesanywhere = utils.get_boto3_client('rolesanywhere', region_name=home_region)
     crls = []
 
     try:

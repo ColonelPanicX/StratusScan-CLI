@@ -375,7 +375,9 @@ def estimate_network_complexity():
         }
 
         # Try to get a rough count of network resources
-        ec2_client = utils.get_boto3_client('ec2', region_name='us-west-2')
+        # Ec2 is a global service - use partition-aware home region
+        home_region = utils.get_partition_default_region()
+        ec2_client = utils.get_boto3_client('ec2', region_name=home_region)
 
         try:
             # Quick count of VPCs to estimate complexity

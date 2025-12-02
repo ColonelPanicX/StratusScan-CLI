@@ -704,7 +704,9 @@ def main():
         regions = utils.get_default_regions()
     elif choice == '2':
         import boto3
-        ec2 = boto3.client('ec2', region_name='us-east-1')
+        # EC2 is used for gateway info - use partition-aware home region
+        home_region = utils.get_partition_default_region()
+        ec2 = utils.get_boto3_client('ec2', region_name=home_region)
         regions = [r['RegionName'] for r in ec2.describe_regions()['Regions']]
     elif choice == '3':
         regions_input = input("Enter regions (comma-separated, e.g., us-east-1,us-west-2): ").strip()

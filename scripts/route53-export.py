@@ -100,7 +100,9 @@ def collect_hosted_zones() -> List[Dict[str, Any]]:
     utils.log_info("Route 53 is a global service - collecting from us-east-1")
 
     zones = []
-    route53 = utils.get_boto3_client('route53', region_name='us-east-1')
+    # Route53 is a global service - use partition-aware home region
+    home_region = utils.get_partition_default_region()
+    route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Use paginator to handle large numbers of zones
     paginator = route53.get_paginator('list_hosted_zones')
@@ -206,7 +208,7 @@ def collect_dns_records() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING DNS RECORDS ===")
 
     records = []
-    route53 = utils.get_boto3_client('route53', region_name='us-east-1')
+    route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Get all hosted zones
     paginator = route53.get_paginator('list_hosted_zones')
@@ -304,7 +306,7 @@ def collect_health_checks() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING HEALTH CHECKS ===")
 
     health_checks = []
-    route53 = utils.get_boto3_client('route53', region_name='us-east-1')
+    route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Use paginator
     paginator = route53.get_paginator('list_health_checks')
@@ -548,7 +550,7 @@ def collect_query_logging_configs() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING QUERY LOGGING CONFIGS ===")
 
     configs = []
-    route53 = utils.get_boto3_client('route53', region_name='us-east-1')
+    route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Use paginator
     paginator = route53.get_paginator('list_query_logging_configs')
