@@ -25,5 +25,14 @@
   status: todo
   waiting_on: user
   created_at: 12.01.2025
-  updated_at: 12.01.2025
-  notes: "MEDIUM PRIORITY: User mentioned wanting this feature. Need to gather requirements, define scope, and design dependency graph infrastructure before implementation."
+  updated_at: 12.02.2025
+  notes: "MEDIUM PRIORITY: User mentioned wanting this feature. Need to gather requirements, define scope, and design dependency graph infrastructure before implementation. On hold pending user requirements definition."
+
+- id: HX-03
+  title: "Final Service Coverage - Complete remaining 8 service exporters"
+  owner: claude
+  status: todo
+  waiting_on: null
+  created_at: 12.02.2025
+  updated_at: 12.02.2025
+  notes: "HIGH PRIORITY: Complete final 8 services to reach 99% AWS coverage (97→105 services). Batch 1: SES/Pinpoint, Cloud Map, X-Ray. Batch 2: Connect, Marketplace, Glacier. Batch 3: Verified Permissions + 1 TBD. See .collab/project-plans/final-service-coverage.md for detailed specs."
