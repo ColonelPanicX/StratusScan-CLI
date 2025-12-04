@@ -24,6 +24,7 @@ from .mapping import (
     get_scripts_for_service,
 )
 from .selector import interactive_select, SmartScanSelector, QUESTIONARY_AVAILABLE
+from .executor import execute_scripts, ScriptExecutor, ExecutionResult
 
 __all__ = [
     # Analyzer functions
@@ -44,4 +45,8 @@ __all__ = [
     "interactive_select",
     "SmartScanSelector",
     "QUESTIONARY_AVAILABLE",
+    # Executor functions
+    "execute_scripts",
+    "ScriptExecutor",
+    "ExecutionResult",
 ]
