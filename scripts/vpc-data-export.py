@@ -86,17 +86,18 @@ def print_title():
 
 
 def get_aws_regions():
-    """Get a list of available AWS regions."""
+    """Get a list of all available AWS regions for the current partition."""
     try:
-        # Use utils function to get available AWS regions
-        regions = utils.get_available_aws_regions()
-        if not regions:
-            utils.log_warning("No accessible AWS regions found. Using default list.")
-            regions = utils.get_aws_regions()
+        # Detect partition and get ALL regions for that partition
+        partition = utils.detect_partition()
+        regions = utils.get_partition_regions(partition, all_regions=True)
+        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
         return regions
     except Exception as e:
         utils.log_error("Error getting AWS regions", e)
-        return utils.get_aws_regions()
+        # Fallback to default regions for the partition
+        partition = utils.detect_partition()
+        return utils.get_partition_regions(partition, all_regions=False)
 
 def is_subnet_public(ec2_client, subnet_id, vpc_id):
     """

@@ -119,21 +119,19 @@ def print_title():
     print("====================================================================")
     return account_id, account_name
 
-@utils.aws_error_handler("Getting all regions", default_return=[
-    'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
-    'ca-central-1', 'eu-west-1', 'eu-west-2', 'eu-central-1',
-    'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-south-1'
-])
 def get_all_regions():
-    """
-    Get a list of all available AWS regions.
-
-    Returns:
-        list: List of region names
-    """
-    ec2_client = utils.get_boto3_client('ec2')
-    regions = [region['RegionName'] for region in ec2_client.describe_regions()['Regions']]
-    return regions
+    """Get list of all available AWS regions for the current partition."""
+    try:
+        # Detect partition and get ALL regions for that partition
+        partition = utils.detect_partition()
+        regions = utils.get_partition_regions(partition, all_regions=True)
+        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
+        return regions
+    except Exception as e:
+        utils.log_error("Error getting AWS regions", e)
+        # Fallback to default regions for the partition
+        partition = utils.detect_partition()
+        return utils.get_partition_regions(partition, all_regions=False)
 
 def is_valid_region(region_name):
     """

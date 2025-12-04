@@ -91,40 +91,58 @@ def validate_account_id(account_id):
 def get_aws_region_choice():
     """
     Get the user's choice for the default AWS region.
+    Automatically detects partition (Commercial vs GovCloud) and shows appropriate regions.
 
     Returns:
         str: The selected AWS region
     """
-    print("\nAWS Region Selection:")
-    print("Please select the default AWS region:")
-    print("1. us-east-1 (US East - N. Virginia)")
-    print("2. us-east-2 (US East - Ohio)")
-    print("3. us-west-1 (US West - N. California)")
-    print("4. us-west-2 (US West - Oregon)")
-    print("5. eu-west-1 (Europe - Ireland)")
-    print("6. eu-central-1 (Europe - Frankfurt)")
-    print("7. ap-southeast-1 (Asia Pacific - Singapore)")
-    print("8. ap-northeast-1 (Asia Pacific - Tokyo)")
+    # Detect the partition
+    partition, default_region = detect_aws_partition()
+    is_govcloud = partition == 'aws-us-gov'
 
-    region_map = {
-        "1": "us-east-1",
-        "2": "us-east-2",
-        "3": "us-west-1",
-        "4": "us-west-2",
-        "5": "eu-west-1",
-        "6": "eu-central-1",
-        "7": "ap-southeast-1",
-        "8": "ap-northeast-1"
-    }
+    print("\nAWS Region Selection:")
+
+    if is_govcloud:
+        print("Please select the default AWS GovCloud region:")
+        print("1. us-gov-west-1 (AWS GovCloud US-West)")
+        print("2. us-gov-east-1 (AWS GovCloud US-East)")
+
+        region_map = {
+            "1": "us-gov-west-1",
+            "2": "us-gov-east-1"
+        }
+        max_choice = 2
+    else:
+        print("Please select the default AWS Commercial region:")
+        print("1. us-east-1 (US East - N. Virginia)")
+        print("2. us-east-2 (US East - Ohio)")
+        print("3. us-west-1 (US West - N. California)")
+        print("4. us-west-2 (US West - Oregon)")
+        print("5. eu-west-1 (Europe - Ireland)")
+        print("6. eu-central-1 (Europe - Frankfurt)")
+        print("7. ap-southeast-1 (Asia Pacific - Singapore)")
+        print("8. ap-northeast-1 (Asia Pacific - Tokyo)")
+
+        region_map = {
+            "1": "us-east-1",
+            "2": "us-east-2",
+            "3": "us-west-1",
+            "4": "us-west-2",
+            "5": "eu-west-1",
+            "6": "eu-central-1",
+            "7": "ap-southeast-1",
+            "8": "ap-northeast-1"
+        }
+        max_choice = 8
 
     while True:
         try:
-            choice = input("\nEnter your choice (1-8): ").strip()
+            choice = input(f"\nEnter your choice (1-{max_choice}): ").strip()
 
             if choice in region_map:
                 return region_map[choice]
             else:
-                print("Invalid choice. Please enter 1-8.")
+                print(f"Invalid choice. Please enter 1-{max_choice}.")
         except KeyboardInterrupt:
             print("\n\nConfiguration cancelled by user.")
             sys.exit(0)
@@ -1037,7 +1055,13 @@ def main():
         if change_region == 'y':
             default_region = get_aws_region_choice()
             # Update all default regions to prioritize the selected one
-            secondary_region = "us-west-2" if default_region == "us-east-1" else "us-east-1"
+            # Set secondary region based on partition
+            if default_region.startswith('us-gov-'):
+                # GovCloud: Choose the other GovCloud region
+                secondary_region = "us-gov-east-1" if default_region == "us-gov-west-1" else "us-gov-west-1"
+            else:
+                # Commercial: Use traditional defaults
+                secondary_region = "us-west-2" if default_region == "us-east-1" else "us-east-1"
             config['default_regions'] = [default_region, secondary_region]
             # Update resource preferences
             update_resource_preferences(config, default_region)

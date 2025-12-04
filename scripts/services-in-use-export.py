@@ -712,7 +712,7 @@ def main():
         regions = utils.get_default_regions()
         utils.log_info(f"Selected default regions: {', '.join(regions)}")
     elif choice == '2':
-        regions = utils.get_all_aws_regions()
+        regions = utils.get_aws_regions()
         utils.log_info(f"Selected all regions: {len(regions)} regions")
     elif choice == '3':
         region = input("Enter AWS region (e.g., us-east-1): ").strip()
@@ -767,11 +767,11 @@ def main():
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
     # Log summary
-    utils.log_export_summary(filename, {
-        'Services In Use': len(services),
-        'Total Resources': sum(s['count'] for s in services.values()),
-        'Categories': len(set(s['category'] for s in services.values()))
-    })
+    utils.log_export_summary(
+        'Services In Use',
+        len(services),
+        filename
+    )
 
     # Print summary to console
     print("\n" + "="*60)

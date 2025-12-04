@@ -141,13 +141,18 @@ def print_title():
 
 def get_available_regions():
     """
-    Get available regions for EKS in AWS.
+    Get available regions for EKS in AWS for the current partition.
+
+    Tests each region to determine EKS availability.
 
     Returns:
         list: List of available regions where EKS is supported
     """
-    # EKS is available in both AWS regions
-    aws_regions = ['us-east-1', 'us-west-2']
+    # Get all regions for the current partition
+    partition = utils.detect_partition()
+    aws_regions = utils.get_partition_regions(partition, all_regions=True)
+    utils.log_info(f"Testing EKS availability in {len(aws_regions)} regions for partition {partition}")
+
     available_regions = []
 
     for region in aws_regions:
@@ -166,7 +171,7 @@ def get_available_regions():
             # Skip regions where EKS is not available
             continue
 
-    return available_regions if available_regions else aws_regions  # Fallback to all AWS regions
+    return available_regions if available_regions else aws_regions  # Fallback to all partition regions
 
 @utils.aws_error_handler("Collecting cluster details", default_return=None)
 def collect_cluster_details(client, cluster_name, region):

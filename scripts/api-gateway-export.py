@@ -84,16 +84,18 @@ def print_title():
 
 
 def get_aws_regions():
-    """Get a list of available AWS regions."""
+    """Get a list of available AWS regions for the current partition."""
     try:
-        regions = utils.get_available_aws_regions()
-        if not regions:
-            utils.log_warning("No accessible AWS regions found. Using default list.")
-            regions = utils.get_default_regions()
+        # Get partition-aware regions
+        partition = utils.detect_partition()
+        regions = utils.get_partition_regions(partition, all_regions=True)
+        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
         return regions
     except Exception as e:
         utils.log_error("Error getting AWS regions", e)
-        return utils.get_default_regions()
+        # Fallback to default regions for the partition
+        partition = utils.detect_partition()
+        return utils.get_partition_regions(partition, all_regions=False)
 
 
 def scan_rest_apis_in_region(region: str) -> List[Dict[str, Any]]:

@@ -19,6 +19,16 @@
   completed_at: 12.02.2025
   notes: "✅ COMPLETE: Fixed 24 scripts with 62 hardcoded regions. All 111 scripts now partition-aware. Results: Batch 1 (IAM: 10 scripts/26 fixes), Batch 2 (Cost: 5/9), Batch 3 (Network: 6/22), Batch 4 (Storage: 3/4). All scripts compile successfully. 0 hardcoded regions remain. Tracker: .collab/reference/partition-compliance-audit-progress.md. Committed: 4e9d3e2"
 
+- id: HX-04
+  title: "Region Selection Partition Awareness - Fix dynamic region selection"
+  owner: claude
+  status: done
+  waiting_on: null
+  created_at: 12.03.2025
+  updated_at: 12.04.2025
+  completed_at: 12.04.2025
+  notes: "✅ COMPLETE: All 34/34 scripts with custom region selection now explicitly partition-aware. Fixed eks-export.py hardcoded regions. Made 8 scripts (access-analyzer, acm, ami, api-gateway, autoscaling, image-builder, network-firewall, waf) more explicit by replacing get_default_regions() with partition-aware code. All 9 modified scripts compile successfully. Verification report: .collab/reference/region-selection-verification-12.04.2025.md. 100% partition compliance achieved. Optional remaining work: Add explicit partition awareness to compute-optimizer/ecs describe_regions (LOW PRIORITY), test in both Commercial and GovCloud environments (RECOMMENDED)."
+
 - id: HX-02
   title: "Resource Dependency Mapping - Define requirements and scope"
   owner: codex

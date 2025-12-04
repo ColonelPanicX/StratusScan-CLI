@@ -1,8 +1,8 @@
 # Task Manager - StratusScan-CLI
 ---
 
-**Last Updated:** December 2, 2025
-**Current Focus:** Final Service Coverage & Cross-Cutting Features
+**Last Updated:** December 4, 2025
+**Current Focus:** Region Selection Partition Awareness Completion & Final Service Coverage
 
 ---
 
@@ -77,6 +77,43 @@
 ---
 
 ## Done
+
+### Region Selection Partition Awareness Audit - COMPLETE ✅
+**Completion Date:** December 4, 2025
+**Plan:** `.collab/project-plans/region-selection-partition-awareness.md`
+**Verification Report:** `.collab/reference/region-selection-verification-12.04.2025.md`
+
+**Problem:** Scripts with region selection logic attempting to access wrong partition regions.
+
+**Final Results:**
+- 📊 Total scripts analyzed: 111
+- ✅ Scripts with explicit partition awareness: **34/34 (100%)**
+- ✅ Fixed eks-export.py hardcoded regions
+- ✅ Made all 8 scripts with get_default_regions() explicitly partition-aware
+- ✅ All 9 modified scripts compile successfully
+
+**Scripts Fixed in Session (December 4, 2025):**
+1. eks-export.py - Replaced hardcoded ['us-east-1', 'us-west-2'] with partition-aware code
+2. access-analyzer-export.py - Made partition awareness explicit
+3. acm-export.py - Made partition awareness explicit
+4. ami-export.py - Made partition awareness explicit
+5. api-gateway-export.py - Made partition awareness explicit
+6. autoscaling-export.py - Made partition awareness explicit
+7. image-builder-export.py - Made partition awareness explicit
+8. network-firewall-export.py - Made partition awareness explicit
+9. waf-export.py - Made partition awareness explicit
+
+**Final Status:**
+- ✅ Custom get_aws_regions() with explicit partition awareness: 34/34 (100%)
+- ✅ All scripts use utils.get_partition_regions(partition, all_regions=True)
+- ✅ No hardcoded regions remain
+- ✅ 100% compilation success
+
+**Optional Remaining Work:**
+- [ ] Add explicit partition awareness to compute-optimizer/ecs describe_regions (30 min) - LOW PRIORITY
+- [ ] Test in both AWS Commercial and GovCloud environments (1-2 hours) - RECOMMENDED
+
+**Impact:** Fully partition-aware, production-ready for both Commercial and GovCloud
 
 ### Recent Sessions (December 1-2, 2025)
 

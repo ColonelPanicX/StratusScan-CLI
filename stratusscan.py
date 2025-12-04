@@ -7,8 +7,8 @@
 ===========================
 
 Title: StratusScan - AWS Resource Exporter Main Menu
-Version: v3.0.0
-Date: NOV-14-2025
+Version: v3.1.0
+Date: DEC-03-2025
 
 Description:
 This script provides a centralized interface for executing various AWS resource
@@ -79,7 +79,7 @@ def print_header():
     print("                         STRATUSSCAN                                ")
     print("                   AWS RESOURCE EXPORTER MENU                      ")
     print("====================================================================")
-    print("Version: v3.0.0                                Date: NOV-14-2025")
+    print("Version: v3.1.0                                Date: DEC-03-2025")
     print("Multi-Partition: Commercial & GovCloud Support")
     print("====================================================================")
 
@@ -323,6 +323,7 @@ def create_output_archive(account_name):
 def get_menu_structure():
     """
     Create a hierarchical menu structure with main categories and submenus.
+    Simplified 10-option main menu for better usability.
     Updated for multi-partition support - includes all available services for
     both AWS Commercial and GovCloud environments.
 
@@ -330,8 +331,8 @@ def get_menu_structure():
         dict: Dictionary with main menu options and their corresponding submenus
     """
     scripts_dir, _ = ensure_directory_structure()
-    
-    # Define the menu structure with categories and script mappings
+
+    # Define the simplified menu structure with consolidated categories
     menu_structure = {
         "0": {
             "name": "Configure StratusScan",
@@ -344,764 +345,225 @@ def get_menu_structure():
             "description": "Discover all AWS services in use (both billing and non-billing services)"
         },
         "2": {
-            "name": "Compute Resources",
+            "name": "Infrastructure (Compute, Storage, Network, Database)",
             "submenu": {
                 "1": {
-                    "name": "EC2",
-                    "file": scripts_dir / "ec2-export.py",
-                    "description": "Export EC2 instance data"
+                    "name": "Compute Resources",
+                    "submenu": {
+                        "1": {"name": "EC2", "file": scripts_dir / "ec2-export.py", "description": "Export EC2 instance data"},
+                        "2": {"name": "RDS", "file": scripts_dir / "rds-export.py", "description": "Export RDS instance information"},
+                        "3": {"name": "EKS", "file": scripts_dir / "eks-export.py", "description": "Export EKS cluster information"},
+                        "4": {"name": "ECS", "file": scripts_dir / "ecs-export.py", "description": "Export ECS cluster and service information"},
+                        "5": {"name": "Auto Scaling Groups", "file": scripts_dir / "autoscaling-export.py", "description": "Export Auto Scaling Group configurations"},
+                        "6": {"name": "Lambda Functions", "file": scripts_dir / "lambda-export.py", "description": "Export Lambda function configurations"},
+                        "7": {"name": "ECR", "file": scripts_dir / "ecr-export.py", "description": "Export ECR repositories and images"},
+                        "8": {"name": "AMI", "file": scripts_dir / "ami-export.py", "description": "Export account-owned AMIs"},
+                        "9": {"name": "EC2 Image Builder", "file": scripts_dir / "image-builder-export.py", "description": "Export Image Builder pipelines"},
+                        "10": {"name": "EC2 Capacity Reservations", "file": scripts_dir / "ec2-capacity-reservations-export.py", "description": "Export EC2 Capacity Reservations"},
+                        "11": {"name": "EC2 Dedicated Hosts", "file": scripts_dir / "ec2-dedicated-hosts-export.py", "description": "Export EC2 Dedicated Hosts"},
+                        "12": {"name": "All Compute Resources", "file": scripts_dir / "compute-resources.py", "description": "Export all compute resources in one report"},
+                        "13": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
+                    }
                 },
                 "2": {
-                    "name": "RDS",
-                    "file": scripts_dir / "rds-export.py",
-                    "description": "Export RDS instance information"
+                    "name": "Storage Resources",
+                    "submenu": {
+                        "1": {"name": "EBS Volumes", "file": scripts_dir / "ebs-volumes-export.py", "description": "Export EBS volume information"},
+                        "2": {"name": "EBS Snapshots", "file": scripts_dir / "ebs-snapshots-export.py", "description": "Export EBS snapshot information"},
+                        "3": {"name": "S3", "file": scripts_dir / "s3-export.py", "description": "Export S3 bucket information"},
+                        "4": {"name": "EFS", "file": scripts_dir / "efs-export.py", "description": "Export EFS file systems"},
+                        "5": {"name": "FSx", "file": scripts_dir / "fsx-export.py", "description": "Export FSx file systems"},
+                        "6": {"name": "AWS Backup", "file": scripts_dir / "backup-export.py", "description": "Export AWS Backup vaults and plans"},
+                        "7": {"name": "S3 Access Points", "file": scripts_dir / "s3-accesspoints-export.py", "description": "Export S3 Access Points"},
+                        "8": {"name": "DataSync", "file": scripts_dir / "datasync-export.py", "description": "Export DataSync tasks and locations"},
+                        "9": {"name": "Transfer Family", "file": scripts_dir / "transfer-family-export.py", "description": "Export Transfer Family servers"},
+                        "10": {"name": "Storage Gateway", "file": scripts_dir / "storagegateway-export.py", "description": "Export Storage Gateway"},
+                        "11": {"name": "Glacier Vaults", "file": scripts_dir / "glacier-export.py", "description": "Export Glacier vaults"},
+                        "12": {"name": "All Storage Resources", "file": scripts_dir / "storage-resources.py", "description": "Export all storage resources in one report"},
+                        "13": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
+                    }
                 },
                 "3": {
-                    "name": "EKS",
-                    "file": scripts_dir / "eks-export.py",
-                    "description": "Export EKS cluster information"
+                    "name": "Network Resources",
+                    "submenu": {
+                        "1": {"name": "VPC/Subnet", "file": scripts_dir / "vpc-data-export.py", "description": "Export VPC and subnet information"},
+                        "2": {"name": "ELB", "file": scripts_dir / "elb-export.py", "description": "Export load balancer information"},
+                        "3": {"name": "Network ACLs", "file": scripts_dir / "nacl-export.py", "description": "Export Network ACL information"},
+                        "4": {"name": "Security Groups", "file": scripts_dir / "security-groups-export.py", "description": "Export security group rules"},
+                        "5": {"name": "Route Tables", "file": scripts_dir / "route-tables-export.py", "description": "Export route table information"},
+                        "6": {"name": "CloudFront", "file": scripts_dir / "cloudfront-export.py", "description": "Export CloudFront distributions"},
+                        "7": {"name": "Route 53", "file": scripts_dir / "route53-export.py", "description": "Export Route 53 hosted zones and records"},
+                        "8": {"name": "VPN", "file": scripts_dir / "vpn-export.py", "description": "Export VPN connections"},
+                        "9": {"name": "Direct Connect", "file": scripts_dir / "directconnect-export.py", "description": "Export Direct Connect connections"},
+                        "10": {"name": "Global Accelerator", "file": scripts_dir / "globalaccelerator-export.py", "description": "Export Global Accelerator"},
+                        "11": {"name": "Transit Gateway", "file": scripts_dir / "transit-gateway-export.py", "description": "Export Transit Gateway configurations"},
+                        "12": {"name": "Network Firewall", "file": scripts_dir / "network-firewall-export.py", "description": "Export Network Firewall"},
+                        "13": {"name": "Network Manager", "file": scripts_dir / "network-manager-export.py", "description": "Export Network Manager topology"},
+                        "14": {"name": "All Network Resources", "file": scripts_dir / "network-resources.py", "description": "Export all network resources in one report"},
+                        "15": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
+                    }
                 },
                 "4": {
-                    "name": "ECS",
-                    "file": scripts_dir / "ecs-export.py",
-                    "description": "Export ECS cluster and service information"
+                    "name": "Database Resources",
+                    "submenu": {
+                        "1": {"name": "DynamoDB", "file": scripts_dir / "dynamodb-export.py", "description": "Export DynamoDB tables and GSIs"},
+                        "2": {"name": "ElastiCache", "file": scripts_dir / "elasticache-export.py", "description": "Export ElastiCache clusters"},
+                        "3": {"name": "DocumentDB", "file": scripts_dir / "documentdb-export.py", "description": "Export DocumentDB clusters"},
+                        "4": {"name": "Neptune", "file": scripts_dir / "neptune-export.py", "description": "Export Neptune graph databases"},
+                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
+                    }
                 },
-                "5": {
-                    "name": "Auto Scaling Groups",
-                    "file": scripts_dir / "autoscaling-export.py",
-                    "description": "Export Auto Scaling Group configurations, instances, and scaling policies"
-                },
-                "6": {
-                    "name": "Lambda Functions",
-                    "file": scripts_dir / "lambda-export.py",
-                    "description": "Export Lambda function configurations, event sources, and concurrency settings"
-                },
-                "7": {
-                    "name": "ECR (Elastic Container Registry)",
-                    "file": scripts_dir / "ecr-export.py",
-                    "description": "Export ECR repositories, images, vulnerability scans, and lifecycle policies"
-                },
-                "8": {
-                    "name": "AMI (Amazon Machine Images)",
-                    "file": scripts_dir / "ami-export.py",
-                    "description": "Export account-owned AMIs with architecture, platform, and snapshot details"
-                },
-                "9": {
-                    "name": "EC2 Image Builder",
-                    "file": scripts_dir / "image-builder-export.py",
-                    "description": "Export Image Builder pipelines, recipes, components, and infrastructure configurations"
-                },
-                "10": {
-                    "name": "EC2 Capacity Reservations",
-                    "file": scripts_dir / "ec2-capacity-reservations-export.py",
-                    "description": "Export EC2 Capacity Reservations (ODCRs), capacity fleets, blocks, and utilization tracking"
-                },
-                "11": {
-                    "name": "EC2 Dedicated Hosts",
-                    "file": scripts_dir / "ec2-dedicated-hosts-export.py",
-                    "description": "Export EC2 Dedicated Hosts, host reservations, instance placements, and BYOL license tracking"
-                },
-                "12": {
-                    "name": "All Compute Resources",
-                    "file": scripts_dir / "compute-resources.py",
-                    "description": "Export all compute resources (EC2, RDS, EKS, ECS) in one comprehensive report"
-                },
-                "13": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "5": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "3": {
-            "name": "Storage Resources",
+            "name": "Security & Compliance",
             "submenu": {
-                "1": {
-                    "name": "EBS Volumes",
-                    "file": scripts_dir / "ebs-volumes-export.py",
-                    "description": "Export EBS volume information"
-                },
-                "2": {
-                    "name": "EBS Snapshots",
-                    "file": scripts_dir / "ebs-snapshots-export.py",
-                    "description": "Export EBS snapshot information"
-                },
-                "3": {
-                    "name": "S3",
-                    "file": scripts_dir / "s3-export.py",
-                    "description": "Export S3 bucket information"
-                },
-                "4": {
-                    "name": "EFS (Elastic File System)",
-                    "file": scripts_dir / "efs-export.py",
-                    "description": "Export EFS file systems, mount targets, and access points"
-                },
-                "5": {
-                    "name": "FSx",
-                    "file": scripts_dir / "fsx-export.py",
-                    "description": "Export FSx file systems (Windows, Lustre, ONTAP, OpenZFS) and backups"
-                },
-                "6": {
-                    "name": "AWS Backup",
-                    "file": scripts_dir / "backup-export.py",
-                    "description": "Export AWS Backup vaults, backup plans, and backup selections"
-                },
-                "7": {
-                    "name": "S3 Access Points",
-                    "file": scripts_dir / "s3-accesspoints-export.py",
-                    "description": "Export S3 Access Points (standard, multi-region, Object Lambda) with VPC configs and policies"
-                },
-                "8": {
-                    "name": "DataSync",
-                    "file": scripts_dir / "datasync-export.py",
-                    "description": "Export DataSync tasks, locations (S3/EFS/FSx/NFS/SMB), agents, and execution history"
-                },
-                "9": {
-                    "name": "Transfer Family",
-                    "file": scripts_dir / "transfer-family-export.py",
-                    "description": "Export Transfer Family servers (SFTP/FTPS/FTP/AS2), users, connectors, workflows, and certificates"
-                },
-                "10": {
-                    "name": "Storage Gateway",
-                    "file": scripts_dir / "storagegateway-export.py",
-                    "description": "Export Storage Gateway gateways (File/Volume/Tape), file shares, volumes, tapes, and local disks"
-                },
-                "11": {
-                    "name": "Glacier Vaults",
-                    "file": scripts_dir / "glacier-export.py",
-                    "description": "Export Glacier vaults, access policies, lock policies, and notifications (separate from S3 Glacier)"
-                },
-                "12": {
-                    "name": "All Storage Resources",
-                    "file": scripts_dir / "storage-resources.py",
-                    "description": "Export all storage resources (EBS, S3) in one comprehensive report"
-                },
-                "13": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "1": {"name": "Security Hub", "file": scripts_dir / "security-hub-export.py", "description": "Export Security Hub findings"},
+                "2": {"name": "GuardDuty", "file": scripts_dir / "guardduty-export.py", "description": "Export GuardDuty findings"},
+                "3": {"name": "AWS WAF", "file": scripts_dir / "waf-export.py", "description": "Export WAF web ACLs and rules"},
+                "4": {"name": "CloudTrail", "file": scripts_dir / "cloudtrail-export.py", "description": "Export CloudTrail trails"},
+                "5": {"name": "AWS Config", "file": scripts_dir / "config-export.py", "description": "Export Config rules and compliance"},
+                "6": {"name": "KMS", "file": scripts_dir / "kms-export.py", "description": "Export KMS keys and encryption configs"},
+                "7": {"name": "Secrets Manager", "file": scripts_dir / "secrets-manager-export.py", "description": "Export Secrets Manager metadata"},
+                "8": {"name": "ACM", "file": scripts_dir / "acm-export.py", "description": "Export ACM SSL/TLS certificates"},
+                "9": {"name": "IAM Access Analyzer", "file": scripts_dir / "access-analyzer-export.py", "description": "Export Access Analyzer findings"},
+                "10": {"name": "Detective", "file": scripts_dir / "detective-export.py", "description": "Export Detective behavior graphs"},
+                "11": {"name": "Shield Advanced", "file": scripts_dir / "shield-export.py", "description": "Export Shield DDoS protection"},
+                "12": {"name": "IAM Roles Anywhere", "file": scripts_dir / "iam-rolesanywhere-export.py", "description": "Export IAM Roles Anywhere"},
+                "13": {"name": "Verified Access", "file": scripts_dir / "verifiedaccess-export.py", "description": "Export Verified Access zero-trust"},
+                "14": {"name": "Macie", "file": scripts_dir / "macie-export.py", "description": "Export Macie data security findings"},
+                "15": {"name": "Cognito", "file": scripts_dir / "cognito-export.py", "description": "Export Cognito user pools"},
+                "16": {"name": "ACM Private CA", "file": scripts_dir / "acm-privateca-export.py", "description": "Export ACM Private CAs"},
+                "17": {"name": "IAM Identity Providers", "file": scripts_dir / "iam-identity-providers-export.py", "description": "Export IAM SAML/OIDC providers"},
+                "18": {"name": "Verified Permissions", "file": scripts_dir / "verifiedpermissions-export.py", "description": "Export Verified Permissions Cedar policies"},
+                "19": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "4": {
-            "name": "Network Resources",
-            "submenu": {
-                "1": {
-                    "name": "VPC/Subnet",
-                    "file": scripts_dir / "vpc-data-export.py",
-                    "description": "Export VPC and subnet information"
-                },
-                "2": {
-                    "name": "ELB",
-                    "file": scripts_dir / "elb-export.py",
-                    "description": "Export load balancer information"
-                },
-                "3": {
-                    "name": "Network ACLs",
-                    "file": scripts_dir / "nacl-export.py",
-                    "description": "Export Network ACL information"
-                },
-                "4": {
-                    "name": "Security Groups",
-                    "file": scripts_dir / "security-groups-export.py",
-                    "description": "Export security group rules and associations"
-                },
-                "5": {
-                    "name": "Route Tables",
-                    "file": scripts_dir / "route-tables-export.py",
-                    "description": "Export route table information"
-                },
-                "6": {
-                    "name": "CloudFront",
-                    "file": scripts_dir / "cloudfront-export.py",
-                    "description": "Export CloudFront distribution configurations, origins, and cache behaviors"
-                },
-                "7": {
-                    "name": "Route 53",
-                    "file": scripts_dir / "route53-export.py",
-                    "description": "Export Route 53 hosted zones, DNS records, health checks, and Resolver configurations"
-                },
-                "8": {
-                    "name": "VPN",
-                    "file": scripts_dir / "vpn-export.py",
-                    "description": "Export Site-to-Site VPN connections, Client VPN endpoints, and gateway configurations"
-                },
-                "9": {
-                    "name": "Direct Connect",
-                    "file": scripts_dir / "directconnect-export.py",
-                    "description": "Export Direct Connect connections, virtual interfaces, LAGs, and gateways (premium service)"
-                },
-                "10": {
-                    "name": "Global Accelerator",
-                    "file": scripts_dir / "globalaccelerator-export.py",
-                    "description": "Export Global Accelerator configurations, listeners, endpoint groups, and endpoints (premium service)"
-                },
-                "11": {
-                    "name": "Transit Gateway",
-                    "file": scripts_dir / "transit-gateway-export.py",
-                    "description": "Export Transit Gateway configurations, attachments, route tables, and routes"
-                },
-                "12": {
-                    "name": "AWS Network Firewall",
-                    "file": scripts_dir / "network-firewall-export.py",
-                    "description": "Export Network Firewall configurations, policies, rule groups, and logging settings"
-                },
-                "13": {
-                    "name": "Network Manager",
-                    "file": scripts_dir / "network-manager-export.py",
-                    "description": "Export Network Manager global networks, sites, links, devices, and SD-WAN topology"
-                },
-                "14": {
-                    "name": "All Network Resources",
-                    "file": scripts_dir / "network-resources.py",
-                    "description": "Export all network resources (VPC, ELB, NACLs, Security Groups, Route Tables) in one comprehensive report"
-                },
-                "15": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "5": {
-            "name": "Security Resources",
-            "submenu": {
-                "1": {
-                    "name": "Security Hub",
-                    "file": scripts_dir / "security-hub-export.py",
-                    "description": "Export Security Hub findings with severity, compliance status, and remediation guidance"
-                },
-                "2": {
-                    "name": "GuardDuty",
-                    "file": scripts_dir / "guardduty-export.py",
-                    "description": "Export GuardDuty detectors, findings, threat intel sets, and IP sets for threat detection"
-                },
-                "3": {
-                    "name": "AWS WAF",
-                    "file": scripts_dir / "waf-export.py",
-                    "description": "Export WAF web ACLs, rules, IP sets, and regex patterns for application protection"
-                },
-                "4": {
-                    "name": "CloudTrail",
-                    "file": scripts_dir / "cloudtrail-export.py",
-                    "description": "Export CloudTrail trails, event selectors, and insight selectors for audit logging"
-                },
-                "5": {
-                    "name": "AWS Config",
-                    "file": scripts_dir / "config-export.py",
-                    "description": "Export Config recorders, rules, compliance status, and conformance packs"
-                },
-                "6": {
-                    "name": "KMS (Key Management Service)",
-                    "file": scripts_dir / "kms-export.py",
-                    "description": "Export KMS keys, aliases, grants, rotation status, and encryption configurations"
-                },
-                "7": {
-                    "name": "Secrets Manager",
-                    "file": scripts_dir / "secrets-manager-export.py",
-                    "description": "Export Secrets Manager secrets metadata, rotation configs, and replication settings (no secret values)"
-                },
-                "8": {
-                    "name": "ACM (Certificate Manager)",
-                    "file": scripts_dir / "acm-export.py",
-                    "description": "Export ACM SSL/TLS certificates with validation methods, expiration dates, and usage tracking"
-                },
-                "9": {
-                    "name": "IAM Access Analyzer",
-                    "file": scripts_dir / "access-analyzer-export.py",
-                    "description": "Export Access Analyzer findings, analyzers, archive rules, and external access detection"
-                },
-                "10": {
-                    "name": "Detective",
-                    "file": scripts_dir / "detective-export.py",
-                    "description": "Export Detective behavior graphs, member accounts, invitations, and security investigation capabilities"
-                },
-                "11": {
-                    "name": "Shield Advanced",
-                    "file": scripts_dir / "shield-export.py",
-                    "description": "Export Shield Advanced DDoS protection: subscription, protections, attacks, DRT access (premium service ~$3k/month)"
-                },
-                "12": {
-                    "name": "IAM Roles Anywhere",
-                    "file": scripts_dir / "iam-rolesanywhere-export.py",
-                    "description": "Export IAM Roles Anywhere trust anchors, profiles, CRLs, and workload identity federation for on-premises X.509 certificates"
-                },
-                "13": {
-                    "name": "Verified Access",
-                    "file": scripts_dir / "verifiedaccess-export.py",
-                    "description": "Export Verified Access instances, trust providers, groups, endpoints, and zero-trust network access configurations"
-                },
-                "14": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "6": {
-            "name": "Identity and Access Management Resources",
+            "name": "Identity & Access Management",
             "submenu": {
                 "1": {
                     "name": "IAM",
                     "description": "Traditional IAM resources (users, roles, policies)",
                     "submenu": {
-                        "1": {
-                            "name": "IAM Users",
-                            "file": scripts_dir / "iam-export.py",
-                            "description": "Export IAM user information, permissions, and security details"
-                        },
-                        "2": {
-                            "name": "IAM Roles",
-                            "file": scripts_dir / "iam-roles-export.py",
-                            "description": "Export IAM role information, trust relationships, and usage patterns"
-                        },
-                        "3": {
-                            "name": "IAM Policies",
-                            "file": scripts_dir / "iam-policies-export.py",
-                            "description": "Export IAM policy information, risk assessment, and compliance analysis"
-                        },
-                        "4": {
-                            "name": "All the above",
-                            "file": scripts_dir / "iam-comprehensive-export.py",
-                            "description": "Export all IAM resources (users, roles, policies) in one comprehensive report"
-                        },
-                        "5": {
-                            "name": "Return to Previous Menu",
-                            "file": None,
-                            "description": "Return to the previous menu"
-                        }
+                        "1": {"name": "IAM Users", "file": scripts_dir / "iam-export.py", "description": "Export IAM user information"},
+                        "2": {"name": "IAM Roles", "file": scripts_dir / "iam-roles-export.py", "description": "Export IAM role information"},
+                        "3": {"name": "IAM Policies", "file": scripts_dir / "iam-policies-export.py", "description": "Export IAM policy information"},
+                        "4": {"name": "All IAM Resources", "file": scripts_dir / "iam-comprehensive-export.py", "description": "Export all IAM resources in one report"},
+                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to IAM menu"}
                     }
                 },
-                "2": {
-                    "name": "AWS Organizations",
-                    "file": scripts_dir / "organizations-export.py",
-                    "description": "Export AWS Organizations structure, accounts, and organizational units"
-                },
+                "2": {"name": "AWS Organizations", "file": scripts_dir / "organizations-export.py", "description": "Export AWS Organizations structure"},
                 "3": {
                     "name": "IAM Identity Center",
                     "description": "IAM Identity Center (formerly AWS SSO) resources",
                     "submenu": {
-                        "1": {
-                            "name": "IAM Identity Center",
-                            "file": scripts_dir / "iam-identity-center-export.py",
-                            "description": "Export IAM Identity Center users, groups, and permission sets"
-                        },
-                        "2": {
-                            "name": "IAM Identity Center Groups",
-                            "file": scripts_dir / "iam-identity-center-groups-export.py",
-                            "description": "Export IAM Identity Center groups with detailed member information"
-                        },
-                        "3": {
-                            "name": "IAM Identity Center Permission Sets",
-                            "file": scripts_dir / "iam-identity-center-permission-sets-export.py",
-                            "description": "Export IAM Identity Center permission sets and assignments"
-                        },
-                        "4": {
-                            "name": "IAM Identity Center Comprehensive",
-                            "file": scripts_dir / "iam-identity-center-comprehensive-export.py",
-                            "description": "Export comprehensive IAM Identity Center data (users, groups, permission sets, assignments) in one report"
-                        },
-                        "5": {
-                            "name": "Return to Previous Menu",
-                            "file": None,
-                            "description": "Return to the previous menu"
-                        }
+                        "1": {"name": "IAM Identity Center", "file": scripts_dir / "iam-identity-center-export.py", "description": "Export users, groups, and permission sets"},
+                        "2": {"name": "Groups", "file": scripts_dir / "iam-identity-center-groups-export.py", "description": "Export Identity Center groups"},
+                        "3": {"name": "Permission Sets", "file": scripts_dir / "iam-identity-center-permission-sets-export.py", "description": "Export permission sets"},
+                        "4": {"name": "Comprehensive", "file": scripts_dir / "iam-identity-center-comprehensive-export.py", "description": "Export all Identity Center data"},
+                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to IAM menu"}
                     }
                 },
-                "4": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "4": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
+            }
+        },
+        "5": {
+            "name": "Cost Management & Optimization",
+            "submenu": {
+                "1": {"name": "Billing Export", "file": scripts_dir / "billing-export.py", "description": "Export AWS billing and cost data"},
+                "2": {"name": "Cost Optimization Hub", "file": scripts_dir / "cost-optimization-hub-export.py", "description": "Export Cost Optimization Hub recommendations"},
+                "3": {"name": "Trusted Advisor", "file": scripts_dir / "trusted-advisor-cost-optimization-export.py", "description": "Export Trusted Advisor cost recommendations"},
+                "4": {"name": "Compute Optimizer", "file": scripts_dir / "compute-optimizer-export.py", "description": "Export Compute Optimizer recommendations"},
+                "5": {"name": "Savings Plans", "file": scripts_dir / "savings-plans-export.py", "description": "Export Savings Plans commitments"},
+                "6": {"name": "AWS Budgets", "file": scripts_dir / "budgets-export.py", "description": "Export AWS Budgets and alerts"},
+                "7": {"name": "Reserved Instances", "file": scripts_dir / "reserved-instances-export.py", "description": "Export Reserved Instances"},
+                "8": {"name": "Cost Categories", "file": scripts_dir / "cost-categories-export.py", "description": "Export Cost Categories"},
+                "9": {"name": "Cost Anomaly Detection", "file": scripts_dir / "cost-anomaly-detection-export.py", "description": "Export Cost Anomaly Detection"},
+                "10": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
+            }
+        },
+        "6": {
+            "name": "Application Services",
+            "submenu": {
+                "1": {"name": "Step Functions", "file": scripts_dir / "stepfunctions-export.py", "description": "Export Step Functions state machines"},
+                "2": {"name": "App Runner", "file": scripts_dir / "apprunner-export.py", "description": "Export App Runner services"},
+                "3": {"name": "Elastic Beanstalk", "file": scripts_dir / "elasticbeanstalk-export.py", "description": "Export Elastic Beanstalk applications"},
+                "4": {"name": "AppSync", "file": scripts_dir / "appsync-export.py", "description": "Export AppSync GraphQL APIs"},
+                "5": {"name": "AWS Connect", "file": scripts_dir / "connect-export.py", "description": "Export Connect contact center"},
+                "6": {"name": "API Gateway", "file": scripts_dir / "api-gateway-export.py", "description": "Export API Gateway REST/HTTP APIs"},
+                "7": {"name": "EventBridge", "file": scripts_dir / "eventbridge-export.py", "description": "Export EventBridge event buses"},
+                "8": {"name": "SQS/SNS", "file": scripts_dir / "sqs-sns-export.py", "description": "Export SQS queues and SNS topics"},
+                "9": {"name": "Cloud Map", "file": scripts_dir / "cloudmap-export.py", "description": "Export Cloud Map service discovery"},
+                "10": {"name": "SES", "file": scripts_dir / "ses-export.py", "description": "Export SES email identities"},
+                "11": {"name": "SES & Pinpoint", "file": scripts_dir / "ses-pinpoint-export.py", "description": "Export SES and Pinpoint combined"},
+                "12": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "7": {
-            "name": "Billing and Cost Management",
+            "name": "Data & Analytics",
             "submenu": {
-                "1": {
-                    "name": "Billing Export",
-                    "file": scripts_dir / "billing-export.py",
-                    "description": "Export AWS billing and cost data"
-                },
-                "2": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "1": {"name": "OpenSearch Service", "file": scripts_dir / "opensearch-export.py", "description": "Export OpenSearch domains"},
+                "2": {"name": "Redshift", "file": scripts_dir / "redshift-export.py", "description": "Export Redshift data warehouse clusters"},
+                "3": {"name": "Glue & Athena", "file": scripts_dir / "glue-athena-export.py", "description": "Export Glue databases and Athena workgroups"},
+                "4": {"name": "Lake Formation", "file": scripts_dir / "lakeformation-export.py", "description": "Export Lake Formation resources"},
+                "5": {"name": "SageMaker", "file": scripts_dir / "sagemaker-export.py", "description": "Export SageMaker ML resources"},
+                "6": {"name": "Bedrock", "file": scripts_dir / "bedrock-export.py", "description": "Export Bedrock generative AI"},
+                "7": {"name": "Comprehend", "file": scripts_dir / "comprehend-export.py", "description": "Export Comprehend NLP resources"},
+                "8": {"name": "Rekognition", "file": scripts_dir / "rekognition-export.py", "description": "Export Rekognition computer vision"},
+                "9": {"name": "CloudWatch", "file": scripts_dir / "cloudwatch-export.py", "description": "Export CloudWatch alarms and logs"},
+                "10": {"name": "X-Ray", "file": scripts_dir / "xray-export.py", "description": "Export X-Ray distributed tracing"},
+                "11": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "8": {
-            "name": "Cost Optimization Resources",
+            "name": "Developer Tools",
             "submenu": {
-                "1": {
-                    "name": "Cost Optimization Hub",
-                    "file": scripts_dir / "cost-optimization-hub-export.py",
-                    "description": "Export AWS Cost Optimization Hub recommendations (aggregates Trusted Advisor, Compute Optimizer, and Cost Explorer)"
-                },
-                "2": {
-                    "name": "Trusted Advisor - Cost Optimization",
-                    "file": scripts_dir / "trusted-advisor-cost-optimization-export.py",
-                    "description": "Export Trusted Advisor cost optimization recommendations (requires Business/Enterprise Support)"
-                },
-                "3": {
-                    "name": "Compute Optimizer",
-                    "file": scripts_dir / "compute-optimizer-export.py",
-                    "description": "Export AWS Compute Optimizer recommendations for EC2, RDS, Lambda, and ECS"
-                },
-                "4": {
-                    "name": "Savings Plans",
-                    "file": scripts_dir / "savings-plans-export.py",
-                    "description": "Export Savings Plans (Compute, EC2, SageMaker) with commitment details and savings estimates"
-                },
-                "5": {
-                    "name": "AWS Budgets",
-                    "file": scripts_dir / "budgets-export.py",
-                    "description": "Export AWS Budgets with alerts, thresholds, actual vs forecasted spend tracking"
-                },
-                "6": {
-                    "name": "Reserved Instances",
-                    "file": scripts_dir / "reserved-instances-export.py",
-                    "description": "Export Reserved Instances across EC2, RDS, ElastiCache, OpenSearch, Redshift, MemoryDB with utilization and expiration tracking"
-                },
-                "7": {
-                    "name": "Cost Categories",
-                    "file": scripts_dir / "cost-categories-export.py",
-                    "description": "Export Cost Categories definitions, rules, inherited values, and split charge configurations"
-                },
-                "8": {
-                    "name": "Cost Anomaly Detection",
-                    "file": scripts_dir / "cost-anomaly-detection-export.py",
-                    "description": "Export Cost Anomaly Detection monitors, subscriptions, anomalies, and root cause analysis"
-                },
-                "9": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "1": {"name": "CodeBuild", "file": scripts_dir / "codebuild-export.py", "description": "Export CodeBuild projects"},
+                "2": {"name": "CodePipeline", "file": scripts_dir / "codepipeline-export.py", "description": "Export CodePipeline pipelines"},
+                "3": {"name": "CodeCommit", "file": scripts_dir / "codecommit-export.py", "description": "Export CodeCommit repositories"},
+                "4": {"name": "CodeDeploy", "file": scripts_dir / "codedeploy-export.py", "description": "Export CodeDeploy applications"},
+                "5": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "9": {
-            "name": "Integration & Messaging",
+            "name": "Management & Governance",
             "submenu": {
-                "1": {
-                    "name": "API Gateway",
-                    "file": scripts_dir / "api-gateway-export.py",
-                    "description": "Export API Gateway REST APIs, HTTP APIs, stages, and custom domains"
-                },
-                "2": {
-                    "name": "EventBridge",
-                    "file": scripts_dir / "eventbridge-export.py",
-                    "description": "Export EventBridge event buses, rules, targets, and archives"
-                },
-                "3": {
-                    "name": "SQS/SNS",
-                    "file": scripts_dir / "sqs-sns-export.py",
-                    "description": "Export SQS queues and SNS topics with subscriptions and configurations"
-                },
-                "4": {
-                    "name": "Cloud Map (Service Discovery)",
-                    "file": scripts_dir / "cloudmap-export.py",
-                    "description": "Export Cloud Map namespaces, services, instances, and health check configurations for microservices discovery"
-                },
-                "5": {
-                    "name": "SES (Simple Email Service)",
-                    "file": scripts_dir / "ses-export.py",
-                    "description": "Export SES email identities, configuration sets, templates, sending quotas, and suppression lists"
-                },
-                "6": {
-                    "name": "SES & Pinpoint (Combined)",
-                    "file": scripts_dir / "ses-pinpoint-export.py",
-                    "description": "Export SES and Pinpoint combined: email campaigns, templates, analytics, sending statistics, and SMS channels"
-                },
-                "7": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "1": {"name": "CloudFormation", "file": scripts_dir / "cloudformation-export.py", "description": "Export CloudFormation stacks"},
+                "2": {"name": "Service Catalog", "file": scripts_dir / "service-catalog-export.py", "description": "Export Service Catalog portfolios"},
+                "3": {"name": "AWS Health", "file": scripts_dir / "health-export.py", "description": "Export AWS Health events"},
+                "4": {"name": "License Manager", "file": scripts_dir / "license-manager-export.py", "description": "Export License Manager configurations"},
+                "5": {"name": "AWS Marketplace", "file": scripts_dir / "marketplace-export.py", "description": "Export AWS Marketplace configuration"},
+                "6": {"name": "AWS Control Tower", "file": scripts_dir / "controltower-export.py", "description": "Export Control Tower landing zone"},
+                "7": {"name": "Systems Manager Fleet", "file": scripts_dir / "ssm-fleet-export.py", "description": "Export SSM managed instances"},
+                "8": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "10": {
-            "name": "Monitoring & Operations",
-            "submenu": {
-                "1": {
-                    "name": "CloudWatch",
-                    "file": scripts_dir / "cloudwatch-export.py",
-                    "description": "Export CloudWatch alarms, log groups, and metric filters"
-                },
-                "2": {
-                    "name": "Systems Manager Fleet",
-                    "file": scripts_dir / "ssm-fleet-export.py",
-                    "description": "Export SSM managed instances, patch compliance, and parameters"
-                },
-                "3": {
-                    "name": "X-Ray",
-                    "file": scripts_dir / "xray-export.py",
-                    "description": "Export X-Ray distributed tracing: sampling rules, groups, insights, and encryption config"
-                },
-                "4": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "11": {
-            "name": "Database Resources",
-            "submenu": {
-                "1": {
-                    "name": "DynamoDB",
-                    "file": scripts_dir / "dynamodb-export.py",
-                    "description": "Export DynamoDB tables, GSIs, backups, and configuration details"
-                },
-                "2": {
-                    "name": "ElastiCache",
-                    "file": scripts_dir / "elasticache-export.py",
-                    "description": "Export ElastiCache (Redis/Memcached) clusters, replication groups, and subnet groups"
-                },
-                "3": {
-                    "name": "DocumentDB",
-                    "file": scripts_dir / "documentdb-export.py",
-                    "description": "Export DocumentDB (MongoDB-compatible) clusters, instances, and snapshots"
-                },
-                "4": {
-                    "name": "Neptune",
-                    "file": scripts_dir / "neptune-export.py",
-                    "description": "Export Neptune (Graph Database) clusters, instances, snapshots, and endpoints"
-                },
-                "5": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "12": {
-            "name": "Analytics & Data",
-            "submenu": {
-                "1": {
-                    "name": "OpenSearch Service",
-                    "file": scripts_dir / "opensearch-export.py",
-                    "description": "Export OpenSearch domains, VPC configs, encryption, access policies, and snapshots"
-                },
-                "2": {
-                    "name": "Redshift",
-                    "file": scripts_dir / "redshift-export.py",
-                    "description": "Export Redshift data warehouse clusters, snapshots, parameter groups, and subnet groups"
-                },
-                "3": {
-                    "name": "Glue & Athena",
-                    "file": scripts_dir / "glue-athena-export.py",
-                    "description": "Export Glue databases, tables, crawlers, jobs, and Athena workgroups/catalogs"
-                },
-                "4": {
-                    "name": "Lake Formation",
-                    "file": scripts_dir / "lakeformation-export.py",
-                    "description": "Export Lake Formation resources, permissions, data lake settings, and LF-Tags"
-                },
-                "5": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "13": {
-            "name": "Application Services",
-            "submenu": {
-                "1": {
-                    "name": "Step Functions",
-                    "file": scripts_dir / "stepfunctions-export.py",
-                    "description": "Export Step Functions state machines, executions, and activities"
-                },
-                "2": {
-                    "name": "App Runner",
-                    "file": scripts_dir / "apprunner-export.py",
-                    "description": "Export App Runner services, auto scaling configs, VPC connectors, and custom domains"
-                },
-                "3": {
-                    "name": "Elastic Beanstalk",
-                    "file": scripts_dir / "elasticbeanstalk-export.py",
-                    "description": "Export Elastic Beanstalk applications, environments, versions, and config templates"
-                },
-                "4": {
-                    "name": "AppSync",
-                    "file": scripts_dir / "appsync-export.py",
-                    "description": "Export AppSync GraphQL APIs, data sources, resolvers, and API keys"
-                },
-                "5": {
-                    "name": "AWS Connect",
-                    "file": scripts_dir / "connect-export.py",
-                    "description": "Export Connect contact center instances, queues, contact flows, phone numbers, and users"
-                },
-                "6": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "14": {
-            "name": "Advanced Security & Identity",
-            "submenu": {
-                "1": {
-                    "name": "Macie",
-                    "file": scripts_dir / "macie-export.py",
-                    "description": "Export Macie data security service: classification jobs, findings, and sensitive data discovery"
-                },
-                "2": {
-                    "name": "Cognito",
-                    "file": scripts_dir / "cognito-export.py",
-                    "description": "Export Cognito user pools, identity pools, clients, providers, and groups"
-                },
-                "3": {
-                    "name": "ACM Private CA",
-                    "file": scripts_dir / "acm-privateca-export.py",
-                    "description": "Export ACM Private Certificate Authorities, certificates, templates, and permissions"
-                },
-                "4": {
-                    "name": "IAM Identity Providers",
-                    "file": scripts_dir / "iam-identity-providers-export.py",
-                    "description": "Export IAM SAML and OIDC identity providers with role trust relationships"
-                },
-                "5": {
-                    "name": "Verified Permissions",
-                    "file": scripts_dir / "verifiedpermissions-export.py",
-                    "description": "Export Verified Permissions Cedar policies, policy stores, templates, and identity sources"
-                },
-                "6": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "15": {
-            "name": "AI & Machine Learning",
-            "submenu": {
-                "1": {
-                    "name": "SageMaker",
-                    "file": scripts_dir / "sagemaker-export.py",
-                    "description": "Export SageMaker notebooks, training jobs, models, endpoints, and processing jobs"
-                },
-                "2": {
-                    "name": "Bedrock",
-                    "file": scripts_dir / "bedrock-export.py",
-                    "description": "Export Bedrock foundation models, custom models, guardrails, knowledge bases, and agents"
-                },
-                "3": {
-                    "name": "Comprehend",
-                    "file": scripts_dir / "comprehend-export.py",
-                    "description": "Export Comprehend entity recognizers, classifiers, endpoints, and NLP jobs"
-                },
-                "4": {
-                    "name": "Rekognition",
-                    "file": scripts_dir / "rekognition-export.py",
-                    "description": "Export Rekognition custom models, face collections, stream processors, and projects"
-                },
-                "5": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "16": {
-            "name": "Developer Tools & CI/CD",
-            "submenu": {
-                "1": {
-                    "name": "CodeBuild",
-                    "file": scripts_dir / "codebuild-export.py",
-                    "description": "Export CodeBuild projects, builds, and report groups"
-                },
-                "2": {
-                    "name": "CodePipeline",
-                    "file": scripts_dir / "codepipeline-export.py",
-                    "description": "Export CodePipeline pipelines, executions, and webhooks"
-                },
-                "3": {
-                    "name": "CodeCommit",
-                    "file": scripts_dir / "codecommit-export.py",
-                    "description": "Export CodeCommit repositories, branches, and pull requests"
-                },
-                "4": {
-                    "name": "CodeDeploy",
-                    "file": scripts_dir / "codedeploy-export.py",
-                    "description": "Export CodeDeploy applications, deployment groups, and deployments"
-                },
-                "5": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "17": {
-            "name": "Management & Governance",
-            "submenu": {
-                "1": {
-                    "name": "CloudFormation",
-                    "file": scripts_dir / "cloudformation-export.py",
-                    "description": "Export CloudFormation stacks, StackSets, resources, and drift detection status"
-                },
-                "2": {
-                    "name": "Service Catalog",
-                    "file": scripts_dir / "service-catalog-export.py",
-                    "description": "Export Service Catalog portfolios, products, provisioned products, and access controls"
-                },
-                "3": {
-                    "name": "AWS Health",
-                    "file": scripts_dir / "health-export.py",
-                    "description": "Export AWS Health events, Personal Health Dashboard, affected resources, and organizational events"
-                },
-                "4": {
-                    "name": "License Manager",
-                    "file": scripts_dir / "license-manager-export.py",
-                    "description": "Export License Manager configurations, usage tracking, grants, and license compliance"
-                },
-                "5": {
-                    "name": "AWS Marketplace",
-                    "file": scripts_dir / "marketplace-export.py",
-                    "description": "Export AWS Marketplace configuration and Private Marketplace settings"
-                },
-                "6": {
-                    "name": "AWS Control Tower",
-                    "file": scripts_dir / "controltower-export.py",
-                    "description": "Export Control Tower landing zone, enabled controls, OUs, and compliance status"
-                },
-                "7": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
-            }
-        },
-        "18": {
             "name": "Output Management",
             "submenu": {
-                "1": {
-                    "name": "Create Output Archive",
-                    "file": None,
-                    "description": "Create a zip archive of all exported files",
-                    "action": "create_archive"
-                },
-                "2": {
-                    "name": "Return to Main Menu",
-                    "file": None,
-                    "description": "Return to the main menu"
-                }
+                "1": {"name": "Create Output Archive", "file": None, "description": "Create a zip archive of all exported files", "action": "create_archive"},
+                "2": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         }
     }
-    
+
     # Verify the script files exist (only for actual scripts)
     for main_option, main_info in menu_structure.items():
         if "submenu" in main_info:
+            # Check first level submenus
             for sub_option, sub_info in main_info["submenu"].items():
-                if sub_info.get("file") and not sub_info["file"].exists():
-                    print(f"Warning: Script file {sub_info['file']} for submenu option {main_option}.{sub_option} ({sub_info['name']}) not found!")
+                if "submenu" in sub_info:
+                    # Check nested submenus
+                    for nested_option, nested_info in sub_info["submenu"].items():
+                        if nested_info.get("file") and not nested_info["file"].exists():
+                            print(f"Warning: Script file {nested_info['file']} not found!")
+                elif sub_info.get("file") and not sub_info["file"].exists():
+                    print(f"Warning: Script file {sub_info['file']} not found!")
         elif main_info.get("file") and main_info["file"] is not None and not main_info["file"].exists():
-            print(f"Warning: Script file {main_info['file']} for main menu option {main_option} ({main_info['name']}) not found!")
-    
+            print(f"Warning: Script file {main_info['file']} not found!")
+
     return menu_structure
 
 def display_main_menu():
@@ -1122,34 +584,37 @@ def display_main_menu():
         print(f"{option}. {info['name']}")
     
     # Add exit option
-    exit_option = str(len(menu_structure) + 1)
-    print(f"{exit_option}. Exit")
-    
-    return menu_structure, exit_option
+    print("x. Exit")
+
+    return menu_structure, 'x'
 
 def display_submenu(submenu, category_name):
     """
     Display a submenu for a specific category.
-    
+
     Args:
         submenu (dict): The submenu options
         category_name (str): The name of the category
-        
+
     Returns:
         dict: The submenu structure
     """
     # Clear the screen
     clear_screen()
-    
+
     print(f"====================================================================")
     print(f"                  {category_name.upper()}")
     print(f"====================================================================")
-    
+
     # Display the submenu options
     print("\nSelect an option:")
     for option, info in submenu.items():
-        print(f"{option}. {info['name']} - {info['description']}")
-    
+        # Handle items with or without descriptions
+        if 'description' in info:
+            print(f"{option}. {info['name']} - {info['description']}")
+        else:
+            print(f"{option}. {info['name']}")
+
     return submenu
 
 
@@ -1250,7 +715,7 @@ def navigate_menus():
             user_choice = input("> ")
             
             # Exit option
-            if user_choice == exit_option:
+            if user_choice.lower() == exit_option.lower():
                 clear_screen()
                 print("Exiting StratusScan. Thank you for using the tool.")
                 break

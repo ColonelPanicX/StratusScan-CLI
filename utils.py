@@ -222,9 +222,10 @@ def is_aws_region(region: str) -> bool:
     Returns:
         bool: True if valid AWS region, False otherwise
     """
-    # Basic check for AWS region format
+    # Basic check for AWS region format (supports both Commercial and GovCloud)
     import re
-    pattern = r'^[a-z]{2}-[a-z]+-[0-9]$'
+    # Pattern supports: us-east-1, us-gov-west-1, ap-southeast-2, etc.
+    pattern = r'^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$'
     return bool(re.match(pattern, region)) or region in DEFAULT_REGIONS
 
 def validate_aws_region(region: str) -> bool:
@@ -249,12 +250,14 @@ def validate_aws_region(region: str) -> bool:
 
 def get_aws_regions() -> List[str]:
     """
-    Get list of default AWS regions.
+    Get list of default AWS regions for the current partition.
+    Partition-aware: Returns GovCloud regions when in GovCloud, Commercial regions otherwise.
 
     Returns:
         list: List of AWS region names
     """
-    return DEFAULT_REGIONS.copy()
+    partition = detect_partition()
+    return get_partition_regions(partition)
 
 def is_aws_commercial_environment() -> bool:
     """
@@ -528,21 +531,34 @@ def get_service_disability_reason(service_name: str) -> Optional[str]:
     
     return None
 
-def get_partition_regions(partition: str = 'aws') -> List[str]:
+def get_partition_regions(partition: str = 'aws', all_regions: bool = False) -> List[str]:
     """
     Get available regions for a specific AWS partition.
 
     Args:
         partition: AWS partition ('aws' or 'aws-us-gov')
+        all_regions: If True, query EC2 for all regions; if False, return default subset
 
     Returns:
         list: List of region names for the partition
     """
     if partition == 'aws-us-gov':
+        # GovCloud only has 2 regions
         return ['us-gov-west-1', 'us-gov-east-1']
     elif partition == 'aws':
-        # Standard commercial regions
-        return DEFAULT_REGIONS
+        if all_regions:
+            # Query EC2 for all Commercial regions
+            try:
+                ec2 = get_boto3_client('ec2', region_name='us-east-1')
+                response = ec2.describe_regions(AllRegions=True)
+                regions = [region['RegionName'] for region in response['Regions']]
+                return sorted(regions)
+            except Exception as e:
+                log_warning(f"Could not query all regions from EC2, using default list: {e}")
+                return DEFAULT_REGIONS
+        else:
+            # Return default subset of commercial regions
+            return DEFAULT_REGIONS
     else:
         log_warning(f"Unknown partition: {partition}, returning commercial regions")
         return DEFAULT_REGIONS
@@ -972,13 +988,18 @@ def check_aws_region_access(region: str) -> bool:
 def get_available_aws_regions() -> List[str]:
     """
     Get list of AWS regions that are currently accessible.
+    Partition-aware: Returns GovCloud regions when in GovCloud, Commercial regions otherwise.
 
     Returns:
         list: List of accessible AWS region names
     """
+    # Detect partition and get appropriate regions
+    partition = detect_partition()
+    partition_regions = get_partition_regions(partition)
+
     available_regions = []
 
-    for region in DEFAULT_REGIONS:
+    for region in partition_regions:
         if check_aws_region_access(region):
             available_regions.append(region)
         else:
