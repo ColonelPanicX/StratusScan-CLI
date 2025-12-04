@@ -47,6 +47,7 @@ dependencies = [
     "pandas>=2.0.0",           # Data manipulation and analysis
     "openpyxl>=3.1.0",         # Excel file creation
     "python-dateutil>=2.8.2",  # Date/time utilities
+    "questionary>=2.0.0",      # Interactive CLI prompts
 ]
 
 # Optional dependencies for different use cases
