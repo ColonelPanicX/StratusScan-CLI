@@ -17,6 +17,7 @@ Features:
 Output: Multi-worksheet Excel file with services categorized by type
 """
 
+import argparse
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
@@ -680,6 +681,46 @@ def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.
 
 def main():
     """Main execution function."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='AWS Services In Use Discovery with Smart Scan Integration',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Interactive mode (default)
+  python3 services-in-use-export.py
+
+  # Auto-launch Smart Scan with interactive selection
+  python3 services-in-use-export.py --smart-scan
+
+  # Skip Smart Scan prompt entirely
+  python3 services-in-use-export.py --no-smart-scan
+
+  # Run Quick Scan (all recommended scripts) automatically
+  python3 services-in-use-export.py --smart-scan --quick-scan
+        """
+    )
+
+    parser.add_argument(
+        '--smart-scan',
+        action='store_true',
+        help='Automatically launch Smart Scan after service discovery'
+    )
+
+    parser.add_argument(
+        '--no-smart-scan',
+        action='store_true',
+        help='Skip Smart Scan prompt (discovery only)'
+    )
+
+    parser.add_argument(
+        '--quick-scan',
+        action='store_true',
+        help='Run Quick Scan (all recommended scripts) without interactive selection'
+    )
+
+    args = parser.parse_args()
+
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
@@ -783,6 +824,101 @@ def main():
             print(f"  └─ {item['Details']}")
 
     utils.log_success("Services discovery completed successfully")
+
+    # Smart Scan integration - prompt user to run recommended scripts
+    # Skip if --no-smart-scan flag provided
+    if args.no_smart_scan:
+        utils.log_info("Smart Scan skipped (--no-smart-scan flag)")
+        return
+
+    try:
+        from smart_scan import (
+            analyze_services,
+            interactive_select,
+            execute_scripts,
+            QUESTIONARY_AVAILABLE,
+        )
+
+        print("\n" + "="*60)
+        print("SMART SCAN - Intelligent Script Recommendations")
+        print("="*60)
+        print()
+        print("Smart Scan can analyze your discovered services and recommend")
+        print("relevant export scripts to run for comprehensive AWS auditing.")
+        print()
+
+        # Determine if we should launch Smart Scan
+        if args.smart_scan:
+            # Auto-launch via CLI flag
+            launch_smart_scan = 'y'
+            utils.log_info("Auto-launching Smart Scan (--smart-scan flag)")
+        else:
+            # Interactive prompt
+            launch_smart_scan = input("Launch Smart Scan analyzer? (y/n): ").strip().lower()
+
+        if launch_smart_scan == 'y':
+            utils.log_info("Launching Smart Scan analyzer...")
+
+            # Analyze the services export we just created
+            recommendations = analyze_services(filename, include_always_run=True)
+
+            if not recommendations or not recommendations.get("all_scripts"):
+                utils.log_warning("No script recommendations generated")
+            else:
+                # Show quick stats
+                stats = recommendations.get("coverage_stats", {})
+                print()
+                print(f"✓ Found {stats.get('services_with_scripts', 0)} services with export scripts")
+                print(f"✓ {stats.get('total_scripts_recommended', 0)} scripts recommended")
+                print()
+
+                # Determine selection method
+                if args.quick_scan:
+                    # Quick Scan mode - run all recommended scripts
+                    utils.log_info("Quick Scan mode - running all recommended scripts")
+                    selected_scripts = recommendations.get("all_scripts", set())
+                elif QUESTIONARY_AVAILABLE:
+                    # Interactive selection if questionary available
+                    utils.log_info("Starting interactive script selection...")
+                    selected_scripts = interactive_select(recommendations)
+                else:
+                    # Fallback - no questionary, run all scripts
+                    utils.log_warning("Questionary not installed - defaulting to Quick Scan")
+                    selected_scripts = recommendations.get("all_scripts", set())
+
+                if selected_scripts:
+                        print()
+                        print(f"Executing {len(selected_scripts)} selected scripts...")
+                        print()
+
+                        # Execute the selected scripts
+                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True)
+
+                        # Show final summary
+                        print()
+                        print("="*60)
+                        print("SMART SCAN COMPLETE")
+                        print("="*60)
+                        print(f"Total Scripts: {summary['total']}")
+                        print(f"Successful: {summary['successful']}")
+                        print(f"Failed: {summary['failed']}")
+                        print(f"Success Rate: {summary['success_rate']:.1f}%")
+                        print("="*60)
+                        print()
+
+                        utils.log_success("Smart Scan batch execution completed")
+                else:
+                    utils.log_info("Smart Scan cancelled by user")
+
+        else:
+            utils.log_info("Smart Scan skipped")
+
+    except ImportError:
+        # Smart Scan not available - silently continue
+        pass
+    except Exception as e:
+        # Don't fail the entire script if Smart Scan has issues
+        utils.log_warning(f"Smart Scan encountered an error (continuing): {e}")
 
 
 if __name__ == "__main__":
