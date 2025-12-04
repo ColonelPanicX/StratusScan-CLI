@@ -52,6 +52,27 @@
 
 ## To Do
 
+### HIGH PRIORITY: Smart Scan Feature (NEW!)
+**Project Plan:** `.collab/project-plans/smart-scan-feature.md`
+**Estimated Effort:** 13-15 hours
+**Target Version:** v3.2.0
+
+Interactive script recommendation and batch execution based on service discovery.
+
+**Quick Summary:**
+- User runs services-in-use-export.py
+- Prompt to launch Smart Scan analysis
+- Interactive selection: Quick Scan / Custom / View Checklist / Save
+- Batch execution with progress tracking
+- Seamless workflow integration
+
+**Phases:**
+- [ ] Phase 1: Core Infrastructure (3 hours) - Service-script mapping
+- [ ] Phase 2: Interactive UI (4 hours) - Questionary-based selection
+- [ ] Phase 3: Batch Execution (2 hours) - Script runner with progress
+- [ ] Phase 4: Integration (2 hours) - Menu and services-in-use integration
+- [ ] Phase 5: Polish & Documentation (2 hours) - Testing and docs
+
 ### HIGH PRIORITY: Resource Dependency Mapping
 - [ ] Define requirements and scope (user input needed)
 - [ ] Design dependency graph infrastructure
