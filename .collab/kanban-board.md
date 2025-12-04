@@ -2,7 +2,8 @@
 ---
 
 **Last Updated:** December 4, 2025
-**Current Focus:** Region Selection Partition Awareness Completion & Final Service Coverage
+**Current Version:** v3.1.1
+**Current Focus:** Final Service Coverage & Phase 5 Planning
 
 ---
 
@@ -77,6 +78,21 @@
 ---
 
 ## Done
+
+### v3.1.1 Release - COMPLETE ✅
+**Release Date:** December 4, 2025
+**Release Type:** Patch Release (Quality & Reliability)
+**GitHub Tag:** v3.1.1
+
+**Changes:**
+- Released v3.1.1 completing partition awareness initiative
+- Updated stratusscan.py version from v3.1.0 to v3.1.1
+- Created comprehensive release documentation
+- Tagged and pushed to GitHub successfully
+
+**Release Notes:**
+- `RELEASE_NOTES_v3.1.1.md` - Complete technical release notes
+- `GITHUB_RELEASE_v3.1.1.md` - GitHub release announcement
 
 ### Region Selection Partition Awareness Audit - COMPLETE ✅
 **Completion Date:** December 4, 2025
@@ -181,15 +197,26 @@
 
 ## Notes
 
-### Current Sprint Focus
+### Recent Milestones
+- **v3.1.1 Release:** ✅ COMPLETE (December 4, 2025)
+  - 100% explicit partition awareness achieved (34/34 scripts)
+  - Quality improvement patch release
+  - All documentation and boards updated
+
+- **Region Selection Partition Awareness Audit:** ✅ COMPLETE (December 4, 2025)
+  - Fixed 9 scripts for explicit partition awareness
+  - Zero implicit partition assumptions remain
+  - All 111 scripts now have crystal clear partition detection
+
 - **Multi-Partition Compliance Audit:** ✅ COMPLETE (December 2, 2025)
-  - All 111 scripts now work correctly in both Commercial and GovCloud
+  - All 111 scripts work correctly in both Commercial and GovCloud
   - 62 hardcoded regions replaced with partition-aware code
   - 100% compilation success rate
 
 ### Next Priorities
 - Complete final 8 service exporters (SES/Pinpoint, Cloud Map, X-Ray, etc.)
 - Begin Phase 5 cross-cutting features (resource dependency mapping first)
+- Optional: Test in both AWS Commercial and GovCloud environments
 
 ### Decisions to Make
 - Resource dependency mapping requirements (awaiting user input)
