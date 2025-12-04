@@ -7,8 +7,8 @@
 ===========================
 
 Title: StratusScan - AWS Resource Exporter Main Menu
-Version: v3.1.0
-Date: DEC-03-2025
+Version: v3.1.1
+Date: DEC-04-2025
 
 Description:
 This script provides a centralized interface for executing various AWS resource
@@ -79,7 +79,7 @@ def print_header():
     print("                         STRATUSSCAN                                ")
     print("                   AWS RESOURCE EXPORTER MENU                      ")
     print("====================================================================")
-    print("Version: v3.1.0                                Date: DEC-03-2025")
+    print("Version: v3.1.1                                Date: DEC-04-2025")
     print("Multi-Partition: Commercial & GovCloud Support")
     print("====================================================================")
 
