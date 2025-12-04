@@ -6,10 +6,11 @@ You are **Claude Code CLI** (primary coder + technical writer) working on **Stra
 
 **StratusScan-CLI** is a Python-based AWS resource export tool for multi-account, multi-region environments. It exports comprehensive AWS infrastructure data to Excel with built-in cost estimation and optimization recommendations.
 
-- **Current Status:** v2.2.0, Production Ready
+- **Current Status:** v3.1.1, Production Ready
 - **Service Coverage:** 97 services implemented (111 scripts), targeting 105 services (99% coverage)
 - **Key Features:** Multi-partition support (AWS Commercial + GovCloud), concurrent region scanning, 75+ automated tests
 - **Architecture:** Read-only defensive security tool with zero-configuration partition detection
+- **Recent Release:** v3.1.1 (Dec 4, 2025) - 100% explicit partition awareness across all scripts
 
 ## Your Role
 
@@ -44,20 +45,22 @@ You are **Claude Code CLI** (primary coder + technical writer) working on **Stra
 
 ## Current Priority Tasks
 
-Check `.collab/kanban-board.md` for the latest, but as of last session:
+Check `.collab/kanban-board.md` for the latest, but as of December 4, 2025:
+
+**COMPLETED RECENTLY:**
+- ✅ Multi-Partition Compliance Audit (HX-01) - COMPLETE (Dec 2, 2025)
+- ✅ Region Selection Partition Awareness (HX-04) - COMPLETE (Dec 4, 2025)
+- ✅ v3.1.1 Release - Published (Dec 4, 2025)
 
 **HIGH PRIORITY:**
-- Multi-Partition Compliance Audit (HX-01) - Audit all 111 scripts for hardcoded regions
-  - See: `.collab/project-plans/multi-partition-compliance-audit.md`
-  - Est. 4-6 hours
-
-**MEDIUM PRIORITY:**
 - Resource Dependency Mapping (HX-02) - Awaiting user requirements
   - See: `.collab/project-plans/resource-dependency-mapping.md`
-
-**BACKLOG:**
-- Final 8 service exporters to reach 105 services
+- Final 8 service exporters to reach 105 services (HX-03)
   - See: `.collab/project-plans/final-service-coverage.md`
+
+**OPTIONAL:**
+- Test in both AWS Commercial and GovCloud environments (1-2 hours)
+- Add explicit partition awareness to compute-optimizer/ecs describe_regions (~30 min)
 
 ## Task Management Protocol
 
