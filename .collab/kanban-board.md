@@ -1,9 +1,9 @@
 # Task Manager - StratusScan-CLI
 ---
 
-**Last Updated:** December 4, 2025
-**Current Version:** v3.1.1
-**Current Focus:** Final Service Coverage & Phase 5 Planning
+**Last Updated:** December 9, 2025
+**Current Version:** v3.2.0-dev (Smart Scan enhancements complete)
+**Current Focus:** Smart Scan Refinement & Testing
 
 ---
 
@@ -28,6 +28,15 @@
 - [ ] Cross-account aggregation reports
 - [ ] Tag-based filtering across all exports
 
+### UX/UI Standardization Initiative
+- [ ] **User Prompt Standardization** - Massive effort to standardize all interactive prompts
+  - **Scope:** All 111+ export scripts with region selection or user input
+  - **Goal:** Consistent, option-based prompts across entire codebase
+  - **Impact:** Reduced user errors, professional consistency, better UX
+  - **Estimated Effort:** 20-30 hours across all scripts
+  - **Project Plan:** `.collab/project-plans/prompt-standardization.md`
+  - **Priority:** Medium-High (quality improvement, not blocking functionality)
+
 ### Low-Priority Performance Optimizations
 - [ ] Additional ~20 medium-priority scripts need concurrent scanning upgrade
 - [ ] acm-export.py, api-gateway-export.py, cognito-export.py
@@ -51,27 +60,6 @@
 ---
 
 ## To Do
-
-### HIGH PRIORITY: Smart Scan Feature (NEW!)
-**Project Plan:** `.collab/project-plans/smart-scan-feature.md`
-**Estimated Effort:** 13-15 hours
-**Target Version:** v3.2.0
-
-Interactive script recommendation and batch execution based on service discovery.
-
-**Quick Summary:**
-- User runs services-in-use-export.py
-- Prompt to launch Smart Scan analysis
-- Interactive selection: Quick Scan / Custom / View Checklist / Save
-- Batch execution with progress tracking
-- Seamless workflow integration
-
-**Phases:**
-- [ ] Phase 1: Core Infrastructure (3 hours) - Service-script mapping
-- [ ] Phase 2: Interactive UI (4 hours) - Questionary-based selection
-- [ ] Phase 3: Batch Execution (2 hours) - Script runner with progress
-- [ ] Phase 4: Integration (2 hours) - Menu and services-in-use integration
-- [ ] Phase 5: Polish & Documentation (2 hours) - Testing and docs
 
 ### HIGH PRIORITY: Resource Dependency Mapping
 - [ ] Define requirements and scope (user input needed)
@@ -99,6 +87,88 @@ Interactive script recommendation and batch execution based on service discovery
 ---
 
 ## Done
+
+### Smart Scan Enhancements - COMPLETE ✅
+**Completion Date:** December 9, 2025
+**Session Focus:** Bug fixes and user-requested improvements
+**Related Work:** Smart Scan v3.2.0 feature (completed Dec 4)
+
+**Issues Fixed:**
+1. **File Path Resolution** (analyzer.py)
+   - Fixed services export file not found errors
+   - Enhanced search to check output/, ../output/, and current directory
+   - Handles both project root and scripts/ directory execution
+
+2. **Script Discovery** (executor.py)
+   - Fixed "Script not found" errors during batch execution
+   - Auto-detects whether running from project root or scripts/ directory
+   - Intelligently locates scripts regardless of working directory
+
+3. **Recommendations Worksheet** (services-in-use-export.py) - User Request
+   - Added "Recommended Scripts" worksheet to Excel export
+   - Shows all Smart Scan recommendations with reasons
+   - Includes Priority (Always Run vs Service-Based)
+   - Displays Category and detailed Reason for each script
+   - Console summary shows recommendation counts
+   - Self-contained solution - no file coordination needed
+
+**Files Modified:**
+- `scripts/services-in-use-export.py` - Added create_recommendations_sheet()
+- `scripts/smart_scan/analyzer.py` - Enhanced find_latest_services_export()
+- `scripts/smart_scan/executor.py` - Improved script and output path detection
+
+**Benefits:**
+- Works from any working directory (project root or scripts/)
+- Recommendations persistently documented in Excel export
+- No dependency on external files or complex path coordination
+- Better user experience - see recommendations without running scripts
+
+**Testing:**
+- ✅ All modified files pass Python syntax validation
+- ✅ Comprehensive test suite exists (test_analyzer.py, test_executor.py)
+- 🔲 Live testing with actual AWS environment (pending user verification)
+
+### Smart Scan Feature - COMPLETE ✅
+**Completion Date:** December 4, 2025
+**Actual Time:** 4.25 hours (13-15 hours estimated - **68% time saved!**)
+**Project Plan:** `.collab/project-plans/smart-scan-feature.md`
+**Target Version:** v3.2.0
+
+**Description:**
+Intelligent script recommendation and batch execution based on service discovery.
+Seamlessly integrated into services-in-use workflow with multiple automation levels.
+
+**Implementation Complete:**
+- ✅ Phase 1: Core Infrastructure (1.5 hours) - 160 services mapped to 166 scripts
+- ✅ Phase 2: Interactive UI (2 hours) - Full questionary-based selection
+- ✅ Phase 3: Batch Execution (0.5 hours) - Sequential execution with progress
+- ✅ Phase 4: Integration (0.25 hours) - CLI args + services-in-use integration
+- ✅ Phase 5: Polish & Documentation - Testing and docs complete
+
+**Features Delivered:**
+- 4 new modules (mapping.py, analyzer.py, selector.py, executor.py)
+- 2,700+ lines of production code
+- Interactive selection with questionary
+- Batch execution with real-time progress
+- CLI arguments (--smart-scan, --no-smart-scan, --quick-scan)
+- Comprehensive error handling
+- Full type hints and docstrings
+
+**Key Capabilities:**
+- Automatic script recommendations based on discovered services
+- Interactive category and service-based selection
+- Quick Scan mode (run all recommended)
+- Custom Selection (choose specific scripts)
+- View/Save checklist options
+- Batch execution with progress tracking
+- Execution summary with success/failure stats
+- Multiple automation levels
+
+**Git Commits:**
+- f59682b - Phase 1: Core Infrastructure
+- 6dacdbc - Phase 2: Interactive UI
+- 7aff597 - Phase 3: Batch Execution Engine
+- 73d046b - Phase 4: Integration
 
 ### v3.1.1 Release - COMPLETE ✅
 **Release Date:** December 4, 2025
