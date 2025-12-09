@@ -317,22 +317,22 @@ def get_latest_storage_lens_data(account_id):
 def convert_to_mb(size_in_bytes):
     """
     Convert bytes to megabytes
-    
+
     Args:
         size_in_bytes (int or str): Size in bytes or "Not Available"
-        
+
     Returns:
-        float or str: Size in MB with 2 decimal places or "0" if not available
+        float: Size in MB rounded to 2 decimal places, or 0.0 if not available
     """
     if size_in_bytes == "Not Available" or size_in_bytes == 0:
-        return "0"
-        
+        return 0.0
+
     # Convert bytes to MB (1 MB = 1024 * 1024 bytes)
     try:
         size_in_mb = float(size_in_bytes) / (1024 * 1024)
-        return f"{size_in_mb:.2f}"
+        return round(size_in_mb, 2)
     except (ValueError, TypeError):
-        return "0"
+        return 0.0
 
 @utils.aws_error_handler("Collecting S3 buckets", default_return=[])
 def get_s3_buckets_info(use_storage_lens=False, target_region=None):
