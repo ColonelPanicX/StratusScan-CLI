@@ -818,35 +818,79 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
     export_vpc_peering = choice in [3, 5]
     export_elastic_ip = choice in [4, 5]
 
-    # Ask for AWS region selection
-    print("\n" + "=" * 60)
-    print("AWS Region Selection:")
-    print(f"Available AWS regions: {example_regions}")
-    region_input = input("Would you like all AWS regions (type \"all\") or a specific region (ex. \"us-east-1\")? ").strip().lower()
-    
+    # Ask for AWS region selection with standardized numbered menu
+    print("\n" + "=" * 68)
+    print("REGION SELECTION")
+    print("=" * 68)
+    print()
+    print("Please select which AWS regions to scan:")
+    print()
+    print("1. Default Regions (recommended for most use cases)")
+    print(f"   └─ {example_regions}")
+    print()
+    print("2. All Available Regions")
+    print("   └─ Scans all regions (slower, more comprehensive)")
+    print()
+    print("3. Specific Region")
+    print("   └─ Choose a single region to scan")
+    print()
+
+    # Get user selection
+    while True:
+        try:
+            selection = input("Enter your selection (1-3): ").strip()
+            selection_int = int(selection)
+            if 1 <= selection_int <= 3:
+                break
+            else:
+                print("Please enter a number between 1 and 3.")
+        except ValueError:
+            print("Please enter a valid number (1-3).")
+
     # Get all available AWS regions
     all_available_regions = get_aws_regions()
-    
-    # Determine regions to scan
-    if region_input == "all":
+    default_regions = utils.get_partition_regions(partition, all_regions=False)
+
+    # Process selection
+    if selection_int == 1:
+        # Default regions
+        regions = default_regions
+        region_text = f"default AWS regions ({len(regions)} regions)"
+        region_suffix = ""
+    elif selection_int == 2:
+        # All regions
         regions = all_available_regions
-        region_text = "all AWS regions"
-    else:
-        # Validate the provided region is a AWS region
-        if utils.validate_aws_region(region_input):
-            regions = [region_input]
-            region_text = f"AWS region {region_input}"
-        else:
-            utils.log_warning(f"'{region_input}' is not a valid AWS region. Using all AWS regions.")
-            regions = all_available_regions
-            region_text = "all AWS regions"
+        region_text = f"all AWS regions ({len(regions)} regions)"
+        region_suffix = ""
+    else:  # selection_int == 3
+        # Specific region - show numbered list
+        print()
+        print("=" * 68)
+        print("AVAILABLE REGIONS")
+        print("=" * 68)
+        for idx, region in enumerate(all_available_regions, 1):
+            print(f"{idx}. {region}")
+        print()
+
+        while True:
+            try:
+                region_choice = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
+                region_idx = int(region_choice) - 1
+                if 0 <= region_idx < len(all_available_regions):
+                    selected_region = all_available_regions[region_idx]
+                    regions = [selected_region]
+                    region_text = f"AWS region {selected_region}"
+                    region_suffix = f"-{selected_region}"
+                    break
+                else:
+                    print(f"Please enter a number between 1 and {len(all_available_regions)}.")
+            except ValueError:
+                print("Please enter a valid number.")
     
     # Get current date for file naming
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
-    # Create appropriate filename based on selection and region
-    region_suffix = "" if region_input == "all" else f"-{region_input}"
-    
+
+    # Determine resource type based on choice
     if choice == 1:
         resource_type = "vpc-subnet"
     elif choice == 2:
