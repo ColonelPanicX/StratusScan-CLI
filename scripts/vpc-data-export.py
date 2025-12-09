@@ -217,8 +217,8 @@ def collect_vpc_data_for_region(region):
             # Feature might not be available or enabled
             block_public_access = 'Not Available'
 
-        # Format tags as JSON string for better readability
-        tags_str = utils.format_tags_as_string(vpc_tags) if vpc_tags else 'N/A'
+        # Format tags as string for better readability
+        tags_str = ', '.join([f"{k}={v}" for k, v in vpc_tags.items()]) if vpc_tags else 'N/A'
 
         # Append VPC data
         vpc_data.append({
@@ -410,8 +410,8 @@ def collect_vpc_subnet_data_for_region(region):
             public_status = is_subnet_public(ec2_client, subnet_id, vpc_id)
             public_private = "Public" if public_status else "Private"
 
-            # Format tags as JSON string for better readability
-            tags_str = utils.format_tags_as_string(subnet_tags) if subnet_tags else 'N/A'
+            # Format tags as string for better readability
+            tags_str = ', '.join([f"{k}={v}" for k, v in subnet_tags.items()]) if subnet_tags else 'N/A'
 
             # Append subnet data to the list
             subnet_data.append({
