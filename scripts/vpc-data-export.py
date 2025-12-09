@@ -99,6 +99,171 @@ def get_aws_regions():
         partition = utils.detect_partition()
         return utils.get_partition_regions(partition, all_regions=False)
 
+@utils.aws_error_handler("Collecting VPC data for region", default_return=[])
+def collect_vpc_data_for_region(region):
+    """
+    Collect comprehensive VPC information from a single AWS region.
+
+    Args:
+        region: AWS region to scan
+
+    Returns:
+        list: List of dictionaries with VPC information
+    """
+    vpc_data = []
+
+    # Validate region is AWS
+    if not utils.validate_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nCollecting VPC details in AWS region: {region}")
+
+    # Create EC2 client for this region
+    ec2_client = utils.get_boto3_client('ec2', region_name=region)
+
+    # Get all VPCs in the region
+    vpc_response = ec2_client.describe_vpcs()
+    vpcs = vpc_response.get('Vpcs', [])
+
+    print(f"Found {len(vpcs)} VPCs in AWS region {region}")
+
+    # Process each VPC
+    for vpc in vpcs:
+        vpc_id = vpc['VpcId']
+
+        # Extract VPC name from tags
+        vpc_name = None
+        vpc_tags = {}
+        if 'Tags' in vpc:
+            for tag in vpc['Tags']:
+                if tag['Key'] == 'Name':
+                    vpc_name = tag['Value']
+                vpc_tags[tag['Key']] = tag['Value']
+
+        # Get primary IPv4 CIDR
+        ipv4_cidr = vpc.get('CidrBlock', 'N/A')
+
+        # Get all IPv4 CIDR blocks (including secondary)
+        ipv4_cidrs = [ipv4_cidr]
+        if 'CidrBlockAssociationSet' in vpc:
+            for assoc in vpc['CidrBlockAssociationSet']:
+                cidr = assoc.get('CidrBlock')
+                if cidr and cidr not in ipv4_cidrs:
+                    ipv4_cidrs.append(cidr)
+        ipv4_cidr_combined = ', '.join(ipv4_cidrs)
+
+        # Get IPv6 CIDR if available
+        ipv6_cidr = 'N/A'
+        ipv6_cidrs = []
+        if 'Ipv6CidrBlockAssociationSet' in vpc:
+            for ipv6_assoc in vpc['Ipv6CidrBlockAssociationSet']:
+                if ipv6_assoc.get('Ipv6CidrBlockState', {}).get('State') == 'associated':
+                    cidr = ipv6_assoc.get('Ipv6CidrBlock', 'N/A')
+                    if cidr != 'N/A':
+                        ipv6_cidrs.append(cidr)
+        if ipv6_cidrs:
+            ipv6_cidr = ', '.join(ipv6_cidrs)
+
+        # Get DHCP Options Set
+        dhcp_options_id = vpc.get('DhcpOptionsId', 'N/A')
+
+        # Check if default VPC
+        is_default = vpc.get('IsDefault', False)
+        default_vpc = 'Yes' if is_default else 'No'
+
+        # Get Main Route Table
+        main_route_table = 'N/A'
+        try:
+            rt_response = ec2_client.describe_route_tables(
+                Filters=[
+                    {'Name': 'vpc-id', 'Values': [vpc_id]},
+                    {'Name': 'association.main', 'Values': ['true']}
+                ]
+            )
+            route_tables = rt_response.get('RouteTables', [])
+            if route_tables:
+                main_route_table = route_tables[0]['RouteTableId']
+        except Exception as e:
+            utils.log_warning(f"Error getting main route table for VPC {vpc_id}: {e}")
+
+        # Get Main NACL
+        main_nacl = 'N/A'
+        try:
+            nacl_response = ec2_client.describe_network_acls(
+                Filters=[
+                    {'Name': 'vpc-id', 'Values': [vpc_id]},
+                    {'Name': 'default', 'Values': ['true']}
+                ]
+            )
+            nacls = nacl_response.get('NetworkAcls', [])
+            if nacls:
+                main_nacl = nacls[0]['NetworkAclId']
+        except Exception as e:
+            utils.log_warning(f"Error getting main NACL for VPC {vpc_id}: {e}")
+
+        # Get Block Public Access settings (VPC-level BPA for IPv4)
+        # Note: This is a newer feature and might not be available in all regions/accounts
+        block_public_access = 'N/A'
+        try:
+            bpa_response = ec2_client.describe_vpc_block_public_access_options(
+                VpcIds=[vpc_id]
+            )
+            if 'VpcBlockPublicAccessOptions' in bpa_response and bpa_response['VpcBlockPublicAccessOptions']:
+                bpa_option = bpa_response['VpcBlockPublicAccessOptions'][0]
+                internet_gateway_block_mode = bpa_option.get('InternetGatewayBlockMode', 'N/A')
+                block_public_access = internet_gateway_block_mode
+        except Exception as e:
+            # Feature might not be available or enabled
+            block_public_access = 'Not Available'
+
+        # Format tags as JSON string for better readability
+        tags_str = utils.format_tags_as_string(vpc_tags) if vpc_tags else 'N/A'
+
+        # Append VPC data
+        vpc_data.append({
+            'Region': region,
+            'VPC Name': vpc_name if vpc_name else 'N/A',
+            'VPC ID': vpc_id,
+            'Block Public Access': block_public_access,
+            'IPv4 CIDR': ipv4_cidr_combined,
+            'IPv6 CIDR': ipv6_cidr,
+            'DHCP Option Set': dhcp_options_id,
+            'Main Route Table': main_route_table,
+            'Main NACL': main_nacl,
+            'Default VPC': default_vpc,
+            'Tags': tags_str
+        })
+
+    return vpc_data
+
+def collect_vpc_data(regions):
+    """
+    Collect VPC information from AWS regions (Phase 4B: concurrent).
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with VPC information
+    """
+    print("\n=== COLLECTING VPC INFORMATION ===")
+
+    # Use concurrent region scanning
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=collect_vpc_data_for_region,
+        show_progress=True
+    )
+
+    # Flatten results
+    all_vpc_data = []
+    for vpcs in region_results:
+        all_vpc_data.extend(vpcs)
+
+    utils.log_success(f"Total VPCs collected: {len(all_vpc_data)}")
+    return all_vpc_data
+
 def is_subnet_public(ec2_client, subnet_id, vpc_id):
     """
     Determine if a subnet is public by checking if it has a route to an Internet Gateway.
@@ -189,6 +354,17 @@ def collect_vpc_subnet_data_for_region(region):
         vpc_progress = (vpc_index / len(vpcs)) * 100 if len(vpcs) > 0 else 0
         print(f"  [{vpc_progress:.1f}%] Processing VPC {vpc_index}/{len(vpcs)}: {vpc_id}")
 
+        # Extract VPC name from tags
+        vpc_name = None
+        if 'Tags' in vpc:
+            for tag in vpc['Tags']:
+                if tag['Key'] == 'Name':
+                    vpc_name = tag['Value']
+                    break
+
+        # Get VPC CIDR Block
+        vpc_cidr = vpc.get('CidrBlock', 'N/A')
+
         # Get all subnets for this VPC
         subnet_response = ec2_client.describe_subnets(
             Filters=[
@@ -209,13 +385,14 @@ def collect_vpc_subnet_data_for_region(region):
             if len(subnets) > 1:  # Only show subnet progress if there are multiple subnets
                 print(f"      [{subnet_progress:.1f}%] Processing subnet {subnet_index}/{len(subnets)}: {subnet_id}")
 
-            # Extract subnet name from tags
+            # Extract subnet name and all tags
             subnet_name = None
+            subnet_tags = {}
             if 'Tags' in subnet:
                 for tag in subnet['Tags']:
                     if tag['Key'] == 'Name':
                         subnet_name = tag['Value']
-                        break
+                    subnet_tags[tag['Key']] = tag['Value']
 
             availability_zone = subnet['AvailabilityZone']
             ipv4_cidr = subnet['CidrBlock']
@@ -233,17 +410,23 @@ def collect_vpc_subnet_data_for_region(region):
             public_status = is_subnet_public(ec2_client, subnet_id, vpc_id)
             public_private = "Public" if public_status else "Private"
 
+            # Format tags as JSON string for better readability
+            tags_str = utils.format_tags_as_string(subnet_tags) if subnet_tags else 'N/A'
+
             # Append subnet data to the list
             subnet_data.append({
                 'Region': region,
+                'VPC Name': vpc_name if vpc_name else 'N/A',
                 'VPC ID': vpc_id,
+                'VPC CIDR Block': vpc_cidr,
                 'Subnet ID': subnet_id,
                 'Subnet Name': subnet_name if subnet_name else 'N/A',
                 'Availability Zone': availability_zone,
                 'IPv4 CIDR Block': ipv4_cidr,
                 'IPv4 Address Count': ipv4_address_count,
                 'IPv6 CIDR Block': ipv6_cidr,
-                'Public/Private': public_private
+                'Public/Private': public_private,
+                'Subnet Tags': tags_str
             })
 
     return subnet_data
@@ -693,38 +876,44 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
     
     # Dictionary to hold all DataFrames for export
     data_frames = {}
-    
-    # STEP 1: Collect VPC and Subnet information (if selected)
+
+    # STEP 1: Collect VPC information (if VPC/Subnet selected)
+    if export_vpc_subnet:
+        all_vpc_data = collect_vpc_data(regions)
+        if all_vpc_data:
+            data_frames['VPCs'] = pd.DataFrame(all_vpc_data)
+
+    # STEP 2: Collect VPC and Subnet information (if selected)
     if export_vpc_subnet:
         all_subnet_data = collect_vpc_subnet_data(regions)
         if all_subnet_data:
             data_frames['VPCs and Subnets'] = pd.DataFrame(all_subnet_data)
     
-    # STEP 2: Collect NAT Gateway information (if selected)
+    # STEP 3: Collect NAT Gateway information (if selected)
     if export_nat_gateways:
         all_nat_gateway_data = collect_nat_gateway_data(regions)
         if all_nat_gateway_data:
             data_frames['NAT Gateways'] = pd.DataFrame(all_nat_gateway_data)
-    
-    # STEP 3: Collect VPC Peering information (if selected)
+
+    # STEP 4: Collect VPC Peering information (if selected)
     if export_vpc_peering:
         all_vpc_peering_data = collect_vpc_peering_data(regions)
         if all_vpc_peering_data:
             data_frames['VPC Peering Connections'] = pd.DataFrame(all_vpc_peering_data)
-    
-    # STEP 4: Collect Elastic IP information (if selected)
+
+    # STEP 5: Collect Elastic IP information (if selected)
     if export_elastic_ip:
         all_elastic_ip_data = collect_elastic_ip_data(regions)
         if all_elastic_ip_data:
             data_frames['Elastic IPs'] = pd.DataFrame(all_elastic_ip_data)
-    
-    # STEP 5: Prepare and sanitize all DataFrames
+
+    # STEP 6: Prepare and sanitize all DataFrames
     for sheet_name in data_frames:
         data_frames[sheet_name] = utils.sanitize_for_export(
             utils.prepare_dataframe_for_export(data_frames[sheet_name])
         )
 
-    # STEP 6: Save the Excel file using utils module
+    # STEP 7: Save the Excel file using utils module
     if not data_frames:
         utils.log_warning("No data was collected. Nothing to export.")
         return
