@@ -43,25 +43,30 @@ class ServiceAnalyzer:
         self.recommended_scripts: Dict[str, List[str]] = {}
         self.services_data: Optional[pd.DataFrame] = None
 
-    def find_latest_services_export(self, search_dir: str = ".") -> Optional[str]:
+    def find_latest_services_export(self, search_dir: Optional[str] = None) -> Optional[str]:
         """
         Find the most recent services-in-use export file.
 
         Args:
-            search_dir: Directory to search for export files
+            search_dir: Directory to search (uses utils.get_output_dir() if None)
 
         Returns:
             Path to latest export file, or None if not found
         """
         try:
-            search_path = Path(search_dir)
-            pattern = "*-services-in-use-export-*.xlsx"
+            pattern = "*-services-in-use-*-export-*.xlsx"
 
-            # Find all matching files
-            export_files = list(search_path.glob(pattern))
+            # Use utils to get the proper output directory
+            if search_dir is None:
+                output_dir = utils.get_output_dir()
+            else:
+                output_dir = Path(search_dir)
+
+            # Find all matching files in output directory
+            export_files = list(output_dir.glob(pattern))
 
             if not export_files:
-                utils.log_warning(f"No services-in-use export files found in {search_dir}")
+                utils.log_warning(f"No services-in-use export files found in {output_dir}")
                 return None
 
             # Sort by modification time (newest first)
@@ -323,6 +328,8 @@ class ServiceAnalyzer:
 def find_latest_services_export(search_dir: str = ".") -> Optional[str]:
     """
     Find the most recent services-in-use export file.
+
+    Searches in multiple locations including output/ directory.
 
     Args:
         search_dir: Directory to search for export files

@@ -1082,6 +1082,22 @@ def get_stratusscan_root() -> Path:
         # Assume we're already at the root
         return script_dir
 
+def get_scripts_dir() -> Path:
+    """
+    Get the path to the scripts directory.
+
+    Returns:
+        Path: Path to the scripts directory
+    """
+    # Get StratusScan root directory
+    root_dir = get_stratusscan_root()
+
+    # Define the scripts directory path
+    scripts_dir = root_dir / "scripts"
+
+    return scripts_dir
+
+
 def get_output_dir() -> Path:
     """
     Get the path to the output directory and create it if it doesn't exist.

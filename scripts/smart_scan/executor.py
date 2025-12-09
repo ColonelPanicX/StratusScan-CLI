@@ -49,7 +49,7 @@ class ScriptExecutor:
     def __init__(
         self,
         scripts: Set[str],
-        scripts_dir: str = "scripts",
+        scripts_dir: Optional[str] = None,
         python_executable: str = "python3",
     ):
         """
@@ -57,11 +57,17 @@ class ScriptExecutor:
 
         Args:
             scripts: Set of script filenames to execute
-            scripts_dir: Directory containing the scripts
+            scripts_dir: Directory containing the scripts (uses utils.get_scripts_dir() if None)
             python_executable: Python interpreter to use
         """
         self.scripts = sorted(scripts)  # Sort for consistent ordering
-        self.scripts_dir = Path(scripts_dir)
+
+        # Use utils to get the proper scripts directory
+        if scripts_dir is None:
+            self.scripts_dir = utils.get_scripts_dir()
+        else:
+            self.scripts_dir = Path(scripts_dir)
+
         self.python_executable = python_executable
         self.results: List[ExecutionResult] = []
         self.total_scripts = len(self.scripts)
@@ -192,20 +198,21 @@ class ScriptExecutor:
         Returns:
             Path to output file if found, None otherwise
         """
-        # Look for Excel files created in the last minute
+        # Look for Excel files in the output directory
         try:
-            current_dir = Path(".")
-            xlsx_files = list(current_dir.glob("*.xlsx"))
+            # Use utils to get the proper output directory
+            output_dir = utils.get_output_dir()
 
-            if not xlsx_files:
-                return None
+            # Find all Excel files
+            xlsx_files = list(output_dir.glob("*.xlsx"))
 
-            # Sort by modification time, newest first
-            xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            if xlsx_files:
+                # Sort by modification time, newest first
+                xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                # Return the newest file
+                return str(xlsx_files[0])
 
-            # Return the newest file
-            newest = xlsx_files[0]
-            return str(newest)
+            return None
 
         except Exception:
             return None

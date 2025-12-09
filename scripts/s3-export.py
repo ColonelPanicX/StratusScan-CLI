@@ -196,15 +196,17 @@ def check_storage_lens_availability():
 def get_latest_storage_lens_data(account_id):
     """
     Get the latest available Storage Lens data from AWS
-    
+
     Args:
         account_id (str): AWS account ID
-        
+
     Returns:
         dict: Dictionary mapping bucket names to their metrics
     """
     try:
         # Create S3 Control client in AWS region
+        # S3Control is a global service - use partition-aware home region
+        home_region = utils.get_partition_default_region()
         s3control_client = utils.get_boto3_client('s3control', region_name=home_region)
         
         # List Storage Lens configurations

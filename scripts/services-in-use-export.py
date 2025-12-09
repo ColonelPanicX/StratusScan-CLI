@@ -679,6 +679,88 @@ def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.
     return sheets
 
 
+def create_recommendations_sheet(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+    """
+    Generate Smart Scan recommendations based on discovered services.
+
+    Args:
+        services: Dictionary of discovered services
+
+    Returns:
+        DataFrame with recommended export scripts
+    """
+    try:
+        from smart_scan import analyze_services, map_services_to_scripts
+        from smart_scan.mapping import ALWAYS_RUN_SCRIPTS, get_category_for_script
+
+        # Extract just service names
+        service_names = set(services.keys())
+
+        # Map services to scripts
+        service_script_mapping = map_services_to_scripts(service_names)
+
+        # Build recommendations list
+        recommendations = []
+
+        # Add always-run scripts (security/compliance baseline)
+        for script in sorted(ALWAYS_RUN_SCRIPTS):
+            category = get_category_for_script(script)
+            recommendations.append({
+                'Script Name': script,
+                'Category': category,
+                'Priority': 'Always Run',
+                'Reason': 'Security & compliance baseline - recommended for all accounts'
+            })
+
+        # Add service-based recommendations
+        for service_name, scripts in sorted(service_script_mapping.items()):
+            for script in sorted(scripts):
+                # Skip if already added as always-run
+                if script in ALWAYS_RUN_SCRIPTS:
+                    continue
+
+                category = get_category_for_script(script)
+                resource_info = services.get(service_name, {})
+                count = resource_info.get('count', 0)
+                unit = resource_info.get('unit', 'resources')
+
+                recommendations.append({
+                    'Script Name': script,
+                    'Category': category,
+                    'Priority': 'Service-Based',
+                    'Reason': f'{service_name} detected ({count} {unit})'
+                })
+
+        if recommendations:
+            df = pd.DataFrame(recommendations)
+            # Sort by priority (Always Run first) then by category
+            df['_sort_priority'] = df['Priority'].map({'Always Run': 0, 'Service-Based': 1})
+            df = df.sort_values(['_sort_priority', 'Category', 'Script Name'])
+            df = df.drop('_sort_priority', axis=1)
+            return df
+        else:
+            # Return empty DataFrame with proper structure
+            return pd.DataFrame(columns=['Script Name', 'Category', 'Priority', 'Reason'])
+
+    except ImportError:
+        # Smart Scan not available - return empty DataFrame with note
+        utils.log_warning("Smart Scan module not available - skipping recommendations")
+        return pd.DataFrame([{
+            'Script Name': 'N/A',
+            'Category': 'N/A',
+            'Priority': 'N/A',
+            'Reason': 'Smart Scan module not installed'
+        }])
+    except Exception as e:
+        utils.log_warning(f"Error generating recommendations: {e}")
+        return pd.DataFrame([{
+            'Script Name': 'Error',
+            'Category': 'N/A',
+            'Priority': 'N/A',
+            'Reason': f'Error: {str(e)}'
+        }])
+
+
 def main():
     """Main execution function."""
     # Parse command-line arguments
@@ -787,9 +869,15 @@ Examples:
 
     category_sheets = create_category_sheets(services)
 
+    # Generate Smart Scan recommendations
+    utils.log_info("Generating Smart Scan script recommendations...")
+    df_recommendations = create_recommendations_sheet(services)
+    df_recommendations = utils.prepare_dataframe_for_export(df_recommendations)
+
     # Combine all sheets
     dataframes = {
         'Summary': df_summary,
+        'Recommended Scripts': df_recommendations,  # Add recommendations as 2nd sheet
         'All Services': df_details,
     }
 
@@ -807,6 +895,9 @@ Examples:
     utils.log_info(f"Exporting to {filename}...")
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
+    # Get the actual file path where it was saved (utils saves to output/ directory)
+    actual_filepath = utils.get_output_filepath(filename)
+
     # Log summary
     utils.log_export_summary(
         'Services In Use',
@@ -822,6 +913,23 @@ Examples:
         print(f"{item['Metric']:.<40} {item['Value']}")
         if item.get('Details'):
             print(f"  └─ {item['Details']}")
+
+    # Show recommendations summary
+    recommendation_count = len(df_recommendations)
+    if recommendation_count > 0:
+        print()
+        print("="*60)
+        print("SMART SCAN RECOMMENDATIONS")
+        print("="*60)
+        print(f"✓ {recommendation_count} export scripts recommended")
+        print(f"  └─ See 'Recommended Scripts' worksheet in Excel export")
+        print()
+        always_run = len([r for r in df_recommendations.to_dict('records') if r.get('Priority') == 'Always Run'])
+        service_based = recommendation_count - always_run
+        if always_run > 0:
+            print(f"  • {always_run} Always-Run scripts (security baseline)")
+        if service_based > 0:
+            print(f"  • {service_based} Service-Based scripts (for discovered services)")
 
     utils.log_success("Services discovery completed successfully")
 
@@ -860,7 +968,8 @@ Examples:
             utils.log_info("Launching Smart Scan analyzer...")
 
             # Analyze the services export we just created
-            recommendations = analyze_services(filename, include_always_run=True)
+            # Use the actual filepath we saved above
+            recommendations = analyze_services(str(actual_filepath), include_always_run=True)
 
             if not recommendations or not recommendations.get("all_scripts"):
                 utils.log_warning("No script recommendations generated")
