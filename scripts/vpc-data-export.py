@@ -204,18 +204,20 @@ def collect_vpc_data_for_region(region):
 
         # Get Block Public Access settings (VPC-level BPA for IPv4)
         # Note: This is a newer feature and might not be available in all regions/accounts
-        block_public_access = 'N/A'
+        block_public_access = 'Off'  # Default to 'Off' to match AWS console behavior
         try:
             bpa_response = ec2_client.describe_vpc_block_public_access_options(
                 VpcIds=[vpc_id]
             )
             if 'VpcBlockPublicAccessOptions' in bpa_response and bpa_response['VpcBlockPublicAccessOptions']:
                 bpa_option = bpa_response['VpcBlockPublicAccessOptions'][0]
-                internet_gateway_block_mode = bpa_option.get('InternetGatewayBlockMode', 'N/A')
-                block_public_access = internet_gateway_block_mode
+                internet_gateway_block_mode = bpa_option.get('InternetGatewayBlockMode', 'off')
+                # Capitalize first letter to match AWS console display
+                block_public_access = internet_gateway_block_mode.capitalize() if internet_gateway_block_mode else 'Off'
         except Exception as e:
-            # Feature might not be available or enabled
-            block_public_access = 'Not Available'
+            # If API call fails entirely (feature not available in region), show 'Off'
+            # This matches AWS console behavior where the feature just shows as disabled
+            block_public_access = 'Off'
 
         # Format tags as string for better readability
         tags_str = ', '.join([f"{k}={v}" for k, v in vpc_tags.items()]) if vpc_tags else 'N/A'
