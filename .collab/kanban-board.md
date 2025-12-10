@@ -2,8 +2,8 @@
 ---
 
 **Last Updated:** December 9, 2025
-**Current Version:** v3.2.0-dev (Smart Scan enhancements complete)
-**Current Focus:** Smart Scan Refinement & Testing
+**Current Version:** v3.2.0-dev (VPC Export Enhanced + Region Selection UX)
+**Current Focus:** UX Standardization & Script Enhancements
 
 ---
 
@@ -87,6 +87,55 @@
 ---
 
 ## Done
+
+### VPC Export Enhancement & Region Selection Standardization - COMPLETE ✅
+**Completion Date:** December 9, 2025 (Evening Session)
+**Duration:** ~3 hours
+**Focus:** vpc-data-export.py enhancements and UX standardization pilot
+
+**Enhancements Delivered:**
+1. **New VPCs Worksheet** - Comprehensive VPC-level details
+   - VPC Name, VPC ID, Block Public Access
+   - IPv4 CIDR (primary + secondary), IPv6 CIDR
+   - DHCP Option Set, Main Route Table, Main NACL
+   - Default VPC indicator, Tags
+   - 11 detailed columns per VPC
+
+2. **Enhanced VPCs and Subnets Worksheet** - Added missing fields
+   - VPC Name (user-requested)
+   - VPC CIDR Block (user-requested)
+   - Subnet Tags (user-requested)
+   - All fields now match AWS console display
+
+3. **Standardized Region Selection Prompt** - First implementation
+   - Numbered menu (1. Default, 2. All, 3. Specific)
+   - Partition-aware region examples
+   - Visual hierarchy with box separators
+   - Clear option descriptions
+   - Error handling with retry loops
+   - Template for 111+ script standardization initiative
+
+4. **Bug Fixes:**
+   - Fixed format_tags_as_string error (non-existent function)
+   - Fixed Block Public Access display ("Not Available" → "Off")
+   - Fixed variable scoping in region selection
+
+**Git Commits:**
+- 2671254 - Fix format_tags_as_string error
+- 926f762 - Implement standardized region selection prompt
+- e7b8711 - Fix Block Public Access display to match AWS console
+
+**Files Modified:**
+- `scripts/vpc-data-export.py` - Major enhancements (145 lines changed)
+
+**Impact:**
+- vpc-data-export.py now production-ready with comprehensive VPC data
+- First script with standardized region selection (110 more to go)
+- Template established for UX Standardization Initiative
+
+**User Feedback:**
+> "Yoooooooo, that region select menu is DOPE. Love it"
+> "Everything worked GREAT"
 
 ### Smart Scan Enhancements - COMPLETE ✅
 **Completion Date:** December 9, 2025
