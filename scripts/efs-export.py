@@ -332,8 +332,8 @@ def scan_access_points_in_region(region: str) -> List[Dict[str, Any]]:
 
             # POSIX user
             posix_user = ap.get('PosixUser', {})
-            uid = posix_user.get('Uid', 'N/A')
-            gid = posix_user.get('Gid', 'N/A')
+            uid = str(posix_user.get('Uid', 'N/A'))
+            gid = str(posix_user.get('Gid', 'N/A'))
 
             # Root directory
             root_directory = ap.get('RootDirectory', {})
