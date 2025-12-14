@@ -435,44 +435,83 @@ def export_elasticache_data(account_id: str, account_name: str):
         account_id: The AWS account ID
         account_name: The AWS account name
     """
-    # Ask for region selection
-    print("\n" + "=" * 60)
-    print("AWS Region Selection:")
-
     # Detect partition for region examples
     partition = utils.detect_partition()
     if partition == 'aws-us-gov':
-        print("Available AWS GovCloud regions: us-gov-west-1, us-gov-east-1")
         example_regions = "us-gov-west-1, us-gov-east-1"
     else:
-        print("Available AWS regions: us-east-1, us-west-1, us-west-2, eu-west-1, ap-southeast-1, etc.")
         example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
 
-    region_input = input("Would you like all AWS regions (type \"all\") or a specific region (ex. \"us-east-1\")? ").strip().lower()
+    # Display standardized region selection menu
+    print("\n" + "=" * 68)
+    print("REGION SELECTION")
+    print("=" * 68)
+    print()
+    print("Please select which AWS regions to scan:")
+    print()
+    print("1. Default Regions (recommended for most use cases)")
+    print(f"   └─ {example_regions}")
+    print()
+    print("2. All Available Regions")
+    print("   └─ Scans all regions (slower, more comprehensive)")
+    print()
+    print("3. Specific Region")
+    print("   └─ Choose a single region to scan")
+    print()
 
-    # Get all available AWS regions
+    # Get user selection with validation
+    while True:
+        try:
+            selection = input("Enter your selection (1-3): ").strip()
+            selection_int = int(selection)
+            if 1 <= selection_int <= 3:
+                break
+            else:
+                print("Please enter a number between 1 and 3.")
+        except ValueError:
+            print("Please enter a valid number (1-3).")
+
+    # Get regions based on selection
     all_available_regions = get_aws_regions()
+    default_regions = utils.get_partition_regions(partition, all_regions=False)
 
-    # Determine regions to scan
-    if region_input == "all":
-        regions = all_available_regions
-        region_text = "all AWS regions"
+    # Process selection
+    if selection_int == 1:
+        regions = default_regions
+        region_text = f"default AWS regions ({len(regions)} regions)"
         region_suffix = ""
-    else:
-        # Validate the provided region
-        if utils.validate_aws_region(region_input):
-            regions = [region_input]
-            region_text = f"AWS region {region_input}"
-            region_suffix = f"-{region_input}"
-        else:
-            utils.log_warning(f"'{region_input}' is not a valid AWS region.")
-            utils.log_info(f"Valid AWS regions include: {example_regions}")
-            utils.log_warning("Using all AWS regions instead.")
-            regions = all_available_regions
-            region_text = "all AWS regions"
-            region_suffix = ""
+    elif selection_int == 2:
+        regions = all_available_regions
+        region_text = f"all AWS regions ({len(regions)} regions)"
+        region_suffix = ""
+    else:  # selection_int == 3
+        # Display numbered list of regions
+        print("\n" + "=" * 68)
+        print("AVAILABLE AWS REGIONS")
+        print("=" * 68)
+        print()
+        for idx, region in enumerate(all_available_regions, 1):
+            print(f"{idx:2}. {region}")
+        print()
+
+        # Get region selection with validation
+        while True:
+            try:
+                region_num = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
+                region_idx = int(region_num) - 1
+                if 0 <= region_idx < len(all_available_regions):
+                    selected_region = all_available_regions[region_idx]
+                    regions = [selected_region]
+                    region_text = f"AWS region \"{selected_region}\""
+                    region_suffix = f"-{selected_region}"
+                    break
+                else:
+                    print(f"Please enter a number between 1 and {len(all_available_regions)}.")
+            except ValueError:
+                print(f"Please enter a valid number (1-{len(all_available_regions)}).")
 
     print(f"\nStarting ElastiCache export process for {region_text}...")
+    print("=" * 68)
     print("This may take some time depending on the number of regions and clusters...")
 
     utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")

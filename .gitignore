@@ -3,6 +3,16 @@ CLAUDE.md
 .claude/
 *.claude
 
+# Collaboration and development files (not needed for StratusScan functionality)
+.collab/
+GITHUB_RELEASE*.md
+RELEASE_NOTES*.md
+stratusscan.py.backup
+*.backup
+=2.0.0
+reference/
+.github/workflows/*.disabled
+
 # Python
 __pycache__/
 *.py[cod]

@@ -51,6 +51,7 @@ That's it! Select a resource to export from the menu and follow the prompts. Exp
 - **🔐 Read-Only Operations**: Safe, non-destructive AWS resource scanning
 
 ### Advanced Features
+- **🧠 Smart Scan**: Intelligent script recommendations based on discovered AWS services with batch execution
 - **💰 Cost Estimation**: Built-in cost calculators for RDS, S3, NAT Gateway, and EC2 with pricing data
 - **🎯 Optimization Engine**: Intelligent recommendations for cost savings and resource optimization
 - **🔄 Progress Checkpointing**: Resume interrupted long-running operations automatically
@@ -191,6 +192,108 @@ python scripts/iam-comprehensive-export.py
 ```
 
 Each script will prompt for required information and save output to `output/`.
+
+### Smart Scan - Intelligent Export Automation
+
+**Smart Scan** analyzes your AWS environment and recommends the most relevant export scripts to run based on discovered services. This feature saves time by automating the workflow of discovering services and exporting their data.
+
+#### How It Works
+
+1. **Service Discovery**: Run `services-in-use-export.py` to scan your AWS account
+2. **Automatic Analysis**: Smart Scan analyzes the export to identify which services you're using
+3. **Script Recommendations**: Get a curated list of export scripts matching your active services
+4. **Interactive Selection**: Choose which exports to run (or run all with Quick Scan)
+5. **Batch Execution**: Selected scripts run sequentially with real-time progress tracking
+
+#### Usage Examples
+
+**Interactive Mode (Recommended)**:
+```bash
+python scripts/services-in-use-export.py
+# After service discovery completes, you'll be prompted:
+# "Launch Smart Scan analyzer? (y/n):"
+```
+
+**Automatic Smart Scan**:
+```bash
+python scripts/services-in-use-export.py --smart-scan
+# Automatically launches Smart Scan after service discovery
+```
+
+**Quick Scan (Full Automation)**:
+```bash
+python scripts/services-in-use-export.py --smart-scan --quick-scan
+# Discovers services AND runs all recommended scripts automatically
+```
+
+**Skip Smart Scan**:
+```bash
+python scripts/services-in-use-export.py --no-smart-scan
+# Only run service discovery, skip Smart Scan prompt
+```
+
+#### Interactive Smart Scan Menu
+
+When Smart Scan launches, you'll see a menu with these options:
+
+1. **Quick Scan** - Run all recommended scripts immediately (fastest)
+2. **Custom Selection** - Choose specific scripts by category or service
+3. **View Checklist** - See complete list of recommendations
+4. **Save & Exit** - Save checklist to file for later review
+5. **Exit** - Skip batch execution
+
+#### Features
+
+- **Intelligent Mapping**: 160+ AWS services mapped to 166 export scripts
+- **Service Aliases**: Recognizes service name variations (e.g., "EC2", "Amazon EC2")
+- **Always-Run Scripts**: Core security/compliance scripts (GuardDuty, CloudTrail, IAM, etc.)
+- **Category Grouping**: Scripts organized by function (Compute, Storage, Network, etc.)
+- **Progress Tracking**: Real-time execution status with `[X/Total] (percent%)` display
+- **Execution Summary**: Success/failure stats with duration for each script
+- **Execution Logs**: Detailed logs saved automatically for audit trails
+
+#### Example Workflow
+
+```bash
+# 1. Discover active services
+$ python scripts/services-in-use-export.py --smart-scan
+
+# Smart Scan analyzes your environment...
+# Found 23 active services
+
+# 2. Choose what to run
+Smart Scan Menu:
+  1. Quick Scan (run all 31 recommended scripts)
+  2. Custom Selection
+  3. View Checklist
+  4. Save & Exit
+  5. Exit
+
+# 3. Watch batch execution
+Executing Scripts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[1/31] (3%) ec2-export.py ✓ Success (2m 15s)
+[2/31] (6%) s3-export.py ✓ Success (1m 45s)
+[3/31] (10%) rds-export.py ✓ Success (3m 30s)
+...
+
+# 4. Review summary
+Execution Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Total Scripts: 31
+Successful: 29
+Failed: 2
+Total Time: 42m 15s
+```
+
+#### Execution Logs
+
+All batch executions are automatically logged to:
+```
+smart-scan-execution-YYYY-MM-DD-HHMMSS.log
+```
+
+The log includes script names, success/failure status, duration, output files, and error messages.
 
 ### Region Selection
 

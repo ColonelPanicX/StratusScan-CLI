@@ -252,30 +252,76 @@ def main():
         else:
             example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
 
-        # Get AWS region preference from user
-        print("\nAWS Region Selection:")
-        print("Would you like the information for all AWS regions or a specific region?")
-        print(f"Available AWS regions: {example_regions}")
-        region_choice = input("If all, write \"all\", or specify an AWS region name: ").strip().lower()
+        # Display standardized region selection menu
+        print("\n" + "=" * 68)
+        print("REGION SELECTION")
+        print("=" * 68)
+        print()
+        print("Please select which AWS regions to scan:")
+        print()
+        print("1. Default Regions (recommended for most use cases)")
+        print(f"   └─ {example_regions}")
+        print()
+        print("2. All Available Regions")
+        print("   └─ Scans all regions (slower, more comprehensive)")
+        print()
+        print("3. Specific Region")
+        print("   └─ Choose a single region to scan")
+        print()
 
-        if region_choice != "all":
-            if not is_valid_aws_region(region_choice):
-                utils.log_warning(f"'{region_choice}' is not a valid AWS region.")
-                utils.log_info(f"Valid AWS regions include: {example_regions}")
-                utils.log_info("Checking all AWS regions instead.")
-                region_choice = "all"
-        
-        # Determine AWS regions to process
-        if region_choice == "all":
-            utils.log_info("Retrieving available AWS regions...")
-            regions = get_aws_regions()
-            if not regions:
-                utils.log_error("No AWS regions found. Please check your AWS credentials and permissions.")
-                sys.exit(1)
-            utils.log_info(f"Found {len(regions)} AWS regions to scan: {', '.join(regions)}")
-        else:
-            regions = [region_choice]
-            utils.log_info(f"Scanning only the {region_choice} AWS region.")
+        # Get user selection with validation
+        while True:
+            try:
+                selection = input("Enter your selection (1-3): ").strip()
+                selection_int = int(selection)
+                if 1 <= selection_int <= 3:
+                    break
+                else:
+                    print("Please enter a number between 1 and 3.")
+            except ValueError:
+                print("Please enter a valid number (1-3).")
+
+        # Get regions based on selection
+        all_available_regions = get_aws_regions()
+        default_regions = utils.get_partition_regions(partition, all_regions=False)
+
+        # Process selection
+        if selection_int == 1:
+            regions = default_regions
+            region_text = f"default AWS regions ({len(regions)} regions)"
+            region_suffix = ""
+        elif selection_int == 2:
+            regions = all_available_regions
+            region_text = f"all AWS regions ({len(regions)} regions)"
+            region_suffix = ""
+        else:  # selection_int == 3
+            # Display numbered list of regions
+            print("\n" + "=" * 68)
+            print("AVAILABLE AWS REGIONS")
+            print("=" * 68)
+            print()
+            for idx, region in enumerate(all_available_regions, 1):
+                print(f"{idx:2}. {region}")
+            print()
+
+            # Get region selection with validation
+            while True:
+                try:
+                    region_num = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
+                    region_idx = int(region_num) - 1
+                    if 0 <= region_idx < len(all_available_regions):
+                        selected_region = all_available_regions[region_idx]
+                        regions = [selected_region]
+                        region_text = f"AWS region \"{selected_region}\""
+                        region_suffix = f"_{selected_region}"
+                        break
+                    else:
+                        print(f"Please enter a number between 1 and {len(all_available_regions)}.")
+                except ValueError:
+                    print(f"Please enter a valid number (1-{len(all_available_regions)}).")
+
+        print(f"\nProcessing {region_text}...")
+        print("=" * 68)
         
         # Collect snapshot data from all specified AWS regions (Phase 4B: concurrent)
         utils.log_info("Collecting EBS snapshot data from all regions...")

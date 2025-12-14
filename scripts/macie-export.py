@@ -575,26 +575,77 @@ def main():
     account_id, account_name = utils.get_account_info()
     utils.log_info(f"Account: {account_name} ({account_id})")
 
-    # Region selection
-    print("\n=== Region Selection ===")
-    print("1. All regions")
-    print("2. Specific region")
-    region_choice = input("Enter your choice (1-2): ").strip()
-
-    if region_choice == '1':
-        # Get all AWS regions
-        regions = utils.get_all_aws_regions('macie2')
-        utils.log_info(f"Scanning all {len(regions)} AWS regions")
-    elif region_choice == '2':
-        region = input("Enter AWS region (e.g., us-east-1): ").strip()
-        if not utils.validate_aws_region(region):
-            utils.log_error(f"Invalid AWS region: {region}")
-            return
-        regions = [region]
-        utils.log_info(f"Scanning region: {region}")
+    # Detect partition for region examples
+    partition = utils.detect_partition()
+    if partition == 'aws-us-gov':
+        example_regions = "us-gov-west-1, us-gov-east-1"
     else:
-        utils.log_error("Invalid choice")
-        return
+        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
+
+    # Display standardized region selection menu
+    print("\n" + "=" * 68)
+    print("REGION SELECTION")
+    print("=" * 68)
+    print()
+    print("Please select which AWS regions to scan:")
+    print()
+    print("1. Default Regions (recommended for most use cases)")
+    print(f"   └─ {example_regions}")
+    print()
+    print("2. All Available Regions")
+    print("   └─ Scans all regions (slower, more comprehensive)")
+    print()
+    print("3. Specific Region")
+    print("   └─ Choose a single region to scan")
+    print()
+
+    # Get user selection with validation
+    while True:
+        try:
+            selection = input("Enter your selection (1-3): ").strip()
+            selection_int = int(selection)
+            if 1 <= selection_int <= 3:
+                break
+            else:
+                print("Please enter a number between 1 and 3.")
+        except ValueError:
+            print("Please enter a valid number (1-3).")
+
+    # Get regions based on selection
+    all_available_regions = utils.get_all_aws_regions('macie2')
+    default_regions = utils.get_partition_regions(partition, all_regions=False)
+
+    # Process selection
+    if selection_int == 1:
+        regions = default_regions
+        utils.log_info(f"Scanning default regions: {len(regions)} regions")
+    elif selection_int == 2:
+        regions = all_available_regions
+        utils.log_info(f"Scanning all {len(regions)} AWS regions")
+    else:  # selection_int == 3
+        # Display numbered list of regions
+        print("\n" + "=" * 68)
+        print("AVAILABLE AWS REGIONS")
+        print("=" * 68)
+        print()
+        for idx, region in enumerate(all_available_regions, 1):
+            print(f"{idx:2}. {region}")
+        print()
+
+        # Get region selection with validation
+        while True:
+            try:
+                region_num = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
+                region_idx = int(region_num) - 1
+                if 0 <= region_idx < len(all_available_regions):
+                    selected_region = all_available_regions[region_idx]
+                    regions = [selected_region]
+                    utils.log_info(f"Scanning region: {selected_region}")
+                    break
+                else:
+                    print(f"Please enter a number between 1 and {len(all_available_regions)}.")
+            except ValueError:
+                print(f"Please enter a valid number (1-{len(all_available_regions)}).")
 
     # Collect data
     print("\n=== Collecting Macie Data ===")

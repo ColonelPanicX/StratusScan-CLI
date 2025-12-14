@@ -362,30 +362,28 @@ def get_route_tables(region):
     
     return route_table_data
 
-def export_route_tables(account_name, all_regions=False, specific_region=None):
+def export_route_tables(account_name, regions, region_suffix=""):
     """
     Export route table information to an Excel file.
-    
+
     Args:
         account_name (str): AWS account name
-        all_regions (bool): Whether to export from all regions
-        specific_region (str): Specific region to export from, if not all_regions
-        
+        regions (list): List of AWS regions to export from
+        region_suffix (str): Suffix to add to filename (e.g., "-us-east-1")
+
     Returns:
         str: Path to the exported file
     """
     import pandas as pd
-    
+
     print("\nCollecting route table information...")
-    
+
     # Determine which regions to process
-    regions_to_process = []
-    if all_regions:
-        regions_to_process = get_all_regions()
-        print(f"Processing all {len(regions_to_process)} AWS regions")
+    regions_to_process = regions
+    if len(regions) == 1:
+        print(f"Processing region: {regions[0]}")
     else:
-        regions_to_process = [specific_region]
-        print(f"Processing region: {specific_region}")
+        print(f"Processing {len(regions)} AWS regions")
     
     # Collect route table data from all regions (Phase 4B: concurrent)
     all_route_tables = []
@@ -416,13 +414,9 @@ def export_route_tables(account_name, all_regions=False, specific_region=None):
     # Create DataFrame
     df = pd.DataFrame(all_route_tables)
     
-    # Generate file name based on whether we're exporting all regions or a specific one
+    # Generate file name
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
-    if all_regions:
-        filename = utils.create_export_filename(account_name, "route-tables", "", current_date)
-    else:
-        filename = utils.create_export_filename(account_name, "route-tables", specific_region, current_date)
+    filename = utils.create_export_filename(account_name, "route-tables", region_suffix, current_date)
     
     # Export to Excel
     output_path = utils.save_dataframe_to_excel(df, filename)
@@ -446,25 +440,86 @@ def main():
         # Import pandas now that we've checked dependencies
         import pandas as pd
         
-        # Ask for region preference
-        print("\nWould you like to export route tables from all regions or a specific region?")
-        region_choice = input("Enter 'all' for all regions, or a specific region name (e.g., us-east-1): ").strip().lower()
-        
-        # Process based on region choice
-        if region_choice == 'all':
-            # Export from all regions
-            output_file = export_route_tables(account_name, all_regions=True)
+        # Detect partition and set partition-aware example regions
+        partition = utils.detect_partition()
+        if partition == 'aws-us-gov':
+            example_regions = "us-gov-west-1, us-gov-east-1"
         else:
-            # Validate region
-            if not is_valid_region(region_choice):
-                print(f"Warning: '{region_choice}' is not a valid AWS region.")
-                use_anyway = input("Do you want to use this region anyway? (y/n): ").lower()
-                if use_anyway != 'y':
-                    print("Please try again with a valid region.")
-                    sys.exit(0)
-            
-            # Export from specific region
-            output_file = export_route_tables(account_name, all_regions=False, specific_region=region_choice)
+            example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
+
+        # Display standardized region selection menu
+        print("\n" + "=" * 68)
+        print("REGION SELECTION")
+        print("=" * 68)
+        print()
+        print("Please select which AWS regions to scan:")
+        print()
+        print("1. Default Regions (recommended for most use cases)")
+        print(f"   └─ {example_regions}")
+        print()
+        print("2. All Available Regions")
+        print("   └─ Scans all regions (slower, more comprehensive)")
+        print()
+        print("3. Specific Region")
+        print("   └─ Choose a single region to scan")
+        print()
+
+        # Get user selection with validation
+        while True:
+            try:
+                selection = input("Enter your selection (1-3): ").strip()
+                selection_int = int(selection)
+                if 1 <= selection_int <= 3:
+                    break
+                else:
+                    print("Please enter a number between 1 and 3.")
+            except ValueError:
+                print("Please enter a valid number (1-3).")
+
+        # Get regions based on selection
+        all_available_regions = get_all_regions()
+        default_regions = utils.get_partition_regions(partition, all_regions=False)
+
+        # Process selection
+        if selection_int == 1:
+            # Default regions
+            regions = default_regions
+            region_text = f"default AWS regions ({len(regions)} regions)"
+            region_suffix = ""
+        elif selection_int == 2:
+            # All regions
+            regions = all_available_regions
+            region_text = f"all AWS regions ({len(regions)} regions)"
+            region_suffix = ""
+        else:  # selection_int == 3
+            # Specific region - show numbered list
+            print()
+            print("=" * 68)
+            print("AVAILABLE REGIONS")
+            print("=" * 68)
+            for idx, region in enumerate(all_available_regions, 1):
+                print(f"{idx}. {region}")
+            print()
+
+            while True:
+                try:
+                    region_choice = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
+                    region_idx = int(region_choice) - 1
+                    if 0 <= region_idx < len(all_available_regions):
+                        selected_region = all_available_regions[region_idx]
+                        regions = [selected_region]
+                        region_text = f"AWS region {selected_region}"
+                        region_suffix = f"-{selected_region}"
+                        break
+                    else:
+                        print(f"Please enter a number between 1 and {len(all_available_regions)}.")
+                except ValueError:
+                    print("Please enter a valid number.")
+
+        print(f"\nStarting AWS export process for {region_text}...")
+
+        # Export based on selection
+        output_file = export_route_tables(account_name, regions, region_suffix)
         
         # Report results
         if output_file:
