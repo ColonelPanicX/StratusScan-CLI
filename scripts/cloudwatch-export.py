@@ -275,7 +275,7 @@ def export_cloudwatch_data(account_id: str, account_name: str):
         account_id: The AWS account ID
         account_name: The AWS account name
     """
-    # Detect partition and set partition-aware example regions
+    # Detect partition for region examples
     partition = utils.detect_partition()
     if partition == 'aws-us-gov':
         example_regions = "us-gov-west-1, us-gov-east-1"
@@ -286,72 +286,80 @@ def export_cloudwatch_data(account_id: str, account_name: str):
     print("\n" + "=" * 68)
     print("REGION SELECTION")
     print("=" * 68)
-    print()
-    print("Please select which AWS regions to scan:")
-    print()
-    print("1. Default Regions (recommended for most use cases)")
-    print(f"   └─ {example_regions}")
-    print()
-    print("2. All Available Regions")
-    print("   └─ Scans all regions (slower, more comprehensive)")
-    print()
-    print("3. Specific Region")
-    print("   └─ Choose a single region to scan")
-    print()
+    print("\nCloudWatch is a regional service.")
+    print("\nPlease select an option for region selection:")
+    print("\n  1. Default Regions")
+    print(f"     ({example_regions})")
+    print("\n  2. All Available Regions")
+    print("     (Scan all regions where CloudWatch is available)")
+    print("\n  3. Specific Region")
+    print("     (Enter a specific AWS region code)")
+    print("\n" + "-" * 68)
 
-    # Get user selection with validation
-    while True:
+    # Get and validate region choice
+    regions = []
+    while not regions:
         try:
-            selection = input("Enter your selection (1-3): ").strip()
-            selection_int = int(selection)
-            if 1 <= selection_int <= 3:
-                break
+            region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
+
+            if region_choice == '1':
+                # Default regions
+                regions = utils.get_partition_default_regions()
+                print(f"\nUsing default regions: {', '.join(regions)}")
+                region_suffix = ""
+            elif region_choice == '2':
+                # All available regions
+                regions = utils.get_partition_regions(partition, all_regions=True)
+                print(f"\nScanning all {len(regions)} available regions")
+                region_suffix = ""
+            elif region_choice == '3':
+                # Specific region - show numbered list
+                available_regions = utils.get_partition_regions(
+                    partition, all_regions=True
+                )
+                print("\n" + "=" * 68)
+                print("AVAILABLE REGIONS")
+                print("=" * 68)
+                for idx, region in enumerate(available_regions, 1):
+                    print(f"  {idx}. {region}")
+                print("-" * 68)
+
+                # Get region selection
+                region_selected = False
+                while not region_selected:
+                    try:
+                        region_num = input(
+                            f"\nEnter region number (1-{len(available_regions)}): "
+                        ).strip()
+                        region_idx = int(region_num) - 1
+
+                        if 0 <= region_idx < len(available_regions):
+                            selected_region = available_regions[region_idx]
+                            regions = [selected_region]
+                            region_suffix = f"-{selected_region}"
+                            print(f"\nSelected region: {selected_region}")
+                            region_selected = True
+                        else:
+                            print(
+                                f"Invalid selection. Please enter a number "
+                                f"between 1 and {len(available_regions)}."
+                            )
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                    except KeyboardInterrupt:
+                        print("\n\nOperation cancelled by user.")
+                        sys.exit(0)
             else:
-                print("Please enter a number between 1 and 3.")
-        except ValueError:
-            print("Please enter a valid number (1-3).")
+                print("\nInvalid choice. Please enter 1, 2, or 3.")
 
-    # Get regions based on selection
-    all_available_regions = get_aws_regions()
-    default_regions = utils.get_partition_regions(partition, all_regions=False)
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user.")
+            sys.exit(0)
+        except Exception as e:
+            utils.log_error(f"Error getting region selection: {str(e)}")
+            print("Please try again.")
 
-    # Process selection
-    if selection_int == 1:
-        # Default regions
-        regions = default_regions
-        region_text = f"default AWS regions ({len(regions)} regions)"
-        region_suffix = ""
-    elif selection_int == 2:
-        # All regions
-        regions = all_available_regions
-        region_text = f"all AWS regions ({len(regions)} regions)"
-        region_suffix = ""
-    else:  # selection_int == 3
-        # Specific region - show numbered list
-        print()
-        print("=" * 68)
-        print("AVAILABLE REGIONS")
-        print("=" * 68)
-        for idx, region in enumerate(all_available_regions, 1):
-            print(f"{idx}. {region}")
-        print()
-
-        while True:
-            try:
-                region_choice = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
-                region_idx = int(region_choice) - 1
-                if 0 <= region_idx < len(all_available_regions):
-                    selected_region = all_available_regions[region_idx]
-                    regions = [selected_region]
-                    region_text = f"AWS region {selected_region}"
-                    region_suffix = f"-{selected_region}"
-                    break
-                else:
-                    print(f"Please enter a number between 1 and {len(all_available_regions)}.")
-            except ValueError:
-                print("Please enter a valid number.")
-
-    print(f"\nStarting CloudWatch export process for {region_text}...")
+    print(f"\nStarting CloudWatch export process for {len(regions)} region(s)...")
     print("This may take some time depending on the number of regions and resources...")
 
     utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")

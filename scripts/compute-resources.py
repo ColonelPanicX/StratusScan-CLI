@@ -153,29 +153,86 @@ def get_region_selection():
     Returns:
         list: List of selected regions to scan
     """
-    print("\nAWS Region Selection:")
-    print("Would you like the information for all AWS regions or a specific region?")
-    print("Available AWS regions: us-east-1, us-west-1, us-west-2, eu-west-1, ap-southeast-1, etc.")
-    region_choice = input("If all, write \"all\", or specify an AWS region name: ").lower().strip()
-
-    if region_choice != "all":
-        if not utils.is_aws_region(region_choice):
-            utils.log_warning(f"'{region_choice}' is not a valid AWS region.")
-            utils.log_info("Valid AWS regions include: us-east-1, us-west-1, us-west-2, eu-west-1")
-            utils.log_info("Checking all available AWS regions instead.")
-            region_choice = "all"
-
-    # Get AWS regions to scan
-    if region_choice == "all":
-        utils.log_info("Retrieving available AWS regions...")
-        regions = utils.get_available_aws_regions()
-        if not regions:
-            utils.log_error("No AWS regions found. Please check your AWS credentials and permissions.")
-            sys.exit(1)
-        utils.log_info(f"Found {len(regions)} AWS regions to scan: {', '.join(regions)}")
+    # Detect partition for region examples
+    partition = utils.detect_partition()
+    if partition == 'aws-us-gov':
+        example_regions = "us-gov-west-1, us-gov-east-1"
     else:
-        regions = [region_choice]
-        utils.log_info(f"Scanning only the {region_choice} AWS region.")
+        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
+
+    # Display standardized region selection menu
+    print("\n" + "=" * 68)
+    print("REGION SELECTION")
+    print("=" * 68)
+    print("\nCompute Resources (EC2/RDS/EKS) are regional services.")
+    print("\nPlease select an option for region selection:")
+    print("\n  1. Default Regions")
+    print(f"     ({example_regions})")
+    print("\n  2. All Available Regions")
+    print("     (Scan all regions where compute services are available)")
+    print("\n  3. Specific Region")
+    print("     (Enter a specific AWS region code)")
+    print("\n" + "-" * 68)
+
+    # Get and validate region choice
+    regions = []
+    while not regions:
+        try:
+            region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
+
+            if region_choice == '1':
+                # Default regions
+                regions = utils.get_partition_default_regions()
+                print(f"\nUsing default regions: {', '.join(regions)}")
+            elif region_choice == '2':
+                # All available regions
+                regions = utils.get_partition_regions(partition, all_regions=True)
+                print(f"\nScanning all {len(regions)} available regions")
+            elif region_choice == '3':
+                # Specific region - show numbered list
+                available_regions = utils.get_partition_regions(
+                    partition, all_regions=True
+                )
+                print("\n" + "=" * 68)
+                print("AVAILABLE REGIONS")
+                print("=" * 68)
+                for idx, region in enumerate(available_regions, 1):
+                    print(f"  {idx}. {region}")
+                print("-" * 68)
+
+                # Get region selection
+                region_selected = False
+                while not region_selected:
+                    try:
+                        region_num = input(
+                            f"\nEnter region number (1-{len(available_regions)}): "
+                        ).strip()
+                        region_idx = int(region_num) - 1
+
+                        if 0 <= region_idx < len(available_regions):
+                            selected_region = available_regions[region_idx]
+                            regions = [selected_region]
+                            print(f"\nSelected region: {selected_region}")
+                            region_selected = True
+                        else:
+                            print(
+                                f"Invalid selection. Please enter a number "
+                                f"between 1 and {len(available_regions)}."
+                            )
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                    except KeyboardInterrupt:
+                        print("\n\nOperation cancelled by user.")
+                        sys.exit(0)
+            else:
+                print("\nInvalid choice. Please enter 1, 2, or 3.")
+
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user.")
+            sys.exit(0)
+        except Exception as e:
+            utils.log_error(f"Error getting region selection: {str(e)}")
+            print("Please try again.")
 
     return regions
 

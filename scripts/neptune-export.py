@@ -520,7 +520,7 @@ def main():
     utils.log_script_start(script_name)
 
     # Check dependencies
-    if not utils.check_dependencies(['pandas', 'openpyxl', 'boto3']):
+    if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
         utils.log_error("Required dependencies not installed")
         return
 
