@@ -613,6 +613,186 @@ def get_default_regions(partition: Optional[str] = None) -> List[str]:
 
     return config_regions
 
+def get_partition_default_regions(partition: Optional[str] = None) -> List[str]:
+    """
+    Get the default AWS regions (alias for get_default_regions for consistency).
+
+    Args:
+        partition: Optional partition to filter regions ('aws' or 'aws-us-gov')
+                  If not provided, uses regions from config.json or auto-detects
+
+    Returns:
+        list: List of default AWS region names
+    """
+    return get_default_regions(partition)
+
+def prompt_region_selection(
+    service_name: Optional[str] = None,
+    prompt_message: Optional[str] = None,
+    default_to_all: bool = False,
+    allow_all: bool = True
+) -> List[str]:
+    """
+    Prompt user for AWS region selection with standardized 3-option menu.
+
+    This function provides a consistent user experience across all export scripts
+    with partition-aware region examples and robust input validation.
+
+    Args:
+        service_name: Name of the AWS service (e.g., "Lambda", "S3")
+                     Used to customize the prompt message if prompt_message not provided
+        prompt_message: Custom message to display before menu
+                       If provided, overrides service_name in message
+        default_to_all: If True, make "All Regions" the default choice
+                       If False, make "Default Regions" the default choice
+        allow_all: If True, include "All Regions" option (default: True)
+
+    Returns:
+        list: List of selected AWS region names
+
+    Examples:
+        # Basic usage with service name
+        regions = utils.prompt_region_selection(service_name="Lambda")
+
+        # Custom prompt message
+        regions = utils.prompt_region_selection(
+            prompt_message="Select regions for DataSync export:",
+            allow_all=True
+        )
+
+        # Default to all regions
+        regions = utils.prompt_region_selection(
+            service_name="Detective",
+            default_to_all=False
+        )
+    """
+    import sys
+
+    # Detect partition for region examples
+    partition = detect_partition()
+    if partition == 'aws-us-gov':
+        example_regions = "us-gov-west-1, us-gov-east-1"
+    else:
+        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
+
+    # Build prompt message
+    if prompt_message:
+        print(f"\n{prompt_message}")
+    elif service_name:
+        print(f"\n{service_name} is a regional service.")
+
+    # Display standardized region selection menu
+    print("\n" + "=" * 68)
+    print("REGION SELECTION")
+    print("=" * 68)
+    print("\nPlease select an option for region selection:")
+    print("\n  1. Default Regions")
+    print(f"     ({example_regions})")
+
+    if allow_all:
+        print("\n  2. All Available Regions")
+        print("     (Scan all regions where the service is available)")
+        print("\n  3. Specific Region")
+        print("     (Enter a specific AWS region code)")
+    else:
+        print("\n  2. Specific Region")
+        print("     (Enter a specific AWS region code)")
+
+    print("\n" + "-" * 68)
+
+    # Get and validate region choice
+    regions = []
+    while not regions:
+        try:
+            if allow_all:
+                region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
+            else:
+                region_choice = input("\nEnter your choice (1 or 2): ").strip()
+
+            if region_choice == '1':
+                # Default regions
+                regions = get_default_regions()
+                print(f"\nUsing default regions: {', '.join(regions)}")
+
+            elif region_choice == '2':
+                if allow_all:
+                    # All available regions
+                    regions = get_partition_regions(partition, all_regions=True)
+                    print(f"\nScanning all {len(regions)} available regions")
+                else:
+                    # Specific region (when allow_all=False, option 2 is specific region)
+                    available_regions = get_partition_regions(partition, all_regions=True)
+                    print("\n" + "=" * 68)
+                    print("AVAILABLE REGIONS")
+                    print("=" * 68)
+                    for idx, region in enumerate(available_regions, 1):
+                        print(f"  {idx:2d}. {region}")
+                    print("=" * 68)
+
+                    # Get region selection with validation
+                    region_selected = False
+                    while not region_selected:
+                        try:
+                            region_num = input(f"\nEnter region number (1-{len(available_regions)}): ").strip()
+                            region_idx = int(region_num) - 1
+
+                            if 0 <= region_idx < len(available_regions):
+                                selected_region = available_regions[region_idx]
+                                regions = [selected_region]
+                                print(f"\nSelected region: {selected_region}")
+                                region_selected = True
+                            else:
+                                print(f"Invalid selection. Please enter a number between 1 and {len(available_regions)}.")
+                        except ValueError:
+                            print("Invalid input. Please enter a number.")
+                        except KeyboardInterrupt:
+                            print("\n\nOperation cancelled by user.")
+                            sys.exit(0)
+
+            elif region_choice == '3' and allow_all:
+                # Specific region (when allow_all=True, option 3 is specific region)
+                available_regions = get_partition_regions(partition, all_regions=True)
+                print("\n" + "=" * 68)
+                print("AVAILABLE REGIONS")
+                print("=" * 68)
+                for idx, region in enumerate(available_regions, 1):
+                    print(f"  {idx:2d}. {region}")
+                print("=" * 68)
+
+                # Get region selection with validation
+                region_selected = False
+                while not region_selected:
+                    try:
+                        region_num = input(f"\nEnter region number (1-{len(available_regions)}): ").strip()
+                        region_idx = int(region_num) - 1
+
+                        if 0 <= region_idx < len(available_regions):
+                            selected_region = available_regions[region_idx]
+                            regions = [selected_region]
+                            print(f"\nSelected region: {selected_region}")
+                            region_selected = True
+                        else:
+                            print(f"Invalid selection. Please enter a number between 1 and {len(available_regions)}.")
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                    except KeyboardInterrupt:
+                        print("\n\nOperation cancelled by user.")
+                        sys.exit(0)
+            else:
+                if allow_all:
+                    print("\nInvalid choice. Please enter 1, 2, or 3.")
+                else:
+                    print("\nInvalid choice. Please enter 1 or 2.")
+
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user.")
+            sys.exit(0)
+        except Exception as e:
+            log_error(f"Error getting region selection: {str(e)}")
+            print("Please try again.")
+
+    return regions
+
 def get_organization_name() -> str:
     """
     Get the organization name from configuration.
