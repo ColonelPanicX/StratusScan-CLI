@@ -1,0 +1,237 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stratusscan-cli"
+version = "3.1.0"
+description = "AWS defensive security scanning and auditing tool for resource exports"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "GPL-3.0"}
+
+authors = [
+    {name = "StratusScan Contributors"}
+]
+
+keywords = [
+    "aws",
+    "security",
+    "audit",
+    "cloud",
+    "scanner",
+    "compliance",
+    "export",
+    "inventory"
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+# Runtime dependencies
+dependencies = [
+    "boto3>=1.28.0",           # AWS SDK for Python
+    "pandas>=2.0.0",           # Data manipulation and analysis
+    "openpyxl>=3.1.0",         # Excel file creation
+    "python-dateutil>=2.8.2",  # Date/time utilities
+    "questionary>=2.0.0",      # Interactive CLI prompts
+]
+
+# Optional dependencies for different use cases
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.1",
+    "moto[all]>=4.1.0",
+
+    # Code Quality
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+
+    # Type Stubs
+    "boto3-stubs[essential]>=1.28.0",
+    "pandas-stubs>=2.0.0",
+
+    # Development Utilities
+    "ipython>=8.12.0",
+    "ipdb>=0.13.13",
+]
+
+# Entry points - creates command-line commands
+[project.scripts]
+stratusscan = "stratusscan:main"
+stratusscan-configure = "configure:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/stratusscan-cli"
+Documentation = "https://github.com/yourusername/stratusscan-cli#readme"
+Repository = "https://github.com/yourusername/stratusscan-cli"
+Issues = "https://github.com/yourusername/stratusscan-cli/issues"
+
+# ===== Tool Configuration =====
+
+# Setuptools configuration
+[tool.setuptools]
+packages = ["scripts"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["reference/*.csv", "config.json"]
+
+# Black - Code formatter
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | \.eggs
+  | \.tox
+  | build
+  | dist
+  | htmlcov
+  | \.pytest_cache
+)/
+'''
+
+# Ruff - Fast linter (replaces flake8, isort, etc.)
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+# Enable specific rule sets
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "A",   # flake8-builtins
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    "*.egg-info",
+]
+
+# Ruff per-file ignores
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # Unused imports in __init__.py are okay
+
+# Mypy - Static type checker
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Start false, enable gradually
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+
+# Ignore missing imports for third-party libraries without stubs
+[[tool.mypy.overrides]]
+module = [
+    "openpyxl.*",
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+addopts = [
+    "-v",                           # Verbose output
+    "--strict-markers",             # Error on unknown markers
+    "--cov=.",                      # Coverage for all code
+    "--cov-report=html",            # HTML coverage report
+    "--cov-report=term-missing",    # Terminal report with missing lines
+    "--cov-report=term:skip-covered",  # Skip fully covered in terminal
+    "--no-cov-on-fail",             # Don't show coverage if tests fail
+]
+
+# Define custom markers
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "aws: marks tests that interact with AWS (requires credentials)",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/.venv/*",
+    "*/venv/*",
+    "setup.py",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    # Standard pragma
+    "pragma: no cover",
+
+    # Debug code
+    "def __repr__",
+    "def __str__",
+
+    # Defensive code
+    "raise AssertionError",
+    "raise NotImplementedError",
+
+    # Non-runnable code
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+
+    # Abstract methods
+    "@abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

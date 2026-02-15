@@ -1,0 +1,113 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StratusScanOptionalSecurityHubPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "securityhub:Describe*",
+        "securityhub:Get*",
+        "securityhub:List*",
+        "securityhub:BatchGet*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalCostOptimizationPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ce:Get*",
+        "ce:Describe*",
+        "ce:List*",
+        "cost-optimization-hub:Get*",
+        "cost-optimization-hub:List*",
+        "budgets:Describe*",
+        "budgets:View*",
+        "cur:Describe*",
+        "savingsplans:Describe*",
+        "savingsplans:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalTrustedAdvisorPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "support:Describe*",
+        "support:Get*",
+        "support:RefreshTrustedAdvisorCheck"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "StratusScanOptionalComputeOptimizerPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "compute-optimizer:Describe*",
+        "compute-optimizer:Get*",
+        "compute-optimizer:Export*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalIdentityCenterPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "sso:Describe*",
+        "sso:Get*",
+        "sso:List*",
+        "sso-admin:Describe*",
+        "sso-admin:Get*",
+        "sso-admin:List*",
+        "identitystore:Describe*",
+        "identitystore:Get*",
+        "identitystore:List*",
+        "identitystore:IsMemberInGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalHealthPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "health:Describe*",
+        "health:Get*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalReservedInstancesPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeReservedInstances",
+        "ec2:DescribeReservedInstancesListings",
+        "ec2:DescribeReservedInstancesModifications",
+        "ec2:DescribeReservedInstancesOfferings",
+        "rds:DescribeReservedDBInstances",
+        "rds:DescribeReservedDBInstancesOfferings",
+        "elasticache:DescribeReservedCacheNodes",
+        "elasticache:DescribeReservedCacheNodesOfferings",
+        "redshift:DescribeReservedNodes",
+        "redshift:DescribeReservedNodeOfferings",
+        "opensearch:DescribeReservedInstances",
+        "opensearch:DescribeReservedInstanceOfferings"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalCapacityReservationsPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeCapacityReservations",
+        "ec2:DescribeHostReservations",
+        "ec2:DescribeHosts"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

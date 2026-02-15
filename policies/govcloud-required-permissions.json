@@ -1,0 +1,325 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StratusScanCoreComputePermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:GetConsoleOutput",
+        "ec2:GetConsoleScreenshot",
+        "autoscaling:Describe*",
+        "ecs:Describe*",
+        "ecs:List*",
+        "eks:Describe*",
+        "eks:List*",
+        "elasticbeanstalk:Describe*",
+        "elasticbeanstalk:List*",
+        "lambda:Get*",
+        "lambda:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreStoragePermissions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketPolicyStatus",
+        "s3:GetBucketLogging",
+        "s3:GetBucketTagging",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketWebsite",
+        "s3:GetBucketNotification",
+        "s3:GetReplicationConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetIntelligentTieringConfiguration",
+        "s3:GetMetricsConfiguration",
+        "s3:GetAnalyticsConfiguration",
+        "s3:GetInventoryConfiguration",
+        "s3:ListBucket",
+        "s3:ListAllMyBuckets",
+        "s3:ListAccessPoints",
+        "s3:ListMultiRegionAccessPoints",
+        "s3:GetAccessPoint",
+        "s3:GetAccessPointPolicy",
+        "s3:GetAccessPointPolicyStatus",
+        "s3:GetMultiRegionAccessPoint",
+        "s3:GetMultiRegionAccessPointPolicy",
+        "s3:GetStorageLensConfiguration",
+        "s3:ListStorageLensConfigurations",
+        "glacier:Describe*",
+        "glacier:Get*",
+        "glacier:List*",
+        "elasticfilesystem:Describe*",
+        "fsx:Describe*",
+        "fsx:List*",
+        "backup:Describe*",
+        "backup:List*",
+        "backup:Get*",
+        "storagegateway:Describe*",
+        "storagegateway:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreDatabasePermissions",
+      "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "rds:List*",
+        "dynamodb:Describe*",
+        "dynamodb:List*",
+        "elasticache:Describe*",
+        "elasticache:List*",
+        "redshift:Describe*",
+        "memorydb:Describe*",
+        "memorydb:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreNetworkPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "elasticloadbalancing:Describe*",
+        "route53:Get*",
+        "route53:List*",
+        "route53resolver:Get*",
+        "route53resolver:List*",
+        "directconnect:Describe*",
+        "networkmanager:Describe*",
+        "networkmanager:Get*",
+        "networkmanager:List*",
+        "network-firewall:Describe*",
+        "network-firewall:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreIAMPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "iam:Get*",
+        "iam:List*",
+        "iam:GenerateCredentialReport",
+        "iam:GenerateServiceLastAccessedDetails",
+        "sts:GetCallerIdentity",
+        "sts:GetSessionToken",
+        "sts:DecodeAuthorizationMessage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreSecurityPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Describe*",
+        "kms:Get*",
+        "kms:List*",
+        "secretsmanager:Describe*",
+        "secretsmanager:List*",
+        "secretsmanager:GetResourcePolicy",
+        "acm:Describe*",
+        "acm:Get*",
+        "acm:List*",
+        "acm-pca:Describe*",
+        "acm-pca:Get*",
+        "acm-pca:List*",
+        "wafv2:Get*",
+        "wafv2:List*",
+        "wafv2:Describe*",
+        "shield:Describe*",
+        "shield:Get*",
+        "shield:List*",
+        "guardduty:Get*",
+        "guardduty:List*",
+        "cloudtrail:Describe*",
+        "cloudtrail:Get*",
+        "cloudtrail:List*",
+        "cloudtrail:LookupEvents",
+        "config:Describe*",
+        "config:Get*",
+        "config:List*",
+        "access-analyzer:GetAnalyzer",
+        "access-analyzer:GetArchiveRule",
+        "access-analyzer:GetFinding",
+        "access-analyzer:GetGeneratedPolicy",
+        "access-analyzer:ListAnalyzers",
+        "access-analyzer:ListArchiveRules",
+        "access-analyzer:ListFindings",
+        "access-analyzer:ListPolicyGenerations",
+        "access-analyzer:ListTagsForResource",
+        "detective:Get*",
+        "detective:List*",
+        "macie2:Describe*",
+        "macie2:Get*",
+        "macie2:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreMonitoringPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:Describe*",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "logs:Describe*",
+        "logs:Get*",
+        "logs:List*",
+        "logs:FilterLogEvents",
+        "xray:Get*",
+        "xray:BatchGet*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreApplicationPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:GET",
+        "appsync:Get*",
+        "appsync:List*",
+        "apprunner:Describe*",
+        "apprunner:List*",
+        "cognito-idp:Describe*",
+        "cognito-idp:List*",
+        "cognito-idp:Get*",
+        "cognito-identity:Describe*",
+        "cognito-identity:List*",
+        "cognito-identity:Get*",
+        "sns:Get*",
+        "sns:List*",
+        "sqs:Get*",
+        "sqs:List*",
+        "events:Describe*",
+        "events:List*",
+        "states:DescribeActivity",
+        "states:DescribeExecution",
+        "states:DescribeStateMachine",
+        "states:DescribeStateMachineForExecution",
+        "states:GetExecutionHistory",
+        "states:ListActivities",
+        "states:ListExecutions",
+        "states:ListStateMachines",
+        "states:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreDevToolsPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "codecommit:Get*",
+        "codecommit:List*",
+        "codecommit:Describe*",
+        "codebuild:List*",
+        "codebuild:BatchGet*",
+        "codedeploy:Get*",
+        "codedeploy:List*",
+        "codedeploy:BatchGet*",
+        "codepipeline:Get*",
+        "codepipeline:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreDataAnalyticsPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "glue:Get*",
+        "glue:List*",
+        "athena:Get*",
+        "athena:List*",
+        "athena:Batch*",
+        "lakeformation:Describe*",
+        "lakeformation:Get*",
+        "lakeformation:List*",
+        "es:Describe*",
+        "es:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreManagementPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:Describe*",
+        "cloudformation:Get*",
+        "cloudformation:List*",
+        "ssm:Describe*",
+        "ssm:Get*",
+        "ssm:List*",
+        "servicecatalog:Describe*",
+        "servicecatalog:List*",
+        "servicecatalog:Get*",
+        "servicediscovery:Get*",
+        "servicediscovery:List*",
+        "imagebuilder:Get*",
+        "imagebuilder:List*",
+        "datasync:Describe*",
+        "datasync:List*",
+        "transfer:Describe*",
+        "transfer:List*",
+        "connect:Describe*",
+        "connect:List*",
+        "connect:Get*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreMessagingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ses:Get*",
+        "ses:List*",
+        "ses:Describe*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreLicensingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "license-manager:Get*",
+        "license-manager:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreOrganizationsPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "organizations:Describe*",
+        "organizations:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanCoreAccessManagementPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVerifiedAccessEndpoints",
+        "ec2:DescribeVerifiedAccessGroups",
+        "ec2:DescribeVerifiedAccessInstances",
+        "ec2:DescribeVerifiedAccessTrustProviders",
+        "ec2:GetVerifiedAccessEndpointPolicy",
+        "ec2:GetVerifiedAccessGroupPolicy",
+        "verifiedpermissions:Get*",
+        "verifiedpermissions:List*",
+        "rolesanywhere:Get*",
+        "rolesanywhere:List*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

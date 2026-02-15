@@ -1,0 +1,60 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StratusScanOptionalMLAIPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "sagemaker:Describe*",
+        "sagemaker:List*",
+        "sagemaker:Get*",
+        "bedrock:Get*",
+        "bedrock:List*",
+        "bedrock:GetAgent",
+        "bedrock:GetAgentAlias",
+        "bedrock:GetAgentKnowledgeBase",
+        "bedrock:GetAgentVersion",
+        "bedrock:GetDataSource",
+        "bedrock:GetKnowledgeBase",
+        "bedrock:ListAgentActionGroups",
+        "bedrock:ListAgentAliases",
+        "bedrock:ListAgentKnowledgeBases",
+        "bedrock:ListAgents",
+        "bedrock:ListAgentVersions",
+        "bedrock:ListDataSources",
+        "bedrock:ListKnowledgeBases",
+        "bedrock:ListTagsForResource",
+        "comprehend:Describe*",
+        "comprehend:List*",
+        "rekognition:Describe*",
+        "rekognition:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalMobileMarketingPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "mobiletargeting:GetApp",
+        "mobiletargeting:GetApplicationSettings",
+        "mobiletargeting:GetCampaign",
+        "mobiletargeting:GetEmailChannel",
+        "mobiletargeting:GetSegment",
+        "mobiletargeting:GetSmsChannel",
+        "mobiletargeting:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StratusScanOptionalMarketplacePermissions",
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:DescribeEntity",
+        "aws-marketplace:ListEntities",
+        "aws-marketplace:ListChangeSets",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
