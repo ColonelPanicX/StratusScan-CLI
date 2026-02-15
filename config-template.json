@@ -1,0 +1,22 @@
+{
+  "__comment": "StratusScan Configuration Template - Copy this file to config.json and customize",
+  "account_mappings": {
+    "123456789012": "PROD",
+    "234567890123": "DEV",
+    "345678901234": "TEST",
+    "__comment": "Add your own account mappings in the format 'account_id': 'friendly_name'"
+  },
+  "agency_name": "YOUR-AGENCY",
+  "default_regions": ["us-east-1", "us-west-2"],
+  "resource_preferences": {
+    "ec2": {
+      "default_filter": "all", 
+      "include_stopped": true,
+      "default_region": "all"
+    },
+    "vpc": {
+      "default_export_type": "all",
+      "default_region": "all"
+    }
+  }
+}
