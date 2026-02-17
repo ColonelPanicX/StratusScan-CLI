@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS IAM Comprehensive Export Script
-Version: v2.0.0
+Version: v0.1.0
 Date: SEP-23-2025
 
 Description:
@@ -66,7 +66,7 @@ def print_title():
     print("====================================================================")
     print("AWS IAM COMPREHENSIVE EXPORT")
     print("====================================================================")
-    print("Version: v2.0.0                       Date: SEP-23-2025")
+    print("Version: v0.1.0                       Date: SEP-23-2025")
 
     # Get account information using utils
     account_id, account_name = utils.get_account_info()

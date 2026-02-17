@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS EBS Volume Data Export
-Version: v1.3.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -311,7 +311,7 @@ def print_title():
     print("====================================================================")
     print("               AWS EBS VOLUME DATA EXPORT                         ")
     print("====================================================================")
-    print("Version: v1.2.0                               Date: SEP-30-2025")
+    print("Version: v0.1.0                               Date: SEP-30-2025")
 
     # Get account information using utils
     account_id, account_name = utils.get_account_info()

@@ -5,7 +5,7 @@
 ===========================
 
 Title: StratusScan Utilities Module
-Version: v3.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:

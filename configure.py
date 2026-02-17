@@ -6,7 +6,7 @@
 ===========================
 
 Title: StratusScan Configuration Tool
-Version: v2.0.0
+Version: v0.1.0
 Date: DEC-24-2024
 
 Description:
@@ -450,7 +450,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Header
     print("\n")
-    print_box("STRATUSSCAN CONFIGURATION TOOL v2.0.0", 70)
+    print_box("STRATUSSCAN CONFIGURATION TOOL v0.1.0", 70)
 
     # Status box
     print("╔" + "═" * 68 + "╗")
@@ -1354,7 +1354,7 @@ if __name__ == "__main__":
             sys.exit(0 if success else 1)
 
         elif arg in ['--help', '-h']:
-            print("StratusScan Configuration Tool v2.0.0")
+            print("StratusScan Configuration Tool v0.1.0")
             print("\nUsage:")
             print("  python configure.py                              # Interactive dashboard")
             print("  python configure.py --deps                       # Dependency check only")

@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS IAM Role Information Collection Script
-Version: v2.0.0
+Version: v0.1.0
 Date: SEP-22-2025
 
 Description:
@@ -62,7 +62,7 @@ def print_title():
     print("====================================================================")
     print("AWS IAM ROLE INFORMATION COLLECTION")
     print("====================================================================")
-    print("Version: v2.0.0                       Date: SEP-22-2025")
+    print("Version: v0.1.0                       Date: SEP-22-2025")
 
     # Get account information
     account_id, account_name = utils.get_account_info()

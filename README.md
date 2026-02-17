@@ -1,5 +1,7 @@
 # StratusScan-CLI
 
+[![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
+[![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#-project-status)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![AWS Commercial](https://img.shields.io/badge/AWS-Commercial-orange.svg)](https://aws.amazon.com/)
@@ -562,7 +564,11 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 ## 📊 Project Status
 
-**Current Version**: 3.1.0 (Production Ready)
+**Current Version**: 0.1.0 — **Beta**
+
+> ⚠️ StratusScan-CLI is currently in **Beta**. The API and output format may change
+> before the 1.0.0 stable release. Breaking changes will be documented in the changelog.
+> All development happens on the `dev` branch.
 
 - ✅ **75+ Automated Tests** - Comprehensive test coverage
 - ✅ **CI/CD Pipeline** - GitHub Actions testing Python 3.9-3.12
@@ -570,6 +576,40 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 - ✅ **Type Safety** - Full type hints throughout codebase
 - ✅ **Security Scanning** - Pre-commit hooks with Bandit
 - ✅ **40+ Exporters** - Comprehensive AWS resource coverage
+
+---
+
+## 🔖 Versioning Strategy
+
+StratusScan-CLI uses [Semantic Versioning (SemVer)](https://semver.org/).
+
+- **Current series**: `0.x.x` — pre-release, active development
+- **Stable release**: `1.0.0` — planned once core API and export format stabilize
+- **Breaking changes**: may occur in any `0.x` release; documented in the changelog
+- **Previous versions**: the `3.x.x` series is deprecated and superseded by `0.1.0`
+
+| Version Range | Status | Notes |
+|---|---|---|
+| `3.x.x` | Deprecated | Superseded by governance reset at `0.1.0` |
+| `0.1.x` | Active (Beta) | Current development line |
+| `1.0.0` | Planned | Stable release target |
+
+---
+
+## 🌿 Branch Workflow
+
+| Branch | Purpose | Target |
+|---|---|---|
+| `dev` | Primary development — all feature work merges here first | `main` (release only) |
+| `main` | Stable release snapshots only — no direct commits | — |
+| `feature/*` | Short-lived feature branches | `dev` via PR |
+
+**All work must originate from a GitHub Issue.** PRs must reference issues using GitHub
+closing keywords (`Closes #N`, `Fixes #N`, `Resolves #N`).
+
+```
+feature/* → dev → main (release merge only)
+```
 
 ---
 

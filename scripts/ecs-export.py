@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS ECS Resource Export Script
-Version: v1.1.0
+Version: v0.1.0
 Date: NOV-16-2025
 
 Description:
@@ -109,7 +109,7 @@ def print_title():
     print("====================================================================")
     print("AWS ECS (ELASTIC CONTAINER SERVICE) RESOURCE EXPORT")
     print("====================================================================")
-    print("Version: v1.1.0                                 Date: NOV-16-2025")
+    print("Version: v0.1.0                                 Date: NOV-16-2025")
     print("====================================================================")
     
     # Get account information

@@ -5,7 +5,7 @@
 ===========================
 
 Title: AWS VPC, Subnet, NAT Gateway, Peering Connection, and Elastic IP Export Tool
-Version: v2.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -53,7 +53,7 @@ def print_title():
     print("====================================================================")
     print("AWS VPC, SUBNET, NAT GATEWAY, PEERING, AND ELASTIC IP EXPORT TOOL")
     print("====================================================================")
-    print("Version: v2.0.0                        Date: AUG-19-2025")
+    print("Version: v0.1.0                        Date: AUG-19-2025")
 
     # Get the current AWS account ID and validate AWS environment
     try:

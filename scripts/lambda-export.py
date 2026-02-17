@@ -5,7 +5,7 @@
 ===========================
 
 Title: AWS Lambda Functions Export Tool
-Version: v1.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -63,7 +63,7 @@ def print_title():
     print("====================================================================")
     print("             AWS LAMBDA FUNCTIONS EXPORT TOOL")
     print("====================================================================")
-    print("Version: v1.0.0                        Date: NOV-09-2025")
+    print("Version: v0.1.0                        Date: NOV-09-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

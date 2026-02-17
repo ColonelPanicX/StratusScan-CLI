@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Elastic Load Balancer Data Export
-Version: v2.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -77,7 +77,7 @@ def print_title_screen():
     print("====================================================================")
     print("AWS ELB INVENTORY EXPORT SCRIPT")
     print("====================================================================")
-    print("Version: v2.0.0                             Date: AUG-19-2025")
+    print("Version: v0.1.0                             Date: AUG-19-2025")
     print(f"Environment: {partition_name}")
     print("====================================================================")
     print(f"Account ID: {account_id}")
