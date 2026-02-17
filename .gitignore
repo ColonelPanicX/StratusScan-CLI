@@ -1,66 +1,49 @@
-# Claude Code files
-CLAUDE.md
+########################################
+# Local configuration
+########################################
+config.json
+
+########################################
+# Runtime outputs
+########################################
+logs/
+output/
+outputs/
+results/
+*.log
+
+########################################
+# AI / personal workflow (not part of product)
+########################################
 .claude/
 *.claude
-
-# Collaboration and development files (not needed for StratusScan functionality)
 .collab/
-GITHUB_RELEASE*.md
-RELEASE_NOTES*.md
-stratusscan.py.backup
-*.backup
-=2.0.0
-reference/
-.github/workflows/*.disabled
 
-# Python
+########################################
+# Python cache / build artifacts
+########################################
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+########################################
 # Virtual environments
+########################################
+.venv/
 venv/
 env/
 ENV/
-env.bak/
-venv.bak/
 
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# Environment variables
-.env
-.env.local
-
-# Testing
+########################################
+# Testing / coverage artifacts
+########################################
 .pytest_cache/
 .coverage
 coverage.xml
@@ -71,52 +54,20 @@ htmlcov/
 test-results/
 bandit-report.json
 
-# OS files
+########################################
+# IDE / editor
+########################################
+.idea/
+.vscode/
+
+########################################
+# OS noise
+########################################
 .DS_Store
 Thumbs.db
 *Zone.Identifier
-*:mshield
 
-# Logs
-*.log
-
-# Output directories (adjust based on your needs)
-output/
-outputs/
-results/
-logs/
-
-# Config files with sensitive data (if any)
-# config_local.json
-# secrets.json
-
-# Symlinks
-ref-docs
-
-# Checkpoints
-.checkpoints/
-*.checkpoint
-
-# Temporary documentation and status files
-*_MIGRATION_*.md
-*_SUMMARY.txt
-*_STATUS.md
-*_REPORT.md
-*_COMPLETION_*.md
-*_MIGRATION_*.md
-*_IMPLEMENTATION_*.md
-OPTION_*.md
-BATCH_*.md
-BATCH_*.txt
-ERROR_HANDLING_PATTERNS.md
-IMPLEMENTATION_SUMMARY.md
-VALIDATION_SUMMARY.md
-QUICK_REFERENCE.md
-
-# Audit directory and milestone tracking
-.AUDIT/
-MILESTONE*.md
-*MILESTONE*.md
-
-# Local audit artifacts
-.audit/
+########################################
+# Optional disabled workflows
+########################################
+.github/workflows/*.disabled

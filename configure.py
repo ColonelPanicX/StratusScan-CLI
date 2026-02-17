@@ -809,6 +809,23 @@ def configure_default_regions(config: Dict):
             else:
                 secondary_region = "us-west-2" if default_region == "us-east-1" else "us-east-1"
 
+            # Count how many per-service regions will be rewritten
+            services_to_update = [
+                svc for svc, prefs in config.get("resource_preferences", {}).items()
+                if isinstance(prefs, dict) and "default_region" in prefs
+            ]
+
+            # Summarise the impact and require confirmation before bulk rewrite
+            print(f"\nThis will update default_regions to [{default_region}, {secondary_region}]")
+            if services_to_update:
+                print(f"and rewrite default_region for {len(services_to_update)} service(s) in resource_preferences:")
+                for svc in services_to_update:
+                    print(f"  - {svc}")
+            confirm = input("\nApply these changes? (y/n): ").strip().lower()
+            if confirm != 'y':
+                print("Cancelled — no changes made.")
+                break
+
             config['default_regions'] = [default_region, secondary_region]
 
             # Update resource preferences

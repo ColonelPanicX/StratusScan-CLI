@@ -860,7 +860,12 @@ Examples:
     regions = []
     while not regions:
         try:
-            region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
+            # In automation mode, fall back to default regions without prompting
+            if utils.is_auto_run():
+                utils.log_info("Auto-run mode: using default regions (no interactive prompt)")
+                region_choice = '1'
+            else:
+                region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
 
             if region_choice == '1':
                 # Default regions
@@ -1029,6 +1034,10 @@ Examples:
             # Auto-launch via CLI flag
             launch_smart_scan = 'y'
             utils.log_info("Auto-launching Smart Scan (--smart-scan flag)")
+        elif utils.is_auto_run():
+            # In automation mode, skip Smart Scan to avoid blocking on prompts
+            launch_smart_scan = 'n'
+            utils.log_info("Auto-run mode: skipping Smart Scan interactive prompt")
         else:
             # Interactive prompt
             launch_smart_scan = input("Launch Smart Scan analyzer? (y/n): ").strip().lower()
@@ -1092,8 +1101,10 @@ Examples:
             utils.log_info("Smart Scan skipped")
 
     except ImportError:
-        # Smart Scan not available - silently continue
-        pass
+        utils.log_warning(
+            "Smart Scan modules not available. To enable Smart Scan, install dev "
+            "dependencies with: pip install -e '.[dev]'"
+        )
     except Exception as e:
         # Don't fail the entire script if Smart Scan has issues
         utils.log_warning(f"Smart Scan encountered an error (continuing): {e}")

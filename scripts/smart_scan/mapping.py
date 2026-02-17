@@ -237,6 +237,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
 
     # Security, Identity & Compliance
     "AWS Identity and Access Management": [
+        "iam-export.py",
         "iam-comprehensive-export.py",
         "iam-roles-export.py",
         "iam-policies-export.py",

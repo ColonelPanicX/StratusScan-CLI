@@ -31,6 +31,8 @@ class ExecutionResult:
     return_code: int
     output_file: Optional[str] = None
     error_message: Optional[str] = None
+    # Full stderr content for persistence/diagnostics (console display is truncated)
+    full_error_message: Optional[str] = None
 
     @property
     def duration_formatted(self) -> str:
@@ -133,8 +135,15 @@ class ScriptExecutor:
 
             # Get error message if failed
             error_message = None
+            full_error_message = None
             if not success:
-                error_message = result.stderr.strip() if result.stderr else "Unknown error"
+                full_error_message = result.stderr.strip() if result.stderr else "Unknown error"
+                # Truncate for console display; full text persisted in full_error_message
+                error_message = (
+                    full_error_message[:100] + "..."
+                    if len(full_error_message) > 100
+                    else full_error_message
+                )
 
             execution_result = ExecutionResult(
                 script=script_name,
@@ -145,6 +154,7 @@ class ScriptExecutor:
                 return_code=result.returncode,
                 output_file=output_file,
                 error_message=error_message,
+                full_error_message=full_error_message,
             )
 
             if success:
@@ -191,21 +201,29 @@ class ScriptExecutor:
                 error_message=str(e),
             )
 
-    def _snapshot_output_files(self) -> set:
-        """Capture the current set of xlsx file paths in the output directory."""
+    def _snapshot_output_files(self) -> tuple:
+        """
+        Capture the current set of xlsx file paths and the snapshot epoch time.
+
+        Returns:
+            Tuple of (set of file path strings, epoch float of snapshot time)
+        """
+        import time as _time
         try:
             output_dir = utils.get_output_dir()
-            return {str(p) for p in output_dir.glob("*.xlsx")}
+            snapshot_time = _time.time()
+            return ({str(p) for p in output_dir.glob("*.xlsx")}, snapshot_time)
         except Exception:
-            return set()
+            return (set(), 0.0)
 
-    def _find_output_file(self, script_name: str, pre_run_files: set = None) -> Optional[str]:
+    def _find_output_file(self, script_name: str, pre_run_files=None) -> Optional[str]:
         """
         Try to find the output file created by a script.
 
         Args:
             script_name: Name of the script that was executed
-            pre_run_files: Set of xlsx file paths that existed before execution
+            pre_run_files: Tuple of (set of pre-run xlsx paths, snapshot epoch time),
+                           or a plain set for backwards compatibility
 
         Returns:
             Path to output file if found, None otherwise
@@ -217,9 +235,24 @@ class ScriptExecutor:
             if not xlsx_files:
                 return None
 
-            # If we have a pre-run snapshot, prefer files that are new since execution
-            if pre_run_files is not None:
-                new_files = [p for p in xlsx_files if str(p) not in pre_run_files]
+            # Unpack snapshot tuple if provided
+            if isinstance(pre_run_files, tuple):
+                pre_run_set, start_time_epoch = pre_run_files
+            elif isinstance(pre_run_files, set):
+                pre_run_set = pre_run_files
+                start_time_epoch = 0.0
+            else:
+                pre_run_set = None
+                start_time_epoch = 0.0
+
+            if pre_run_set is not None:
+                # Prefer files that are both new (not in pre-run set) AND written
+                # after the snapshot time to eliminate false matches on same-day files
+                new_files = [
+                    p for p in xlsx_files
+                    if str(p) not in pre_run_set
+                    and (start_time_epoch == 0.0 or p.stat().st_mtime >= start_time_epoch)
+                ]
                 if new_files:
                     new_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                     return str(new_files[0])
@@ -303,11 +336,9 @@ class ScriptExecutor:
             for result in failed:
                 print(f"  ✗ {result.script:<45} {result.duration_formatted:>8}")
                 if result.error_message:
-                    # Truncate long error messages
-                    error = result.error_message[:100]
-                    if len(result.error_message) > 100:
-                        error += "..."
-                    print(f"     Error: {error}")
+                    # error_message is already truncated to 100 chars for console;
+                    # full text is available in result.full_error_message
+                    print(f"     Error: {result.error_message}")
             print()
 
         print("=" * 80)

@@ -631,6 +631,7 @@ def get_instance_data(region, instance_filter=None):
                     'Monthly Cost (On-Demand)': monthly_cost,
                     'Monthly Storage Cost': storage_cost,
                     'Total Monthly Cost': total_monthly_cost,
+                    'Cost Note': 'Estimate (us-east-1 pricing)',
                     'Operating System': os_info,
                     'AMI Name': ami_name,
                     'Private IPv4': instance.get('PrivateIpAddress', 'N/A'),

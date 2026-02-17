@@ -75,8 +75,8 @@ def collect_global_networks() -> List[Dict[str, Any]]:
                     'CreatedAt': network.get('CreatedAt'),
                     'Tags': ', '.join(tags) if tags else 'N/A',
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        utils.log_warning(f"Error collecting Network Manager global networks: {e}")
 
     return networks
 

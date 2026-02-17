@@ -218,63 +218,56 @@ def collect_iam_users():
     iam_client = utils.get_boto3_client('iam', region_name=home_region)
     user_data = []
 
-    # Get all IAM users
+    # Collect all IAM users in a single pass, then derive totals from len()
     paginator = iam_client.get_paginator('list_users')
-
-    total_users = 0
+    all_users = []
     for page in paginator.paginate():
-        users = page['Users']
-        total_users += len(users)
+        all_users.extend(page['Users'])
 
+    total_users = len(all_users)
     utils.log_info(f"Found {total_users} IAM users to process")
 
-    # Reset paginator and process users
-    paginator = iam_client.get_paginator('list_users')
     processed = 0
+    for user in all_users:
+        username = user['UserName']
+        processed += 1
+        progress = (processed / total_users) * 100 if total_users > 0 else 0
 
-    for page in paginator.paginate():
-        users = page['Users']
+        utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {username}")
 
-        for user in users:
-            username = user['UserName']
-            processed += 1
-            progress = (processed / total_users) * 100
+        # Basic user information
+        creation_date = user['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if user['CreateDate'] else "Unknown"
+        password_last_used = user.get('PasswordLastUsed')
 
-            utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {username}")
+        # Format console last sign-in
+        if password_last_used:
+            console_last_signin = password_last_used.strftime('%Y-%m-%d %H:%M:%S UTC')
+        else:
+            console_last_signin = "Never"
 
-            # Basic user information
-            creation_date = user['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if user['CreateDate'] else "Unknown"
-            password_last_used = user.get('PasswordLastUsed')
+        # Get additional user information
+        groups = get_user_groups(iam_client, username)
+        mfa_status = get_user_mfa_devices(iam_client, username)
+        password_age, console_access = get_password_info(iam_client, username)
+        access_key_id, active_key_age, access_key_last_used = get_access_key_info(iam_client, username)
+        permission_policies = get_user_policies(iam_client, username)
 
-            # Format console last sign-in
-            if password_last_used:
-                console_last_signin = password_last_used.strftime('%Y-%m-%d %H:%M:%S UTC')
-            else:
-                console_last_signin = "Never"
+        # Compile user data
+        user_info = {
+            'User Name': username,
+            'Groups': groups,
+            'MFA': mfa_status,
+            'Password Age': f"{password_age} days" if isinstance(password_age, int) else password_age,
+            'Console Last Sign-in': console_last_signin,
+            'Access Key ID': access_key_id,
+            'Active Key Age': f"{active_key_age} days" if isinstance(active_key_age, int) else active_key_age,
+            'Access Key Last Used': access_key_last_used,
+            'Creation Date': creation_date,
+            'Console Access': console_access,
+            'Permission Policies': permission_policies
+        }
 
-            # Get additional user information
-            groups = get_user_groups(iam_client, username)
-            mfa_status = get_user_mfa_devices(iam_client, username)
-            password_age, console_access = get_password_info(iam_client, username)
-            access_key_id, active_key_age, access_key_last_used = get_access_key_info(iam_client, username)
-            permission_policies = get_user_policies(iam_client, username)
-
-            # Compile user data
-            user_info = {
-                'User Name': username,
-                'Groups': groups,
-                'MFA': mfa_status,
-                'Password Age': f"{password_age} days" if isinstance(password_age, int) else password_age,
-                'Console Last Sign-in': console_last_signin,
-                'Access Key ID': access_key_id,
-                'Active Key Age': f"{active_key_age} days" if isinstance(active_key_age, int) else active_key_age,
-                'Access Key Last Used': access_key_last_used,
-                'Creation Date': creation_date,
-                'Console Access': console_access,
-                'Permission Policies': permission_policies
-            }
-
-            user_data.append(user_info)
+        user_data.append(user_info)
 
     utils.log_success(f"Successfully collected information for {len(user_data)} users")
     return user_data
@@ -388,6 +381,12 @@ def determine_role_type(role_name, role_path, trust_policy_doc):
     if role_path.startswith('/aws-service-role/') or 'ServiceLinkedRole' in role_name:
         return "Service-linked"
 
+    # Retrieve current account ID once for cross-account comparison
+    try:
+        current_account_id, _ = utils.get_account_info()
+    except Exception:
+        current_account_id = None
+
     # Check for cross-account roles by analyzing trust policy
     try:
         statements = trust_policy_doc.get('Statement', [])
@@ -403,11 +402,15 @@ def determine_role_type(role_name, role_path, trust_policy_doc):
                         aws_principals = [aws_principals]
 
                     for principal in aws_principals:
-                        if isinstance(principal, str) and 'arn:aws' in principal:
-                            # Check if it's a different account
+                        # Handle both arn:aws: and arn:aws-us-gov: partitions
+                        if isinstance(principal, str) and re.search(r'arn:aws(-us-gov)?:', principal):
+                            # Extract account ID from the ARN
                             match = re.search(r':(\d{12}):', principal)
                             if match:
-                                return "Cross-account"
+                                principal_account_id = match.group(1)
+                                # Only flag as cross-account when account IDs differ
+                                if current_account_id is None or principal_account_id != current_account_id:
+                                    return "Cross-account"
     except Exception as e:
         utils.log_warning(f"Could not determine role type from trust policy: {e}")
 
@@ -454,85 +457,78 @@ def collect_iam_roles():
     iam_client = utils.get_boto3_client('iam', region_name=home_region)
     role_data = []
 
-    # Get all IAM roles
+    # Collect all IAM roles in a single pass, then derive totals from len()
     paginator = iam_client.get_paginator('list_roles')
-
-    total_roles = 0
+    all_roles = []
     for page in paginator.paginate():
-        roles = page['Roles']
-        total_roles += len(roles)
+        all_roles.extend(page['Roles'])
 
+    total_roles = len(all_roles)
     utils.log_info(f"Found {total_roles} IAM roles to process")
 
-    # Reset paginator and process roles
-    paginator = iam_client.get_paginator('list_roles')
     processed = 0
+    for role in all_roles:
+        role_name = role['RoleName']
+        processed += 1
+        progress = (processed / total_roles) * 100 if total_roles > 0 else 0
 
-    for page in paginator.paginate():
-        roles = page['Roles']
+        utils.log_info(f"[{progress:.1f}%] Processing role {processed}/{total_roles}: {role_name}")
 
-        for role in roles:
-            role_name = role['RoleName']
-            processed += 1
-            progress = (processed / total_roles) * 100
+        # Basic role information
+        creation_date = role['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if role['CreateDate'] else "Unknown"
+        role_path = role.get('Path', '/')
+        description = role.get('Description', 'None')
+        max_session_duration = role.get('MaxSessionDuration', 3600) // 3600  # Convert to hours
 
-            utils.log_info(f"[{progress:.1f}%] Processing role {processed}/{total_roles}: {role_name}")
+        # Parse trust policy
+        trust_policy_doc = role.get('AssumeRolePolicyDocument', {})
+        trusted_entities, trust_summary, cross_account_info, service_usage = analyze_trust_policy(trust_policy_doc)
 
-            # Basic role information
-            creation_date = role['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if role['CreateDate'] else "Unknown"
-            role_path = role.get('Path', '/')
-            description = role.get('Description', 'None')
-            max_session_duration = role.get('MaxSessionDuration', 3600) // 3600  # Convert to hours
+        # Determine role type
+        role_type = determine_role_type(role_name, role_path, trust_policy_doc)
 
-            # Parse trust policy
-            trust_policy_doc = role.get('AssumeRolePolicyDocument', {})
-            trusted_entities, trust_summary, cross_account_info, service_usage = analyze_trust_policy(trust_policy_doc)
+        # Get role usage information
+        try:
+            role_usage = iam_client.get_role(RoleName=role_name)
+            role_last_used = role_usage['Role'].get('RoleLastUsed', {})
+            last_used_date = role_last_used.get('LastUsedDate')
+            last_used_region = role_last_used.get('Region', 'Unknown')
 
-            # Determine role type
-            role_type = determine_role_type(role_name, role_path, trust_policy_doc)
+            if last_used_date:
+                last_used_str = last_used_date.strftime('%Y-%m-%d %H:%M:%S UTC')
+                days_since_used = calculate_days_since_last_used(last_used_date)
+            else:
+                last_used_str = "Never"
+                days_since_used = "Never"
 
-            # Get role usage information
-            try:
-                role_usage = iam_client.get_role(RoleName=role_name)
-                role_last_used = role_usage['Role'].get('RoleLastUsed', {})
-                last_used_date = role_last_used.get('LastUsedDate')
-                last_used_region = role_last_used.get('Region', 'Unknown')
+        except Exception as e:
+            utils.log_warning(f"Could not get usage info for role {role_name}: {e}")
+            last_used_str = "Unknown"
+            days_since_used = "Unknown"
 
-                if last_used_date:
-                    last_used_str = last_used_date.strftime('%Y-%m-%d %H:%M:%S UTC')
-                    days_since_used = calculate_days_since_last_used(last_used_date)
-                else:
-                    last_used_str = "Never"
-                    days_since_used = "Never"
+        # Get additional role information
+        permission_policies = get_role_policies(iam_client, role_name)
+        tags = get_role_tags(iam_client, role_name)
 
-            except Exception as e:
-                utils.log_warning(f"Could not get usage info for role {role_name}: {e}")
-                last_used_str = "Unknown"
-                days_since_used = "Unknown"
+        # Compile role data
+        role_info = {
+            'Role Name': role_name,
+            'Role Type': role_type,
+            'Trusted Entities': trusted_entities,
+            'Trust Policy Summary': trust_summary,
+            'Permission Policies': permission_policies,
+            'Last Used': last_used_str,
+            'Days Since Last Used': days_since_used,
+            'Max Session Duration (Hours)': max_session_duration,
+            'Cross-Account Access': cross_account_info,
+            'Service Usage': service_usage,
+            'Creation Date': creation_date,
+            'Path': role_path,
+            'Description': description,
+            'Tags': tags
+        }
 
-            # Get additional role information
-            permission_policies = get_role_policies(iam_client, role_name)
-            tags = get_role_tags(iam_client, role_name)
-
-            # Compile role data
-            role_info = {
-                'Role Name': role_name,
-                'Role Type': role_type,
-                'Trusted Entities': trusted_entities,
-                'Trust Policy Summary': trust_summary,
-                'Permission Policies': permission_policies,
-                'Last Used': last_used_str,
-                'Days Since Last Used': days_since_used,
-                'Max Session Duration (Hours)': max_session_duration,
-                'Cross-Account Access': cross_account_info,
-                'Service Usage': service_usage,
-                'Creation Date': creation_date,
-                'Path': role_path,
-                'Description': description,
-                'Tags': tags
-            }
-
-            role_data.append(role_info)
+        role_data.append(role_info)
 
     utils.log_success(f"Successfully collected information for {len(role_data)} roles")
     return role_data

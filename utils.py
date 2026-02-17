@@ -40,6 +40,35 @@ from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
 
 # Global logger instance
 logger = None
+# Tracks whether setup_logging() has been explicitly called
+_logging_configured = False
+
+def _cleanup_old_logs(logs_dir: Path, log_retention_days: int = 14) -> None:
+    """
+    Remove log files older than log_retention_days from the logs directory.
+
+    Args:
+        logs_dir: Path to the logs directory
+        log_retention_days: Number of days to retain log files (default: 14)
+    """
+    try:
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=log_retention_days)
+        cutoff_timestamp = cutoff.timestamp()
+        removed = 0
+        for log_file in logs_dir.glob("*.log"):
+            try:
+                if log_file.stat().st_mtime < cutoff_timestamp:
+                    log_file.unlink()
+                    removed += 1
+            except Exception:
+                pass  # Skip files we cannot stat or remove
+        if removed:
+            logging.getLogger('stratusscan').debug(
+                f"Cleaned up {removed} log file(s) older than {log_retention_days} days"
+            )
+    except Exception:
+        pass  # Log cleanup is best-effort; never raise
+
 
 def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) -> logging.Logger:
     """
@@ -52,7 +81,7 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
     Returns:
         logging.Logger: Configured logger instance
     """
-    global logger
+    global logger, _logging_configured
 
     # Create logger
     logger = logging.getLogger('stratusscan')
@@ -85,6 +114,9 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
             logs_dir = Path(__file__).parent / "logs"
             logs_dir.mkdir(exist_ok=True)
 
+            # Remove stale log files before creating the new one
+            _cleanup_old_logs(logs_dir)
+
             # Generate timestamp for log filename: MM.DD.YYYY-HHMM
             timestamp = datetime.datetime.now().strftime("%m.%d.%Y-%H%M")
             log_filename = f"logs-{script_name}-{timestamp}.log"
@@ -107,22 +139,35 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
             logger.error(f"Failed to setup file logging: {e}")
             logger.warning("Continuing with console logging only")
 
+    _logging_configured = True
     return logger
 
 def get_logger() -> logging.Logger:
     """
     Get the current logger instance, creating one if it doesn't exist.
+    If setup_logging() has not yet been called, returns a logger with a
+    NullHandler so that library usage does not emit spurious output.
 
     Returns:
         logging.Logger: Logger instance
     """
-    global logger
+    global logger, _logging_configured
     if logger is None:
-        logger = setup_logging()
+        if _logging_configured:
+            # setup_logging() was called but logger was somehow cleared — reinitialise
+            logger = setup_logging()
+        else:
+            # setup_logging() has not been called yet; return a silent logger
+            # so importing utils as a library doesn't emit unexpected output
+            _null_logger = logging.getLogger('stratusscan')
+            if not _null_logger.handlers:
+                _null_logger.addHandler(logging.NullHandler())
+            return _null_logger
     return logger
 
-# Initialize with basic console logging by default
-logger = get_logger()
+# Do NOT call setup_logging() or get_logger() at module import time.
+# Scripts must call utils.setup_logging() explicitly to activate logging.
+# This prevents side effects (file creation, console output) on import.
 
 # AWS Commercial constants
 DEFAULT_REGIONS = ['us-east-1', 'us-west-2', 'us-west-1', 'eu-west-1']
@@ -155,11 +200,11 @@ def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
                 # Get account mappings from config
                 if 'account_mappings' in CONFIG_DATA:
                     ACCOUNT_MAPPINGS = CONFIG_DATA['account_mappings']
-                    logger.debug(f"Loaded {len(ACCOUNT_MAPPINGS)} account mappings from config.json")
-                
-                logger.debug("Configuration loaded successfully")
+                    get_logger().debug(f"Loaded {len(ACCOUNT_MAPPINGS)} account mappings from config.json")
+
+                get_logger().debug("Configuration loaded successfully")
         else:
-            logger.warning("config.json not found. Using default AWS configuration.")
+            get_logger().warning("config.json not found. Using default AWS configuration.")
 
             # Create a default AWS config if it doesn't exist
             default_config = {
@@ -199,16 +244,21 @@ def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
             try:
                 with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(default_config, f, indent=2)
-                logger.info(f"Created default config.json at {config_path}")
-                
+                msg = (
+                    f"Created default config.json at {config_path}. "
+                    "Please run 'python configure.py' to set your account mappings and preferences."
+                )
+                get_logger().info(msg)
+                print(f"[StratusScan] {msg}")
+
                 # Update global variables
                 CONFIG_DATA = default_config
                 ACCOUNT_MAPPINGS = {}
             except Exception as e:
-                logger.error(f"Failed to create default config.json: {e}")
-    
+                get_logger().error(f"Failed to create default config.json: {e}")
+
     except Exception as e:
-        logger.error(f"Error loading configuration: {e}")
+        get_logger().error(f"Error loading configuration: {e}")
     
     return ACCOUNT_MAPPINGS, CONFIG_DATA
 
@@ -595,7 +645,11 @@ def get_partition_regions(partition: str = 'aws', all_regions: bool = False) -> 
             try:
                 ec2 = get_boto3_client('ec2', region_name='us-east-1')
                 response = ec2.describe_regions(AllRegions=True)
-                regions = [region['RegionName'] for region in response['Regions']]
+                # Filter out regions the account has not opted into
+                regions = [
+                    region['RegionName'] for region in response['Regions']
+                    if region.get('OptInStatus') != 'not-opted-in'
+                ]
                 return sorted(regions)
             except Exception as e:
                 log_warning(f"Could not query all regions from EC2, using default list: {e}")
@@ -1145,35 +1199,40 @@ def add_account_mapping(account_id: str, account_name: str) -> bool:
         return False
     
     try:
-        # Update global dictionary (trigger lazy load first to ensure mappings are current)
+        # Trigger lazy load outside the lock to avoid re-entrant lock deadlock
+        # (_CONFIG_LOCK is a plain Lock; get_config() acquires it internally)
         mappings, _ = get_config()
         mappings[account_id] = account_name
         ACCOUNT_MAPPINGS[account_id] = account_name
-        
-        # Update configuration file
+
+        # Update configuration file with atomic write (write to .tmp then rename)
         config_path = Path(__file__).parent / 'config.json'
 
-        if config_path.exists():
-            # Read current config
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+        # Acquire lock only around file I/O to avoid deadlock with get_config()
+        with _CONFIG_LOCK:
+            if config_path.exists():
+                # Read current config
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
 
-            # Update account mappings
-            if 'account_mappings' not in config:
-                config['account_mappings'] = {}
+                # Update account mappings
+                if 'account_mappings' not in config:
+                    config['account_mappings'] = {}
 
-            config['account_mappings'][account_id] = account_name
+                config['account_mappings'][account_id] = account_name
 
-            # Write updated config
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2)
+                # Atomic write: serialize to .tmp then os.replace for crash safety
+                tmp_path = config_path.with_suffix('.json.tmp')
+                with open(tmp_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2)
+                os.replace(tmp_path, config_path)
 
-            log_success(f"Added account mapping: {account_id} → {account_name}")
-            return True
-        else:
-            log_error("config.json not found")
-            return False
-    
+                log_success(f"Added account mapping: {account_id} → {account_name}")
+                return True
+            else:
+                log_error("config.json not found")
+                return False
+
     except Exception as e:
         log_error("Failed to add account mapping", e)
         return False
@@ -1310,8 +1369,9 @@ def get_stratusscan_root() -> Path:
     Returns:
         Path: Path to the StratusScan root directory
     """
-    # Get directory of the calling script
-    calling_script = Path(sys.argv[0]).absolute()
+    # Anchor to this file (utils.py) rather than sys.argv[0] so the path is
+    # correct regardless of how Python was invoked (e.g. pytest, subprocess, etc.)
+    calling_script = Path(__file__).absolute()
     script_dir = calling_script.parent
 
     # Check if we're in a 'scripts' subdirectory
@@ -1390,13 +1450,22 @@ def create_export_filename(
     if not current_date:
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
 
-    # Build the filename
+    # Build the base filename
     if suffix:
-        filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}.xlsx"
     else:
-        filename = f"{account_name}-{resource_type}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-export-{current_date}.xlsx"
 
-    return filename
+    # Same-day overwrite protection: append -v2, -v3, etc. until the name is unique
+    output_dir = get_output_dir()
+    candidate = base_filename
+    version = 2
+    while (output_dir / candidate).exists():
+        stem = base_filename[: -len(".xlsx")]
+        candidate = f"{stem}-v{version}.xlsx"
+        version += 1
+
+    return candidate
 
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_adjust_columns: bool = True, prepare: bool = False) -> Optional[str]:
     """
@@ -1428,26 +1497,22 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         
         # Save to Excel
         if auto_adjust_columns:
-            # Create Excel writer
-            writer = pd.ExcelWriter(output_path, engine='openpyxl')
+            # Create Excel writer using context manager to ensure proper close/save
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                # Write DataFrame to Excel
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # Write DataFrame to Excel
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-            # Auto-adjust column widths (skip if DataFrame is empty)
-            if not df.empty:
-                worksheet = writer.sheets[sheet_name]
-                for i, column in enumerate(df.columns):
-                    column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                    # Set a maximum column width to avoid extremely wide columns
-                    column_width = min(column_width, 50)
-                    # openpyxl column indices are 1-based
-                    from openpyxl.utils import get_column_letter
-                    column_letter = get_column_letter(i + 1)
-                    worksheet.column_dimensions[column_letter].width = column_width
-            
-            # Save the workbook
-            writer.close()
+                # Auto-adjust column widths (skip if DataFrame is empty)
+                if not df.empty:
+                    worksheet = writer.sheets[sheet_name]
+                    for i, column in enumerate(df.columns):
+                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+                        # Set a maximum column width to avoid extremely wide columns
+                        column_width = min(column_width, 50)
+                        # openpyxl column indices are 1-based
+                        from openpyxl.utils import get_column_letter
+                        column_letter = get_column_letter(i + 1)
+                        worksheet.column_dimensions[column_letter].width = column_width
         else:
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
@@ -1501,27 +1566,23 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
         # Ensure the output directory exists
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        # Create Excel writer
-        writer = pd.ExcelWriter(output_path, engine='openpyxl')
+        # Create Excel writer using context manager to ensure proper close/save
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            # Write each DataFrame to a separate sheet
+            for sheet_name, df in dataframes_dict.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Write each DataFrame to a separate sheet
-        for sheet_name, df in dataframes_dict.items():
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-            # Auto-adjust column widths (skip if DataFrame is empty)
-            if not df.empty:
-                worksheet = writer.sheets[sheet_name]
-                for i, column in enumerate(df.columns):
-                    column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                    # Set a maximum column width to avoid extremely wide columns
-                    column_width = min(column_width, 50)
-                    # openpyxl column indices are 1-based
-                    from openpyxl.utils import get_column_letter
-                    column_letter = get_column_letter(i + 1)
-                    worksheet.column_dimensions[column_letter].width = column_width
-        
-        # Save the workbook
-        writer.close()
+                # Auto-adjust column widths (skip if DataFrame is empty)
+                if not df.empty:
+                    worksheet = writer.sheets[sheet_name]
+                    for i, column in enumerate(df.columns):
+                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+                        # Set a maximum column width to avoid extremely wide columns
+                        column_width = min(column_width, 50)
+                        # openpyxl column indices are 1-based
+                        from openpyxl.utils import get_column_letter
+                        column_letter = get_column_letter(i + 1)
+                        worksheet.column_dimensions[column_letter].width = column_width
         
         logger.info(f"Data successfully exported to: {output_path}")
         return str(output_path)
@@ -1819,6 +1880,15 @@ def ensure_dependencies(*packages: str) -> bool:
 
     # Prompt user to install missing packages
     log_warning(f"Missing packages: {', '.join(missing)}")
+
+    # In automation mode, never block on interactive prompts
+    if is_auto_run():
+        log_error(
+            f"Cannot install missing packages in auto-run mode: {', '.join(missing)}. "
+            "Run 'pip install " + " ".join(missing) + "' manually, then retry."
+        )
+        return False
+
     print(f"\nThe following packages are required but not installed: {', '.join(missing)}")
     response = input("Would you like to install these packages now? (y/n): ").lower().strip()
 
@@ -1917,7 +1987,7 @@ def prepare_dataframe_for_export(
     df,
     remove_timezone: bool = True,
     fill_na: str = 'N/A',
-    truncate_strings: Optional[int] = 1000,
+    truncate_strings: Optional[int] = None,
     max_column_width: int = 50
 ):
     """
@@ -1972,7 +2042,7 @@ def prepare_dataframe_for_export(
                     # Sample first non-null value to check if it's a datetime
                     sample = df_clean[col].dropna().head(1)
                     if not sample.empty and hasattr(sample.iloc[0], 'tzinfo') and sample.iloc[0].tzinfo is not None:
-                        datetime_cols = datetime_cols.append(pd.Index([col]))
+                        datetime_cols = datetime_cols.union(pd.Index([col]))
 
             # Remove timezone from identified columns
             for col in datetime_cols:
@@ -2109,7 +2179,7 @@ def sanitize_for_export(
                         if matches:
                             col_masked += len(matches)
                             # Replace sensitive data while preserving the key name
-                            modified = pattern.sub(r'\1' + mask_string, modified)
+                            modified = pattern.sub(lambda m: m.group(1) + mask_string, modified)
 
                     return modified
 
@@ -2380,8 +2450,9 @@ def estimate_rds_monthly_cost(
     """
     Estimate monthly cost for RDS database instance.
 
-    This provides rough cost estimates for RDS instances. For accurate pricing,
-    consult AWS Pricing Calculator or AWS Cost Explorer.
+    NOTE: All pricing figures are based on us-east-1 (N. Virginia) On-Demand rates.
+    Actual costs will differ in other regions and under Reserved or Savings Plan pricing.
+    For accurate pricing, consult AWS Pricing Calculator or AWS Cost Explorer.
 
     Args:
         instance_class: RDS instance class (e.g., 'db.t3.micro')
@@ -2951,19 +3022,17 @@ def paginate_with_progress(
 
     paginator = client.get_paginator(operation)
 
-    # Collect all pages first (quick)
-    log_debug(f"Collecting {operation_label} pages...")
-    pages = list(paginator.paginate(**kwargs))
-    total_pages = len(pages)
+    log_debug(f"Streaming {operation_label} pages...")
 
-    log_info(f"Processing {total_pages} page(s) of {operation_label}")
-
-    # Yield pages with progress
-    for i, page in enumerate(pages, 1):
+    # Stream pages one at a time instead of materialising the full list in memory
+    page_num = 0
+    for page in paginator.paginate(**kwargs):
+        page_num += 1
         if show_pagination:
-            progress = (i / total_pages) * 100
-            log_debug(f"[{progress:.1f}%] Processing page {i}/{total_pages}")
+            log_debug(f"Processing page {page_num} of {operation_label}")
         yield page
+
+    log_info(f"Processed {page_num} page(s) of {operation_label}")
 
 
 def build_dataframe_in_batches(

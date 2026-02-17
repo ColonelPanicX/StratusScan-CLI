@@ -1,0 +1,8 @@
+﻿Type, Cost per GB/month 
+gp3, $0.08 
+gp2, $0.10 
+io2, $0.125 
+io1, $0.125 
+st1, $0.045 
+sc1, $0.015 
+standard, $0.05 

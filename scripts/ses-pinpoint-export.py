@@ -94,8 +94,8 @@ def collect_ses_identities(region: str) -> List[Dict[str, Any]]:
                         'MailFromStatus': 'N/A',
                         'FeedbackForwardingEnabled': 'N/A',
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        utils.log_warning(f"Error collecting SES identities in region {region}: {e}")
 
     return identities
 

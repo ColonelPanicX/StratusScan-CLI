@@ -1,0 +1,965 @@
+﻿Name,API Name,Instance Family,Compute Units (ECU),Intel Turbo,Arch,Availability Zones, On Demand (Monthly) , Linux Reserved cost (Monthly) , SLES Spot Maximum cost (Monthly) , Windows On Demand cost (Monthly) 
+A1 Double Extra Large,a1.2xlarge,a1,0 units,unknown,arm64,, $157.826 , $102.784 , $240.170 , unavailable 
+A1 Quadruple Extra Large,a1.4xlarge,a1,0 units,unknown,arm64,, $297.840 , $187.610 , $389.090 , unavailable 
+A1 Large,a1.large,a1,0 units,unknown,arm64,, $39.493 , $25.696 , $78.329 , unavailable 
+A1 Medium,a1.medium,a1,0 units,unknown,arm64,, $19.710 , $11.753 , $41.245 , unavailable 
+A1 Metal,a1.metal,a1,0 units,unknown,arm64,, $297.840 , $187.610 , $389.090 , unavailable 
+A1 Extra Large,a1.xlarge,a1,0 units,unknown,arm64,, $78.913 , $51.392 , $115.559 , unavailable 
+C1 High-CPU Medium,c1.medium,c1,5 units,unknown,"i386, x86_64",, $104.390 , $73.000 , $105.631 , $168.63 
+C1 High-CPU Extra Large,c1.xlarge,c1,20 units,unknown,x86_64,, $417.560 , $292.000 , $267.472 , $674.52 
+C3 High-CPU Double Extra Large,c3.2xlarge,c3,28 units,Yes,x86_64,, $337.260 , $234.330 , $246.813 , $603.71 
+C3 High-CPU Quadruple Extra Large,c3.4xlarge,c3,55 units,Yes,x86_64,, $674.520 , $426.320 , $532.754 ," $1,207.42 "
+C3 High-CPU Eight Extra Large,c3.8xlarge,c3,108 units,Yes,x86_64,," $1,226.400 ", $852.640 , $649.408 ," $2,195.84 "
+C3 High-CPU Large,c3.large,c3,7 units,Yes,"i386, x86_64",, $84.680 , $58.400 , $103.149 , $151.11 
+C3 High-CPU Extra Large,c3.xlarge,c3,14 units,Yes,x86_64,, $168.630 , $106.580 , $144.248 , $302.22 
+C4 High-CPU Double Extra Large,c4.2xlarge,c4,31 units,Yes,x86_64,, $319.740 , $202.210 , $209.656 , $588.38 
+C4 High-CPU Quadruple Extra Large,c4.4xlarge,c4,62 units,Yes,x86_64,, $639.480 , $404.420 , $345.655 ," $1,176.76 "
+C4 High-CPU Eight Extra Large,c4.8xlarge,c4,132 units,Yes,x86_64,," $1,161.430 ", $735.840 , $537.864 ," $2,256.43 "
+C4 High-CPU Large,c4.large,c4,8 units,Yes,x86_64,, $80.300 , $45.990 , $118.625 , $147.46 
+C4 High-CPU Extra Large,c4.xlarge,c4,16 units,Yes,x86_64,, $159.870 , $101.470 , $136.218 , $294.19 
+C5 High-CPU 12xlarge Extra Large,c5.12xlarge,c5,188 units,Yes,x86_64,," $1,578.260 ", $938.050 , $633.494 ," $3,190.10 "
+C5 High-CPU 18xlarge,c5.18xlarge,c5,281 units,Yes,x86_64,," $2,233.800 "," $1,407.440 ", $895.491 ," $4,651.56 "
+C5 High-CPU 24xlarge,c5.24xlarge,c5,375 units,Yes,x86_64,," $3,157.250 "," $1,876.100 "," $1,109.819 "," $6,380.93 "
+C5 High-CPU Double Extra Large,c5.2xlarge,c5,39 units,Yes,x86_64,, $262.800 , $171.550 , $183.668 , $531.44 
+C5 High-CPU Quadruple Extra Large,c5.4xlarge,c5,73 units,Yes,x86_64,, $526.330 , $312.440 , $268.713 ," $1,063.61 "
+C5 High-CPU 9xlarge,c5.9xlarge,c5,139 units,Yes,x86_64,," $1,184.060 ", $770.880 , $557.720 ," $2,392.94 "
+C5 High-CPU Large,c5.large,c5,10 units,Yes,x86_64,, $65.700 , $43.070 , $65.627 , $132.86 
+C5 High-CPU Metal,c5.metal,c5,375 units,Yes,x86_64,," $2,978.400 "," $1,876.100 "," $1,073.246 "," $6,202.08 "
+C5 High-CPU Extra Large,c5.xlarge,c5,20 units,Yes,x86_64,, $131.400 , $78.110 , $99.572 , $265.72 
+C5A 12xlarge Extra Large,c5a.12xlarge,c5a,0 units,unknown,x86_64,," $1,484.090 ", $849.720 , $740.658 ," $3,095.93 "
+C5A 16xlarge Extra Large,c5a.16xlarge,c5a,0 units,unknown,x86_64,," $1,978.300 "," $1,132.960 ", $930.385 ," $4,127.42 "
+C5A 24xlarge,c5a.24xlarge,c5a,0 units,unknown,x86_64,," $2,968.180 "," $1,699.440 "," $1,422.186 "," $6,191.86 "
+C5A Double Extra Large,c5a.2xlarge,c5a,0 units,unknown,x86_64,, $247.470 , $141.620 , $197.684 , $516.11 
+C5A Quadruple Extra Large,c5a.4xlarge,c5a,0 units,unknown,x86_64,, $494.940 , $311.710 , $300.833 ," $1,032.22 "
+C5A Eight Extra Large,c5a.8xlarge,c5a,0 units,unknown,x86_64,, $989.150 , $566.480 , $518.519 ," $2,063.71 "
+C5A Large,c5a.large,c5a,0 units,unknown,x86_64,, $62.050 , $38.690 , $65.481 , $129.21 
+C5A Extra Large,c5a.xlarge,c5a,0 units,unknown,x86_64,, $123.370 , $70.810 , $97.674 , $257.69 
+C5AD 12xlarge Extra Large,c5ad.12xlarge,c5ad,0 units,unknown,x86_64,," $1,657.100 "," $1,043.900 ", $865.707 ," $3,268.94 "
+C5AD 16xlarge Extra Large,c5ad.16xlarge,c5ad,0 units,unknown,x86_64,," $2,209.710 "," $1,265.820 "," $1,091.423 "," $4,358.83 "
+C5AD 24xlarge,c5ad.24xlarge,c5ad,0 units,unknown,x86_64,," $3,314.930 "," $2,088.530 "," $1,587.385 "," $6,538.61 "
+C5AD Double Extra Large,c5ad.2xlarge,c5ad,0 units,unknown,x86_64,, $275.940 , $173.740 , $241.995 , $544.58 
+C5AD Quadruple Extra Large,c5ad.4xlarge,c5ad,0 units,unknown,x86_64,, $552.610 , $316.090 , $338.939 ," $1,089.89 "
+C5AD Eight Extra Large,c5ad.8xlarge,c5ad,0 units,unknown,x86_64,," $1,105.220 ", $632.910 , $658.314 ," $2,179.78 "
+C5AD Large,c5ad.large,c5ad,0 units,unknown,x86_64,, $69.350 , $39.420 , $70.664 , $136.51 
+C5AD Extra Large,c5ad.xlarge,c5ad,0 units,unknown,x86_64,, $137.970 , $86.870 , $101.762 , $272.29 
+C5 High-CPU 12xlarge Extra Large,c5d.12xlarge,c5d,188 units,Yes,x86_64,," $1,782.660 "," $1,059.960 ", $762.996 ," $3,394.50 "
+C5 High-CPU 18xlarge,c5d.18xlarge,c5d,281 units,Yes,x86_64,," $2,522.880 "," $1,589.210 "," $1,240.635 "," $4,940.64 "
+C5 High-CPU 24xlarge,c5d.24xlarge,c5d,375 units,Yes,x86_64,," $3,566.050 "," $2,321.400 "," $1,340.572 "," $6,789.73 "
+C5 High-CPU Double Extra Large,c5d.2xlarge,c5d,39 units,Yes,x86_64,, $297.110 , $176.660 , $214.912 , $565.75 
+C5 High-CPU Quadruple Extra Large,c5d.4xlarge,c5d,73 units,Yes,x86_64,, $594.220 , $353.320 , $354.999 ," $1,131.50 "
+C5 High-CPU 9xlarge,c5d.9xlarge,c5d,139 units,Yes,x86_64,," $1,337.360 ", $870.160 , $683.207 ," $2,546.24 "
+C5 High-CPU Large,c5d.large,c5d,10 units,Yes,x86_64,, $74.460 , $48.180 , $75.190 , $141.62 
+C5 High-CPU Metal,c5d.metal,c5d,375 units,Yes,x86_64,," $3,363.840 "," $2,119.190 "," $1,118.798 "," $6,587.52 "
+C5 High-CPU Extra Large,c5d.xlarge,c5d,20 units,Yes,x86_64,, $148.920 , $88.330 , $114.683 , $283.24 
+C5N 18xlarge,c5n.18xlarge,c5n,281 units,Yes,x86_64,," $2,838.240 "," $1,787.770 "," $1,421.310 "," $5,256.00 "
+C5N Double Extra Large,c5n.2xlarge,c5n,39 units,Yes,x86_64,, $334.340 , $217.540 , $238.199 , $602.98 
+C5N Quadruple Extra Large,c5n.4xlarge,c5n,73 units,Yes,x86_64,, $668.680 , $435.080 , $418.947 ," $1,205.96 "
+C5N 9xlarge,c5n.9xlarge,c5n,139 units,Yes,x86_64,," $1,504.530 ", $894.250 , $741.826 ," $2,713.41 "
+C5N Large,c5n.large,c5n,10 units,Yes,x86_64,, $83.220 , $49.640 , $73.657 , $150.38 
+C5N Metal,c5n.metal,c5n,0 units,Yes,x86_64,," $2,838.240 "," $1,787.770 "," $1,139.676 "," $5,256.00 "
+C5N Extra Large,c5n.xlarge,c5n,20 units,Yes,x86_64,, $167.170 , $108.770 , $119.428 , $301.49 
+C6A 12xlarge Extra Large,c6a.12xlarge,c6a,0 units,unknown,x86_64,," $1,474.308 ", $975.258 , $624.077 ," $3,086.15 "
+C6A 16xlarge Extra Large,c6a.16xlarge,c6a,0 units,unknown,x86_64,," $1,965.744 "," $1,300.342 ", $891.768 ," $4,114.86 "
+C6A 24xlarge,c6a.24xlarge,c6a,0 units,unknown,x86_64,," $2,948.616 "," $1,950.509 "," $1,165.226 "," $6,172.30 "
+C6A Double Extra Large,c6a.2xlarge,c6a,0 units,unknown,x86_64,, $245.718 , $147.767 , $201.699 , $514.36 
+C6A 32xlarge,c6a.32xlarge,c6a,0 units,unknown,x86_64,," $3,931.488 "," $2,364.251 "," $1,793.537 "," $8,229.73 "
+C6A 48xlarge,c6a.48xlarge,c6a,0 units,unknown,x86_64,," $5,361.120 "," $3,546.384 "," $2,150.142 "," $11,808.48 "
+C6A Quadruple Extra Large,c6a.4xlarge,c6a,0 units,unknown,x86_64,, $491.436 , $325.084 , $297.621 ," $1,028.72 "
+C6A Eight Extra Large,c6a.8xlarge,c6a,0 units,unknown,x86_64,, $982.872 , $591.066 , $536.769 ," $2,057.43 "
+C6A Large,c6a.large,c6a,0 units,unknown,x86_64,, $61.430 , $40.639 , $64.678 , $128.59 
+C6A Metal,c6a.metal,c6a,0 units,unknown,x86_64,," $5,361.120 "," $3,546.384 "," $2,294.317 "," $11,808.48 "
+C6A Extra Large,c6a.xlarge,c6a,0 units,unknown,x86_64,, $122.859 , $73.883 , $93.586 , $257.18 
+C6G 12xlarge Extra Large,c6g.12xlarge,c6g,0 units,unknown,arm64,," $1,262.827 ", $822.053 , $498.298 , unavailable 
+C6G 16xlarge Extra Large,c6g.16xlarge,c6g,0 units,unknown,arm64,," $1,683.818 "," $1,000.757 ", $765.332 , unavailable 
+C6G Double Extra Large,c6g.2xlarge,c6g,0 units,unknown,arm64,, $210.459 , $125.122 , $187.683 , unavailable 
+C6G Quadruple Extra Large,c6g.4xlarge,c6g,0 units,unknown,arm64,, $420.918 , $274.042 , $232.651 , unavailable 
+C6G Eight Extra Large,c6g.8xlarge,c6g,0 units,unknown,arm64,, $841.909 , $500.342 , $371.570 , unavailable 
+C6G Large,c6g.large,c6g,0 units,unknown,arm64,, $52.633 , $31.244 , $67.890 , unavailable 
+C6G Medium,c6g.medium,c6g,0 units,unknown,arm64,, $26.280 , $17.155 , $32.631 , unavailable 
+C6G Metal,c6g.metal,c6g,0 units,unknown,arm64,," $1,683.818 "," $1,096.022 ", $655.832 , unavailable 
+C6G Extra Large,c6g.xlarge,c6g,0 units,unknown,arm64,, $105.266 , $62.561 , $86.140 , unavailable 
+C6GD 12xlarge Extra Large,c6gd.12xlarge,c6gd,0 units,unknown,arm64,," $1,426.274 ", $847.676 , $581.007 , unavailable 
+C6GD 16xlarge Extra Large,c6gd.16xlarge,c6gd,0 units,unknown,arm64,," $1,901.723 "," $1,237.861 ", $704.085 , unavailable 
+C6GD Double Extra Large,c6gd.2xlarge,c6gd,0 units,unknown,arm64,, $237.688 , $154.760 , $174.835 , unavailable 
+C6GD Quadruple Extra Large,c6gd.4xlarge,c6gd,0 units,unknown,arm64,, $475.449 , $309.447 , $273.166 , unavailable 
+C6GD Eight Extra Large,c6gd.8xlarge,c6gd,0 units,unknown,arm64,, $950.825 , $565.093 , $433.839 , unavailable 
+C6GD Large,c6gd.large,c6gd,0 units,unknown,arm64,, $59.422 , $38.690 , $68.839 , unavailable 
+C6GD Medium,c6gd.medium,c6gd,0 units,unknown,arm64,, $29.711 , $19.345 , $32.339 , unavailable 
+C6GD Metal,c6gd.metal,c6gd,0 units,unknown,arm64,," $1,901.723 "," $1,130.259 ", $675.031 , unavailable 
+C6GD Extra Large,c6gd.xlarge,c6gd,0 units,unknown,arm64,, $118.844 , $70.664 , $88.257 , unavailable 
+C6GN 12xlarge Extra Large,c6gn.12xlarge,c6gn,0 units,unknown,arm64,," $1,665.101 ", $955.395 , $634.297 , unavailable 
+C6GN 16xlarge Extra Large,c6gn.16xlarge,c6gn,0 units,unknown,arm64,," $2,220.134 "," $1,401.250 ", $781.903 , unavailable 
+C6GN Double Extra Large,c6gn.2xlarge,c6gn,0 units,unknown,arm64,, $277.517 , $175.156 , $209.656 , unavailable 
+C6GN Quadruple Extra Large,c6gn.4xlarge,c6gn,0 units,unknown,arm64,, $555.034 , $350.312 , $291.416 , unavailable 
+C6GN Eight Extra Large,c6gn.8xlarge,c6gn,0 units,unknown,arm64,," $1,110.067 ", $636.932 , $496.035 , unavailable 
+C6GN Large,c6gn.large,c6gn,0 units,unknown,arm64,, $69.379 , $43.785 , $73.292 , unavailable 
+C6GN Medium,c6gn.medium,c6gn,0 units,unknown,arm64,, $34.690 , $21.893 , $33.580 , unavailable 
+C6GN Metal,c6gn.metal,c6gn,0 units,unknown,arm64,, unavailable , unavailable , unavailable , unavailable 
+C6GN Extra Large,c6gn.xlarge,c6gn,0 units,unknown,arm64,, $138.758 , $87.578 , $97.017 , unavailable 
+C6I 12xlarge Extra Large,c6i.12xlarge,c6i,0 units,Yes,x86_64,," $1,638.120 ", $985.106 , $827.163 ," $3,249.96 "
+C6I 16xlarge Extra Large,c6i.16xlarge,c6i,0 units,Yes,x86_64,," $2,184.160 "," $1,313.474 ", $918.486 ," $4,333.28 "
+C6I 24xlarge,c6i.24xlarge,c6i,0 units,Yes,x86_64,," $3,276.240 "," $1,970.212 "," $1,244.431 "," $6,499.92 "
+C6I Double Extra Large,c6i.2xlarge,c6i,0 units,Yes,x86_64,, $273.020 , $164.184 , $209.948 , $541.66 
+C6I 32xlarge,c6i.32xlarge,c6i,0 units,Yes,x86_64,," $4,368.320 "," $2,889.647 "," $1,468.541 "," $8,666.56 "
+C6I Quadruple Extra Large,c6i.4xlarge,c6i,0 units,Yes,x86_64,, $546.040 , $328.369 , $307.695 ," $1,083.32 "
+C6I Eight Extra Large,c6i.8xlarge,c6i,0 units,Yes,x86_64,," $1,092.080 ", $722.408 , $552.172 ," $2,166.64 "
+C6I Large,c6i.large,c6i,0 units,Yes,x86_64,, $68.255 , $41.048 , $67.963 , $135.42 
+C6I Metal,c6i.metal,c6i,0 units,Yes,x86_64,," $3,971.200 "," $2,626.949 "," $1,530.518 "," $8,269.44 "
+C6I Extra Large,c6i.xlarge,c6i,0 units,Yes,x86_64,, $136.510 , $82.096 , $92.053 , $270.83 
+C6ID 12xlarge Extra Large,c6id.12xlarge,c6id,0 units,Yes,x86_64,," $1,942.618 "," $1,112.958 ", $809.205 ," $3,554.46 "
+C6ID 16xlarge Extra Large,c6id.16xlarge,c6id,0 units,Yes,x86_64,," $2,590.157 "," $1,483.944 "," $1,108.797 "," $4,739.28 "
+C6ID 24xlarge,c6id.24xlarge,c6id,0 units,Yes,x86_64,," $3,885.235 "," $2,448.508 "," $1,694.403 "," $7,108.92 "
+C6ID Double Extra Large,c6id.2xlarge,c6id,0 units,Yes,x86_64,, $323.770 , $185.493 , $223.745 , $592.41 
+C6ID 32xlarge,c6id.32xlarge,c6id,0 units,Yes,x86_64,," $4,709.376 "," $2,967.888 "," $1,704.039 "," $9,007.62 "
+C6ID Quadruple Extra Large,c6id.4xlarge,c6id,0 units,Yes,x86_64,, $647.539 , $370.986 , $401.938 ," $1,184.82 "
+C6ID Eight Extra Large,c6id.8xlarge,c6id,0 units,Yes,x86_64,," $1,295.078 ", $816.169 , $651.598 ," $2,369.64 "
+C6ID Large,c6id.large,c6id,0 units,Yes,x86_64,, $80.942 , $46.377 , $78.840 , $148.10 
+C6ID Metal,c6id.metal,c6id,0 units,Yes,x86_64,," $4,709.376 "," $2,967.888 "," $1,632.572 "," $9,007.62 "
+C6ID Extra Large,c6id.xlarge,c6id,0 units,Yes,x86_64,, $161.885 , $102.025 , $108.186 , $296.20 
+C6IN 12xlarge Extra Large,c6in.12xlarge,c6in,0 units,Yes,x86_64,," $2,185.445 "," $1,376.831 "," $1,018.131 "," $3,797.28 "
+C6IN 16xlarge Extra Large,c6in.16xlarge,c6in,0 units,Yes,x86_64,," $2,913.926 "," $1,835.775 "," $1,404.447 "," $5,063.05 "
+C6IN 24xlarge,c6in.24xlarge,c6in,0 units,Yes,x86_64,," $4,370.890 "," $2,753.662 "," $1,819.087 "," $7,594.57 "
+C6IN Double Extra Large,c6in.2xlarge,c6in,0 units,Yes,x86_64,, $364.241 , $229.468 , $271.779 , $632.88 
+C6IN 32xlarge,c6in.32xlarge,c6in,0 units,Yes,x86_64,," $5,298.048 "," $3,337.772 "," $2,078.748 "," $9,596.29 "
+C6IN Quadruple Extra Large,c6in.4xlarge,c6in,0 units,Yes,x86_64,, $728.482 , $417.224 , $499.320 ," $1,265.76 "
+C6IN Eight Extra Large,c6in.8xlarge,c6in,0 units,Yes,x86_64,," $1,456.963 ", $917.887 , $708.684 ," $2,531.52 "
+C6IN Large,c6in.large,c6in,0 units,Yes,x86_64,, $91.060 , $52.151 , $76.066 , $158.22 
+C6IN Metal,c6in.metal,c6in,0 units,Yes,x86_64,," $5,298.048 "," $3,337.772 "," $1,834.417 "," $9,596.29 "
+C6IN Extra Large,c6in.xlarge,c6in,0 units,Yes,x86_64,, $182.120 , $114.734 , $113.734 , $316.44 
+C7A 12xlarge Extra Large,c7a.12xlarge,c7a,0 units,unknown,x86_64,," $1,978.081 "," $1,308.496 ", $830.229 ," $3,589.92 "
+C7A 16xlarge Extra Large,c7a.16xlarge,c7a,0 units,unknown,x86_64,," $2,637.439 "," $1,744.664 "," $1,212.457 "," $4,786.56 "
+C7A 24xlarge,c7a.24xlarge,c7a,0 units,unknown,x86_64,," $3,956.155 "," $2,616.999 "," $1,805.290 "," $7,179.83 "
+C7A Double Extra Large,c7a.2xlarge,c7a,0 units,unknown,x86_64,, $329.683 , $218.080 , $240.535 , $598.32 
+C7A 32xlarge,c7a.32xlarge,c7a,0 units,unknown,x86_64,," $5,274.878 "," $3,172.120 "," $1,971.219 "," $9,573.12 "
+C7A 48xlarge,c7a.48xlarge,c7a,0 units,unknown,x86_64,," $7,193.011 "," $4,758.177 "," $2,546.751 "," $13,640.37 "
+C7A Quadruple Extra Large,c7a.4xlarge,c7a,0 units,unknown,x86_64,, $659.358 , $396.514 , $366.606 ," $1,196.64 "
+C7A Eight Extra Large,c7a.8xlarge,c7a,0 units,unknown,x86_64,," $1,318.716 ", $793.028 , $697.953 ," $2,393.28 "
+C7A Large,c7a.large,c7a,0 units,unknown,x86_64,, $82.417 , $49.567 , $73.584 , $149.58 
+C7A Medium,c7a.medium,c7a,0 units,unknown,x86_64,, $41.209 , $24.784 , $57.013 , $74.79 
+C7A Metal-48xl,c7a.metal-48xl,c7a,0 units,unknown,x86_64,," $7,193.011 "," $4,758.177 "," $3,045.633 "," $13,640.37 "
+C7A Extra Large,c7a.xlarge,c7a,0 units,unknown,x86_64,, $164.841 , $99.127 , $114.464 , $299.16 
+C7G 12xlarge Extra Large,c7g.12xlarge,c7g,0 units,unknown,arm64,," $1,349.916 ", $837.018 , $542.682 , unavailable 
+C7G 16xlarge Extra Large,c7g.16xlarge,c7g,0 units,unknown,arm64,," $1,693.600 "," $1,116.024 ", $698.172 , unavailable 
+C7G Double Extra Large,c7g.2xlarge,c7g,0 units,unknown,arm64,, $224.986 , $152.789 , $193.012 , unavailable 
+C7G Quadruple Extra Large,c7g.4xlarge,c7g,0 units,unknown,arm64,, $449.972 , $305.578 , $278.714 , unavailable 
+C7G Eight Extra Large,c7g.8xlarge,c7g,0 units,unknown,arm64,, $899.944 , $611.156 , $486.764 , unavailable 
+C7G Large,c7g.large,c7g,0 units,unknown,arm64,, $56.210 , $38.179 , $74.387 , unavailable 
+C7G Medium,c7g.medium,c7g,0 units,unknown,arm64,, $28.105 , $19.126 , $32.412 , unavailable 
+C7G Metal,c7g.metal,c7g,0 units,unknown,arm64,," $1,693.600 "," $1,116.024 ", $806.796 , unavailable 
+C7G Extra Large,c7g.xlarge,c7g,0 units,unknown,arm64,, $112.493 , $76.358 , $87.673 , unavailable 
+C7GD 12xlarge Extra Large,c7gd.12xlarge,c7gd,0 units,unknown,arm64,," $1,684.840 "," $1,001.633 ", $676.929 , unavailable 
+C7GD 16xlarge Extra Large,c7gd.16xlarge,c7gd,0 units,unknown,arm64,," $2,119.190 "," $1,335.535 ", $846.435 , unavailable 
+C7GD Double Extra Large,c7gd.2xlarge,c7gd,0 units,unknown,arm64,, $280.831 , $182.865 , $190.384 , unavailable 
+C7GD Quadruple Extra Large,c7gd.4xlarge,c7gd,0 units,unknown,arm64,, $561.589 , $333.902 , $296.307 , unavailable 
+C7GD Eight Extra Large,c7gd.8xlarge,c7gd,0 units,unknown,arm64,," $1,123.178 ", $667.804 , $476.617 , unavailable 
+C7GD Large,c7gd.large,c7gd,0 units,unknown,arm64,, $70.226 , $41.756 , $72.854 , unavailable 
+C7GD Medium,c7gd.medium,c7gd,0 units,unknown,arm64,, $35.113 , $22.849 , $52.925 , unavailable 
+C7GD Metal,c7gd.metal,c7gd,0 units,unknown,arm64,," $2,119.190 "," $1,335.535 ", $741.534 , unavailable 
+C7GD Extra Large,c7gd.xlarge,c7gd,0 units,unknown,arm64,, $140.379 , $91.396 , $94.608 , unavailable 
+C7GN 12xlarge Extra Large,c7gn.12xlarge,c7gn,0 units,unknown,arm64,," $2,317.677 "," $1,377.510 ", $901.696 , unavailable 
+C7GN 16xlarge Extra Large,c7gn.16xlarge,c7gn,0 units,unknown,arm64,," $2,915.328 "," $1,836.680 "," $1,143.545 ", unavailable 
+C7GN Double Extra Large,c7gn.2xlarge,c7gn,0 units,unknown,arm64,, $386.316 , $229.585 , $288.277 , unavailable 
+C7GN Quadruple Extra Large,c7gn.4xlarge,c7gn,0 units,unknown,arm64,, $772.559 , $459.170 , $450.556 , unavailable 
+C7GN Eight Extra Large,c7gn.8xlarge,c7gn,0 units,unknown,arm64,," $1,545.118 ", $918.340 , $810.738 , unavailable 
+C7GN Large,c7gn.large,c7gn,0 units,unknown,arm64,, $96.579 , $57.378 , $81.760 , unavailable 
+C7GN Medium,c7gn.medium,c7gn,0 units,unknown,arm64,, $48.253 , $28.689 , $69.934 , unavailable 
+C7GN Metal,c7gn.metal,c7gn,0 units,unknown,arm64,," $2,915.328 "," $1,836.680 "," $2,500.615 ", unavailable 
+C7GN Extra Large,c7gn.xlarge,c7gn,0 units,unknown,arm64,, $193.158 , $114.756 , $123.078 , unavailable 
+C7I-FLEX 12xlarge Extra Large,c7i-flex.12xlarge,c7i-flex,0 units,Yes,x86_64,," $1,485.477 ", $982.646 , $681.382 ," $3,097.32 "
+C7I-FLEX 16xlarge Extra Large,c7i-flex.16xlarge,c7i-flex,0 units,Yes,x86_64,," $1,980.636 "," $1,310.189 ", $832.273 ," $4,129.76 "
+C7I-FLEX Double Extra Large,c7i-flex.2xlarge,c7i-flex,0 units,Yes,x86_64,, $247.580 , $163.776 , $226.957 , $502.79 
+C7I-FLEX Quadruple Extra Large,c7i-flex.4xlarge,c7i-flex,0 units,Yes,x86_64,, $495.159 , $327.551 , $309.301 ," $1,005.58 "
+C7I-FLEX Eight Extra Large,c7i-flex.8xlarge,c7i-flex,0 units,Yes,x86_64,, $990.318 , $655.095 , $510.854 ," $2,011.15 "
+C7I-FLEX Large,c7i-flex.large,c7i-flex,0 units,Yes,x86_64,, $61.897 , $40.946 , $71.175 , $125.70 
+C7I-FLEX Extra Large,c7i-flex.xlarge,c7i-flex,0 units,Yes,x86_64,, $123.793 , $81.884 , $101.762 , $251.40 
+C7I 12xlarge Extra Large,c7i.12xlarge,c7i,0 units,Yes,x86_64,," $1,720.026 "," $1,034.359 ", $754.309 ," $3,331.87 "
+C7I 16xlarge Extra Large,c7i.16xlarge,c7i,0 units,Yes,x86_64,," $2,293.368 "," $1,517.064 ", $951.044 ," $4,442.49 "
+C7I 24xlarge,c7i.24xlarge,c7i,0 units,Yes,x86_64,," $3,440.052 "," $2,068.725 "," $1,695.133 "," $6,663.73 "
+C7I Double Extra Large,c7i.2xlarge,c7i,0 units,Yes,x86_64,, $286.671 , $172.397 , $194.618 , $555.31 
+C7I 48xlarge,c7i.48xlarge,c7i,0 units,Yes,x86_64,," $6,254.640 "," $4,137.443 "," $2,796.411 "," $12,702.00 "
+C7I Quadruple Extra Large,c7i.4xlarge,c7i,0 units,Yes,x86_64,, $573.342 , $344.786 , $309.228 ," $1,110.62 "
+C7I Eight Extra Large,c7i.8xlarge,c7i,0 units,Yes,x86_64,," $1,146.684 ", $758.528 , $549.617 ," $2,221.24 "
+C7I Large,c7i.large,c7i,0 units,Yes,x86_64,, $71.671 , $43.099 , $63.948 , $138.83 
+C7I Metal-24xl,c7i.metal-24xl,c7i,0 units,Yes,x86_64,," $3,440.052 "," $2,275.593 "," $1,149.020 "," $6,663.73 "
+C7I Metal-48xl,c7i.metal-48xl,c7i,0 units,Yes,x86_64,," $6,254.640 "," $4,137.443 "," $3,000.373 "," $12,702.00 "
+C7I Extra Large,c7i.xlarge,c7i,0 units,Yes,x86_64,, $143.336 , $94.820 , $93.440 , $277.66 
+C8G 12xlarge Extra Large,c8g.12xlarge,c8g,0 units,unknown,arm64,," $1,537.132 "," $1,012.919 ", $854.465 , unavailable 
+C8G 16xlarge Extra Large,c8g.16xlarge,c8g,0 units,unknown,arm64,," $2,049.512 "," $1,227.780 ", $734.599 , unavailable 
+C8G 24xlarge,c8g.24xlarge,c8g,0 units,unknown,arm64,," $3,074.271 "," $2,025.838 "," $1,050.689 ", unavailable 
+C8G Double Extra Large,c8g.2xlarge,c8g,0 units,unknown,arm64,, $256.186 , $168.820 , $191.041 , unavailable 
+C8G 48xlarge,c8g.48xlarge,c8g,0 units,unknown,arm64,," $5,589.581 "," $3,683.339 "," $1,991.513 ", unavailable 
+C8G Quadruple Extra Large,c8g.4xlarge,c8g,0 units,unknown,arm64,, $512.380 , $306.943 , $279.006 , unavailable 
+C8G Eight Extra Large,c8g.8xlarge,c8g,0 units,unknown,arm64,," $1,024.759 ", $675.279 , $539.908 , unavailable 
+C8G Large,c8g.large,c8g,0 units,unknown,arm64,, $64.050 , $38.369 , $71.686 , unavailable 
+C8G Medium,c8g.medium,c8g,0 units,unknown,arm64,, $32.025 , $21.104 , $52.414 , unavailable 
+C8G Metal-24xl,c8g.metal-24xl,c8g,0 units,unknown,arm64,," $3,074.271 "," $1,841.673 "," $1,102.519 ", unavailable 
+C8G Metal-48xl,c8g.metal-48xl,c8g,0 units,unknown,arm64,," $5,589.581 "," $3,683.339 "," $1,858.653 ", unavailable 
+C8G Extra Large,c8g.xlarge,c8g,0 units,unknown,arm64,, $128.093 , $76.738 , $88.695 , unavailable 
+C8GD 12xlarge Extra Large,c8gd.12xlarge,c8gd,0 units,unknown,arm64,," $1,888.269 ", unavailable , $736.497 , unavailable 
+C8GD 16xlarge Extra Large,c8gd.16xlarge,c8gd,0 units,unknown,arm64,," $2,517.697 ", unavailable ," $1,127.047 ", unavailable 
+C8GD 24xlarge,c8gd.24xlarge,c8gd,0 units,unknown,arm64,," $3,776.538 ", unavailable ," $1,590.013 ", unavailable 
+C8GD Double Extra Large,c8gd.2xlarge,c8gd,0 units,unknown,arm64,, $314.710 , unavailable , $236.447 , unavailable 
+C8GD 48xlarge,c8gd.48xlarge,c8gd,0 units,unknown,arm64,," $6,866.438 ", unavailable ," $3,148.417 ", unavailable 
+C8GD Quadruple Extra Large,c8gd.4xlarge,c8gd,0 units,unknown,arm64,, $629.421 , unavailable , $372.811 , unavailable 
+C8GD Eight Extra Large,c8gd.8xlarge,c8gd,0 units,unknown,arm64,," $1,258.849 ", unavailable , $703.428 , unavailable 
+C8GD Large,c8gd.large,c8gd,0 units,unknown,arm64,, $78.679 , unavailable , $77.891 , unavailable 
+C8GD Medium,c8gd.medium,c8gd,0 units,unknown,arm64,, $39.340 , unavailable , $52.998 , unavailable 
+C8GD Metal-24xl,c8gd.metal-24xl,c8gd,0 units,unknown,arm64,," $3,776.538 ", unavailable ," $1,271.368 ", unavailable 
+C8GD Metal-48xl,c8gd.metal-48xl,c8gd,0 units,unknown,arm64,," $6,866.438 ", unavailable ," $2,135.104 ", unavailable 
+C8GD Extra Large,c8gd.xlarge,c8gd,0 units,unknown,arm64,, $157.359 , unavailable , $123.954 , unavailable 
+C8GN 12xlarge Extra Large,c8gn.12xlarge,c8gn,0 units,unknown,arm64,," $2,200.658 ", unavailable , $864.539 , unavailable 
+C8GN 16xlarge Extra Large,c8gn.16xlarge,c8gn,0 units,unknown,arm64,," $2,934.235 ", unavailable ," $1,151.648 ", unavailable 
+C8GN 24xlarge,c8gn.24xlarge,c8gn,0 units,unknown,arm64,," $4,401.389 ", unavailable ," $1,757.767 ", unavailable 
+C8GN Double Extra Large,c8gn.2xlarge,c8gn,0 units,unknown,arm64,, $366.752 , unavailable , $257.106 , unavailable 
+C8GN 48xlarge,c8gn.48xlarge,c8gn,0 units,unknown,arm64,," $8,304.480 ", unavailable ," $3,460.200 ", unavailable 
+C8GN Quadruple Extra Large,c8gn.4xlarge,c8gn,0 units,unknown,arm64,, $733.577 , unavailable , $444.570 , unavailable 
+C8GN Eight Extra Large,c8gn.8xlarge,c8gn,0 units,unknown,arm64,," $1,467.154 ", unavailable , $714.962 , unavailable 
+C8GN Large,c8gn.large,c8gn,0 units,unknown,arm64,, $91.688 , unavailable , $77.745 , unavailable 
+C8GN Medium,c8gn.medium,c8gn,0 units,unknown,arm64,, $45.844 , unavailable , $54.312 , unavailable 
+C8GN Metal-24xl,c8gn.metal-24xl,c8gn,0 units,unknown,arm64,," $4,401.389 ", unavailable ," $1,468.906 ", unavailable 
+C8GN Metal-48xl,c8gn.metal-48xl,c8gn,0 units,unknown,arm64,," $8,304.480 ", unavailable ," $2,388.341 ", unavailable 
+C8GN Extra Large,c8gn.xlarge,c8gn,0 units,unknown,arm64,, $183.376 , unavailable , $120.888 , unavailable 
+Cluster Compute Eight Extra Large,cc2.8xlarge,cc2,88 units,unknown,x86_64,," $1,460.000 ", unavailable , unavailable ," $1,876.10 "
+High Memory Cluster Eight Extra Large,cr1.8xlarge,cr1,88 units,unknown,x86_64,," $2,555.000 ", unavailable , unavailable ," $2,796.63 "
+D2 Double Extra Large,d2.2xlarge,d2,28 units,Yes,x86_64,," $1,108.140 ", $586.920 ," $1,080.400 "," $1,285.53 "
+D2 Quadruple Extra Large,d2.4xlarge,d2,56 units,Yes,x86_64,," $2,216.280 "," $1,173.840 "," $1,457.810 "," $2,458.64 "
+D2 Eight Extra Large,d2.8xlarge,d2,116 units,Yes,x86_64,," $4,029.600 "," $2,347.680 "," $3,069.577 "," $4,524.54 "
+D2 Extra Large,d2.xlarge,d2,14 units,Yes,x86_64,, $554.070 , $322.660 , $444.935 , $659.19 
+D3 Double Extra Large,d3.2xlarge,d3,0 units,Yes,x86_64,, $802.270 , $505.160 , $397.631 ," $1,070.91 "
+D3 Quadruple Extra Large,d3.4xlarge,d3,0 units,Yes,x86_64,," $1,604.540 "," $1,010.320 ", $835.631 ," $2,141.82 "
+D3 Eight Extra Large,d3.8xlarge,d3,0 units,Yes,x86_64,," $3,208.401 "," $2,021.297 "," $1,311.445 "," $4,282.96 "
+D3 Extra Large,d3.xlarge,d3,0 units,Yes,x86_64,, $400.770 , $229.950 , $196.735 , $535.09 
+D3EN 12xlarge Extra Large,d3en.12xlarge,d3en,0 units,Yes,x86_64,," $5,065.835 "," $3,191.480 "," $1,996.258 "," $6,677.68 "
+D3EN Double Extra Large,d3en.2xlarge,d3en,0 units,Yes,x86_64,, $844.610 , $483.260 , $427.780 ," $1,113.25 "
+D3EN Quadruple Extra Large,d3en.4xlarge,d3en,0 units,Yes,x86_64,," $1,688.490 "," $1,063.610 "," $1,039.885 "," $2,225.77 "
+D3EN 6xlarge,d3en.6xlarge,d3en,0 units,Yes,x86_64,," $2,533.100 "," $1,595.780 "," $1,220.195 "," $3,339.02 "
+D3EN Eight Extra Large,d3en.8xlarge,d3en,0 units,Yes,x86_64,," $3,377.228 "," $1,934.230 "," $1,311.080 "," $4,451.79 "
+D3EN Large,d3en.large,d3en,0 units,Yes,x86_64,, unavailable , unavailable , unavailable , unavailable 
+D3EN Extra Large,d3en.xlarge,d3en,0 units,Yes,x86_64,, $421.940 , $241.630 , $192.428 , $556.26 
+DL1 24xlarge,dl1.24xlarge,dl1,0 units,Yes,x86_64,," $10,526.556 "," $6,028.851 ", unavailable , unavailable 
+DL2Q 24xlarge,dl2q.24xlarge,dl2q,0 units,Yes,x86_64,, unavailable , unavailable , unavailable , unavailable 
+F1 16xlarge Extra Large,f1.16xlarge,f1,201 units,Yes,x86_64,," $9,636.000 ", unavailable ," $9,709.000 "," $9,636.00 "
+F1 Double Extra Large,f1.2xlarge,f1,31 units,Yes,x86_64,," $1,324.950 ", unavailable ," $1,277.500 "," $1,324.95 "
+F1 Quadruple Extra Large,f1.4xlarge,f1,58 units,Yes,x86_64,," $2,649.900 ", unavailable ," $1,640.529 ", unavailable 
+F2 12xlarge Extra Large,f2.12xlarge,f2,0 units,unknown,x86_64,," $3,179.880 ", unavailable ," $1,351.230 ", unavailable 
+F2 48xlarge,f2.48xlarge,f2,0 units,unknown,x86_64,," $12,719.520 ", unavailable ," $4,498.771 ", unavailable 
+F2 6xlarge,f2.6xlarge,f2,0 units,unknown,x86_64,," $1,589.940 ", unavailable , $284.554 , unavailable 
+G2 Double Extra Large,g2.2xlarge,g2,26 units,Yes,x86_64,, $521.950 , unavailable , unavailable , $616.12 
+G2 Eight Extra Large,g2.8xlarge,g2,104 units,Yes,x86_64,," $1,898.000 ", unavailable , unavailable ," $2,100.94 "
+G3 Graphics GPU 16xlarge Extra Large,g3.16xlarge,g3,201 units,Yes,x86_64,," $3,328.800 ", unavailable , unavailable ," $5,477.92 "
+G3 Graphics GPU Quadruple Extra Large,g3.4xlarge,g3,58 units,Yes,x86_64,, $915.420 , unavailable , unavailable ," $1,452.70 "
+G3 Graphics GPU Eight Extra Large,g3.8xlarge,g3,97 units,Yes,x86_64,," $1,830.840 ", unavailable , unavailable ," $2,905.40 "
+G3S Extra Large,g3s.xlarge,g3s,13 units,unknown,x86_64,, $586.190 , unavailable , unavailable , $720.51 
+G4AD 16xlarge Extra Large,g4ad.16xlarge,g4ad,0 units,unknown,x86_64,," $2,784.804 "," $1,594.933 "," $1,578.625 "," $4,933.92 "
+G4AD Double Extra Large,g4ad.2xlarge,g4ad,0 units,unknown,x86_64,, $434.562 , $273.772 , $287.985 , $703.20 
+G4AD Quadruple Extra Large,g4ad.4xlarge,g4ad,0 units,unknown,x86_64,, $696.201 , $438.606 , $391.718 ," $1,233.48 "
+G4AD Eight Extra Large,g4ad.8xlarge,g4ad,0 units,unknown,x86_64,," $1,392.402 ", $877.212 , $727.299 ," $2,466.96 "
+G4AD Extra Large,g4ad.xlarge,g4ad,0 units,unknown,x86_64,, $303.957 , $174.083 , $141.985 , $438.28 
+G4DN 12xlarge Extra Large,g4dn.12xlarge,g4dn,0 units,Yes,x86_64,," $3,027.310 "," $1,970.270 "," $1,210.121 "," $4,639.15 "
+G4DN 16xlarge Extra Large,g4dn.16xlarge,g4dn,0 units,Yes,x86_64,," $3,367.490 "," $2,192.190 "," $1,111.936 "," $5,516.61 "
+G4DN Double Extra Large,g4dn.2xlarge,g4dn,0 units,Yes,x86_64,, $581.810 , $378.870 , $360.620 , $850.45 
+G4DN Quadruple Extra Large,g4dn.4xlarge,g4dn,0 units,Yes,x86_64,, $931.480 , $606.630 , $429.678 ," $1,468.76 "
+G4DN Eight Extra Large,g4dn.8xlarge,g4dn,0 units,Yes,x86_64,," $1,684.110 "," $1,000.830 ", $681.309 ," $2,758.67 "
+G4DN Metal,g4dn.metal,g4dn,0 units,Yes,x86_64,," $5,711.520 "," $3,598.170 "," $2,994.752 "," $8,935.20 "
+G4DN Extra Large,g4dn.xlarge,g4dn,0 units,Yes,x86_64,, $407.340 , $264.990 , $201.699 , $541.66 
+G5 Graphics and Machine Learning GPU 12xlarge Extra Large,g5.12xlarge,g5,0 units,unknown,x86_64,," $4,554.616 "," $2,869.411 "," $2,038.379 "," $6,166.46 "
+G5 Graphics and Machine Learning GPU 16xlarge Extra Large,g5.16xlarge,g5,0 units,unknown,x86_64,," $3,289.088 "," $2,072.127 "," $1,446.057 "," $5,438.21 "
+G5 Graphics and Machine Learning GPU 24xlarge,g5.24xlarge,g5,0 units,unknown,x86_64,," $6,539.632 "," $4,119.967 "," $3,157.980 "," $9,763.31 "
+G5 Graphics and Machine Learning GPU Double Extra Large,g5.2xlarge,g5,0 units,unknown,x86_64,, $973.236 , $557.399 , $513.044 ," $1,241.88 "
+G5 Graphics and Machine Learning GPU 48xlarge,g5.48xlarge,g5,0 units,unknown,x86_64,," $13,079.264 "," $8,239.933 "," $6,024.690 "," $19,526.62 "
+G5 Graphics and Machine Learning GPU Quadruple Extra Large,g5.4xlarge,g5,0 units,unknown,x86_64,," $1,304.072 ", $746.878 , $597.359 ," $1,841.35 "
+G5 Graphics and Machine Learning GPU Eight Extra Large,g5.8xlarge,g5,0 units,unknown,x86_64,," $1,965.744 "," $1,125.835 ", $929.582 ," $3,040.30 "
+G5 Graphics and Machine Learning GPU Extra Large,g5.xlarge,g5,0 units,unknown,x86_64,, $807.818 , $462.659 , $377.191 , $942.14 
+G5G 16xlarge Extra Large,g5g.16xlarge,g5g,0 units,unknown,arm64,," $2,003.120 "," $1,261.951 ", $715.619 , unavailable 
+G5G Double Extra Large,g5g.2xlarge,g5g,0 units,unknown,arm64,, $430.262 , $255.719 , $388.944 , unavailable 
+G5G Quadruple Extra Large,g5g.4xlarge,g5g,0 units,unknown,arm64,, $640.721 , $380.768 , $332.077 , unavailable 
+G5G Eight Extra Large,g5g.8xlarge,g5g,0 units,unknown,arm64,," $1,061.639 ", $691.091 , $580.788 , unavailable 
+G5G Metal,g5g.metal,g5g,0 units,unknown,arm64,," $2,003.120 "," $1,261.951 ", $727.591 , unavailable 
+G5G Extra Large,g5g.xlarge,g5g,0 units,unknown,arm64,, $324.996 , $193.158 , $161.768 , unavailable 
+G6 Graphics and Machine Learning GPU 12xlarge Extra Large,g6.12xlarge,g6,0 units,unknown,x86_64,," $3,695.085 "," $2,186.817 "," $1,854.273 "," $5,306.92 "
+G6 Graphics and Machine Learning GPU 16xlarge Extra Large,g6.16xlarge,g6,0 units,unknown,x86_64,," $2,727.630 "," $1,775.689 "," $1,199.390 "," $4,876.75 "
+G6 Graphics and Machine Learning GPU 24xlarge,g6.24xlarge,g6,0 units,unknown,x86_64,," $5,360.186 "," $3,172.259 "," $3,259.231 "," $8,583.87 "
+G6 Graphics and Machine Learning GPU Double Extra Large,g6.2xlarge,g6,0 units,unknown,x86_64,, $785.013 , $511.044 , $470.266 ," $1,053.65 "
+G6 Graphics and Machine Learning GPU 48xlarge,g6.48xlarge,g6,0 units,unknown,x86_64,," $9,745.792 "," $6,344.510 "," $5,829.780 "," $16,193.15 "
+G6 Graphics and Machine Learning GPU Quadruple Extra Large,g6.4xlarge,g6,0 units,unknown,x86_64,," $1,062.530 ", $628.822 , $608.017 ," $1,599.81 "
+G6 Graphics and Machine Learning GPU Eight Extra Large,g6.8xlarge,g6,0 units,unknown,x86_64,," $1,617.563 "," $1,053.032 ", $753.433 ," $2,692.12 "
+G6 Graphics and Machine Learning GPU Extra Large,g6.xlarge,g6,0 units,unknown,x86_64,, $646.254 , $420.714 , $350.473 , $780.57 
+G6e Graphics and Machine Learning GPU 12xlarge Extra Large,g6e.12xlarge,g6e,0 units,unknown,x86_64,," $8,425.587 "," $5,308.122 "," $4,467.454 "," $10,037.43 "
+G6e Graphics and Machine Learning GPU 16xlarge Extra Large,g6e.16xlarge,g6e,0 units,unknown,x86_64,," $6,084.484 "," $3,484.750 "," $2,326.583 "," $8,233.60 "
+G6e Graphics and Machine Learning GPU 24xlarge,g6e.24xlarge,g6e,0 units,unknown,x86_64,," $12,097.670 "," $6,928.664 "," $4,735.218 "," $15,321.35 "
+G6e Graphics and Machine Learning GPU Double Extra Large,g6e.2xlarge,g6e,0 units,unknown,x86_64,," $1,800.392 "," $1,031.132 "," $1,299.473 "," $2,069.03 "
+G6e Graphics and Machine Learning GPU 48xlarge,g6e.48xlarge,g6e,0 units,unknown,x86_64,," $21,995.761 "," $13,857.327 "," $14,870.027 "," $28,443.12 "
+G6e Graphics and Machine Learning GPU Quadruple Extra Large,g6e.4xlarge,g6e,0 units,unknown,x86_64,," $2,412.402 "," $1,519.816 "," $1,194.207 "," $2,949.68 "
+G6e Graphics and Machine Learning GPU Eight Extra Large,g6e.8xlarge,g6e,0 units,unknown,x86_64,," $3,636.429 "," $2,290.952 "," $1,345.974 "," $4,710.99 "
+G6e Graphics and Machine Learning GPU Extra Large,g6e.xlarge,g6e,0 units,unknown,x86_64,," $1,494.383 ", $855.874 , $861.181 ," $1,628.70 "
+G6F Double Extra Large,g6f.2xlarge,g6f,0 units,unknown,x86_64,, $381.425 , unavailable , $180.675 , $650.07 
+G6F Quadruple Extra Large,g6f.4xlarge,g6f,0 units,unknown,x86_64,, $762.850 , unavailable , $275.137 ," $1,300.13 "
+G6F Large,g6f.large,g6f,0 units,unknown,x86_64,, $162.206 , unavailable , $80.665 , $229.37 
+G6F Extra Large,g6f.xlarge,g6f,0 units,unknown,x86_64,, $190.713 , unavailable , $84.388 , $325.03 
+Gr6 Graphics and Machine Learning GPU High RAM ratio Quadruple Extra Large,gr6.4xlarge,gr6,0 units,unknown,x86_64,," $1,235.978 ", $731.475 , $622.471 ," $1,773.26 "
+Gr6 Graphics and Machine Learning GPU High RAM ratio Eight Extra Large,gr6.8xlarge,gr6,0 units,unknown,x86_64,," $1,964.459 "," $1,278.865 ", $923.961 ," $3,039.02 "
+GR6F Quadruple Extra Large,gr6f.4xlarge,gr6f,0 units,unknown,x86_64,, $855.998 , unavailable , $301.928 ," $1,393.28 "
+H1 16xlarge Extra Large,h1.16xlarge,h1,201 units,Yes,x86_64,," $3,212.000 "," $1,857.850 "," $2,119.993 "," $5,361.12 "
+H1 Double Extra Large,h1.2xlarge,h1,31 units,Yes,x86_64,, $427.780 , $254.040 , $414.640 , $696.42 
+H1 Quadruple Extra Large,h1.4xlarge,h1,58 units,Yes,x86_64,, $854.830 , $464.280 , $756.280 ," $1,392.11 "
+H1 Eight Extra Large,h1.8xlarge,h1,97 units,Yes,x86_64,," $1,709.660 "," $1,016.890 "," $1,167.124 "," $2,784.22 "
+HPC6A 48xlarge,hpc6a.48xlarge,hpc6a,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC6ID 32xlarge,hpc6id.32xlarge,hpc6id,0 units,Yes,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC7A 12xlarge Extra Large,hpc7a.12xlarge,hpc7a,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC7A 24xlarge,hpc7a.24xlarge,hpc7a,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC7A 48xlarge,hpc7a.48xlarge,hpc7a,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC7A 96xlarge,hpc7a.96xlarge,hpc7a,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+HPC7G 16xlarge Extra Large,hpc7g.16xlarge,hpc7g,0 units,unknown,arm64,," $1,228.736 ", $967.615 , unavailable , unavailable 
+HPC7G Quadruple Extra Large,hpc7g.4xlarge,hpc7g,0 units,unknown,arm64,," $1,228.736 ", $967.615 , unavailable , unavailable 
+HPC7G Eight Extra Large,hpc7g.8xlarge,hpc7g,0 units,unknown,arm64,," $1,228.736 ", $967.615 , unavailable , unavailable 
+High Storage Eight Extra Large,hs1.8xlarge,hs1,35 units,unknown,x86_64,," $3,358.000 ", unavailable , unavailable ," $3,599.63 "
+I2 Double Extra Large,i2.2xlarge,i2,27 units,Yes,x86_64,," $1,369.480 ", $680.360 , $538.521 ," $1,562.93 "
+I2 Quadruple Extra Large,i2.4xlarge,i2,53 units,Yes,x86_64,," $2,738.230 "," $1,361.450 "," $1,176.322 "," $3,124.40 "
+I2 Eight Extra Large,i2.8xlarge,i2,104 units,Yes,x86_64,," $4,978.600 "," $2,476.160 "," $2,186.204 "," $5,680.86 "
+I2 Large,i2.large,i2,7 units,Yes,x86_64,, $341.640 , unavailable , unavailable , unavailable 
+I2 Extra Large,i2.xlarge,i2,14 units,Yes,x86_64,, $684.740 , $309.520 , $261.121 , $781.10 
+I3 High I/O 16xlarge Extra Large,i3.16xlarge,i3,201 units,Yes,x86_64,," $3,644.160 "," $2,501.710 "," $1,717.690 "," $5,793.28 "
+I3 High I/O Double Extra Large,i3.2xlarge,i3,31 units,Yes,x86_64,, $500.780 , $312.440 , $322.660 , $769.42 
+I3 High I/O Quadruple Extra Large,i3.4xlarge,i3,58 units,Yes,x86_64,," $1,002.290 ", $687.660 , $589.986 ," $1,539.57 "
+I3 High I/O Eight Extra Large,i3.8xlarge,i3,97 units,Yes,x86_64,," $2,004.580 "," $1,376.050 "," $1,045.725 "," $3,079.14 "
+I3 High I/O Large,i3.large,i3,8 units,Yes,x86_64,, $125.560 , $86.140 , $111.033 , $192.72 
+I3 High I/O Metal,i3.metal,i3,208 units,Yes,x86_64,," $3,644.160 "," $2,501.710 "," $1,225.086 "," $5,793.28 "
+I3 High I/O Extra Large,i3.xlarge,i3,16 units,Yes,x86_64,, $250.390 , $156.220 , $175.273 , $384.71 
+I3EN 12xlarge Extra Large,i3en.12xlarge,i3en,168 units,Yes,x86_64,," $4,216.480 "," $2,953.580 "," $1,762.439 "," $5,828.32 "
+I3EN 24xlarge,i3en.24xlarge,i3en,337 units,Yes,x86_64,," $7,919.040 "," $5,393.240 "," $3,932.437 "," $11,142.72 "
+I3EN Double Extra Large,i3en.2xlarge,i3en,37 units,Yes,x86_64,, $702.990 , $449.680 , $416.027 , $971.63 
+I3EN 3xlarge,i3en.3xlarge,i3en,0 units,Yes,x86_64,," $1,054.120 ", $674.520 , $485.085 ," $1,457.08 "
+I3EN 6xlarge,i3en.6xlarge,i3en,0 units,Yes,x86_64,," $2,108.240 "," $1,476.790 "," $1,008.641 "," $2,914.16 "
+I3EN Large,i3en.large,i3en,10 units,Yes,x86_64,, $175.930 , $112.420 , $106.872 , $243.09 
+I3EN Metal,i3en.metal,i3en,0 units,Yes,x86_64,," $7,919.040 "," $5,393.240 "," $2,703.701 "," $11,142.72 "
+I3EN Extra Large,i3en.xlarge,i3en,0 units,Yes,x86_64,, $351.130 , $224.840 , $159.797 , $485.45 
+I3P 16xlarge Extra Large,i3p.16xlarge,i3p,201 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+I4G 16xlarge Extra Large,i4g.16xlarge,i4g,0 units,unknown,arm64,," $3,607.718 "," $2,341.198 "," $2,481.416 ", unavailable 
+I4G Double Extra Large,i4g.2xlarge,i4g,0 units,unknown,arm64,, $496.064 , $321.915 , $281.269 , unavailable 
+I4G Quadruple Extra Large,i4g.4xlarge,i4g,0 units,unknown,arm64,, $992.121 , $643.831 , $529.615 , unavailable 
+I4G Eight Extra Large,i4g.8xlarge,i4g,0 units,unknown,arm64,," $1,984.242 "," $1,287.662 "," $1,205.595 ", unavailable 
+I4G Large,i4g.large,i4g,0 units,unknown,arm64,, $124.012 , $73.161 , $82.782 , unavailable 
+I4G Extra Large,i4g.xlarge,i4g,0 units,unknown,arm64,, $248.032 , $146.329 , $145.781 , unavailable 
+I4I 12xlarge Extra Large,i4i.12xlarge,i4i,0 units,Yes,x86_64,," $3,306.900 "," $1,950.560 "," $2,339.504 "," $4,918.74 "
+I4I 16xlarge Extra Large,i4i.16xlarge,i4i,0 units,Yes,x86_64,," $4,409.200 "," $2,861.600 "," $2,650.557 "," $6,558.32 "
+I4I 24xlarge,i4i.24xlarge,i4i,0 units,Yes,x86_64,," $6,614.150 "," $3,901.792 "," $2,178.101 "," $9,837.83 "
+I4I Double Extra Large,i4i.2xlarge,i4i,0 units,Yes,x86_64,, $551.150 , $357.700 , $368.577 , $819.79 
+I4I 32xlarge,i4i.32xlarge,i4i,0 units,Yes,x86_64,," $8,017.152 "," $5,202.389 "," $3,130.313 "," $12,315.39 "
+I4I Quadruple Extra Large,i4i.4xlarge,i4i,0 units,Yes,x86_64,," $1,102.300 ", $650.430 , $657.365 ," $1,639.58 "
+I4I Eight Extra Large,i4i.8xlarge,i4i,0 units,Yes,x86_64,," $2,204.600 "," $1,430.800 "," $1,760.103 "," $3,279.16 "
+I4I Large,i4i.large,i4i,0 units,Yes,x86_64,, $137.970 , $89.060 , $85.045 , $205.13 
+I4I Metal,i4i.metal,i4i,0 units,Yes,x86_64,," $8,016.860 "," $5,202.710 "," $7,052.384 "," $12,315.10 "
+I4I Extra Large,i4i.xlarge,i4i,0 units,Yes,x86_64,, $275.940 , $178.850 , $155.198 , $410.26 
+I7I 12xlarge Extra Large,i7i.12xlarge,i7i,0 units,Yes,x86_64,," $3,511.446 ", unavailable ," $1,617.315 "," $5,123.29 "
+I7I 16xlarge Extra Large,i7i.16xlarge,i7i,0 units,Yes,x86_64,," $4,681.928 ", unavailable ," $2,185.547 "," $6,831.05 "
+I7I 24xlarge,i7i.24xlarge,i7i,0 units,Yes,x86_64,," $7,022.892 ", unavailable ," $2,962.340 "," $10,246.57 "
+I7I Double Extra Large,i7i.2xlarge,i7i,0 units,Yes,x86_64,, $585.241 , unavailable , $313.535 , $853.88 
+I7I 48xlarge,i7i.48xlarge,i7i,0 units,Yes,x86_64,," $14,045.784 ", unavailable ," $8,315.430 "," $20,493.14 "
+I7I Quadruple Extra Large,i7i.4xlarge,i7i,0 units,Yes,x86_64,," $1,170.482 ", unavailable , $631.815 ," $1,707.76 "
+I7I Eight Extra Large,i7i.8xlarge,i7i,0 units,Yes,x86_64,," $2,340.964 ", unavailable ," $1,192.893 "," $3,415.52 "
+I7I Large,i7i.large,i7i,0 units,Yes,x86_64,, $146.292 , unavailable , $96.360 , $213.45 
+I7I Metal-24xl,i7i.metal-24xl,i7i,0 units,Yes,x86_64,," $7,022.892 ", unavailable ," $1,892.817 "," $10,246.57 "
+I7I Metal-48xl,i7i.metal-48xl,i7i,0 units,Yes,x86_64,," $14,045.784 ", unavailable ," $4,120.996 "," $20,493.14 "
+I7I Extra Large,i7i.xlarge,i7i,0 units,Yes,x86_64,, $292.657 , unavailable , $140.014 , $426.98 
+I7IE 12xlarge Extra Large,i7ie.12xlarge,i7ie,0 units,Yes,x86_64,," $4,848.806 ", unavailable ," $4,644.698 "," $6,460.65 "
+I7IE 18xlarge,i7ie.18xlarge,i7ie,0 units,Yes,x86_64,," $7,273.209 ", unavailable ," $2,691.291 "," $9,690.97 "
+I7IE 24xlarge,i7ie.24xlarge,i7ie,0 units,Yes,x86_64,," $9,697.612 ", unavailable ," $9,198.146 "," $12,921.29 "
+I7IE Double Extra Large,i7ie.2xlarge,i7ie,0 units,Yes,x86_64,, $808.110 , unavailable , $850.158 ," $1,076.75 "
+I7IE 3xlarge,i7ie.3xlarge,i7ie,0 units,Yes,x86_64,," $1,212.165 ", unavailable , $571.955 ," $1,615.13 "
+I7IE 48xlarge,i7ie.48xlarge,i7ie,0 units,Yes,x86_64,," $19,395.151 ", unavailable ," $18,305.042 "," $25,842.51 "
+I7IE 6xlarge,i7ie.6xlarge,i7ie,0 units,Yes,x86_64,," $2,424.403 ", unavailable ," $1,759.884 "," $3,230.32 "
+I7IE Large,i7ie.large,i7ie,0 units,Yes,x86_64,, $202.064 , unavailable , $230.826 , $269.22 
+I7IE Metal-24xl,i7ie.metal-24xl,i7ie,0 units,Yes,x86_64,," $9,697.612 ", unavailable ," $4,733.320 "," $12,921.29 "
+I7IE Metal-48xl,i7ie.metal-48xl,i7ie,0 units,Yes,x86_64,," $19,395.151 ", unavailable ," $8,029.270 "," $25,842.51 "
+I7IE Extra Large,i7ie.xlarge,i7ie,0 units,Yes,x86_64,, $404.055 , unavailable , $350.254 , $538.38 
+I8G 12xlarge Extra Large,i8g.12xlarge,i8g,0 units,unknown,arm64,," $3,307.075 ", unavailable ," $2,613.035 ", unavailable 
+I8G 16xlarge Extra Large,i8g.16xlarge,i8g,0 units,unknown,arm64,," $4,409.434 ", unavailable ," $3,132.503 ", unavailable 
+I8G 24xlarge,i8g.24xlarge,i8g,0 units,unknown,arm64,," $6,614.150 ", unavailable ," $4,681.417 ", unavailable 
+I8G Double Extra Large,i8g.2xlarge,i8g,0 units,unknown,arm64,, $551.150 , unavailable , $264.479 , unavailable 
+I8G 48xlarge,i8g.48xlarge,i8g,0 units,unknown,arm64,," $13,228.301 ", unavailable ," $8,967.466 ", unavailable 
+I8G Quadruple Extra Large,i8g.4xlarge,i8g,0 units,unknown,arm64,," $1,102.373 ", unavailable , $532.681 , unavailable 
+I8G Eight Extra Large,i8g.8xlarge,i8g,0 units,unknown,arm64,," $2,204.746 ", unavailable , $944.036 , unavailable 
+I8G Large,i8g.large,i8g,0 units,unknown,arm64,, $137.824 , unavailable , $134.320 , unavailable 
+I8G Metal-24xl,i8g.metal-24xl,i8g,0 units,unknown,arm64,," $6,614.150 ", unavailable ," $6,104.114 ", unavailable 
+I8G Extra Large,i8g.xlarge,i8g,0 units,unknown,arm64,, $275.575 , unavailable , $216.080 , unavailable 
+IM4GN 16xlarge Extra Large,im4gn.16xlarge,im4gn,0 units,unknown,arm64,," $4,249.089 "," $2,725.061 "," $1,515.334 ", unavailable 
+IM4GN Double Extra Large,im4gn.2xlarge,im4gn,0 units,unknown,arm64,, $584.248 , $340.633 , $255.135 , unavailable 
+IM4GN Quadruple Extra Large,im4gn.4xlarge,im4gn,0 units,unknown,arm64,," $1,168.496 ", $681.265 , $478.807 , unavailable 
+IM4GN Eight Extra Large,im4gn.8xlarge,im4gn,0 units,unknown,arm64,," $2,337.000 "," $1,362.530 ", $771.464 , unavailable 
+IM4GN Large,im4gn.large,im4gn,0 units,unknown,arm64,, $146.066 , $85.155 , $91.031 , unavailable 
+IM4GN Extra Large,im4gn.xlarge,im4gn,0 units,unknown,arm64,, $292.124 , $187.347 , $141.255 , unavailable 
+INF1 24xlarge,inf1.24xlarge,inf1,0 units,unknown,x86_64,," $3,653.650 "," $2,378.340 "," $3,537.580 ", unavailable 
+INF1 Double Extra Large,inf1.2xlarge,inf1,0 units,unknown,x86_64,, $280.320 , $166.440 , $181.697 , unavailable 
+INF1 6xlarge,inf1.6xlarge,inf1,0 units,unknown,x86_64,, $913.230 , $594.220 , $892.425 , unavailable 
+INF1 Extra Large,inf1.xlarge,inf1,0 units,unknown,x86_64,, $176.660 , $114.610 , $97.601 , unavailable 
+INF2 24xlarge,inf2.24xlarge,inf2,0 units,unknown,x86_64,," $5,211.981 "," $3,283.547 ", unavailable , unavailable 
+INF2 48xlarge,inf2.48xlarge,inf2,0 units,unknown,x86_64,," $10,423.955 "," $5,970.086 ", unavailable , unavailable 
+INF2 Eight Extra Large,inf2.8xlarge,inf2,0 units,unknown,x86_64,," $1,580.195 ", $905.018 , unavailable , unavailable 
+INF2 Extra Large,inf2.xlarge,inf2,0 units,unknown,x86_64,, $608.835 , $348.699 , unavailable , unavailable 
+IS4GEN Double Extra Large,is4gen.2xlarge,is4gen,0 units,unknown,arm64,, $841.398 , $573.860 , $476.617 , unavailable 
+IS4GEN Quadruple Extra Large,is4gen.4xlarge,is4gen,0 units,unknown,arm64,," $1,682.796 "," $1,147.728 ", $890.162 , unavailable 
+IS4GEN Eight Extra Large,is4gen.8xlarge,is4gen,0 units,unknown,arm64,," $3,365.592 "," $2,295.456 "," $1,271.733 ", unavailable 
+IS4GEN Large,is4gen.large,is4gen,0 units,unknown,arm64,, $210.350 , $143.467 , $202.283 , unavailable 
+IS4GEN Medium,is4gen.medium,is4gen,0 units,unknown,arm64,, $105.178 , $71.730 , $50.662 , unavailable 
+IS4GEN Extra Large,is4gen.xlarge,is4gen,0 units,unknown,arm64,, $420.699 , $286.934 , $292.365 , unavailable 
+M1 General Purpose Large,m1.large,m1,4 units,unknown,x86_64,, $140.890 , $81.760 , $123.662 , $240.17 
+M1 General Purpose Medium,m1.medium,m1,2 units,unknown,"i386, x86_64",, $70.080 , $44.530 , $99.572 , $119.72 
+M1 General Purpose Small,m1.small,m1,1 units,unknown,"i386, x86_64",, $35.040 , $20.440 , $33.361 , $60.59 
+M1 General Purpose Extra Large,m1.xlarge,m1,8 units,unknown,x86_64,, $281.050 , $179.580 , $182.865 , $480.34 
+M2 High Memory Double Extra Large,m2.2xlarge,m2,13 units,unknown,x86_64,, $393.470 , $162.060 , $226.592 , $554.07 
+M2 High Memory Quadruple Extra Large,m2.4xlarge,m2,26 units,unknown,x86_64,, $786.940 , $356.240 , $408.070 ," $1,108.14 "
+M2 High Memory Extra Large,m2.xlarge,m2,6.5 units,unknown,x86_64,, $197.100 , $81.030 , $156.658 , $277.40 
+M3 General Purpose Double Extra Large,m3.2xlarge,m3,26 units,Yes,x86_64,, $427.050 , $305.140 , $274.407 , $832.20 
+M3 General Purpose Large,m3.large,m3,6.5 units,Yes,x86_64,, $106.580 , $69.350 , $113.734 , $208.05 
+M3 General Purpose Medium,m3.medium,m3,3 units,Yes,x86_64,, $54.020 , $38.690 , $89.644 , $104.39 
+M3 General Purpose Extra Large,m3.xlarge,m3,13 units,Yes,x86_64,, $213.890 , $152.570 , $151.475 , $416.10 
+M4 General Purpose Deca Extra Large,m4.10xlarge,m4,124.5 units,Yes,x86_64,," $1,460.000 ", $904.470 , $708.392 ," $2,803.20 "
+M4 General Purpose 16xlarge Extra Large,m4.16xlarge,m4,188 units,Yes,x86_64,," $2,336.000 "," $1,447.152 "," $1,000.684 "," $4,485.12 "
+M4 General Purpose Double Extra Large,m4.2xlarge,m4,26 units,Yes,x86_64,, $321.200 , $180.894 , $223.161 , $589.84 
+M4 General Purpose Quadruple Extra Large,m4.4xlarge,m4,53.5 units,Yes,x86_64,, $642.400 , $361.788 , $327.332 ," $1,179.68 "
+M4 General Purpose Large,m4.large,m4,6.5 units,Yes,x86_64,, $80.300 , $49.713 , $115.632 , $147.46 
+M4 General Purpose Extra Large,m4.xlarge,m4,13 units,Yes,x86_64,, $160.600 , $99.499 , $149.504 , $294.92 
+M5 General Purpose 12xlarge Extra Large,m5.12xlarge,m5,168 units,Yes,x86_64,," $1,784.120 "," $1,059.960 ", $806.431 ," $3,395.96 "
+M5 General Purpose 16xlarge Extra Large,m5.16xlarge,m5,256 units,Yes,x86_64,," $2,379.070 "," $1,547.600 ", $939.948 ," $4,528.19 "
+M5 General Purpose 24xlarge,m5.24xlarge,m5,337 units,Yes,x86_64,," $3,363.840 "," $2,119.190 "," $1,421.894 "," $6,587.52 "
+M5 General Purpose Double Extra Large,m5.2xlarge,m5,37 units,Yes,x86_64,, $297.110 , $176.660 , $211.773 , $565.75 
+M5 General Purpose Quadruple Extra Large,m5.4xlarge,m5,70 units,Yes,x86_64,, $594.950 , $386.900 , $350.473 ," $1,132.23 "
+M5 General Purpose Eight Extra Large,m5.8xlarge,m5,128 units,Yes,x86_64,," $1,189.170 ", $706.640 , $522.972 ," $2,263.73 "
+M5 General Purpose Large,m5.large,m5,10 units,Yes,x86_64,, $74.460 , $48.180 , $71.978 , $141.62 
+M5 General Purpose Metal,m5.metal,m5,345 units,Yes,x86_64,," $3,363.840 "," $2,119.190 "," $1,127.047 "," $6,587.52 "
+M5 General Purpose Extra Large,m5.xlarge,m5,16 units,Yes,x86_64,, $148.920 , $88.330 , $99.061 , $283.24 
+M5A 12xlarge Extra Large,m5a.12xlarge,m5a,0 units,unknown,x86_64,," $1,597.970 ", $949.000 , $762.704 ," $3,209.81 "
+M5A 16xlarge Extra Large,m5a.16xlarge,m5a,0 units,unknown,x86_64,," $2,130.870 "," $1,386.270 "," $1,106.680 "," $4,279.99 "
+M5A 24xlarge,m5a.24xlarge,m5a,0 units,unknown,x86_64,," $3,195.940 "," $2,079.040 "," $1,278.449 "," $6,419.62 "
+M5A Double Extra Large,m5a.2xlarge,m5a,0 units,unknown,x86_64,, $266.450 , $173.010 , $212.722 , $535.09 
+M5A Quadruple Extra Large,m5a.4xlarge,m5a,0 units,unknown,x86_64,, $532.900 , $346.750 , $348.064 ," $1,070.18 "
+M5A Eight Extra Large,m5a.8xlarge,m5a,0 units,unknown,x86_64,," $1,065.070 ", $692.770 , $613.127 ," $2,139.63 "
+M5A Large,m5a.large,m5a,0 units,unknown,x86_64,, $66.430 , $43.070 , $68.182 , $133.59 
+M5A Extra Large,m5a.xlarge,m5a,0 units,unknown,x86_64,, $132.860 , $78.840 , $98.623 , $267.18 
+M5AD 12xlarge Extra Large,m5ad.12xlarge,m5ad,0 units,unknown,x86_64,," $1,914.790 "," $1,245.380 "," $1,356.267 "," $3,526.63 "
+M5AD 16xlarge Extra Large,m5ad.16xlarge,m5ad,0 units,unknown,x86_64,," $2,550.620 "," $1,515.480 "," $1,418.536 "," $4,699.74 "
+M5AD 24xlarge,m5ad.24xlarge,m5ad,0 units,unknown,x86_64,," $3,828.850 "," $2,490.030 "," $2,068.747 "," $7,052.53 "
+M5AD Double Extra Large,m5ad.2xlarge,m5ad,0 units,unknown,x86_64,, $319.010 , $189.800 , $344.852 , $587.65 
+M5AD Quadruple Extra Large,m5ad.4xlarge,m5ad,0 units,unknown,x86_64,, $638.020 , $378.870 , $648.167 ," $1,175.30 "
+M5AD Eight Extra Large,m5ad.8xlarge,m5ad,0 units,unknown,x86_64,," $1,275.310 ", $830.010 ," $1,109.746 "," $2,349.87 "
+M5AD Large,m5ad.large,m5ad,0 units,unknown,x86_64,, $79.570 , $47.450 , $81.030 , $146.73 
+M5AD Extra Large,m5ad.xlarge,m5ad,0 units,unknown,x86_64,, $159.870 , $94.900 , $142.204 , $294.19 
+M5 General Purpose 12xlarge Extra Large,m5d.12xlarge,m5d,168 units,Yes,x86_64,," $2,099.480 "," $1,247.570 "," $1,163.036 "," $3,711.32 "
+M5 General Purpose 16xlarge Extra Large,m5d.16xlarge,m5d,256 units,Yes,x86_64,," $2,799.550 "," $1,662.940 "," $1,334.075 "," $4,948.67 "
+M5 General Purpose 24xlarge,m5d.24xlarge,m5d,337 units,Yes,x86_64,," $3,959.520 "," $2,494.410 "," $2,221.609 "," $7,183.20 "
+M5 General Purpose Double Extra Large,m5d.2xlarge,m5d,37 units,Yes,x86_64,, $349.670 , $208.050 , $263.165 , $618.31 
+M5 General Purpose Quadruple Extra Large,m5d.4xlarge,m5d,70 units,Yes,x86_64,, $700.070 , $455.520 , $505.306 ," $1,237.35 "
+M5 General Purpose Eight Extra Large,m5d.8xlarge,m5d,128 units,Yes,x86_64,," $1,400.140 ", $911.040 , $770.004 ," $2,474.70 "
+M5 General Purpose Large,m5d.large,m5d,10 units,Yes,x86_64,, $87.600 , $51.830 , $80.081 , $154.76 
+M5 General Purpose Metal,m5d.metal,m5d,345 units,Yes,x86_64,," $3,959.520 "," $2,494.410 "," $1,395.030 "," $7,183.20 "
+M5 General Purpose Extra Large,m5d.xlarge,m5d,16 units,Yes,x86_64,, $175.200 , $103.660 , $126.071 , $309.52 
+M5DN 12xlarge Extra Large,m5dn.12xlarge,m5dn,0 units,unknown,x86_64,," $2,527.260 "," $1,643.960 ", unavailable ," $4,139.10 "
+M5DN 16xlarge Extra Large,m5dn.16xlarge,m5dn,0 units,unknown,x86_64,," $3,369.680 "," $2,001.660 ", unavailable ," $5,518.80 "
+M5DN 24xlarge,m5dn.24xlarge,m5dn,0 units,unknown,x86_64,," $4,765.440 "," $3,002.490 ", unavailable ," $7,989.12 "
+M5DN Double Extra Large,m5dn.2xlarge,m5dn,0 units,unknown,x86_64,, $421.210 , $250.390 , unavailable , $689.85 
+M5DN Quadruple Extra Large,m5dn.4xlarge,m5dn,0 units,unknown,x86_64,, $842.420 , $500.050 , unavailable ," $1,379.70 "
+M5DN Eight Extra Large,m5dn.8xlarge,m5dn,0 units,unknown,x86_64,," $1,684.840 "," $1,095.730 ", unavailable ," $2,759.40 "
+M5DN Large,m5dn.large,m5dn,0 units,unknown,x86_64,, $105.120 , $68.620 , unavailable , $172.28 
+M5DN Metal,m5dn.metal,m5dn,0 units,unknown,x86_64,," $4,765.440 "," $3,002.490 "," $2,054.950 "," $7,989.12 "
+M5DN Extra Large,m5dn.xlarge,m5dn,0 units,unknown,x86_64,, $210.240 , $137.240 , unavailable , $344.56 
+M5N 12xlarge Extra Large,m5n.12xlarge,m5n,0 units,unknown,x86_64,," $2,211.170 "," $1,438.830 "," $1,084.488 "," $3,823.01 "
+M5N 16xlarge Extra Large,m5n.16xlarge,m5n,0 units,unknown,x86_64,," $2,947.740 "," $1,751.270 "," $1,598.554 "," $5,096.86 "
+M5N 24xlarge,m5n.24xlarge,m5n,0 units,unknown,x86_64,," $4,169.760 "," $2,627.270 "," $1,961.802 "," $7,393.44 "
+M5N Double Extra Large,m5n.2xlarge,m5n,0 units,unknown,x86_64,, $368.650 , $219.000 , $281.488 , $637.29 
+M5N Quadruple Extra Large,m5n.4xlarge,m5n,0 units,unknown,x86_64,, $737.300 , $479.610 , $450.629 ," $1,274.58 "
+M5N Eight Extra Large,m5n.8xlarge,m5n,0 units,unknown,x86_64,," $1,473.870 ", $959.220 , $927.830 ," $2,548.43 "
+M5N Large,m5n.large,m5n,0 units,unknown,x86_64,, $91.980 , $54.750 , $84.972 , $159.14 
+M5N Metal,m5n.metal,m5n,0 units,unknown,x86_64,," $4,169.760 "," $2,627.270 "," $1,494.164 "," $7,393.44 "
+M5N Extra Large,m5n.xlarge,m5n,0 units,unknown,x86_64,, $183.960 , $109.500 , $131.327 , $318.28 
+M5ZN 12xlarge Extra Large,m5zn.12xlarge,m5zn,0 units,Yes,x86_64,," $3,183.165 "," $1,823.102 "," $1,665.130 "," $4,795.01 "
+M5ZN Double Extra Large,m5zn.2xlarge,m5zn,0 units,Yes,x86_64,, $530.491 , $303.826 , $337.041 , $799.13 
+M5ZN 3xlarge,m5zn.3xlarge,m5zn,0 units,Yes,x86_64,, $795.773 , $501.364 , $621.522 ," $1,198.73 "
+M5ZN 6xlarge,m5zn.6xlarge,m5zn,0 units,Yes,x86_64,," $1,591.546 "," $1,002.728 "," $1,133.471 "," $2,397.47 "
+M5ZN Large,m5zn.large,m5zn,0 units,Yes,x86_64,, $132.641 , $75.993 , $95.703 , $199.80 
+M5ZN Metal,m5zn.metal,m5zn,0 units,Yes,x86_64,," $3,183.165 "," $2,005.383 "," $1,541.176 "," $4,795.01 "
+M5ZN Extra Large,m5zn.xlarge,m5zn,0 units,Yes,x86_64,, $265.282 , $151.913 , $182.062 , $399.60 
+M6A 12xlarge Extra Large,m6a.12xlarge,m6a,0 units,unknown,x86_64,," $1,665.101 "," $1,001.334 ", $845.924 ," $3,276.94 "
+M6A 16xlarge Extra Large,m6a.16xlarge,m6a,0 units,unknown,x86_64,," $2,220.134 "," $1,335.112 "," $1,042.732 "," $4,369.25 "
+M6A 24xlarge,m6a.24xlarge,m6a,0 units,unknown,x86_64,," $3,330.202 "," $2,202.928 "," $1,303.634 "," $6,553.88 "
+M6A Double Extra Large,m6a.2xlarge,m6a,0 units,unknown,x86_64,, $277.517 , $183.580 , $224.913 , $546.16 
+M6A 32xlarge,m6a.32xlarge,m6a,0 units,unknown,x86_64,," $4,440.269 "," $2,937.235 "," $2,148.025 "," $8,738.51 "
+M6A 48xlarge,m6a.48xlarge,m6a,0 units,unknown,x86_64,," $6,054.912 "," $4,005.328 "," $2,980.371 "," $12,502.27 "
+M6A Quadruple Extra Large,m6a.4xlarge,m6a,0 units,unknown,x86_64,, $555.034 , $333.778 , $399.967 ," $1,092.31 "
+M6A Eight Extra Large,m6a.8xlarge,m6a,0 units,unknown,x86_64,," $1,110.067 ", $734.307 , $620.573 ," $2,184.63 "
+M6A Large,m6a.large,m6a,0 units,unknown,x86_64,, $69.379 , $45.895 , $71.175 , $136.54 
+M6A Metal,m6a.metal,m6a,0 units,unknown,x86_64,," $6,054.912 "," $4,005.328 "," $2,405.277 "," $12,502.27 "
+M6A Extra Large,m6a.xlarge,m6a,0 units,unknown,x86_64,, $138.758 , $83.446 , $102.419 , $273.08 
+M6G 12xlarge Extra Large,m6g.12xlarge,m6g,0 units,unknown,arm64,," $1,429.632 ", $846.216 , $598.746 , unavailable 
+M6G 16xlarge Extra Large,m6g.16xlarge,m6g,0 units,unknown,arm64,," $1,906.176 "," $1,128.288 ", $721.094 , unavailable 
+M6G Double Extra Large,m6g.2xlarge,m6g,0 units,unknown,arm64,, $238.272 , $141.036 , $180.675 , unavailable 
+M6G Quadruple Extra Large,m6g.4xlarge,m6g,0 units,unknown,arm64,, $476.544 , $282.072 , $286.306 , unavailable 
+M6G Eight Extra Large,m6g.8xlarge,m6g,0 units,unknown,arm64,, $953.088 , $617.872 , $513.117 , unavailable 
+M6G Large,m6g.large,m6g,0 units,unknown,arm64,, $59.568 , $35.259 , $69.131 , unavailable 
+M6G Medium,m6g.medium,m6g,0 units,unknown,arm64,, $29.784 , $17.593 , $34.675 , unavailable 
+M6G Metal,m6g.metal,m6g,0 units,unknown,arm64,," $1,906.176 "," $1,235.744 ", $773.946 , unavailable 
+M6G Extra Large,m6g.xlarge,m6g,0 units,unknown,arm64,, $119.136 , $70.518 , $82.782 , unavailable 
+M6GD 12xlarge Extra Large,m6gd.12xlarge,m6gd,0 units,unknown,arm64,," $1,678.854 ", $997.764 , $665.176 , unavailable 
+M6GD 16xlarge Extra Large,m6gd.16xlarge,m6gd,0 units,unknown,arm64,," $2,238.472 "," $1,457.080 "," $1,136.245 ", unavailable 
+M6GD Double Extra Large,m6gd.2xlarge,m6gd,0 units,unknown,arm64,, $279.809 , $182.135 , $255.792 , unavailable 
+M6GD Quadruple Extra Large,m6gd.4xlarge,m6gd,0 units,unknown,arm64,, $559.618 , $332.588 , $370.110 , unavailable 
+M6GD Eight Extra Large,m6gd.8xlarge,m6gd,0 units,unknown,arm64,," $1,119.236 ", $665.176 , $575.751 , unavailable 
+M6GD Large,m6gd.large,m6gd,0 units,unknown,arm64,, $69.934 , $41.610 , $71.759 , unavailable 
+M6GD Medium,m6gd.medium,m6gd,0 units,unknown,arm64,, $34.967 , $20.805 , $35.405 , unavailable 
+M6GD Metal,m6gd.metal,m6gd,0 units,unknown,arm64,," $2,238.472 "," $1,457.080 ", $750.513 , unavailable 
+M6GD Extra Large,m6gd.xlarge,m6gd,0 units,unknown,arm64,, $139.868 , $91.104 , $132.495 , unavailable 
+M6I 12xlarge Extra Large,m6i.12xlarge,m6i,0 units,Yes,x86_64,," $1,850.112 "," $1,112.593 ", $829.718 ," $3,461.95 "
+M6I 16xlarge Extra Large,m6i.16xlarge,m6i,0 units,Yes,x86_64,," $2,466.816 "," $1,631.798 "," $1,138.216 "," $4,615.94 "
+M6I 24xlarge,m6i.24xlarge,m6i,0 units,Yes,x86_64,," $3,700.224 "," $2,225.179 "," $1,354.369 "," $6,923.90 "
+M6I Double Extra Large,m6i.2xlarge,m6i,0 units,Yes,x86_64,, $308.352 , $185.435 , $219.876 , $576.99 
+M6I 32xlarge,m6i.32xlarge,m6i,0 units,Yes,x86_64,," $4,933.632 "," $3,263.596 "," $1,722.143 "," $9,231.87 "
+M6I Quadruple Extra Large,m6i.4xlarge,m6i,0 units,Yes,x86_64,, $616.704 , $370.862 , $325.799 ," $1,153.98 "
+M6I Eight Extra Large,m6i.8xlarge,m6i,0 units,Yes,x86_64,," $1,233.408 ", $815.899 , $604.367 ," $2,307.97 "
+M6I Large,m6i.large,m6i,0 units,Yes,x86_64,, $77.088 , $50.991 , $73.949 , $144.25 
+M6I Metal,m6i.metal,m6i,0 units,Yes,x86_64,," $4,485.120 "," $2,966.910 "," $1,757.548 "," $8,783.36 "
+M6I Extra Large,m6i.xlarge,m6i,0 units,Yes,x86_64,, $154.176 , $101.988 , $100.594 , $288.50 
+M6ID 12xlarge Extra Large,m6id.12xlarge,m6id,0 units,Yes,x86_64,," $2,286.623 "," $1,440.575 ", $932.648 ," $3,898.46 "
+M6ID 16xlarge Extra Large,m6id.16xlarge,m6id,0 units,Yes,x86_64,," $3,048.830 "," $1,920.761 "," $1,760.030 "," $5,197.95 "
+M6ID 24xlarge,m6id.24xlarge,m6id,0 units,Yes,x86_64,," $4,573.246 "," $2,881.142 "," $2,018.961 "," $7,796.93 "
+M6ID Double Extra Large,m6id.2xlarge,m6id,0 units,Yes,x86_64,, $381.104 , $218.270 , $260.756 , $649.74 
+M6ID 32xlarge,m6id.32xlarge,m6id,0 units,Yes,x86_64,," $5,543.328 "," $3,492.298 "," $2,416.373 "," $9,841.57 "
+M6ID Quadruple Extra Large,m6id.4xlarge,m6id,0 units,Yes,x86_64,, $762.208 , $436.540 , $427.999 ," $1,299.49 "
+M6ID Eight Extra Large,m6id.8xlarge,m6id,0 units,Yes,x86_64,," $1,524.415 ", $873.073 ," $1,065.727 "," $2,598.98 "
+M6ID Large,m6id.large,m6id,0 units,Yes,x86_64,, $95.280 , $54.568 , $76.577 , $162.44 
+M6ID Metal,m6id.metal,m6id,0 units,Yes,x86_64,," $5,543.328 "," $3,492.298 "," $2,053.490 "," $9,841.57 "
+M6ID Extra Large,m6id.xlarge,m6id,0 units,Yes,x86_64,, $190.552 , $120.049 , $112.785 , $324.87 
+M6IDN 12xlarge Extra Large,m6idn.12xlarge,m6idn,0 units,Yes,x86_64,," $3,066.562 "," $1,931.930 "," $1,279.690 "," $4,678.40 "
+M6IDN 16xlarge Extra Large,m6idn.16xlarge,m6idn,0 units,Yes,x86_64,," $4,088.745 "," $2,341.738 "," $1,612.205 "," $6,237.86 "
+M6IDN 24xlarge,m6idn.24xlarge,m6idn,0 units,Yes,x86_64,," $6,133.124 "," $3,512.607 "," $2,144.156 "," $9,356.80 "
+M6IDN Double Extra Large,m6idn.2xlarge,m6idn,0 units,Yes,x86_64,, $511.095 , $292.715 , $340.618 , $779.73 
+M6IDN 32xlarge,m6idn.32xlarge,m6idn,0 units,Yes,x86_64,," $7,434.086 "," $4,683.476 "," $2,942.119 "," $11,732.33 "
+M6IDN Quadruple Extra Large,m6idn.4xlarge,m6idn,0 units,Yes,x86_64,," $1,022.190 ", $585.431 , $773.508 ," $1,559.47 "
+M6IDN Eight Extra Large,m6idn.8xlarge,m6idn,0 units,Yes,x86_64,," $2,044.372 "," $1,170.869 "," $1,077.188 "," $3,118.93 "
+M6IDN Large,m6idn.large,m6idn,0 units,Yes,x86_64,, $127.772 , $80.497 , $94.827 , $194.93 
+M6IDN Metal,m6idn.metal,m6idn,0 units,Yes,x86_64,," $7,434.086 "," $4,683.476 "," $2,551.861 "," $11,732.33 "
+M6IDN Extra Large,m6idn.xlarge,m6idn,0 units,Yes,x86_64,, $255.544 , $160.994 , $163.739 , $389.86 
+M6IN 12xlarge Extra Large,m6in.12xlarge,m6in,0 units,Yes,x86_64,," $2,683.239 "," $1,536.767 "," $1,368.166 "," $4,295.08 "
+M6IN 16xlarge Extra Large,m6in.16xlarge,m6in,0 units,Yes,x86_64,," $3,577.657 "," $2,049.022 "," $1,694.695 "," $5,726.78 "
+M6IN 24xlarge,m6in.24xlarge,m6in,0 units,Yes,x86_64,," $5,366.478 "," $3,380.886 "," $2,535.217 "," $8,590.16 "
+M6IN Double Extra Large,m6in.2xlarge,m6in,0 units,Yes,x86_64,, $447.205 , $281.744 , $265.501 , $715.85 
+M6IN 32xlarge,m6in.32xlarge,m6in,0 units,Yes,x86_64,," $6,504.826 "," $4,098.038 "," $3,056.583 "," $10,803.07 "
+M6IN Quadruple Extra Large,m6in.4xlarge,m6in,0 units,Yes,x86_64,, $894.411 , $512.256 , $791.831 ," $1,431.69 "
+M6IN Eight Extra Large,m6in.8xlarge,m6in,0 units,Yes,x86_64,," $1,788.829 "," $1,024.511 "," $1,050.908 "," $2,863.39 "
+M6IN Large,m6in.large,m6in,0 units,Yes,x86_64,, $111.800 , $64.028 , $83.950 , $178.96 
+M6IN Metal,m6in.metal,m6in,0 units,Yes,x86_64,," $6,504.826 "," $4,098.038 "," $2,565.366 "," $10,803.07 "
+M6IN Extra Large,m6in.xlarge,m6in,0 units,Yes,x86_64,, $223.606 , $140.868 , $140.306 , $357.93 
+M7A 12xlarge Extra Large,m7a.12xlarge,m7a,0 units,unknown,x86_64,," $2,234.012 "," $1,343.456 "," $1,467.665 "," $3,845.85 "
+M7A 16xlarge Extra Large,m7a.16xlarge,m7a,0 units,unknown,x86_64,," $2,978.677 "," $1,791.267 "," $1,214.866 "," $5,127.80 "
+M7A 24xlarge,m7a.24xlarge,m7a,0 units,unknown,x86_64,," $4,468.023 "," $2,955.595 "," $2,923.285 "," $7,691.70 "
+M7A Double Extra Large,m7a.2xlarge,m7a,0 units,unknown,x86_64,, $372.337 , $223.906 , $244.988 , $640.98 
+M7A 32xlarge,m7a.32xlarge,m7a,0 units,unknown,x86_64,," $5,957.362 "," $3,582.541 "," $4,358.611 "," $10,255.60 "
+M7A 48xlarge,m7a.48xlarge,m7a,0 units,unknown,x86_64,," $8,123.674 "," $5,373.807 "," $6,724.103 "," $14,571.03 "
+M7A Quadruple Extra Large,m7a.4xlarge,m7a,0 units,unknown,x86_64,, $744.673 , $492.597 , $420.480 ," $1,281.95 "
+M7A Eight Extra Large,m7a.8xlarge,m7a,0 units,unknown,x86_64,," $1,489.339 ", $895.637 , $675.469 ," $2,563.90 "
+M7A Large,m7a.large,m7a,0 units,unknown,x86_64,, $93.082 , $55.976 , $78.110 , $160.24 
+M7A Medium,m7a.medium,m7a,0 units,unknown,x86_64,, $46.545 , $30.784 , $57.670 , $80.12 
+M7A Metal-48xl,m7a.metal-48xl,m7a,0 units,unknown,x86_64,," $8,123.674 "," $5,373.807 "," $6,878.936 "," $14,571.03 "
+M7A Extra Large,m7a.xlarge,m7a,0 units,unknown,x86_64,, $186.165 , $111.953 , $119.720 , $320.48 
+M7G 12xlarge Extra Large,m7g.12xlarge,m7g,0 units,unknown,arm64,," $1,519.714 ", $945.715 , $657.511 , unavailable 
+M7G 16xlarge Extra Large,m7g.16xlarge,m7g,0 units,unknown,arm64,," $1,906.176 "," $1,260.929 ", $763.434 , unavailable 
+M7G Double Extra Large,m7g.2xlarge,m7g,0 units,unknown,arm64,, $253.310 , $157.607 , $189.216 , unavailable 
+M7G Quadruple Extra Large,m7g.4xlarge,m7g,0 units,unknown,arm64,, $506.547 , $315.214 , $306.016 , unavailable 
+M7G Eight Extra Large,m7g.8xlarge,m7g,0 units,unknown,arm64,," $1,013.167 ", $630.501 , $454.352 , unavailable 
+M7G Large,m7g.large,m7g,0 units,unknown,arm64,, $63.291 , $43.143 , $70.518 , unavailable 
+M7G Medium,m7g.medium,m7g,0 units,unknown,arm64,, $31.682 , $19.710 , $53.144 , unavailable 
+M7G Metal,m7g.metal,m7g,0 units,unknown,arm64,," $1,906.176 "," $1,260.929 ", $757.959 , unavailable 
+M7G Extra Large,m7g.xlarge,m7g,0 units,unknown,arm64,, $126.655 , $86.286 , $92.856 , unavailable 
+M7GD 12xlarge Extra Large,m7gd.12xlarge,m7gd,0 units,unknown,arm64,," $1,983.118 "," $1,178.658 ", $753.214 , unavailable 
+M7GD 16xlarge Extra Large,m7gd.16xlarge,m7gd,0 units,unknown,arm64,," $2,494.483 "," $1,571.544 "," $1,112.228 ", unavailable 
+M7GD Double Extra Large,m7gd.2xlarge,m7gd,0 units,unknown,arm64,, $330.544 , $196.443 , $256.668 , unavailable 
+M7GD Quadruple Extra Large,m7gd.4xlarge,m7gd,0 units,unknown,arm64,, $661.015 , $392.886 , $408.508 , unavailable 
+M7GD Eight Extra Large,m7gd.8xlarge,m7gd,0 units,unknown,arm64,," $1,322.103 ", $785.772 , $687.733 , unavailable 
+M7GD Large,m7gd.large,m7gd,0 units,unknown,arm64,, $82.636 , $53.801 , $75.774 , unavailable 
+M7GD Medium,m7gd.medium,m7gd,0 units,unknown,arm64,, $41.318 , $24.528 , $54.312 , unavailable 
+M7GD Metal,m7gd.metal,m7gd,0 units,unknown,arm64,," $2,494.483 "," $1,571.544 ", $916.515 , unavailable 
+M7GD Extra Large,m7gd.xlarge,m7gd,0 units,unknown,arm64,, $165.272 , $98.185 , $117.968 , unavailable 
+M7I-FLEX 12xlarge Extra Large,m7i-flex.12xlarge,m7i-flex,0 units,Yes,x86_64,," $1,677.715 "," $1,109.739 ", $871.182 ," $3,289.56 "
+M7I-FLEX 16xlarge Extra Large,m7i-flex.16xlarge,m7i-flex,0 units,Yes,x86_64,," $2,236.954 "," $1,479.652 ", $949.292 ," $4,386.07 "
+M7I-FLEX Double Extra Large,m7i-flex.2xlarge,m7i-flex,0 units,Yes,x86_64,, $279.619 , $184.953 , $241.630 , $534.83 
+M7I-FLEX Quadruple Extra Large,m7i-flex.4xlarge,m7i-flex,0 units,Yes,x86_64,, $559.238 , $369.913 , $352.225 ," $1,069.65 "
+M7I-FLEX Eight Extra Large,m7i-flex.8xlarge,m7i-flex,0 units,Yes,x86_64,," $1,118.477 ", $739.826 , $654.810 ," $2,139.31 "
+M7I-FLEX Large,m7i-flex.large,m7i-flex,0 units,Yes,x86_64,, $69.905 , $46.238 , $65.554 , $133.71 
+M7I-FLEX Extra Large,m7i-flex.xlarge,m7i-flex,0 units,Yes,x86_64,, $139.810 , $92.476 , $102.492 , $267.41 
+M7I 12xlarge Extra Large,m7i.12xlarge,m7i,0 units,Yes,x86_64,," $1,942.618 "," $1,168.219 ", $955.570 ," $3,554.46 "
+M7I 16xlarge Extra Large,m7i.16xlarge,m7i,0 units,Yes,x86_64,," $2,590.157 "," $1,557.623 ", $990.902 ," $4,739.28 "
+M7I 24xlarge,m7i.24xlarge,m7i,0 units,Yes,x86_64,," $3,885.235 "," $2,336.438 "," $1,399.118 "," $7,108.92 "
+M7I Double Extra Large,m7i.2xlarge,m7i,0 units,Yes,x86_64,, $323.770 , $194.706 , $212.868 , $592.41 
+M7I 48xlarge,m7i.48xlarge,m7i,0 units,Yes,x86_64,," $7,064.064 "," $4,672.876 "," $3,186.012 "," $13,511.42 "
+M7I Quadruple Extra Large,m7i.4xlarge,m7i,0 units,Yes,x86_64,, $647.539 , $428.349 , $340.253 ," $1,184.82 "
+M7I Eight Extra Large,m7i.8xlarge,m7i,0 units,Yes,x86_64,," $1,295.078 ", $856.692 , $752.776 ," $2,369.64 "
+M7I Large,m7i.large,m7i,0 units,Yes,x86_64,, $80.942 , $48.676 , $71.467 , $148.10 
+M7I Metal-24xl,m7i.metal-24xl,m7i,0 units,Yes,x86_64,," $3,885.235 "," $2,336.438 "," $1,262.973 "," $7,108.92 "
+M7I Metal-48xl,m7i.metal-48xl,m7i,0 units,Yes,x86_64,," $7,064.064 "," $4,672.876 "," $2,890.143 "," $13,511.42 "
+M7I Extra Large,m7i.xlarge,m7i,0 units,Yes,x86_64,, $161.885 , $107.084 , $98.185 , $296.20 
+M8G 12xlarge Extra Large,m8g.12xlarge,m8g,0 units,unknown,arm64,," $1,729.852 "," $1,040.272 ", $836.434 , unavailable 
+M8G 16xlarge Extra Large,m8g.16xlarge,m8g,0 units,unknown,arm64,," $2,306.472 "," $1,387.029 ", $989.661 , unavailable 
+M8G 24xlarge,m8g.24xlarge,m8g,0 units,unknown,arm64,," $3,459.711 "," $2,080.544 "," $1,185.812 ", unavailable 
+M8G Double Extra Large,m8g.2xlarge,m8g,0 units,unknown,arm64,, $288.306 , $190.720 , $191.698 , unavailable 
+M8G 48xlarge,m8g.48xlarge,m8g,0 units,unknown,arm64,," $6,290.381 "," $4,161.088 "," $2,476.817 ", unavailable 
+M8G Quadruple Extra Large,m8g.4xlarge,m8g,0 units,unknown,arm64,, $576.620 , $346.757 , $317.696 , unavailable 
+M8G Eight Extra Large,m8g.8xlarge,m8g,0 units,unknown,arm64,," $1,153.239 ", $693.515 , $493.480 , unavailable 
+M8G Large,m8g.large,m8g,0 units,unknown,arm64,, $72.080 , $47.676 , $72.197 , unavailable 
+M8G Medium,m8g.medium,m8g,0 units,unknown,arm64,, $36.040 , $23.842 , $52.998 , unavailable 
+M8G Metal-24xl,m8g.metal-24xl,m8g,0 units,unknown,arm64,," $3,459.711 "," $2,288.601 "," $1,106.899 ", unavailable 
+M8G Metal-48xl,m8g.metal-48xl,m8g,0 units,unknown,arm64,," $6,290.381 "," $4,161.088 "," $2,221.901 ", unavailable 
+M8G Extra Large,m8g.xlarge,m8g,0 units,unknown,arm64,, $144.153 , $86.688 , $101.835 , unavailable 
+M8GD 12xlarge Extra Large,m8gd.12xlarge,m8gd,0 units,unknown,arm64,," $2,222.449 ", unavailable ," $2,111.671 ", unavailable 
+M8GD 16xlarge Extra Large,m8gd.16xlarge,m8gd,0 units,unknown,arm64,," $2,963.260 ", unavailable ," $2,785.096 ", unavailable 
+M8GD 24xlarge,m8gd.24xlarge,m8gd,0 units,unknown,arm64,," $4,444.897 ", unavailable ," $2,311.764 ", unavailable 
+M8GD Double Extra Large,m8gd.2xlarge,m8gd,0 units,unknown,arm64,, $370.409 , unavailable , $427.999 , unavailable 
+M8GD 48xlarge,m8gd.48xlarge,m8gd,0 units,unknown,arm64,," $8,081.626 ", unavailable ," $8,172.861 ", unavailable 
+M8GD Quadruple Extra Large,m8gd.4xlarge,m8gd,0 units,unknown,arm64,, $740.819 , unavailable , $764.748 , unavailable 
+M8GD Eight Extra Large,m8gd.8xlarge,m8gd,0 units,unknown,arm64,," $1,481.630 ", unavailable , $774.603 , unavailable 
+M8GD Large,m8gd.large,m8gd,0 units,unknown,arm64,, $92.601 , unavailable , $125.268 , unavailable 
+M8GD Medium,m8gd.medium,m8gd,0 units,unknown,arm64,, $46.304 , unavailable , $83.220 , unavailable 
+M8GD Metal-24xl,m8gd.metal-24xl,m8gd,0 units,unknown,arm64,," $4,444.897 ", unavailable ," $4,132.092 ", unavailable 
+M8GD Metal-48xl,m8gd.metal-48xl,m8gd,0 units,unknown,arm64,," $8,081.626 ", unavailable ," $8,172.861 ", unavailable 
+M8GD Extra Large,m8gd.xlarge,m8gd,0 units,unknown,arm64,, $185.201 , unavailable , $209.437 , unavailable 
+MAC1 Metal,mac1.metal,mac1,0 units,Yes,x86_64_mac,, unavailable , unavailable , unavailable , unavailable 
+MAC2-M1ULTRA Metal,mac2-m1ultra.metal,mac2-m1ultra,0 units,unknown,arm64_mac,, unavailable , unavailable , unavailable , unavailable 
+MAC2-M2 Metal,mac2-m2.metal,mac2-m2,0 units,unknown,arm64_mac,, unavailable , unavailable , unavailable , unavailable 
+MAC2-M2PRO Metal,mac2-m2pro.metal,mac2-m2pro,0 units,unknown,arm64_mac,, unavailable , unavailable , unavailable , unavailable 
+MAC2 Metal,mac2.metal,mac2,0 units,unknown,arm64_mac,, unavailable , unavailable , unavailable , unavailable 
+P2 General Purpose GPU 16xlarge Extra Large,p2.16xlarge,p2,201 units,Yes,x86_64,," $10,512.000 ", unavailable , unavailable ," $12,661.12 "
+P2 General Purpose GPU Eight Extra Large,p2.8xlarge,p2,97 units,Yes,x86_64,," $5,781.600 ", unavailable , unavailable ," $6,856.16 "
+P2 General Purpose GPU Extra Large,p2.xlarge,p2,16 units,Yes,x86_64,, $722.700 , unavailable , unavailable , $857.02 
+P3 High Performance GPU 16xlarge Extra Large,p3.16xlarge,p3,201 units,Yes,x86_64,," $17,870.400 ", unavailable ," $5,640.345 "," $20,019.52 "
+P3 High Performance GPU Double Extra Large,p3.2xlarge,p3,31 units,Yes,x86_64,," $2,379.070 ", unavailable , $772.340 ," $2,647.71 "
+P3 High Performance GPU Eight Extra Large,p3.8xlarge,p3,97 units,Yes,x86_64,," $9,516.280 ", unavailable ," $2,437.981 "," $10,590.84 "
+P3DN 24xlarge,p3dn.24xlarge,p3dn,337 units,Yes,x86_64,," $22,784.760 "," $14,026.950 "," $7,091.074 "," $26,008.44 "
+P4D Highest Performance GPU 24xlarge,p4d.24xlarge,p4d,345 units,Yes,x86_64,," $17,631.986 "," $11,178.638 "," $8,117.673 ", unavailable 
+P4DE 24xlarge,p4de.24xlarge,p4de,345 units,Yes,x86_64,," $22,039.981 "," $12,702.996 "," $9,248.078 ", unavailable 
+P5 48xlarge,p5.48xlarge,p5,0 units,unknown,x86_64,," $44,197.120 ", unavailable ," $14,403.849 ", unavailable 
+P5 Quadruple Extra Large,p5.4xlarge,p5,0 units,unknown,x86_64,," $5,524.640 ", unavailable , unavailable , unavailable 
+P5e High Performance Computing GPU 48xlarge,p5e.48xlarge,p5e,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+P5en High Performance Computing GPU 48xlarge,p5en.48xlarge,p5en,0 units,unknown,x86_64,," $50,826.688 ", unavailable ," $15,625.869 ", unavailable 
+P6-B200 High Performance and Machine Learning GPU 48xlarge,p6-b200.48xlarge,p6-b200,0 units,unknown,x86_64,," $88,161.202 ", unavailable ," $22,997.263 ", unavailable 
+P6E-GB200 36xlarge,p6e-gb200.36xlarge,p6e-gb200,0 units,unknown,x86_64,, unavailable , unavailable , unavailable , unavailable 
+R3 High-Memory Double Extra Large,r3.2xlarge,r3,26 units,Yes,x86_64,, $534.360 , $335.800 , $315.068 , $839.50 
+R3 High-Memory Quadruple Extra Large,r3.4xlarge,r3,52 units,Yes,x86_64,," $1,067.990 ", $610.280 , $543.266 ," $1,560.74 "
+R3 High-Memory Eight Extra Large,r3.8xlarge,r3,104 units,Yes,x86_64,," $1,941.800 "," $1,220.560 "," $1,154.495 "," $2,555.00 "
+R3 High-Memory Large,r3.large,r3,6.5 units,Yes,x86_64,, $133.590 , $83.950 , $121.472 , $233.60 
+R3 High-Memory Extra Large,r3.xlarge,r3,13 units,Yes,x86_64,, $267.180 , $167.900 , $159.140 , $467.93 
+R4 High-Memory 16xlarge Extra Large,r4.16xlarge,r4,201 units,Yes,x86_64,," $3,106.880 "," $1,962.240 "," $1,399.848 "," $5,256.00 "
+R4 High-Memory Double Extra Large,r4.2xlarge,r4,31 units,Yes,x86_64,, $427.050 , $245.280 , $287.182 , $695.69 
+R4 High-Memory Quadruple Extra Large,r4.4xlarge,r4,58 units,Yes,x86_64,, $854.100 , $539.616 , $421.940 ," $1,391.38 "
+R4 High-Memory Eight Extra Large,r4.8xlarge,r4,97 units,Yes,x86_64,," $1,708.930 ", $981.120 , $694.084 ," $2,783.49 "
+R4 High-Memory Large,r4.large,r4,8 units,Yes,x86_64,, $106.580 , $61.320 , $160.089 , $173.74 
+R4 High-Memory Extra Large,r4.xlarge,r4,16 units,Yes,x86_64,, $213.890 , $122.640 , $169.506 , $348.21 
+R5 12xlarge Extra Large,r5.12xlarge,r5,168 units,Yes,x86_64,," $2,339.650 "," $1,390.650 ", $871.474 ," $3,951.49 "
+R5 16xlarge Extra Large,r5.16xlarge,r5,256 units,Yes,x86_64,," $3,120.020 "," $2,030.860 "," $1,120.185 "," $5,269.14 "
+R5 24xlarge,r5.24xlarge,r5,337 units,Yes,x86_64,," $4,415.040 "," $2,781.300 "," $1,767.768 "," $7,638.72 "
+R5 Double Extra Large,r5.2xlarge,r5,37 units,Yes,x86_64,, $389.820 , $232.140 , $256.303 , $658.46 
+R5 Quadruple Extra Large,r5.4xlarge,r5,70 units,Yes,x86_64,, $779.640 , $508.080 , $399.164 ," $1,316.92 "
+R5 Eight Extra Large,r5.8xlarge,r5,128 units,Yes,x86_64,," $1,560.010 "," $1,015.430 ", $613.711 ," $2,634.57 "
+R5 Large,r5.large,r5,10 units,Yes,x86_64,, $97.820 , $57.670 , $79.862 , $164.98 
+R5 Metal,r5.metal,r5,347 units,Yes,x86_64,," $4,415.040 "," $2,781.300 "," $1,666.736 "," $7,638.72 "
+R5 Extra Large,r5.xlarge,r5,19 units,Yes,x86_64,, $194.910 , $127.020 , $110.522 , $329.23 
+R5A 12xlarge Extra Large,r5a.12xlarge,r5a,0 units,unknown,x86_64,," $2,098.750 "," $1,365.830 "," $1,060.106 "," $3,710.59 "
+R5A 16xlarge Extra Large,r5a.16xlarge,r5a,0 units,unknown,x86_64,," $2,798.090 "," $1,662.940 "," $1,147.560 "," $4,947.21 "
+R5A 24xlarge,r5a.24xlarge,r5a,0 units,unknown,x86_64,," $4,197.500 "," $2,494.410 "," $1,625.710 "," $7,421.18 "
+R5A Double Extra Large,r5a.2xlarge,r5a,0 units,unknown,x86_64,, $349.670 , $208.050 , $251.339 , $618.31 
+R5A Quadruple Extra Large,r5a.4xlarge,r5a,0 units,unknown,x86_64,, $699.340 , $416.100 , $390.112 ," $1,236.62 "
+R5A Eight Extra Large,r5a.8xlarge,r5a,0 units,unknown,x86_64,," $1,399.410 ", $831.470 , $722.700 ," $2,473.97 "
+R5A Large,r5a.large,r5a,0 units,unknown,x86_64,, $87.600 , $51.830 , $76.723 , $154.76 
+R5A Extra Large,r5a.xlarge,r5a,0 units,unknown,x86_64,, $175.200 , $113.880 , $122.056 , $309.52 
+R5AD 12xlarge Extra Large,r5ad.12xlarge,r5ad,0 units,unknown,x86_64,," $2,433.820 "," $1,446.130 "," $1,231.364 "," $4,045.66 "
+R5AD 16xlarge Extra Large,r5ad.16xlarge,r5ad,0 units,unknown,x86_64,," $3,244.120 "," $1,927.930 "," $1,309.036 "," $5,393.24 "
+R5AD 24xlarge,r5ad.24xlarge,r5ad,0 units,unknown,x86_64,," $4,866.910 "," $3,167.470 "," $1,854.930 "," $8,090.59 "
+R5AD Double Extra Large,r5ad.2xlarge,r5ad,0 units,unknown,x86_64,, $405.880 , $264.260 , $352.517 , $674.52 
+R5AD Quadruple Extra Large,r5ad.4xlarge,r5ad,0 units,unknown,x86_64,, $811.030 , $481.800 , $542.463 ," $1,348.31 "
+R5AD Eight Extra Large,r5ad.8xlarge,r5ad,0 units,unknown,x86_64,," $1,622.060 ", $963.600 , $904.981 ," $2,696.62 "
+R5AD Large,r5ad.large,r5ad,0 units,unknown,x86_64,, $101.470 , $65.700 , $87.819 , $168.63 
+R5AD Extra Large,r5ad.xlarge,r5ad,0 units,unknown,x86_64,, $202.940 , $120.450 , $159.213 , $337.26 
+R5B 12xlarge Extra Large,r5b.12xlarge,r5b,0 units,Yes,x86_64,," $2,871.528 "," $1,809.063 "," $1,976.840 "," $4,483.37 "
+R5B 16xlarge Extra Large,r5b.16xlarge,r5b,0 units,Yes,x86_64,," $3,828.704 "," $2,412.084 "," $1,966.985 "," $5,977.82 "
+R5B 24xlarge,r5b.24xlarge,r5b,0 units,Yes,x86_64,," $5,743.056 "," $3,289.205 "," $2,798.893 "," $8,966.74 "
+R5B Double Extra Large,r5b.2xlarge,r5b,0 units,Yes,x86_64,, $478.588 , $274.100 , $435.007 , $747.23 
+R5B Quadruple Extra Large,r5b.4xlarge,r5b,0 units,Yes,x86_64,, $957.176 , $548.201 , $763.653 ," $1,494.46 "
+R5B Eight Extra Large,r5b.8xlarge,r5b,0 units,Yes,x86_64,," $1,914.352 "," $1,096.402 "," $1,598.846 "," $2,988.91 "
+R5B Large,r5b.large,r5b,0 units,Yes,x86_64,, $119.647 , $68.525 , $85.994 , $186.81 
+R5B Metal,r5b.metal,r5b,0 units,Yes,x86_64,," $5,743.056 "," $3,289.205 "," $2,281.104 "," $8,966.74 "
+R5B Extra Large,r5b.xlarge,r5b,0 units,Yes,x86_64,, $239.294 , $150.755 , $160.454 , $373.61 
+R5D 12xlarge Extra Large,r5d.12xlarge,r5d,168 units,Yes,x86_64,," $2,674.720 "," $1,589.210 "," $1,181.286 "," $4,286.56 "
+R5D 16xlarge Extra Large,r5d.16xlarge,r5d,256 units,Yes,x86_64,," $3,566.050 "," $2,321.400 "," $1,490.295 "," $5,715.17 "
+R5D 24xlarge,r5d.24xlarge,r5d,337 units,Yes,x86_64,," $5,045.760 "," $3,179.150 "," $1,923.623 "," $8,269.44 "
+R5D Double Extra Large,r5d.2xlarge,r5d,37 units,Yes,x86_64,, $446.030 , $289.810 , $402.449 , $714.67 
+R5D Quadruple Extra Large,r5d.4xlarge,r5d,70 units,Yes,x86_64,, $891.330 , $580.350 , $601.155 ," $1,428.61 "
+R5D Eight Extra Large,r5d.8xlarge,r5d,128 units,Yes,x86_64,," $1,782.660 "," $1,059.960 ", $960.899 ," $2,857.22 "
+R5D Large,r5d.large,r5d,10 units,Yes,x86_64,, $111.690 , $66.430 , $102.419 , $178.85 
+R5D Metal,r5d.metal,r5d,347 units,Yes,x86_64,," $5,045.760 "," $3,179.150 "," $2,080.281 "," $8,269.44 "
+R5D Extra Large,r5d.xlarge,r5d,19 units,Yes,x86_64,, $222.650 , $145.270 , $178.777 , $356.97 
+R5DN 12xlarge Extra Large,r5dn.12xlarge,r5dn,0 units,unknown,x86_64,," $3,101.770 "," $2,019.180 ", unavailable ," $4,713.61 "
+R5DN 16xlarge Extra Large,r5dn.16xlarge,r5dn,0 units,unknown,x86_64,," $4,135.450 "," $2,457.910 ", unavailable ," $6,284.57 "
+R5DN 24xlarge,r5dn.24xlarge,r5dn,0 units,unknown,x86_64,," $5,851.680 "," $3,686.500 ", unavailable ," $9,075.36 "
+R5DN Double Extra Large,r5dn.2xlarge,r5dn,0 units,unknown,x86_64,, $516.840 , $307.330 , unavailable , $785.48 
+R5DN Quadruple Extra Large,r5dn.4xlarge,r5dn,0 units,unknown,x86_64,," $1,033.680 ", $614.660 , unavailable ," $1,570.96 "
+R5DN Eight Extra Large,r5dn.8xlarge,r5dn,0 units,unknown,x86_64,," $2,068.090 "," $1,228.590 ", unavailable ," $3,142.65 "
+R5DN Large,r5dn.large,r5dn,0 units,unknown,x86_64,, $129.210 , $76.650 , unavailable , $196.37 
+R5DN Metal,r5dn.metal,r5dn,0 units,unknown,x86_64,," $5,851.680 "," $3,686.500 "," $1,694.841 "," $9,075.36 "
+R5DN Extra Large,r5dn.xlarge,r5dn,0 units,unknown,x86_64,, $258.420 , $153.300 , unavailable , $392.74 
+R5N 12xlarge Extra Large,r5n.12xlarge,r5n,0 units,Yes,x86_64,," $2,767.430 "," $1,644.690 "," $1,162.963 "," $4,379.27 "
+R5N 16xlarge Extra Large,r5n.16xlarge,r5n,0 units,Yes,x86_64,," $3,689.420 "," $2,192.920 "," $1,378.824 "," $5,838.54 "
+R5N 24xlarge,r5n.24xlarge,r5n,0 units,Yes,x86_64,," $5,220.960 "," $3,289.380 "," $2,124.154 "," $8,444.64 "
+R5N Double Extra Large,r5n.2xlarge,r5n,0 units,Yes,x86_64,, $461.360 , $300.030 , $334.413 , $730.00 
+R5N Quadruple Extra Large,r5n.4xlarge,r5n,0 units,Yes,x86_64,, $922.720 , $600.060 , $595.096 ," $1,460.00 "
+R5N Eight Extra Large,r5n.8xlarge,r5n,0 units,Yes,x86_64,," $1,844.710 "," $1,200.850 ", $751.681 ," $2,919.27 "
+R5N Large,r5n.large,r5n,0 units,Yes,x86_64,, $115.340 , $75.190 , $93.075 , $182.50 
+R5N Metal,r5n.metal,r5n,0 units,Yes,x86_64,," $5,220.960 "," $3,289.380 "," $1,631.331 "," $8,444.64 "
+R5N Extra Large,r5n.xlarge,r5n,0 units,Yes,x86_64,, $230.680 , $137.240 , $156.366 , $365.00 
+R6A 12xlarge Extra Large,r6a.12xlarge,r6a,0 units,unknown,x86_64,," $2,185.445 "," $1,445.670 ", $989.369 ," $3,797.28 "
+R6A 16xlarge Extra Large,r6a.16xlarge,r6a,0 units,unknown,x86_64,," $2,913.926 "," $1,927.565 "," $1,126.390 "," $5,063.05 "
+R6A 24xlarge,r6a.24xlarge,r6a,0 units,unknown,x86_64,," $4,370.890 "," $2,891.340 "," $1,768.060 "," $7,594.57 "
+R6A Double Extra Large,r6a.2xlarge,r6a,0 units,unknown,x86_64,, $364.241 , $219.044 , $252.872 , $632.88 
+R6A 32xlarge,r6a.32xlarge,r6a,0 units,unknown,x86_64,," $5,827.853 "," $3,504.657 "," $2,021.954 "," $10,126.09 "
+R6A 48xlarge,r6a.48xlarge,r6a,0 units,unknown,x86_64,," $7,947.072 "," $5,256.986 "," $2,692.605 "," $14,394.43 "
+R6A Quadruple Extra Large,r6a.4xlarge,r6a,0 units,unknown,x86_64,, $728.482 , $438.080 , $439.971 ," $1,265.76 "
+R6A Eight Extra Large,r6a.8xlarge,r6a,0 units,unknown,x86_64,," $1,456.963 ", $963.783 , $528.812 ," $2,531.52 "
+R6A Large,r6a.large,r6a,0 units,unknown,x86_64,, $91.060 , $60.240 , $77.234 , $158.22 
+R6A Metal,r6a.metal,r6a,0 units,unknown,x86_64,," $7,947.072 "," $5,256.986 "," $2,704.796 "," $14,394.43 "
+R6A Extra Large,r6a.xlarge,r6a,0 units,unknown,x86_64,, $182.120 , $109.522 , $114.245 , $316.44 
+R6G 12xlarge Extra Large,r6g.12xlarge,r6g,0 units,unknown,arm64,," $1,872.012 "," $1,112.593 ", $744.527 , unavailable 
+R6G 16xlarge Extra Large,r6g.16xlarge,r6g,0 units,unknown,arm64,," $2,495.943 "," $1,624.761 "," $1,458.978 ", unavailable 
+R6G Double Extra Large,r6g.2xlarge,r6g,0 units,unknown,arm64,, $312.002 , $185.420 , $223.818 , unavailable 
+R6G Quadruple Extra Large,r6g.4xlarge,r6g,0 units,unknown,arm64,, $624.004 , $370.840 , $320.324 , unavailable 
+R6G Eight Extra Large,r6g.8xlarge,r6g,0 units,unknown,arm64,," $1,248.008 ", $812.344 , $531.221 , unavailable 
+R6G Large,r6g.large,r6g,0 units,unknown,arm64,, $77.964 , $50.808 , $67.890 , unavailable 
+R6G Medium,r6g.medium,r6g,0 units,unknown,arm64,, $38.982 , $25.404 , $35.916 , unavailable 
+R6G Metal,r6g.metal,r6g,0 units,unknown,arm64,," $2,495.943 "," $1,624.761 ", $978.419 , unavailable 
+R6G Extra Large,r6g.xlarge,r6g,0 units,unknown,arm64,, $156.001 , $92.710 , $106.580 , unavailable 
+R6GD 12xlarge Extra Large,r6gd.12xlarge,r6gd,0 units,unknown,arm64,," $2,139.411 "," $1,271.514 ", $826.214 , unavailable 
+R6GD 16xlarge Extra Large,r6gd.16xlarge,r6gd,0 units,unknown,arm64,," $2,852.548 "," $1,856.828 "," $1,887.123 ", unavailable 
+R6GD Double Extra Large,r6gd.2xlarge,r6gd,0 units,unknown,arm64,, $356.532 , $232.140 , $271.779 , unavailable 
+R6GD Quadruple Extra Large,r6gd.4xlarge,r6gd,0 units,unknown,arm64,, $713.137 , $464.207 , $448.804 , unavailable 
+R6GD Eight Extra Large,r6gd.8xlarge,r6gd,0 units,unknown,arm64,," $1,426.274 ", $847.676 , $760.733 , unavailable 
+R6GD Large,r6gd.large,r6gd,0 units,unknown,arm64,, $89.133 , $52.998 , $76.796 , unavailable 
+R6GD Medium,r6gd.medium,r6gd,0 units,unknown,arm64,, $44.603 , $26.499 , $37.887 , unavailable 
+R6GD Metal,r6gd.metal,r6gd,0 units,unknown,arm64,," $2,852.548 "," $1,856.828 "," $1,050.762 ", unavailable 
+R6GD Extra Large,r6gd.xlarge,r6gd,0 units,unknown,arm64,, $178.266 , $116.070 , $126.801 , unavailable 
+R6I 12xlarge Extra Large,r6i.12xlarge,r6i,0 units,Yes,x86_64,," $2,428.272 "," $1,460.277 ", $942.576 ," $4,040.11 "
+R6I 16xlarge Extra Large,r6i.16xlarge,r6i,0 units,Yes,x86_64,," $3,237.696 "," $1,947.034 "," $1,231.218 "," $5,386.82 "
+R6I 24xlarge,r6i.24xlarge,r6i,0 units,Yes,x86_64,," $4,856.544 "," $2,920.548 "," $1,846.535 "," $8,080.22 "
+R6I Double Extra Large,r6i.2xlarge,r6i,0 units,Yes,x86_64,, $404.712 , $243.382 , $247.397 , $673.35 
+R6I 32xlarge,r6i.32xlarge,r6i,0 units,Yes,x86_64,," $5,886.720 "," $3,894.068 "," $2,246.210 "," $10,184.96 "
+R6I Quadruple Extra Large,r6i.4xlarge,r6i,0 units,Yes,x86_64,, $809.424 , $535.433 , $448.804 ," $1,346.70 "
+R6I Eight Extra Large,r6i.8xlarge,r6i,0 units,Yes,x86_64,," $1,618.848 ", $973.513 , $676.345 ," $2,693.41 "
+R6I Large,r6i.large,r6i,0 units,Yes,x86_64,, $101.178 , $66.926 , $76.504 , $168.34 
+R6I Metal,r6i.metal,r6i,0 units,Yes,x86_64,," $5,886.720 "," $3,894.068 "," $2,043.562 "," $10,184.96 "
+R6I Extra Large,r6i.xlarge,r6i,0 units,Yes,x86_64,, $202.356 , $133.860 , $126.874 , $336.68 
+R6ID 12xlarge Extra Large,r6id.12xlarge,r6id,0 units,Yes,x86_64,," $2,913.926 "," $1,664.838 "," $1,346.120 "," $4,525.77 "
+R6ID 16xlarge Extra Large,r6id.16xlarge,r6id,0 units,Yes,x86_64,," $3,885.235 "," $2,219.784 "," $1,532.708 "," $6,034.36 "
+R6ID 24xlarge,r6id.24xlarge,r6id,0 units,Yes,x86_64,," $5,827.853 "," $3,662.644 "," $2,321.400 "," $9,051.53 "
+R6ID Double Extra Large,r6id.2xlarge,r6id,0 units,Yes,x86_64,, $485.654 , $305.220 , $288.496 , $754.29 
+R6ID 32xlarge,r6id.32xlarge,r6id,0 units,Yes,x86_64,," $7,064.064 "," $4,439.568 "," $3,196.597 "," $11,362.30 "
+R6ID Quadruple Extra Large,r6id.4xlarge,r6id,0 units,Yes,x86_64,, $971.309 , $610.441 , $571.079 ," $1,508.59 "
+R6ID Eight Extra Large,r6id.8xlarge,r6id,0 units,Yes,x86_64,," $1,942.618 "," $1,220.881 ", $962.578 ," $3,017.18 "
+R6ID Large,r6id.large,r6id,0 units,Yes,x86_64,, $121.414 , $69.372 , $87.162 , $188.57 
+R6ID Metal,r6id.metal,r6id,0 units,Yes,x86_64,," $7,064.064 "," $4,439.568 "," $2,969.640 "," $11,362.30 "
+R6ID Extra Large,r6id.xlarge,r6id,0 units,Yes,x86_64,, $242.827 , $138.737 , $157.242 , $377.15 
+R6IDN 12xlarge Extra Large,r6idn.12xlarge,r6idn,0 units,Yes,x86_64,," $3,765.559 "," $2,372.303 "," $1,677.394 "," $5,377.40 "
+R6IDN 16xlarge Extra Large,r6idn.16xlarge,r6idn,0 units,Yes,x86_64,," $5,020.743 "," $3,163.068 "," $1,926.689 "," $7,169.86 "
+R6IDN 24xlarge,r6idn.24xlarge,r6idn,0 units,Yes,x86_64,," $7,531.111 "," $4,744.599 "," $3,081.330 "," $10,754.79 "
+R6IDN Double Extra Large,r6idn.2xlarge,r6idn,0 units,Yes,x86_64,, $627.596 , $359.437 , $515.307 , $896.24 
+R6IDN 32xlarge,r6idn.32xlarge,r6idn,0 units,Yes,x86_64,," $9,128.621 "," $5,751.028 "," $3,455.747 "," $13,426.86 "
+R6IDN Quadruple Extra Large,r6idn.4xlarge,r6idn,0 units,Yes,x86_64,," $1,255.184 ", $718.882 , $704.961 ," $1,792.46 "
+R6IDN Eight Extra Large,r6idn.8xlarge,r6idn,0 units,Yes,x86_64,," $2,510.368 "," $1,437.757 "," $1,147.852 "," $3,584.93 "
+R6IDN Large,r6idn.large,r6idn,0 units,Yes,x86_64,, $156.899 , $89.863 , $97.528 , $224.06 
+R6IDN Metal,r6idn.metal,r6idn,0 units,Yes,x86_64,," $9,128.621 "," $5,751.028 "," $2,744.216 "," $13,426.86 "
+R6IDN Extra Large,r6idn.xlarge,r6idn,0 units,Yes,x86_64,, $313.798 , $179.719 , $191.333 , $448.12 
+R6IN 12xlarge Extra Large,r6in.12xlarge,r6in,0 units,Yes,x86_64,," $3,359.686 "," $2,116.606 "," $1,324.950 "," $4,971.53 "
+R6IN 16xlarge Extra Large,r6in.16xlarge,r6in,0 units,Yes,x86_64,," $4,479.587 "," $2,565.578 "," $1,560.302 "," $6,628.71 "
+R6IN 24xlarge,r6in.24xlarge,r6in,0 units,Yes,x86_64,," $6,719.373 "," $4,233.204 "," $2,467.473 "," $9,943.05 "
+R6IN Double Extra Large,r6in.2xlarge,r6in,0 units,Yes,x86_64,, $559.947 , $352.765 , $350.254 , $828.59 
+R6IN 32xlarge,r6in.32xlarge,r6in,0 units,Yes,x86_64,," $8,144.698 "," $5,131.163 "," $3,596.929 "," $12,442.94 "
+R6IN Quadruple Extra Large,r6in.4xlarge,r6in,0 units,Yes,x86_64,," $1,119.893 ", $641.393 , $754.382 ," $1,657.17 "
+R6IN Eight Extra Large,r6in.8xlarge,r6in,0 units,Yes,x86_64,," $2,239.793 "," $1,411.068 ", $847.603 ," $3,314.35 "
+R6IN Large,r6in.large,r6in,0 units,Yes,x86_64,, $139.985 , $88.191 , $80.446 , $207.14 
+R6IN Metal,r6in.metal,r6in,0 units,Yes,x86_64,," $8,144.698 "," $5,131.163 "," $2,408.635 "," $12,442.94 "
+R6IN Extra Large,r6in.xlarge,r6in,0 units,Yes,x86_64,, $279.977 , $176.383 , $173.229 , $414.30 
+R7A 12xlarge Extra Large,r7a.12xlarge,r7a,0 units,unknown,x86_64,," $2,932.235 "," $1,763.337 "," $1,171.942 "," $4,544.07 "
+R7A 16xlarge Extra Large,r7a.16xlarge,r7a,0 units,unknown,x86_64,," $3,909.646 "," $2,351.118 "," $1,437.589 "," $6,058.77 "
+R7A 24xlarge,r7a.24xlarge,r7a,0 units,unknown,x86_64,," $5,864.470 "," $3,526.681 "," $2,320.816 "," $9,088.15 "
+R7A Double Extra Large,r7a.2xlarge,r7a,0 units,unknown,x86_64,, $488.706 , $323.281 , $281.269 , $757.35 
+R7A 32xlarge,r7a.32xlarge,r7a,0 units,unknown,x86_64,," $7,819.293 "," $5,172.459 "," $2,690.196 "," $12,117.53 "
+R7A 48xlarge,r7a.48xlarge,r7a,0 units,unknown,x86_64,," $10,662.672 "," $7,053.355 "," $10,753.922 "," $17,110.03 "
+R7A Quadruple Extra Large,r7a.4xlarge,r7a,0 units,unknown,x86_64,, $977.412 , $646.561 , $452.965 ," $1,514.69 "
+R7A Eight Extra Large,r7a.8xlarge,r7a,0 units,unknown,x86_64,," $1,954.823 "," $1,293.115 ", $740.001 ," $3,029.38 "
+R7A Large,r7a.large,r7a,0 units,unknown,x86_64,, $122.180 , $73.475 , $86.578 , $189.34 
+R7A Medium,r7a.medium,r7a,0 units,unknown,x86_64,, $61.086 , $40.413 , $69.715 , $94.67 
+R7A Metal-48xl,r7a.metal-48xl,r7a,0 units,unknown,x86_64,," $10,662.672 "," $7,053.355 "," $10,753.922 "," $17,110.03 "
+R7A Extra Large,r7a.xlarge,r7a,0 units,unknown,x86_64,, $244.353 , $161.637 , $143.372 , $378.67 
+R7G 12xlarge Extra Large,r7g.12xlarge,r7g,0 units,unknown,arm64,," $1,994.579 "," $1,241.219 ", $921.917 , unavailable 
+R7G 16xlarge Extra Large,r7g.16xlarge,r7g,0 units,unknown,arm64,," $2,501.856 "," $1,654.983 ", $920.676 , unavailable 
+R7G Double Extra Large,r7g.2xlarge,r7g,0 units,unknown,arm64,, $332.442 , $206.882 , $236.082 , unavailable 
+R7G Quadruple Extra Large,r7g.4xlarge,r7g,0 units,unknown,arm64,, $664.884 , $413.764 , $386.462 , unavailable 
+R7G Eight Extra Large,r7g.8xlarge,r7g,0 units,unknown,arm64,," $1,329.768 ", $906.295 , $582.905 , unavailable 
+R7G Large,r7g.large,r7g,0 units,unknown,arm64,, $83.074 , $51.684 , $75.628 , unavailable 
+R7G Medium,r7g.medium,r7g,0 units,unknown,arm64,, $41.537 , $28.324 , $54.312 , unavailable 
+R7G Metal,r7g.metal,r7g,0 units,unknown,arm64,," $2,501.856 "," $1,654.983 ", $995.355 , unavailable 
+R7G Extra Large,r7g.xlarge,r7g,0 units,unknown,arm64,, $166.221 , $103.441 , $108.989 , unavailable 
+R7GD 12xlarge Extra Large,r7gd.12xlarge,r7gd,0 units,unknown,arm64,," $2,526.822 "," $1,641.040 ", $916.004 , unavailable 
+R7GD 16xlarge Extra Large,r7gd.16xlarge,r7gd,0 units,unknown,arm64,," $3,178.858 "," $1,997.791 "," $1,416.127 ", unavailable 
+R7GD Double Extra Large,r7gd.2xlarge,r7gd,0 units,unknown,arm64,, $421.137 , $273.531 , $309.447 , unavailable 
+R7GD Quadruple Extra Large,r7gd.4xlarge,r7gd,0 units,unknown,arm64,, $842.274 , $499.466 , $496.911 , unavailable 
+R7GD Eight Extra Large,r7gd.8xlarge,r7gd,0 units,unknown,arm64,," $1,684.548 "," $1,094.051 ", $857.750 , unavailable 
+R7GD Large,r7gd.large,r7gd,0 units,unknown,arm64,, $105.266 , $62.415 , $83.147 , unavailable 
+R7GD Medium,r7gd.medium,r7gd,0 units,unknown,arm64,, $52.633 , $31.244 , $59.349 , unavailable 
+R7GD Metal,r7gd.metal,r7gd,0 units,unknown,arm64,," $3,178.858 "," $1,997.791 "," $1,190.119 ", unavailable 
+R7GD Extra Large,r7gd.xlarge,r7gd,0 units,unknown,arm64,, $210.605 , $124.830 , $128.699 , unavailable 
+R7I 12xlarge Extra Large,r7i.12xlarge,r7i,0 units,Yes,x86_64,," $2,549.686 "," $1,686.614 "," $1,064.924 "," $4,161.53 "
+R7I 16xlarge Extra Large,r7i.16xlarge,r7i,0 units,Yes,x86_64,," $3,399.581 "," $2,044.387 "," $1,216.545 "," $5,548.70 "
+R7I 24xlarge,r7i.24xlarge,r7i,0 units,Yes,x86_64,," $5,099.371 "," $3,066.577 "," $2,268.548 "," $8,323.05 "
+R7I Double Extra Large,r7i.2xlarge,r7i,0 units,Yes,x86_64,, $424.948 , $255.551 , $252.215 , $693.59 
+R7I 48xlarge,r7i.48xlarge,r7i,0 units,Yes,x86_64,," $9,271.584 "," $6,133.153 "," $7,291.386 "," $15,718.94 "
+R7I Quadruple Extra Large,r7i.4xlarge,r7i,0 units,Yes,x86_64,, $849.895 , $511.095 , $411.428 ," $1,387.18 "
+R7I Eight Extra Large,r7i.8xlarge,r7i,0 units,Yes,x86_64,," $1,699.790 "," $1,124.412 ", $678.462 ," $2,774.35 "
+R7I Large,r7i.large,r7i,0 units,Yes,x86_64,, $106.237 , $63.890 , $80.300 , $173.40 
+R7I Metal-24xl,r7i.metal-24xl,r7i,0 units,Yes,x86_64,," $5,099.371 "," $3,066.577 "," $1,832.446 "," $8,323.05 "
+R7I Metal-48xl,r7i.metal-48xl,r7i,0 units,Yes,x86_64,," $9,271.584 "," $6,133.153 "," $2,785.096 "," $15,718.94 "
+R7I Extra Large,r7i.xlarge,r7i,0 units,Yes,x86_64,, $212.474 , $127.772 , $128.115 , $346.79 
+R7IZ 12xlarge Extra Large,r7iz.12xlarge,r7iz,0 units,Yes,x86_64,," $3,584.592 "," $2,052.994 "," $1,628.338 "," $5,196.43 "
+R7IZ 16xlarge Extra Large,r7iz.16xlarge,r7iz,0 units,Yes,x86_64,," $4,779.456 "," $2,737.325 "," $1,691.264 "," $6,928.58 "
+R7IZ Double Extra Large,r7iz.2xlarge,r7iz,0 units,Yes,x86_64,, $597.432 , $342.166 , $365.657 , $866.07 
+R7IZ 32xlarge,r7iz.32xlarge,r7iz,0 units,Yes,x86_64,," $9,558.912 "," $6,022.113 "," $4,154.211 "," $13,857.15 "
+R7IZ Quadruple Extra Large,r7iz.4xlarge,r7iz,0 units,Yes,x86_64,," $1,194.864 ", $752.761 , $640.940 ," $1,732.14 "
+R7IZ Eight Extra Large,r7iz.8xlarge,r7iz,0 units,Yes,x86_64,," $2,389.728 "," $1,368.662 "," $1,059.887 "," $3,464.29 "
+R7IZ Large,r7iz.large,r7iz,0 units,Yes,x86_64,, $149.358 , $94.097 , $91.615 , $216.52 
+R7IZ Metal-16xl,r7iz.metal-16xl,r7iz,0 units,Yes,x86_64,," $4,779.456 "," $2,737.325 "," $1,937.858 "," $6,928.58 "
+R7IZ Metal-32xl,r7iz.metal-32xl,r7iz,0 units,Yes,x86_64,," $9,558.912 "," $5,474.650 "," $2,829.407 "," $13,857.15 "
+R7IZ Extra Large,r7iz.xlarge,r7iz,0 units,Yes,x86_64,, $298.716 , $171.083 , $153.008 , $433.04 
+R8G 12xlarge Extra Large,r8g.12xlarge,r8g,0 units,unknown,arm64,," $2,270.629 "," $1,365.472 ", $813.658 , unavailable 
+R8G 16xlarge Extra Large,r8g.16xlarge,r8g,0 units,unknown,arm64,," $3,027.500 "," $1,820.627 "," $1,040.323 ", unavailable 
+R8G 24xlarge,r8g.24xlarge,r8g,0 units,unknown,arm64,," $4,541.257 "," $2,730.945 "," $1,424.887 ", unavailable 
+R8G Double Extra Large,r8g.2xlarge,r8g,0 units,unknown,arm64,, $378.439 , $250.339 , $240.973 , unavailable 
+R8G 48xlarge,r8g.48xlarge,r8g,0 units,unknown,arm64,," $8,256.826 "," $5,461.889 "," $2,889.851 ", unavailable 
+R8G Quadruple Extra Large,r8g.4xlarge,r8g,0 units,unknown,arm64,, $756.879 , $500.671 , $380.841 , unavailable 
+R8G Eight Extra Large,r8g.8xlarge,r8g,0 units,unknown,arm64,," $1,513.750 ", $910.317 , $584.511 , unavailable 
+R8G Large,r8g.large,r8g,0 units,unknown,arm64,, $94.608 , $62.583 , $75.774 , unavailable 
+R8G Medium,r8g.medium,r8g,0 units,unknown,arm64,, $47.304 , $31.295 , $54.969 , unavailable 
+R8G Metal-24xl,r8g.metal-24xl,r8g,0 units,unknown,arm64,," $4,541.257 "," $3,004.038 "," $1,379.554 ", unavailable 
+R8G Metal-48xl,r8g.metal-48xl,r8g,0 units,unknown,arm64,," $8,256.826 "," $5,461.889 "," $2,600.041 ", unavailable 
+R8G Extra Large,r8g.xlarge,r8g,0 units,unknown,arm64,, $189.216 , $125.166 , $111.836 , unavailable 
+R8GD 12xlarge Extra Large,r8gd.12xlarge,r8gd,0 units,unknown,arm64,," $2,832.210 ", unavailable ," $1,437.151 ", unavailable 
+R8GD 16xlarge Extra Large,r8gd.16xlarge,r8gd,0 units,unknown,arm64,," $3,776.283 ", unavailable ," $1,803.903 ", unavailable 
+R8GD 24xlarge,r8gd.24xlarge,r8gd,0 units,unknown,arm64,," $5,664.428 ", unavailable ," $2,867.367 ", unavailable 
+R8GD Double Extra Large,r8gd.2xlarge,r8gd,0 units,unknown,arm64,, $472.033 , unavailable , $301.928 , unavailable 
+R8GD 48xlarge,r8gd.48xlarge,r8gd,0 units,unknown,arm64,," $10,298.957 ", unavailable ," $4,673.168 ", unavailable 
+R8GD Quadruple Extra Large,r8gd.4xlarge,r8gd,0 units,unknown,arm64,, $944.073 , unavailable , $500.488 , unavailable 
+R8GD Eight Extra Large,r8gd.8xlarge,r8gd,0 units,unknown,arm64,," $1,888.145 ", unavailable , $903.740 , unavailable 
+R8GD Large,r8gd.large,r8gd,0 units,unknown,arm64,, $118.012 , unavailable , $82.198 , unavailable 
+R8GD Medium,r8gd.medium,r8gd,0 units,unknown,arm64,, $59.006 , unavailable , $59.422 , unavailable 
+R8GD Metal-24xl,r8gd.metal-24xl,r8gd,0 units,unknown,arm64,," $5,664.428 ", unavailable ," $1,776.382 ", unavailable 
+R8GD Metal-48xl,r8gd.metal-48xl,r8gd,0 units,unknown,arm64,," $10,298.957 ", unavailable ," $3,268.940 ", unavailable 
+R8GD Extra Large,r8gd.xlarge,r8gd,0 units,unknown,arm64,, $236.016 , unavailable , $150.964 , unavailable 
+T1 Micro,t1.micro,t1,0 units,unknown,"i386, x86_64",, $14.600 , $10.220 , $4.818 , $14.60 
+T2 Double Extra Large,t2.2xlarge,t2,0 units,Yes,x86_64,, $270.976 , $167.900 , $194.618 , $316.24 
+T2 Large,t2.large,t2,0 units,Yes,x86_64,, $67.744 , $41.975 , $102.565 , $88.18 
+T2 Medium,t2.medium,t2,0 units,Yes,"i386, x86_64",, $33.872 , $20.951 , $97.455 , $47.01 
+T2 Micro,t2.micro,t2,0 units,Yes,"i386, x86_64",, $8.468 , $5.256 , $3.066 , $11.83 
+T2 Nano,t2.nano,t2,0 units,Yes,"i386, x86_64",, $4.234 , $2.628 , unavailable , $5.91 
+T2 Small,t2.small,t2,0 units,Yes,"i386, x86_64",, $16.790 , $10.512 , $29.857 , $23.36 
+T2 Extra Large,t2.xlarge,t2,0 units,Yes,x86_64,, $135.488 , $83.950 , $135.342 , $165.42 
+T3 Double Extra Large,t3.2xlarge,t3,0 units,Yes,x86_64,, $257.471 , $166.805 , $175.857 , $364.93 
+T3 Large,t3.large,t3,0 units,Yes,x86_64,, $64.386 , $41.683 , $67.306 , $84.53 
+T3 Medium,t3.medium,t3,0 units,Yes,x86_64,, $32.193 , $19.053 , $54.166 , $45.63 
+T3 Micro,t3.micro,t3,0 units,Yes,x86_64,, $8.030 , $5.183 , $2.920 , $14.75 
+T3 Nano,t3.nano,t3,0 units,Yes,x86_64,, $3.796 , $2.409 , $1.314 , $7.15 
+T3 Small,t3.small,t3,0 units,Yes,x86_64,, $16.060 , $10.439 , $29.054 , $29.49 
+T3 Extra Large,t3.xlarge,t3,0 units,Yes,x86_64,, $128.699 , $83.439 , $92.345 , $182.43 
+T3A Double Extra Large,t3a.2xlarge,t3a,0 units,unknown,x86_64,, $219.584 , $137.678 , $186.953 , $327.04 
+T3A Large,t3a.large,t3a,0 units,unknown,x86_64,, $54.896 , $34.383 , $65.189 , $75.04 
+T3A Medium,t3a.medium,t3a,0 units,unknown,x86_64,, $27.448 , $17.228 , $55.261 , $40.88 
+T3A Micro,t3a.micro,t3a,0 units,unknown,x86_64,, $6.862 , $4.307 , $3.504 , $13.58 
+T3A Nano,t3a.nano,t3a,0 units,unknown,x86_64,, $3.431 , $2.117 , $1.314 , $6.79 
+T3A Small,t3a.small,t3a,0 units,unknown,x86_64,, $13.724 , $8.614 , $30.149 , $27.16 
+T3A Extra Large,t3a.xlarge,t3a,0 units,unknown,x86_64,, $109.792 , $68.839 , $82.928 , $163.52 
+T4G Double Extra Large,t4g.2xlarge,t4g,0 units,unknown,arm64,, $196.224 , $123.078 , $180.675 , unavailable 
+T4G Large,t4g.large,t4g,0 units,unknown,arm64,, $49.056 , $30.733 , $65.043 , unavailable 
+T4G Medium,t4g.medium,t4g,0 units,unknown,arm64,, $24.528 , $15.403 , $52.925 , unavailable 
+T4G Micro,t4g.micro,t4g,0 units,unknown,arm64,, $6.132 , $3.869 , $5.256 , unavailable 
+T4G Nano,t4g.nano,t4g,0 units,unknown,arm64,, $3.066 , $1.898 , $2.336 , unavailable 
+T4G Small,t4g.small,t4g,0 units,unknown,arm64,, $12.264 , $7.665 , $27.886 , unavailable 
+T4G Extra Large,t4g.xlarge,t4g,0 units,unknown,arm64,, $98.112 , $61.539 , $85.191 , unavailable 
+TRN1 Double Extra Large,trn1.2xlarge,trn1,0 units,Yes,x86_64,," $1,079.035 ", $603.571 , $421.356 , unavailable 
+TRN1 32xlarge,trn1.32xlarge,trn1,0 units,Yes,x86_64,," $17,264.500 "," $10,622.851 "," $9,235.960 ", unavailable 
+TRN1N 32xlarge,trn1n.32xlarge,trn1n,0 units,Yes,x86_64,," $18,089.400 "," $11,130.405 "," $4,808.291 ", unavailable 
+TRN2 48xlarge,trn2.48xlarge,trn2,0 units,Yes,x86_64,, unavailable , unavailable , unavailable , unavailable 
+U-12TB1 112xlarge,u-12tb1.112xlarge,u-12tb1,0 units,Yes,x86_64,," $79,716.000 ", unavailable , unavailable ," $94,759.84 "
+U-12TB1 Metal,u-12tb1.metal,u-12tb1,0 units,Yes,x86_64,," $49,124.620 ", unavailable , unavailable ," $15,043.84 "
+U-18TB1 112xlarge,u-18tb1.112xlarge,u-18tb1,0 units,Yes,x86_64,," $119,574.000 ", unavailable , unavailable ," $134,617.84 "
+U-18TB1 Metal,u-18tb1.metal,u-18tb1,0 units,Yes,x86_64,, unavailable , unavailable , unavailable ," $15,043.84 "
+U-24TB1 112xlarge,u-24tb1.112xlarge,u-24tb1,0 units,Yes,x86_64,," $159,432.000 ", unavailable , unavailable ," $174,475.84 "
+U-24TB1 Metal,u-24tb1.metal,u-24tb1,0 units,Yes,x86_64,, unavailable , unavailable , unavailable ," $15,043.84 "
+U-3TB1 56xlarge,u-3tb1.56xlarge,u-3tb1,0 units,unknown,x86_64,," $21,921.900 "," $13,509.263 ", unavailable ," $29,443.82 "
+U-6TB1 112xlarge,u-6tb1.112xlarge,u-6tb1,0 units,unknown,x86_64,," $39,858.000 "," $24,562.295 ", unavailable ," $54,901.84 "
+U-6TB1 56xlarge,u-6tb1.56xlarge,u-6tb1,0 units,unknown,x86_64,," $33,874.854 "," $20,875.211 ", unavailable ," $41,396.77 "
+U-6TB1 Metal,u-6tb1.metal,u-6tb1,0 units,unknown,x86_64,," $24,565.960 "," $24,565.960 ", unavailable ," $15,043.84 "
+U-9TB1 112xlarge,u-9tb1.112xlarge,u-9tb1,0 units,Yes,x86_64,," $59,787.000 ", unavailable , unavailable ," $74,830.84 "
+U-9TB1 Metal,u-9tb1.metal,u-9tb1,0 units,Yes,x86_64,," $36,846.020 ", unavailable , unavailable ," $15,043.84 "
+U7I-12TB 224xlarge,u7i-12tb.224xlarge,u7i-12tb,0 units,Yes,x86_64,," $91,674.729 "," $56,503.716 ", unavailable ," $121,762.41 "
+U7I-6TB 112xlarge,u7i-6tb.112xlarge,u7i-6tb,0 units,Yes,x86_64,," $45,836.700 ", unavailable , unavailable ," $60,880.54 "
+U7I-8TB 112xlarge,u7i-8tb.112xlarge,u7i-8tb,0 units,Yes,x86_64,," $61,115.600 ", unavailable , unavailable ," $76,159.44 "
+U7IN-16TB 224xlarge,u7in-16tb.224xlarge,u7in-16tb,0 units,Yes,x86_64,," $131,747.173 "," $81,188.534 ", unavailable ," $161,834.85 "
+U7IN-24TB 224xlarge,u7in-24tb.224xlarge,u7in-24tb,0 units,Yes,x86_64,," $197,633.834 "," $121,790.864 ", unavailable ," $227,721.51 "
+U7IN-32TB 224xlarge,u7in-32tb.224xlarge,u7in-32tb,0 units,Yes,x86_64,," $263,520.474 "," $162,393.172 ", unavailable ," $293,608.15 "
+VT1 24xlarge,vt1.24xlarge,vt1,0 units,Yes,x86_64,," $4,175.600 "," $2,630.628 ", unavailable , unavailable 
+VT1 3xlarge,vt1.3xlarge,vt1,0 units,Yes,x86_64,, $521.950 , $298.935 , unavailable , unavailable 
+VT1 6xlarge,vt1.6xlarge,vt1,0 units,Yes,x86_64,," $1,043.900 ", $657.657 , unavailable , unavailable 
+X1 Extra High-Memory 16xlarge Extra Large,x1.16xlarge,x1,174.5 units,Yes,x86_64,," $5,355.280 "," $3,300.330 "," $2,048.891 "," $7,504.40 "
+X1 Extra High-Memory 32xlarge,x1.32xlarge,x1,349 units,Yes,x86_64,," $9,736.740 "," $5,999.870 "," $6,382.390 "," $14,034.98 "
+X1E 16xlarge Extra Large,x1e.16xlarge,x1e,179 units,unknown,x86_64,," $10,714.940 "," $6,602.850 "," $3,496.846 "," $12,864.06 "
+X1E Double Extra Large,x1e.2xlarge,x1e,23 units,unknown,x86_64,," $1,339.550 ", $750.440 , $525.746 ," $1,608.19 "
+X1E 32xlarge,x1e.32xlarge,x1e,340 units,unknown,x86_64,," $19,482.240 "," $12,005.580 "," $6,296.250 "," $23,780.48 "
+X1E Quadruple Extra Large,x1e.4xlarge,x1e,47 units,unknown,x86_64,," $2,679.100 "," $1,500.880 "," $1,048.864 "," $3,216.38 "
+X1E Eight Extra Large,x1e.8xlarge,x1e,91 units,unknown,x86_64,," $5,357.470 "," $3,301.790 "," $2,112.547 "," $6,432.03 "
+X1E Extra Large,x1e.xlarge,x1e,12 units,unknown,x86_64,, $669.410 , $375.220 , $265.501 , $803.73 
+X2GD 12xlarge Extra Large,x2gd.12xlarge,x2gd,0 units,unknown,arm64,," $3,218.424 "," $1,803.027 "," $1,526.649 ", unavailable 
+X2GD 16xlarge Extra Large,x2gd.16xlarge,x2gd,0 units,unknown,arm64,," $4,291.232 "," $2,644.425 "," $1,659.801 ", unavailable 
+X2GD Double Extra Large,x2gd.2xlarge,x2gd,0 units,unknown,arm64,, $536.404 , $330.544 , $351.495 , unavailable 
+X2GD Quadruple Extra Large,x2gd.4xlarge,x2gd,0 units,unknown,arm64,," $1,072.808 ", $601.009 , $518.300 , unavailable 
+X2GD Eight Extra Large,x2gd.8xlarge,x2gd,0 units,unknown,arm64,," $2,145.616 "," $1,202.018 ", $831.981 , unavailable 
+X2GD Large,x2gd.large,x2gd,0 units,unknown,arm64,, $134.101 , $75.117 , $84.169 , unavailable 
+X2GD Medium,x2gd.medium,x2gd,0 units,unknown,arm64,, $67.087 , $37.595 , $42.924 , unavailable 
+X2GD Metal,x2gd.metal,x2gd,0 units,unknown,arm64,," $4,291.232 "," $2,404.036 "," $1,461.533 ", unavailable 
+X2GD Extra Large,x2gd.xlarge,x2gd,0 units,unknown,arm64,, $268.202 , $150.234 , $149.504 , unavailable 
+X2IDN 16xlarge Extra Large,x2idn.16xlarge,x2idn,0 units,Yes,x86_64,," $5,355.207 "," $2,995.511 "," $2,118.314 "," $7,504.33 "
+X2IDN 24xlarge,x2idn.24xlarge,x2idn,0 units,Yes,x86_64,," $8,032.811 "," $4,942.589 "," $3,949.154 "," $11,256.49 "
+X2IDN 32xlarge,x2idn.32xlarge,x2idn,0 units,Yes,x86_64,," $9,736.740 "," $5,991.015 "," $4,092.307 "," $14,034.98 "
+X2IDN Metal,x2idn.metal,x2idn,0 units,Yes,x86_64,," $9,736.740 "," $5,991.015 "," $4,566.369 "," $14,034.98 "
+X2IEDN 16xlarge Extra Large,x2iedn.16xlarge,x2iedn,0 units,Yes,x86_64,," $10,710.414 "," $5,991.015 "," $3,666.790 "," $12,859.53 "
+X2IEDN 24xlarge,x2iedn.24xlarge,x2iedn,0 units,Yes,x86_64,," $16,065.621 "," $9,885.178 "," $5,986.292 "," $19,289.30 "
+X2IEDN Double Extra Large,x2iedn.2xlarge,x2iedn,0 units,Yes,x86_64,," $1,338.805 ", $748.878 , $547.938 ," $1,607.45 "
+X2IEDN 32xlarge,x2iedn.32xlarge,x2iedn,0 units,Yes,x86_64,," $19,473.480 "," $11,982.030 "," $6,922.517 "," $23,771.72 "
+X2IEDN Quadruple Extra Large,x2iedn.4xlarge,x2iedn,0 units,Yes,x86_64,," $2,677.604 "," $1,497.756 ", $956.738 ," $3,214.88 "
+X2IEDN Eight Extra Large,x2iedn.8xlarge,x2iedn,0 units,Yes,x86_64,," $5,355.207 "," $2,995.511 "," $2,094.443 "," $6,429.77 "
+X2IEDN Metal,x2iedn.metal,x2iedn,0 units,Yes,x86_64,," $19,473.480 "," $11,982.030 "," $8,451.064 "," $23,771.72 "
+X2IEDN Extra Large,x2iedn.xlarge,x2iedn,0 units,Yes,x86_64,, $669.403 , $411.881 , $269.151 , $803.72 
+X2IEZN 12xlarge Extra Large,x2iezn.12xlarge,x2iezn,0 units,Yes,x86_64,," $7,305.840 "," $4,497.822 "," $3,284.416 "," $8,917.68 "
+X2IEZN Double Extra Large,x2iezn.2xlarge,x2iezn,0 units,Yes,x86_64,," $1,339.404 ", $824.608 , $532.462 ," $1,608.04 "
+X2IEZN Quadruple Extra Large,x2iezn.4xlarge,x2iezn,0 units,Yes,x86_64,," $2,678.808 "," $1,499.274 "," $1,049.010 "," $3,216.09 "
+X2IEZN 6xlarge,x2iezn.6xlarge,x2iezn,0 units,Yes,x86_64,," $4,018.212 "," $2,248.911 "," $2,066.192 "," $4,824.13 "
+X2IEZN Eight Extra Large,x2iezn.8xlarge,x2iezn,0 units,Yes,x86_64,," $5,357.616 "," $2,998.548 "," $2,510.251 "," $6,432.18 "
+X2IEZN Metal,x2iezn.metal,x2iezn,0 units,Yes,x86_64,," $7,305.840 "," $4,497.822 "," $4,131.581 "," $8,917.68 "
+X8G 12xlarge Extra Large,x8g.12xlarge,x8g,0 units,unknown,arm64,," $3,765.749 "," $2,109.656 "," $1,925.083 ", unavailable 
+X8G 16xlarge Extra Large,x8g.16xlarge,x8g,0 units,unknown,arm64,," $5,020.998 "," $3,094.163 "," $2,158.172 ", unavailable 
+X8G 24xlarge,x8g.24xlarge,x8g,0 units,unknown,arm64,," $7,531.498 "," $4,641.245 "," $2,653.258 ", unavailable 
+X8G Double Extra Large,x8g.2xlarge,x8g,0 units,unknown,arm64,, $627.625 , $386.769 , $390.623 , unavailable 
+X8G 48xlarge,x8g.48xlarge,x8g,0 units,unknown,arm64,," $13,693.632 "," $8,438.632 "," $4,172.607 ", unavailable 
+X8G Quadruple Extra Large,x8g.4xlarge,x8g,0 units,unknown,arm64,," $1,255.250 ", $773.545 , $821.250 , unavailable 
+X8G Eight Extra Large,x8g.8xlarge,x8g,0 units,unknown,arm64,," $2,510.499 "," $1,547.082 "," $1,218.735 ", unavailable 
+X8G Large,x8g.large,x8g,0 units,unknown,arm64,, $156.906 , $87.899 , $93.951 , unavailable 
+X8G Medium,x8g.medium,x8g,0 units,unknown,arm64,, $78.453 , $48.348 , $62.342 , unavailable 
+X8G Metal-24xl,x8g.metal-24xl,x8g,0 units,unknown,arm64,," $7,531.498 "," $4,219.320 "," $2,389.290 ", unavailable 
+X8G Metal-48xl,x8g.metal-48xl,x8g,0 units,unknown,arm64,," $13,693.632 "," $8,438.632 "," $4,129.245 ", unavailable 
+X8G Extra Large,x8g.xlarge,x8g,0 units,unknown,arm64,, $313.812 , $175.806 , $182.208 , unavailable 
+Z1D 12xlarge Extra Large,z1d.12xlarge,z1d,235 units,Yes,x86_64,," $3,258.720 "," $2,052.760 "," $1,193.769 "," $4,870.56 "
+Z1D Double Extra Large,z1d.2xlarge,z1d,45 units,Yes,x86_64,, $575.970 , $342.370 , $302.877 , $844.61 
+Z1D 3xlarge,z1d.3xlarge,z1d,64 units,Yes,x86_64,, $863.590 , $562.100 , $442.234 ," $1,266.55 "
+Z1D 6xlarge,z1d.6xlarge,z1d,116 units,Yes,x86_64,," $1,727.180 "," $1,124.200 ", $732.409 ," $2,533.10 "
+Z1D Large,z1d.large,z1d,12 units,Yes,x86_64,, $143.810 , $93.440 , $95.411 , $210.97 
+Z1D Metal,z1d.metal,z1d,271 units,Yes,x86_64,," $3,258.720 "," $2,052.760 "," $1,193.842 "," $4,870.56 "
+Z1D Extra Large,z1d.xlarge,z1d,23 units,Yes,x86_64,, $287.620 , $187.610 , $151.110 , $421.94 

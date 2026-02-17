@@ -221,7 +221,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                         'Subdirectory': s3_details.get('Subdirectory', 'N/A')
                     }
                 except Exception:
-                    pass
+                    pass  # intentional: probe both location types
 
                 # EFS
                 if location_type == 'Unknown':
@@ -235,7 +235,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Subnet ARN': efs_details.get('Ec2Config', {}).get('SubnetArn', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # FSx Windows
                 if location_type == 'Unknown':
@@ -248,7 +248,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Subdirectory': fsx_details.get('Subdirectory', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # FSx Lustre
                 if location_type == 'Unknown':
@@ -261,7 +261,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Subdirectory': fsx_details.get('Subdirectory', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # FSx OpenZFS
                 if location_type == 'Unknown':
@@ -274,7 +274,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Subdirectory': fsx_details.get('Subdirectory', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # FSx ONTAP
                 if location_type == 'Unknown':
@@ -287,7 +287,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Subdirectory': fsx_details.get('Subdirectory', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # NFS
                 if location_type == 'Unknown':
@@ -302,7 +302,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Agent ARNs': ', '.join(on_prem_config.get('AgentArns', []))
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # SMB
                 if location_type == 'Unknown':
@@ -316,7 +316,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'User': smb_details.get('User', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # HDFS
                 if location_type == 'Unknown':
@@ -329,7 +329,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'NameNodes': str(len(hdfs_details.get('NameNodes', [])))
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # Object Storage
                 if location_type == 'Unknown':
@@ -342,7 +342,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
                             'Server Port': obj_details.get('ServerPort', 'N/A')
                         }
                     except Exception:
-                        pass
+                        pass  # intentional: probe both location types
 
                 # Build location data
                 location_data = {

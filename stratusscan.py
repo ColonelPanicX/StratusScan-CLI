@@ -57,13 +57,10 @@ utils.log_system_info()
 
 def clear_screen():
     """
-    Clear the terminal screen based on the operating system.
+    Clear the terminal screen using ANSI escape codes (avoids os.system shell call).
+    Works on Windows 10+, Linux, and macOS terminals.
     """
-    # Check if we're on Windows or Unix/Linux/MacOS
-    if os.name == 'nt':  # Windows
-        os.system('cls')
-    else:  # Unix/Linux/MacOS
-        os.system('clear')
+    print('\033[2J\033[H', end='', flush=True)
 
 def print_header():
     """
@@ -340,9 +337,9 @@ def get_menu_structure():
             "description": "Interactive configuration tool for account mappings and AWS settings"
         },
         "1": {
-            "name": "Service Discovery",
+            "name": "Service Discovery + Smart Scan",
             "file": scripts_dir / "services-in-use-export.py",
-            "description": "Discover all AWS services in use (both billing and non-billing services)"
+            "description": "Discover all AWS services in use; optionally launch Smart Scan to auto-run recommended exporters"
         },
         "2": {
             "name": "Infrastructure (Compute, Storage, Network, Database)",
