@@ -86,8 +86,8 @@ def detect_aws_partition() -> Tuple[str, str]:
             return 'aws-us-gov', 'us-gov-west-1'
         else:
             return 'aws', 'us-east-1'
-    except:
-        # Default to commercial if detection fails
+    except Exception:
+        # Default to commercial if detection fails (e.g., no credentials configured)
         return 'aws', 'us-east-1'
 
 def get_aws_identity() -> Optional[Dict]:
@@ -119,7 +119,7 @@ def get_aws_identity() -> Optional[Dict]:
             'default_region': default_region
         }
         return _aws_identity
-    except:
+    except Exception:
         return None
 
 # ============================================================================
@@ -249,7 +249,7 @@ def check_permissions_silent() -> Dict:
                 required_passed += 1
             else:
                 optional_passed += 1
-        except:
+        except Exception:
             if config['required']:
                 required_failed += 1
             else:
@@ -413,7 +413,7 @@ def get_config_status(config: Dict, config_path: Path) -> str:
         mtime = config_path.stat().st_mtime
         mod_date = datetime.fromtimestamp(mtime).strftime("%b %d")
         return f"✅ OK (Updated {mod_date})"
-    except:
+    except OSError:
         return "✅ OK"
 
 # ============================================================================
