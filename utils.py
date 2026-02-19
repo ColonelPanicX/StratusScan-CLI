@@ -307,8 +307,8 @@ def validate_aws_region(region: str) -> bool:
         return True
 
     if not is_aws_region(region):
-        logger.error(f"Invalid AWS region: {region}")
-        logger.error(f"Valid AWS regions include: us-east-1, us-west-1, us-west-2, eu-west-1, ap-southeast-1")
+        log_error(f"Invalid AWS region: {region}")
+        log_error("Valid AWS regions include: us-east-1, us-west-1, us-west-2, eu-west-1, ap-southeast-1")
         return False
 
     return True
@@ -525,7 +525,7 @@ def config_value(key: str, default: Any = None, section: Optional[str] = None) -
             if key in cfg:
                 return cfg[key]
     except Exception as e:
-        logger.warning(f"Error reading config value '{key}': {e}")
+        log_warning(f"Error reading config value '{key}': {e}")
 
     return default
 
