@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Cost Optimization Hub Export
-Version: v1.0.0
+Version: v0.1.0
 Date: OCT-08-2025
 
 Description:

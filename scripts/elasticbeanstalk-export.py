@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AWS Elastic Beanstalk Export Script for StratusScan
-Version: v1.1.0
+Version: v0.1.0
 Date: NOV-16-2025
 
 Exports comprehensive AWS Elastic Beanstalk PaaS information including applications,

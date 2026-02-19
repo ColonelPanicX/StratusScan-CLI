@@ -6,7 +6,7 @@
 ===========================
 
 Title: StratusScan Configuration Tool
-Version: v2.0.0
+Version: v0.1.0
 Date: DEC-24-2024
 
 Description:
@@ -86,8 +86,8 @@ def detect_aws_partition() -> Tuple[str, str]:
             return 'aws-us-gov', 'us-gov-west-1'
         else:
             return 'aws', 'us-east-1'
-    except:
-        # Default to commercial if detection fails
+    except Exception:
+        # Default to commercial if detection fails (e.g., no credentials configured)
         return 'aws', 'us-east-1'
 
 def get_aws_identity() -> Optional[Dict]:
@@ -119,7 +119,7 @@ def get_aws_identity() -> Optional[Dict]:
             'default_region': default_region
         }
         return _aws_identity
-    except:
+    except Exception:
         return None
 
 # ============================================================================
@@ -249,7 +249,7 @@ def check_permissions_silent() -> Dict:
                 required_passed += 1
             else:
                 optional_passed += 1
-        except:
+        except Exception:
             if config['required']:
                 required_failed += 1
             else:
@@ -413,7 +413,7 @@ def get_config_status(config: Dict, config_path: Path) -> str:
         mtime = config_path.stat().st_mtime
         mod_date = datetime.fromtimestamp(mtime).strftime("%b %d")
         return f"✅ OK (Updated {mod_date})"
-    except:
+    except OSError:
         return "✅ OK"
 
 # ============================================================================
@@ -450,7 +450,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Header
     print("\n")
-    print_box("STRATUSSCAN CONFIGURATION TOOL v2.0.0", 70)
+    print_box("STRATUSSCAN CONFIGURATION TOOL v0.1.0", 70)
 
     # Status box
     print("╔" + "═" * 68 + "╗")
@@ -1354,7 +1354,7 @@ if __name__ == "__main__":
             sys.exit(0 if success else 1)
 
         elif arg in ['--help', '-h']:
-            print("StratusScan Configuration Tool v2.0.0")
+            print("StratusScan Configuration Tool v0.1.0")
             print("\nUsage:")
             print("  python configure.py                              # Interactive dashboard")
             print("  python configure.py --deps                       # Dependency check only")

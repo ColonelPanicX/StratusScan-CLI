@@ -7,7 +7,7 @@
 ===========================
 
 Title: AWS RDS Instance Export Script
-Version: v2.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -63,7 +63,7 @@ def print_title():
     print("====================================================================")
     print("                   AWS RESOURCE SCANNER                            ")
     print("====================================================================")
-    print("            AWS RDS INSTANCE EXPORT SCRIPT v2.1.0        ")
+    print("            AWS RDS INSTANCE EXPORT SCRIPT v0.1.0        ")
     print("====================================================================")
     
     # Get the current AWS account ID using STS (Security Token Service)

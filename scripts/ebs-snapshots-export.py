@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS EBS Snapshots Export Tool
-Version: v2.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -58,7 +58,7 @@ def print_title():
     print("====================================================================")
     print("AWS EBS SNAPSHOTS EXPORT TOOL")
     print("====================================================================")
-    print("Version: v2.0.0                                Date: AUG-19-2025")
+    print("Version: v0.1.0                                Date: AUG-19-2025")
 
     # Get account information using utils
     account_id, account_name = utils.get_account_info()

@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS S3 Access Points Comprehensive Export
-Version: v1.0.0
+Version: v0.1.0
 Date: NOV-13-2025
 
 Description:
@@ -48,7 +48,7 @@ def print_title() -> tuple:
     print("====================================================================")
     print("AWS S3 ACCESS POINTS COMPREHENSIVE EXPORT SCRIPT")
     print("====================================================================")
-    print("Version: v1.0.0                       Date: NOV-13-2025")
+    print("Version: v0.1.0                       Date: NOV-13-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

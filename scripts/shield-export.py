@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Shield Advanced Information Collection Script
-Version: v1.0.0
+Version: v0.1.0
 Date: NOV-11-2025
 
 Description:
@@ -67,7 +67,7 @@ def print_title():
     print("====================================================================")
     print("AWS SHIELD ADVANCED INFORMATION COLLECTION")
     print("====================================================================")
-    print("Version: v1.0.0                       Date: NOV-11-2025")
+    print("Version: v0.1.0                       Date: NOV-11-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

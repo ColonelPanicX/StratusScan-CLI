@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS IAM Identity Center Groups Export Script
-Version: v2.0.0
+Version: v0.1.0
 Date: SEP-23-2025
 
 Description:
@@ -58,7 +58,7 @@ def print_title():
     print("====================================================================")
     print("AWS IAM IDENTITY CENTER GROUPS EXPORT")
     print("====================================================================")
-    print("Version: v2.0.0                       Date: SEP-23-2025")
+    print("Version: v0.1.0                       Date: SEP-23-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

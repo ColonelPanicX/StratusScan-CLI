@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Account Billing Data Export
-Version: v1.3.0
+Version: v0.1.0
 Date: MAR-04-2025
 
 Description:
@@ -98,7 +98,7 @@ def print_title():
     print("====================================================================")
     print("AWS ACCOUNT BILLING DATA EXPORT TOOL")
     print("====================================================================")
-    print("Version: v1.3.0                                 Date: MAR-04-2025")
+    print("Version: v0.1.0                                 Date: MAR-04-2025")
     print("====================================================================")
     
     # Get the current AWS account ID

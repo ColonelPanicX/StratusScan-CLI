@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Security Groups Export Script
-Version: v2.1.0
+Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -59,7 +59,7 @@ def print_title():
     print("====================================================================")
     print("AWS SECURITY GROUPS EXPORT")
     print("====================================================================")
-    print("Version: v2.0.0                       Date: AUG-26-2025")
+    print("Version: v0.1.0                       Date: AUG-26-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

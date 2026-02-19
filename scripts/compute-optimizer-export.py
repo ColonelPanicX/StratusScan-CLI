@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Compute Optimizer Recommendations Export
-Version: v1.0.0
+Version: v0.1.0
 Date: MAR-05-2025
 
 Description:
@@ -95,7 +95,7 @@ def print_title():
     print("====================================================================")
     print("AWS COMPUTE OPTIMIZER RECOMMENDATIONS EXPORT TOOL")
     print("====================================================================")
-    print("Version: v1.0.0                                Date: MAR-05-2025")
+    print("Version: v0.1.0                                Date: MAR-05-2025")
     print("====================================================================")
     
     # Get the current AWS account ID

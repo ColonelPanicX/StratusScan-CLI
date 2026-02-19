@@ -6,7 +6,7 @@
 ===========================
 
 Title: AWS Trusted Advisor Cost Optimization Export
-Version: v1.0.1
+Version: v0.1.0
 Date: FEB-28-2025
 
 Description:

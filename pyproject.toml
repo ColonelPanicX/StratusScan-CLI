@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stratusscan-cli"
-version = "3.1.0"
+version = "0.1.0"
 description = "AWS defensive security scanning and auditing tool for resource exports"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -79,10 +79,10 @@ stratusscan = "stratusscan:main"
 stratusscan-configure = "configure:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/stratusscan-cli"
-Documentation = "https://github.com/yourusername/stratusscan-cli#readme"
-Repository = "https://github.com/yourusername/stratusscan-cli"
-Issues = "https://github.com/yourusername/stratusscan-cli/issues"
+Homepage = "https://github.com/ColonelPanicX/StratusScan-CLI"
+Documentation = "https://github.com/ColonelPanicX/StratusScan-CLI#readme"
+Repository = "https://github.com/ColonelPanicX/StratusScan-CLI"
+Issues = "https://github.com/ColonelPanicX/StratusScan-CLI/issues"
 
 # ===== Tool Configuration =====
 

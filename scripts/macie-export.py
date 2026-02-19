@@ -2,7 +2,7 @@
 """
 AWS Macie Export Script for StratusScan
 
-Version: v1.1.0
+Version: v0.1.0
 Date: NOV-16-2025
 
 Description:

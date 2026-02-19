@@ -5,7 +5,7 @@ This package analyzes services-in-use export output and recommends
 relevant StratusScan export scripts to run based on discovered services.
 """
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"
 
 from .analyzer import (
     find_latest_services_export,
