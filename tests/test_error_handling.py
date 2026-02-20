@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Any
 
+import pytest
+
 # Standard utils import pattern
 try:
     import utils
@@ -23,6 +25,7 @@ except ImportError:
 # Test Functions Using @aws_error_handler Decorator
 # =============================================================================
 
+@pytest.mark.aws
 @utils.aws_error_handler("Test: Simple operation with default return", default_return=[])
 def test_decorator_default_return() -> List[str]:
     """Test decorator that returns empty list on error."""
@@ -32,6 +35,7 @@ def test_decorator_default_return() -> List[str]:
     return [identity['Account'], identity['Arn']]
 
 
+@pytest.mark.aws
 @utils.aws_error_handler("Test: Operation with reraise", reraise=True)
 def test_decorator_reraise() -> str:
     """Test decorator that reraises exceptions."""
@@ -41,6 +45,7 @@ def test_decorator_reraise() -> str:
     return "Success"
 
 
+@pytest.mark.aws
 @utils.aws_error_handler("Test: Invalid instance lookup", default_return=None)
 def test_decorator_client_error() -> Dict[str, Any]:
     """Test decorator handling ClientError."""
@@ -54,6 +59,7 @@ def test_decorator_client_error() -> Dict[str, Any]:
 # Test Functions Using handle_aws_operation Context Manager
 # =============================================================================
 
+@pytest.mark.aws
 def test_context_manager_suppress() -> List[str]:
     """Test context manager with error suppression."""
     result = []
@@ -71,6 +77,7 @@ def test_context_manager_suppress() -> List[str]:
     return result
 
 
+@pytest.mark.aws
 def test_context_manager_reraise() -> bool:
     """Test context manager that reraises exceptions."""
     with utils.handle_aws_operation(
@@ -84,6 +91,7 @@ def test_context_manager_reraise() -> bool:
     return True
 
 
+@pytest.mark.aws
 def test_multi_step_operation() -> Dict[str, Any]:
     """Test context manager with multiple steps."""
     results = {

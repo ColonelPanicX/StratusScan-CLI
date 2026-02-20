@@ -3,6 +3,7 @@
 Test script for new session management and partition awareness features.
 """
 
+import pytest
 import utils
 
 def test_detect_partition():
@@ -57,6 +58,7 @@ def test_parse_arn():
 
     print("✓ ARN parsing tests passed")
 
+@pytest.mark.aws
 def test_get_boto3_client():
     """Test boto3 client creation with configuration."""
     print("\n=== Testing Boto3 Client Creation ===")

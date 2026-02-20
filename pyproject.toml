@@ -183,6 +183,7 @@ python_functions = ["test_*"]
 addopts = [
     "-v",                           # Verbose output
     "--strict-markers",             # Error on unknown markers
+    "-m", "not aws",                # Skip live-AWS tests by default (use -m aws to run them)
     "--cov=.",                      # Coverage for all code
     "--cov-report=html",            # HTML coverage report
     "--cov-report=term-missing",    # Terminal report with missing lines
