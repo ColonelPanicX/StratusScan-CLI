@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS Compute Optimizer Recommendations Export
-Version: v0.1.0
 Date: MAR-05-2025
 
 Description:
@@ -57,7 +56,6 @@ def print_title():
     print("====================================================================")
     print("AWS COMPUTE OPTIMIZER RECOMMENDATIONS EXPORT TOOL")
     print("====================================================================")
-    print("Version: v0.1.0                                Date: MAR-05-2025")
     print("====================================================================")
     
     # Get the current AWS account ID
@@ -598,8 +596,7 @@ def main():
         print("Visit the AWS Compute Optimizer console to enable it if not already enabled.")
         print("="*70)
 
-        confirm = input("\nHave you enabled Compute Optimizer? (y/n): ").lower()
-        if confirm != 'y':
+        if not utils.prompt_for_confirmation("Have you enabled Compute Optimizer?", default=False):
             print("Please enable Compute Optimizer first, then run this script again.")
             return
 

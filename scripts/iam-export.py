@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS IAM User Information Collection Script
-Version: v0.1.0
 Date: AUG-26-2025
 
 Description:
@@ -87,7 +86,6 @@ def print_title():
     print("====================================================================")
     print("AWS IAM USER INFORMATION COLLECTION")
     print("====================================================================")
-    print("Version: v0.1.0                       Date: AUG-26-2025")
 
     # Get account information
     account_id, account_name = get_account_info()

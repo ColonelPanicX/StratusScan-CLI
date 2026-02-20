@@ -5,7 +5,6 @@
 ===========================
 
 Title: AWS WAF (Web Application Firewall) Export Tool
-Version: v0.1.0
 Date: NOV-16-2025
 
 Description:
@@ -55,7 +54,6 @@ def print_title():
     print("====================================================================")
     print("         AWS WAF (WEB APPLICATION FIREWALL) EXPORT TOOL")
     print("====================================================================")
-    print("Version: v0.1.0                        Date: NOV-16-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
@@ -481,94 +479,8 @@ def export_waf_data(account_id: str, account_name: str):
         account_name: The AWS account name
     """
     # Detect partition for region examples
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
-
-    # Display standardized region selection menu
-    print("\n" + "=" * 68)
-    print("REGION SELECTION")
-    print("=" * 68)
-    print("\nWAF (WAFv2) is a regional service.")
-    print("\nPlease select an option for region selection:")
-    print("\n  1. Default Regions")
-    print(f"     ({example_regions})")
-    print("\n  2. All Available Regions")
-    print("     (Scan all regions where WAF is available)")
-    print("\n  3. Specific Region")
-    print("     (Enter a specific AWS region code)")
-    print("\n" + "-" * 68)
-
-    # Get and validate region choice
-    regions = []
-    region_suffix = ""
-    while not regions:
-        try:
-            region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
-
-            if region_choice == '1':
-                # Default regions
-                regions = utils.get_partition_default_regions()
-                print(f"\nUsing default regions: {', '.join(regions)}")
-            elif region_choice == '2':
-                # All available regions
-                regions = utils.get_partition_regions(partition, all_regions=True)
-                print(f"\nScanning all {len(regions)} available regions")
-            elif region_choice == '3':
-                # Specific region - show numbered list
-                available_regions = utils.get_partition_regions(
-                    partition, all_regions=True
-                )
-                print("\n" + "=" * 68)
-                print("AVAILABLE REGIONS")
-                print("=" * 68)
-                for idx, region in enumerate(available_regions, 1):
-                    print(f"  {idx}. {region}")
-                print("-" * 68)
-
-                # Get region selection
-                region_selected = False
-                while not region_selected:
-                    try:
-                        region_num = input(
-                            f"\nEnter region number (1-{len(available_regions)}): "
-                        ).strip()
-                        region_idx = int(region_num) - 1
-
-                        if 0 <= region_idx < len(available_regions):
-                            selected_region = available_regions[region_idx]
-                            regions = [selected_region]
-                            region_suffix = f"-{selected_region}"
-                            print(f"\nSelected region: {selected_region}")
-                            region_selected = True
-                        else:
-                            print(
-                                f"Invalid selection. Please enter a number "
-                                f"between 1 and {len(available_regions)}."
-                            )
-                    except ValueError:
-                        print("Invalid input. Please enter a number.")
-                    except KeyboardInterrupt:
-                        print("\n\nOperation cancelled by user.")
-                        sys.exit(0)
-            else:
-                print("\nInvalid choice. Please enter 1, 2, or 3.")
-
-        except KeyboardInterrupt:
-            print("\n\nOperation cancelled by user.")
-            sys.exit(0)
-        except Exception as e:
-            utils.log_error(f"Error getting region selection: {str(e)}")
-            print("Please try again.")
-
-    print(f"\nStarting WAF export process for {len(regions)} region(s)...")
-    print("This may take some time depending on the number of regions and resources...")
-    print("\nNote: CloudFront (global) WAF resources are collected from us-east-1 only.")
-
-    utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")
-
+    regions = utils.prompt_region_selection()
+    region_suffix = 'all'
     # Import pandas for DataFrame handling
     import pandas as pd
 
@@ -651,8 +563,7 @@ def main():
 
         # Check if account name is unknown
         if account_name == "unknown":
-            proceed = input("Unable to determine account name. Proceed anyway? (y/n): ").lower()
-            if proceed != 'y':
+            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
                 sys.exit(0)
 

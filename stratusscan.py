@@ -76,7 +76,7 @@ def print_header():
     print("                         STRATUSSCAN                                ")
     print("                   AWS RESOURCE EXPORTER MENU                      ")
     print("====================================================================")
-    print("Version: v0.1.0                                Date: FEB-17-2026")
+    print(f"Version: {utils.get_version()}                                Date: FEB-17-2026")
     print("Multi-Partition: Commercial & GovCloud Support")
     print("====================================================================")
 
@@ -652,30 +652,26 @@ def handle_submenu(category_option, account_name):
             # Check if this is a special action (like Create Output Archive)
             if selected_option.get("action") == "create_archive":
                 print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
-                
+
                 # Confirm execution
-                confirm = input("Do you want to continue? (y/n): ").lower()
-                if confirm == 'y':
+                if utils.prompt_for_confirmation("Do you want to continue?"):
                     create_output_archive(account_name)
                     # Ask if user wants to perform another action from this submenu
-                    another = input("\nWould you like to perform another action from this menu? (y/n): ").lower()
-                    if another != 'y':
+                    if not utils.prompt_for_confirmation("Would you like to perform another action from this menu?"):
                         return  # Return to main menu
                 continue
-            
+
             # Handle regular script execution
             print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
 
             # Confirm execution
-            confirm = input("Do you want to continue? (y/n): ").lower()
-            if confirm == 'y':
+            if utils.prompt_for_confirmation("Do you want to continue?"):
                 # Execute the script
                 if selected_option["file"]:
                     success = execute_script(selected_option["file"])
-                    
+
                     # Ask if user wants to run another tool from this submenu
-                    another = input("\nWould you like to run another tool from this menu? (y/n): ").lower()
-                    if another != 'y':
+                    if not utils.prompt_for_confirmation("Would you like to run another tool from this menu?"):
                         return  # Return to main menu
                 
             # If user didn't confirm, stay in the submenu
@@ -729,8 +725,7 @@ def navigate_menus():
                     print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
 
                     # Confirm execution
-                    confirm = input("Do you want to continue? (y/n): ").lower()
-                    if confirm == 'y':
+                    if utils.prompt_for_confirmation("Do you want to continue?"):
                         utils.log_info(f"User confirmed execution of: {selected_option['name']}")
                         # Handle special case for creating output archive
                         if selected_option["name"] == "Create Output Archive":

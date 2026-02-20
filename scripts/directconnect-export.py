@@ -5,7 +5,6 @@
 ===========================
 
 Title: AWS Direct Connect Export Tool
-Version: v0.1.0
 Date: NOV-11-2025
 
 Description:
@@ -118,7 +117,6 @@ def print_title():
     print("====================================================================")
     print("              AWS DIRECT CONNECT EXPORT TOOL")
     print("====================================================================")
-    print("Version: v0.1.0                        Date: NOV-11-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
@@ -644,89 +642,8 @@ def export_directconnect_data(account_id: str, account_name: str):
         account_name: The AWS account name
     """
     # Detect partition for region examples
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
-
-    # Display standardized region selection menu
-    print("\n" + "=" * 68)
-    print("REGION SELECTION")
-    print("=" * 68)
-    print("\nDirect Connect is a regional service.")
-    print("\nNOTE: Direct Connect resources are often deployed in specific")
-    print("      locations. Consider using 'All Available Regions' to ensure")
-    print("      complete coverage across regions.")
-    print("\nPlease select an option for region selection:")
-    print("\n  1. Default Regions")
-    print(f"     ({example_regions})")
-    print("\n  2. All Available Regions")
-    print("     (Scan all regions where Direct Connect is available)")
-    print("\n  3. Specific Region")
-    print("     (Enter a specific AWS region code)")
-    print("\n" + "-" * 68)
-
-    # Get and validate region choice
-    regions = []
-    while not regions:
-        try:
-            region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
-
-            if region_choice == '1':
-                regions = utils.get_partition_default_regions()
-                print(f"\nUsing default regions: {', '.join(regions)}")
-                region_suffix = ""
-            elif region_choice == '2':
-                regions = utils.get_partition_regions(partition, all_regions=True)
-                print(f"\nScanning all {len(regions)} available regions")
-                region_suffix = ""
-            elif region_choice == '3':
-                available_regions = utils.get_partition_regions(partition, all_regions=True)
-                print("\n" + "=" * 68)
-                print("AVAILABLE REGIONS")
-                print("=" * 68)
-                for idx, region in enumerate(available_regions, 1):
-                    print(f"  {idx:2d}. {region}")
-                print("=" * 68)
-
-                region_input = input("\nEnter region number or region code: ").strip()
-
-                if region_input.isdigit():
-                    region_idx = int(region_input)
-                    if 1 <= region_idx <= len(available_regions):
-                        regions = [available_regions[region_idx - 1]]
-                        print(f"\nUsing region: {regions[0]}")
-                        region_suffix = f"-{regions[0]}"
-                    else:
-                        print(f"\nInvalid region number. Please enter a number between 1 and {len(available_regions)}.")
-                else:
-                    if region_input in available_regions:
-                        regions = [region_input]
-                        print(f"\nUsing region: {regions[0]}")
-                        region_suffix = f"-{regions[0]}"
-                    else:
-                        print(f"\nInvalid region code: {region_input}")
-                        print("Please enter a valid region code from the list above.")
-            else:
-                print("\nInvalid choice. Please enter 1, 2, or 3.")
-        except KeyboardInterrupt:
-            print("\n\nOperation cancelled by user.")
-            sys.exit(0)
-        except Exception as e:
-            utils.log_error(f"Error getting region selection: {str(e)}")
-            print("Please try again.")
-
-    if not regions:
-        utils.log_error("No regions selected. Exiting.")
-        return
-
-    print(f"\nStarting Direct Connect export process for {len(regions)} region(s)...")
-    print("This may take some time depending on the number of resources...")
-    print("\nNOTE: If you don't have Direct Connect configured, all sheets will be empty.")
-
-    utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")
-
+    regions = utils.prompt_region_selection()
+    region_suffix = 'all'
     # Import pandas for DataFrame handling
     import pandas as pd
 
@@ -825,8 +742,7 @@ def main():
 
         # Check if account name is unknown
         if account_name == "unknown":
-            proceed = input("Unable to determine account name. Proceed anyway? (y/n): ").lower()
-            if proceed != 'y':
+            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
                 sys.exit(0)
 

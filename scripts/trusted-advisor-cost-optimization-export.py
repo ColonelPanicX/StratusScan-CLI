@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS Trusted Advisor Cost Optimization Export
-Version: v0.1.0
 Date: FEB-28-2025
 
 Description:
@@ -438,8 +437,7 @@ def main():
         print("Trusted Advisor API is only available in the us-east-1 region.")
         print("="*70)
 
-        confirm = input("\nDo you have Business or Enterprise Support enabled? (y/n): ").lower()
-        if confirm != 'y':
+        if not utils.prompt_for_confirmation("Do you have Business or Enterprise Support enabled?", default=False):
             print("Please upgrade to Business or Enterprise Support to use Trusted Advisor.")
             return
 

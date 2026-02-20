@@ -35,6 +35,7 @@ import subprocess
 import threading
 from contextlib import contextmanager
 from functools import wraps
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
 
@@ -42,6 +43,15 @@ from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
 logger = None
 # Tracks whether setup_logging() has been explicitly called
 _logging_configured = False
+
+
+def get_version() -> str:
+    """Return the installed package version, or 'dev' if not installed."""
+    try:
+        return _pkg_version("stratusscan-cli")
+    except PackageNotFoundError:
+        return "dev"
+
 
 def _cleanup_old_logs(logs_dir: Path, log_retention_days: int = 14) -> None:
     """
@@ -402,22 +412,17 @@ def detect_partition(region_name: Optional[str] = None) -> str:
         log_warning(f"Could not detect partition: {e}, assuming commercial AWS")
         return 'aws'
 
-def get_aws_session(region_name: Optional[str] = None, partition: Optional[str] = None):
+def get_aws_session(region_name: Optional[str] = None):
     """
-    Create reusable boto3 session with partition awareness.
+    Create a boto3 session for the specified region.
 
     Args:
         region_name: AWS region (None = default from config)
-        partition: AWS partition ('aws' or 'aws-us-gov')
 
     Returns:
         boto3.Session: Configured session
     """
     import boto3
-
-    # Auto-detect partition if not provided
-    if not partition and region_name:
-        partition = detect_partition(region_name)
 
     session = boto3.Session(region_name=region_name)
 
@@ -1135,6 +1140,7 @@ def prompt_for_confirmation(message: str = "Do you want to continue?", default: 
     Returns:
         bool: True if confirmed, False otherwise
     """
+    # TODO: Issue #C — add b/x navigation support here
     default_prompt = " (Y/n): " if default else " (y/N): "
     response = input(f"{message}{default_prompt}").strip().lower()
     
@@ -1206,9 +1212,7 @@ def add_account_mapping(account_id: str, account_name: str) -> bool:
     try:
         # Trigger lazy load outside the lock to avoid re-entrant lock deadlock
         # (_CONFIG_LOCK is a plain Lock; get_config() acquires it internally)
-        mappings, _ = get_config()
-        mappings[account_id] = account_name
-        ACCOUNT_MAPPINGS[account_id] = account_name
+        get_config()
 
         # Update configuration file with atomic write (write to .tmp then rename)
         config_path = Path(__file__).parent / 'config.json'
@@ -1231,6 +1235,9 @@ def add_account_mapping(account_id: str, account_name: str) -> bool:
                 with open(tmp_path, 'w', encoding='utf-8') as f:
                     json.dump(config, f, indent=2)
                 os.replace(tmp_path, config_path)
+
+                # Update in-memory cache only after successful file write
+                ACCOUNT_MAPPINGS[account_id] = account_name
 
                 log_success(f"Added account mapping: {account_id} → {account_name}")
                 return True
