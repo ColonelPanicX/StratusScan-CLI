@@ -22,7 +22,6 @@ Phase 4B Update:
 import os
 import sys
 import datetime
-import boto3
 from botocore.exceptions import ClientError
 from pathlib import Path
 
@@ -48,43 +47,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-
-def check_dependencies():
-    """
-    Check if required dependencies are installed and offer to install them if missing.
-    """
-    required_packages = ['pandas', 'openpyxl']
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package)
-            print(f"✓ {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        print(f"\nPackages required but not installed: {', '.join(missing_packages)}")
-        response = input("Would you like to install these packages now? (y/n): ").lower()
-        
-        if response == 'y':
-            import subprocess
-            for package in missing_packages:
-                print(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    print(f"✓ Successfully installed {package}")
-                except Exception as e:
-                    print(f"Error installing {package}: {e}")
-                    print("Please install it manually with: pip install " + package)
-                    return False
-            return True
-        else:
-            print("Cannot proceed without required dependencies.")
-            return False
-    
-    return True
-
 def print_title():
     """
     Print the script title banner and get account info.
@@ -434,7 +396,7 @@ def main():
         account_id, account_name = print_title()
         
         # Check for required dependencies
-        if not check_dependencies():
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
         
         # Import pandas now that we've checked dependencies

@@ -445,21 +445,6 @@ def calculate_storage_cost(root_size, root_type, attached_volume_info, storage_p
 # Dependency checking handled by utils.ensure_dependencies()
 
 # Account info retrieval handled by utils.get_account_info()
-
-def get_aws_regions():
-    """Get list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
 def is_valid_aws_region(region_name):
     """Check if a region name is a valid AWS region"""
     return utils.is_aws_region(region_name)
@@ -758,7 +743,7 @@ def main():
                 print("Please enter a valid number (1-3).")
 
         # Get regions based on selection
-        all_available_regions = get_aws_regions()
+        all_available_regions = utils.get_aws_regions()
         default_regions = utils.get_partition_regions(partition, all_regions=False)
 
         # Process selection

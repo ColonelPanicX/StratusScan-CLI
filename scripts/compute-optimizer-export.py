@@ -17,7 +17,6 @@ The data is exported to an Excel file with separate tabs for each recommendation
 
 import os
 import sys
-import boto3
 import datetime
 import json
 import pandas as pd
@@ -46,43 +45,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-
-def check_dependencies():
-    """
-    Check if required dependencies are installed and offer to install them if missing.
-    """
-    required_packages = ['pandas', 'openpyxl', 'boto3']
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package)
-            print(f"✓ {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        print(f"\nPackages required but not installed: {', '.join(missing_packages)}")
-        response = input("Would you like to install these packages now? (y/n): ").lower()
-        
-        if response == 'y':
-            import subprocess
-            for package in missing_packages:
-                print(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    print(f"✓ Successfully installed {package}")
-                except Exception as e:
-                    print(f"Error installing {package}: {e}")
-                    print("Please install it manually with: pip install " + package)
-                    return False
-            return True
-        else:
-            print("Cannot proceed without required dependencies.")
-            return False
-    
-    return True
-
 def print_title():
     """
     Print the script title banner and get account info.
@@ -610,7 +572,7 @@ def main():
     """
     try:
         # Check dependencies
-        if not check_dependencies():
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
 
         # Print title and get account info

@@ -57,44 +57,6 @@ except ImportError:
 
 # Setup logging
 logger = utils.setup_logging('storage-resources')
-
-def check_dependencies():
-    """
-    Check if required dependencies are installed and offer to install them if missing.
-
-    Returns:
-        bool: True if all dependencies are satisfied, False otherwise
-    """
-    required_packages = ['pandas', 'openpyxl']
-    missing_packages = []
-
-    for package in required_packages:
-        try:
-            __import__(package)
-            utils.log_info(f"[OK] {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-
-    if missing_packages:
-        utils.log_warning(f"Packages required but not installed: {', '.join(missing_packages)}")
-        response = input("Would you like to install these packages now? (y/n): ").lower().strip()
-
-        if response == 'y':
-            import subprocess
-            for package in missing_packages:
-                utils.log_info(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    utils.log_success(f"{package} installed successfully")
-                except subprocess.CalledProcessError as e:
-                    utils.log_error(f"Error installing {package}", e)
-                    return False
-        else:
-            print("Cannot continue without required packages. Exiting.")
-            return False
-
-    return True
-
 @utils.aws_error_handler("Getting account information", default_return=("Unknown", "Unknown-AWS-Account"))
 def get_account_info():
     """
@@ -424,7 +386,7 @@ def main():
     """
     try:
         # Check dependencies first
-        if not check_dependencies():
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
             return
 
         # Print title and get account info

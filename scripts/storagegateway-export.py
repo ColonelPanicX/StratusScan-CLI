@@ -37,30 +37,6 @@ from botocore.exceptions import ClientError
 # ============================================================================
 # DEPENDENCY CHECKING
 # ============================================================================
-
-def check_dependencies() -> bool:
-    """Check if required packages are installed."""
-    required_packages = {
-        'boto3': 'boto3',
-        'pandas': 'pandas',
-        'openpyxl': 'openpyxl'
-    }
-
-    missing_packages = []
-    for package_name, pip_name in required_packages.items():
-        try:
-            __import__(package_name)
-        except ImportError:
-            missing_packages.append(pip_name)
-
-    if missing_packages:
-        utils.log_error(f"Missing required packages: {', '.join(missing_packages)}")
-        utils.log_error(f"Install with: pip install {' '.join(missing_packages)}")
-        return False
-
-    return True
-
-
 # ============================================================================
 # DATA COLLECTION FUNCTIONS
 # ============================================================================
@@ -684,7 +660,7 @@ def main():
     utils.log_info("=" * 80)
 
     # Check dependencies
-    if not check_dependencies():
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
         utils.log_error("Missing required dependencies. Please install them and try again.")
         sys.exit(1)
 

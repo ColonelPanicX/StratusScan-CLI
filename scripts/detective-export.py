@@ -30,7 +30,6 @@ Prerequisites:
 
 import os
 import sys
-import boto3
 import datetime
 import time
 from pathlib import Path

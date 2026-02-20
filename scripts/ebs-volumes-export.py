@@ -54,22 +54,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-
-
-def get_aws_regions():
-    """Get list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region.
@@ -395,7 +379,7 @@ def main():
         
         # Get AWS regions
         utils.log_info("Getting list of AWS regions...")
-        all_regions = get_aws_regions()
+        all_regions = utils.get_aws_regions()
 
         if not all_regions:
             utils.log_error("No AWS regions found. Please check your AWS credentials and permissions.")

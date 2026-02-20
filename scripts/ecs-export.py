@@ -28,7 +28,6 @@ ELB Target Group, Network Mode, Subnet IDs, Security Groups, IAM Role, and Creat
 
 import os
 import sys
-import boto3
 import datetime
 import time
 from pathlib import Path
@@ -57,46 +56,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-
-def check_dependencies():
-    """
-    Check if required dependencies are installed and offer to install them if missing.
-    
-    Returns:
-        bool: True if all dependencies are satisfied, False otherwise
-    """
-    required_packages = ['pandas', 'openpyxl']
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package)
-            print(f"✓ {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        print(f"\nPackages required but not installed: {', '.join(missing_packages)}")
-        response = input("Would you like to install these packages now? (y/n): ").lower()
-        
-        if response == 'y':
-            import subprocess
-            for package in missing_packages:
-                print(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    print(f"✓ Successfully installed {package}")
-                except Exception as e:
-                    print(f"Error installing {package}: {e}")
-                    print("Please install it manually with: pip install " + package)
-                    return False
-            return True
-        else:
-            print("Cannot proceed without required dependencies.")
-            return False
-    
-    return True
-
 def print_title():
     """
     Print the script title and header, and return account information.
@@ -497,7 +456,7 @@ def main():
         account_id, account_name = print_title()
         
         # Check dependencies
-        if not check_dependencies():
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
         
         # Import pandas after checking dependencies

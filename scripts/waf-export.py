@@ -47,11 +47,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-# Initialize logging
-SCRIPT_START_TIME = datetime.datetime.now()
-utils.setup_logging("waf-export")
-utils.log_script_start("waf-export.py", "AWS WAF Export Tool")
-
 
 def print_title():
     """Print the title and header of the script to the console."""
@@ -84,23 +79,6 @@ def print_title():
 
     print("====================================================================")
     return account_id, account_name
-
-
-def get_aws_regions():
-    """Get a list of available AWS regions for the current partition."""
-    try:
-        # Get partition-aware regions
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
-
 @utils.aws_error_handler("Collecting WAF web ACLs from region", default_return=[])
 def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
     """
@@ -658,7 +636,11 @@ def export_waf_data(account_id: str, account_name: str):
 
 
 def main():
-    """Main function to execute the script."""
+    # Initialize logging
+    utils.setup_logging("waf-export")
+    SCRIPT_START_TIME = datetime.datetime.now()
+    utils.log_script_start("waf-export.py", "AWS WAF Export Tool")
+
     try:
         # Print title and get account information
         account_id, account_name = print_title()
