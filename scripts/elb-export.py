@@ -18,7 +18,6 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import boto3
 import pandas as pd
 import datetime
 import os
@@ -85,63 +84,6 @@ def print_title_screen():
     print("====================================================================")
 
     return account_name
-
-def check_dependencies():
-    """
-    Checks if required dependencies are installed and offers to install them
-    
-    Returns:
-        bool: True if all dependencies are installed or successfully installed,
-              False otherwise
-    """
-    required_packages = ['pandas', 'openpyxl', 'boto3']
-    missing_packages = []
-    
-    # Check which required packages are missing
-    for package in required_packages:
-        try:
-            __import__(package)
-            utils.log_info(f"[OK] {package} is already installed")
-        except ImportError:
-            missing_packages.append(package)
-    
-    # If there are missing packages, prompt the user to install them
-    if missing_packages:
-        utils.log_warning(f"Missing dependencies: {', '.join(missing_packages)}")
-        install_choice = input("Do you want to install the missing dependencies? (y/n): ").lower().strip()
-        
-        if install_choice == 'y':
-            import subprocess
-            for package in missing_packages:
-                utils.log_info(f"Installing {package}...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                    utils.log_success(f"{package} installed successfully.")
-                except Exception as e:
-                    utils.log_error(f"Error installing {package}", e)
-                    print("Please install it manually with: pip install " + package)
-                    return False
-            return True
-        else:
-            print("Script cannot continue without required dependencies. Exiting.")
-            return False
-    
-    return True
-
-def get_aws_regions():
-    """Get list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region
@@ -353,7 +295,7 @@ def main():
     account_name = print_title_screen()
     
     # Check for required dependencies
-    if not check_dependencies():
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
         sys.exit(1)
     
     # Detect partition for region examples
@@ -393,7 +335,7 @@ def main():
             print("Please enter a valid number (1-3).")
 
     # Get regions based on selection
-    all_available_regions = get_aws_regions()
+    all_available_regions = utils.get_aws_regions()
     default_regions = utils.get_partition_regions(partition, all_regions=False)
 
     # Process selection

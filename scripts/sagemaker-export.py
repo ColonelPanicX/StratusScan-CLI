@@ -34,40 +34,6 @@ try:
 except ImportError:
     print("Error: pandas is not installed. Please install it using 'pip install pandas'")
     sys.exit(1)
-
-
-def check_dependencies():
-    """Check if required dependencies are installed."""
-    utils.log_info("Checking dependencies...")
-
-    missing = []
-
-    try:
-        import pandas
-        utils.log_info("✓ pandas is installed")
-    except ImportError:
-        missing.append("pandas")
-
-    try:
-        import openpyxl
-        utils.log_info("✓ openpyxl is installed")
-    except ImportError:
-        missing.append("openpyxl")
-
-    try:
-        import boto3
-        utils.log_info("✓ boto3 is installed")
-    except ImportError:
-        missing.append("boto3")
-
-    if missing:
-        utils.log_error(f"Missing dependencies: {', '.join(missing)}")
-        utils.log_error("Please install using: pip install " + " ".join(missing))
-        sys.exit(1)
-
-    utils.log_success("All dependencies are installed")
-
-
 def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
     """Scan SageMaker notebook instances in a single region."""
     regional_notebooks = []
@@ -644,7 +610,7 @@ def main():
     print("="*60)
 
     # Check dependencies
-    check_dependencies()
+    utils.ensure_dependencies('pandas', 'openpyxl')
 
     # Get AWS account information
     account_id, account_name = utils.get_account_info()

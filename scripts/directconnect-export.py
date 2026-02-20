@@ -51,11 +51,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-# Initialize logging
-SCRIPT_START_TIME = datetime.datetime.now()
-utils.setup_logging("directconnect-export")
-utils.log_script_start("directconnect-export.py", "AWS Direct Connect Export Tool")
-
 
 def _scan_connections_region(region: str) -> List[Dict[str, Any]]:
     """Scan Direct Connect connections in a single region."""
@@ -815,7 +810,11 @@ def export_directconnect_data(account_id: str, account_name: str):
 
 
 def main():
-    """Main function to execute the script."""
+    # Initialize logging
+    utils.setup_logging("directconnect-export")
+    SCRIPT_START_TIME = datetime.datetime.now()
+    utils.log_script_start("directconnect-export.py", "AWS Direct Connect Export Tool")
+
     try:
         # Print title and get account information
         account_id, account_name = print_title()

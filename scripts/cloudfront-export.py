@@ -47,11 +47,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-# Initialize logging
-SCRIPT_START_TIME = datetime.datetime.now()
-utils.setup_logging("cloudfront-export")
-utils.log_script_start("cloudfront-export.py", "AWS CloudFront Distribution Export Tool")
-
 
 def print_title():
     """Print the title and header of the script to the console."""
@@ -520,7 +515,11 @@ def export_cloudfront_data(account_id: str, account_name: str):
 
 
 def main():
-    """Main function to execute the script."""
+    # Initialize logging
+    utils.setup_logging("cloudfront-export")
+    SCRIPT_START_TIME = datetime.datetime.now()
+    utils.log_script_start("cloudfront-export.py", "AWS CloudFront Distribution Export Tool")
+
     try:
         # Check if running in GovCloud partition
         partition = utils.detect_partition()

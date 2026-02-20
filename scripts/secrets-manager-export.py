@@ -49,11 +49,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-# Initialize logging
-SCRIPT_START_TIME = datetime.datetime.now()
-utils.setup_logging("secrets-manager-export")
-utils.log_script_start("secrets-manager-export.py", "AWS Secrets Manager Export Tool")
-
 
 def print_title():
     """Print the title and header of the script to the console."""
@@ -88,23 +83,6 @@ def print_title():
 
     print("====================================================================")
     return account_id, account_name
-
-
-def get_aws_regions():
-    """Get list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
-
 def scan_secrets_in_region(region: str) -> List[Dict[str, Any]]:
     """
     Scan Secrets Manager secrets in a single region.
@@ -476,7 +454,7 @@ def export_secrets_data(account_id: str, account_name: str):
             print("Please enter a valid number (1-3).")
 
     # Get regions based on selection
-    all_available_regions = get_aws_regions()
+    all_available_regions = utils.get_aws_regions()
     default_regions = utils.get_partition_regions(partition, all_regions=False)
 
     # Process selection
@@ -582,7 +560,11 @@ def export_secrets_data(account_id: str, account_name: str):
 
 
 def main():
-    """Main function to execute the script."""
+    # Initialize logging
+    utils.setup_logging("secrets-manager-export")
+    SCRIPT_START_TIME = datetime.datetime.now()
+    utils.log_script_start("secrets-manager-export.py", "AWS Secrets Manager Export Tool")
+
     try:
         # Print title and get account information
         account_id, account_name = print_title()

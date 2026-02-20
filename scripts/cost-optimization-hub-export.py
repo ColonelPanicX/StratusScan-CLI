@@ -21,7 +21,6 @@ import os
 import sys
 import subprocess
 import datetime
-import boto3
 from botocore.exceptions import ClientError
 from pathlib import Path
 

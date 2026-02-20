@@ -49,11 +49,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-# Initialize logging
-SCRIPT_START_TIME = datetime.datetime.now()
-utils.setup_logging("vpn-export")
-utils.log_script_start("vpn-export.py", "AWS VPN Connectivity Export Tool")
-
 
 def print_title():
     """Print the title and header of the script to the console."""
@@ -873,7 +868,11 @@ def export_vpn_data(account_id: str, account_name: str, regions: List[str]):
 
 
 def main():
-    """Main function to execute the script."""
+    # Initialize logging
+    utils.setup_logging("vpn-export")
+    SCRIPT_START_TIME = datetime.datetime.now()
+    utils.log_script_start("vpn-export.py", "AWS VPN Connectivity Export Tool")
+
     try:
         # Print title and get account information
         account_id, account_name = print_title()

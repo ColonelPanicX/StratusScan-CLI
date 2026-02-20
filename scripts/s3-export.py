@@ -77,21 +77,6 @@ def print_title():
     print("====================================================================")
 
     return account_id, account_name
-
-def get_aws_regions():
-    """Get list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region
@@ -297,7 +282,7 @@ def get_latest_storage_lens_data(account_id):
             return region_data
 
         # Use concurrent region scanning for CloudWatch metrics (Phase 4B)
-        aws_regions = utils.get_aws_regions()
+        aws_regions = utils.utils.get_aws_regions()
         region_results = utils.scan_regions_concurrent(
             regions=aws_regions,
             scan_function=collect_cloudwatch_metrics_for_region,

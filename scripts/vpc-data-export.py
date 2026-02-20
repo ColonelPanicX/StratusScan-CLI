@@ -83,22 +83,6 @@ def print_title():
 
     print("====================================================================")
     return account_id, account_name
-
-
-def get_aws_regions():
-    """Get a list of all available AWS regions for the current partition."""
-    try:
-        # Detect partition and get ALL regions for that partition
-        partition = utils.detect_partition()
-        regions = utils.get_partition_regions(partition, all_regions=True)
-        utils.log_info(f"Retrieved {len(regions)} regions for partition {partition}")
-        return regions
-    except Exception as e:
-        utils.log_error("Error getting AWS regions", e)
-        # Fallback to default regions for the partition
-        partition = utils.detect_partition()
-        return utils.get_partition_regions(partition, all_regions=False)
-
 @utils.aws_error_handler("Collecting VPC data for region", default_return=[])
 def collect_vpc_data_for_region(region):
     """
@@ -854,7 +838,7 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
             print("Please enter a valid number (1-3).")
 
     # Get all available AWS regions
-    all_available_regions = get_aws_regions()
+    all_available_regions = utils.get_aws_regions()
     default_regions = utils.get_partition_regions(partition, all_regions=False)
 
     # Process selection
