@@ -29,7 +29,7 @@ class TestExecutionResultDataclass:
     def test_execution_result_creation(self):
         """Test creating ExecutionResult instance."""
         result = ExecutionResult(
-            script="test-script.py",
+            script="test_script.py",
             success=True,
             start_time=datetime(2025, 12, 4, 10, 0, 0),
             end_time=datetime(2025, 12, 4, 10, 2, 30),
@@ -38,7 +38,7 @@ class TestExecutionResultDataclass:
             output_file="test-output.xlsx",
         )
 
-        assert result.script == "test-script.py"
+        assert result.script == "test_script.py"
         assert result.success is True
         assert result.duration_seconds == 150.0
         assert result.return_code == 0
@@ -47,7 +47,7 @@ class TestExecutionResultDataclass:
     def test_execution_result_with_error(self):
         """Test ExecutionResult with error message."""
         result = ExecutionResult(
-            script="failing-script.py",
+            script="failing_script.py",
             success=False,
             start_time=datetime(2025, 12, 4, 10, 0, 0),
             end_time=datetime(2025, 12, 4, 10, 0, 5),
@@ -175,18 +175,18 @@ class TestScriptExecutorMethods:
         """Test finding an existing script."""
         # Create a temporary test script
         with tempfile.TemporaryDirectory() as tmpdir:
-            test_script = Path(tmpdir) / "scripts" / "test-script.py"
+            test_script = Path(tmpdir) / "scripts" / "test_script.py"
             test_script.parent.mkdir(exist_ok=True)
             test_script.write_text("#!/usr/bin/env python3\nprint('test')")
 
             # Create executor pointing to tmpdir
-            executor = ScriptExecutor({"test-script.py"})
+            executor = ScriptExecutor({"test_script.py"})
             executor.scripts_dir = Path(tmpdir) / "scripts"
 
-            result = executor._find_script_path("test-script.py")
+            result = executor._find_script_path("test_script.py")
             assert result is not None
             assert result.exists()
-            assert result.name == "test-script.py"
+            assert result.name == "test_script.py"
 
     def test_find_script_path_nonexistent(self):
         """Test finding a nonexistent script."""
@@ -204,7 +204,7 @@ class TestScriptExecutorMethods:
             output_file = Path(tmpdir) / "test-account-ec2-export-12.04.2025.xlsx"
             output_file.touch()
 
-            executor = ScriptExecutor({"ec2-export.py"})
+            executor = ScriptExecutor({"ec2_export.py"})
             executor.output_dir = Path(tmpdir)
 
             result = executor._find_output_file("ec2-export")
@@ -214,7 +214,7 @@ class TestScriptExecutorMethods:
     def test_find_output_file_not_found(self):
         """Test finding output file when none exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            executor = ScriptExecutor({"ec2-export.py"})
+            executor = ScriptExecutor({"ec2_export.py"})
             executor.output_dir = Path(tmpdir)
 
             result = executor._find_output_file("nonexistent-export")
@@ -252,12 +252,12 @@ class TestExecutionFlow:
             scripts_dir = Path(tmpdir) / "scripts"
             scripts_dir.mkdir(exist_ok=True)
 
-            test_script = scripts_dir / "test-success.py"
+            test_script = scripts_dir / "test_success.py"
             test_script.write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(0)")
             test_script.chmod(0o755)
 
             # Create executor
-            executor = ScriptExecutor({"test-success.py"})
+            executor = ScriptExecutor({"test_success.py"})
             executor.scripts_dir = scripts_dir
 
             # Execute (without showing progress)

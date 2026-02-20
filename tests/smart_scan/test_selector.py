@@ -16,22 +16,22 @@ if scripts_dir not in sys.path:
 from smart_scan.selector import SmartScanSelector, interactive_select, QUESTIONARY_AVAILABLE
 
 MOCK_RECOMMENDATIONS = {
-    "always_run": ["iam-comprehensive-export.py", "cloudtrail-export.py"],
+    "always_run": ["iam_comprehensive_export.py", "cloudtrail_export.py"],
     "service_based": {
-        "Amazon EC2": ["ec2-export.py", "ami-export.py"],
-        "Amazon S3": ["s3-export.py"],
+        "Amazon EC2": ["ec2_export.py", "ami_export.py"],
+        "Amazon S3": ["s3_export.py"],
     },
     "all_scripts": {
-        "iam-comprehensive-export.py",
-        "cloudtrail-export.py",
-        "ec2-export.py",
-        "ami-export.py",
-        "s3-export.py",
+        "iam_comprehensive_export.py",
+        "cloudtrail_export.py",
+        "ec2_export.py",
+        "ami_export.py",
+        "s3_export.py",
     },
     "by_category": {
-        "Security & Compliance": ["iam-comprehensive-export.py", "cloudtrail-export.py"],
-        "Compute": ["ec2-export.py", "ami-export.py"],
-        "Storage": ["s3-export.py"],
+        "Security & Compliance": ["iam_comprehensive_export.py", "cloudtrail_export.py"],
+        "Compute": ["ec2_export.py", "ami_export.py"],
+        "Storage": ["s3_export.py"],
     },
     "coverage_stats": {
         "total_services_found": 2,
