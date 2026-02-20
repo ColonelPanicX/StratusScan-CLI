@@ -88,7 +88,7 @@ Issues = "https://github.com/ColonelPanicX/StratusScan-CLI/issues"
 
 # Setuptools configuration
 [tool.setuptools]
-packages = ["scripts.smart_scan"]
+packages = ["sslib", "scripts.smart_scan"]
 include-package-data = true
 
 [tool.setuptools.package-data]
