@@ -771,13 +771,11 @@ def main():
     utils.log_script_start("globalaccelerator-export.py", "AWS Global Accelerator Export Tool")
 
     try:
-        # Check if running in GovCloud partition
+        # Check partition availability
         partition = utils.detect_partition()
-        if partition == 'aws-us-gov':
-            print(f"\nERROR: Global Accelerator is not available in AWS GovCloud")
-            print("This service operates outside the GovCloud boundary")
-            utils.log_error(f"Global Accelerator is not supported in GovCloud partition")
-            sys.exit(1)
+        if not utils.is_service_available_in_partition("globalaccelerator", partition):
+            utils.log_warning("Global Accelerator is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
 
         account_id, account_name = print_title()
 

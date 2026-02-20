@@ -200,6 +200,12 @@ def classify_impact(impact: Dict) -> str:
 def main():
     """Main execution function."""
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("ce", partition):
+            utils.log_warning("Cost Anomaly Detection (Cost Explorer) is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         # Get account information
         account_id, account_name = utils.get_account_info()
         utils.log_info(f"Exporting Cost Anomaly Detection data for account: {account_name} ({account_id})")

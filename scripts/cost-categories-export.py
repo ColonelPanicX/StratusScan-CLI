@@ -132,6 +132,12 @@ def describe_cost_category(cost_category_arn: str) -> Dict[str, Any]:
 def main():
     """Main execution function."""
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("ce", partition):
+            utils.log_warning("Cost Categories (Cost Explorer) is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         # Get account information
         account_id, account_name = utils.get_account_info()
         utils.log_info(f"Exporting Cost Categories for account: {account_name} ({account_id})")

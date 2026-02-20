@@ -413,6 +413,12 @@ def main():
     Main function to run the script.
     """
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("ce", partition):
+            utils.log_warning("Cost Explorer (billing) is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         # Print title and get account info
         account_id, account_name = print_title()
         

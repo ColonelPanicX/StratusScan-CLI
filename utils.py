@@ -572,14 +572,16 @@ def is_service_available_in_partition(service: str, partition: str = 'aws') -> b
     """
     # Services NOT available in GovCloud (partial list)
     govcloud_unavailable = {
-        'ce',              # Cost Explorer - Not available in GovCloud
-        'globalaccelerator',  # Global Accelerator - Not available in GovCloud
-        'trustedadvisor',  # Not available in GovCloud
-        'appstream',       # Not available in GovCloud
-        'chime',          # Not available in GovCloud
-        'sumerian',       # Not available in GovCloud
-        'gamelift',       # Not available in GovCloud
-        'robomaker',      # Not available in GovCloud
+        'ce',                    # Cost Explorer - Not available in GovCloud
+        'globalaccelerator',     # Global Accelerator - Not available in GovCloud
+        'trustedadvisor',        # Trusted Advisor - Not available in GovCloud
+        'compute-optimizer',     # Compute Optimizer - Not available in GovCloud
+        'cost-optimization-hub', # Cost Optimization Hub - Not available in GovCloud
+        'appstream',             # Not available in GovCloud
+        'chime',                 # Not available in GovCloud
+        'sumerian',              # Not available in GovCloud
+        'gamelift',              # Not available in GovCloud
+        'robomaker',             # Not available in GovCloud
     }
 
     # Services with limited availability in GovCloud
