@@ -34,7 +34,7 @@ import re
 import subprocess
 import threading
 from contextlib import contextmanager
-from functools import wraps, lru_cache
+from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
 
@@ -178,6 +178,11 @@ ACCOUNT_MAPPINGS = {}
 CONFIG_DATA = {}
 _CONFIG_LOADED = False
 _CONFIG_LOCK = threading.Lock()
+
+# Account info cache — set only on successful STS call so transient failures
+# don't permanently poison the cached value (lru_cache hazard avoidance).
+_account_info_cache: Optional[Tuple[str, str, str]] = None
+_account_info_lock = threading.Lock()
 
 # Try to load configuration from config.json file
 def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
@@ -1920,7 +1925,6 @@ def ensure_dependencies(*packages: str) -> bool:
     return True
 
 
-@lru_cache(maxsize=1)
 def get_account_info() -> Tuple[str, str]:
     """
     Get AWS account ID and name with caching.
@@ -1955,27 +1959,12 @@ def get_account_info() -> Tuple[str, str]:
         ...     utils.log_info(f"Scanning account: {account_name}")
 
     Note:
-        - Results are cached using @lru_cache to avoid repeated API calls
+        - Delegates to get_cached_account_info() to avoid duplicate STS calls
         - Uses get_boto3_client() which includes automatic retry logic
         - Falls back to UNKNOWN values on error rather than raising exceptions
     """
-    try:
-        # Use get_boto3_client for automatic retry logic
-        sts = get_boto3_client('sts')
-
-        # Get account ID from STS
-        account_id = sts.get_caller_identity()['Account']
-
-        # Map to friendly name using config.json mappings
-        account_name = get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
-
-        log_debug(f"Retrieved account info: {account_name} ({account_id})")
-        return account_id, account_name
-
-    except Exception as e:
-        log_error("Failed to get account information", e)
-        log_warning("Using default account values")
-        return "UNKNOWN", "UNKNOWN-ACCOUNT"
+    account_id, account_name, _ = get_cached_account_info()
+    return account_id, account_name
 
 
 # =============================================================================
@@ -2941,7 +2930,6 @@ def _scan_regions_sequential(
     return results
 
 
-@lru_cache(maxsize=1)
 def get_cached_account_info() -> Tuple[str, str, str]:
     """
     Get AWS account info with session-level caching (Phase 4B optimization).
@@ -2957,30 +2945,45 @@ def get_cached_account_info() -> Tuple[str, str, str]:
         >>> print(f"Account: {account_name} ({account_id}) in {partition}")
 
     Note:
-        - Cached for the entire Python session (until script exits)
-        - Uses @lru_cache to avoid repeated STS API calls
-        - Automatically called by get_account_info() for backward compatibility
+        - Cached in _account_info_cache (module-level) only on successful STS call.
+          A transient first-call failure returns default values without poisoning
+          the cache, so the next call will retry the STS lookup.
+        - Thread-safe: _account_info_lock guards both the read and write paths.
+        - Uses get_boto3_client() which includes automatic retry logic.
     """
-    try:
-        # Use get_boto3_client for automatic retry logic
-        sts = get_boto3_client('sts')
+    global _account_info_cache
 
-        # Get account ID from STS
-        account_id = sts.get_caller_identity()['Account']
+    # Fast path — check without lock first (safe: tuple assignment is atomic in CPython)
+    if _account_info_cache is not None:
+        return _account_info_cache
 
-        # Map to friendly name using config.json mappings
-        account_name = get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
+    with _account_info_lock:
+        # Re-check inside lock to handle concurrent first callers
+        if _account_info_cache is not None:
+            return _account_info_cache
 
-        # Detect partition
-        partition = detect_partition()
+        try:
+            # Use get_boto3_client for automatic retry logic
+            sts = get_boto3_client('sts')
 
-        log_debug(f"Cached account info: {account_name} ({account_id}) in partition {partition}")
-        return account_id, account_name, partition
+            # Get account ID from STS
+            account_id = sts.get_caller_identity()['Account']
 
-    except Exception as e:
-        log_error("Failed to get account information", e)
-        log_warning("Using default account values")
-        return "UNKNOWN", "UNKNOWN-ACCOUNT", "aws"
+            # Map to friendly name using config.json mappings
+            account_name = get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
+
+            # Detect partition
+            partition = detect_partition()
+
+            _account_info_cache = (account_id, account_name, partition)
+            log_debug(f"Cached account info: {account_name} ({account_id}) in partition {partition}")
+            return _account_info_cache
+
+        except Exception as e:
+            log_error("Failed to get account information", e)
+            log_warning("Using default account values")
+            # Return defaults WITHOUT caching so the next call retries the STS lookup
+            return "UNKNOWN", "UNKNOWN-ACCOUNT", "aws"
 
 
 def paginate_with_progress(
