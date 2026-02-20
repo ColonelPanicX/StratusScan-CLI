@@ -163,8 +163,7 @@ class ScriptExecutor:
                 )
             else:
                 utils.log_error(
-                    f"✗ {script_name} failed with code {result.returncode}",
-                    Exception(error_message or "Script execution failed"),
+                    f"✗ {script_name} failed with code {result.returncode}: {error_message or 'Script execution failed'}",
                 )
 
             return execution_result
@@ -213,7 +212,8 @@ class ScriptExecutor:
             output_dir = utils.get_output_dir()
             snapshot_time = _time.time()
             return ({str(p) for p in output_dir.glob("*.xlsx")}, snapshot_time)
-        except Exception:
+        except Exception as e:
+            utils.log_debug(f"Output snapshot failed: {e}")
             return (set(), 0.0)
 
     def _find_output_file(self, script_name: str, pre_run_files=None) -> Optional[str]:
@@ -261,7 +261,8 @@ class ScriptExecutor:
             xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return str(xlsx_files[0])
 
-        except Exception:
+        except Exception as e:
+            utils.log_debug(f"Output detection failed: {e}")
             return None
 
     def _show_progress_header(self) -> None:
