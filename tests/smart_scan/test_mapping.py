@@ -146,10 +146,10 @@ class TestAlwaysRunScripts:
     def test_security_scripts_in_always_run(self):
         """Verify critical security scripts are in always-run."""
         expected_scripts = [
-            "iam-comprehensive-export.py",
-            "cloudtrail-export.py",
-            "guardduty-export.py",
-            "security-groups-export.py",
+            "iam_comprehensive_export.py",
+            "cloudtrail_export.py",
+            "guardduty_export.py",
+            "security_groups_export.py",
         ]
         for script in expected_scripts:
             assert script in ALWAYS_RUN_SCRIPTS, f"Missing critical script: {script}"
@@ -195,14 +195,14 @@ class TestGetScriptsForService:
         scripts = get_scripts_for_service("Amazon Elastic Compute Cloud")
         assert scripts is not None
         assert len(scripts) > 0
-        assert "ec2-export.py" in scripts
+        assert "ec2_export.py" in scripts
 
     def test_alias_service_name(self):
         """Test getting scripts via alias."""
         scripts = get_scripts_for_service("ec2")
         assert scripts is not None
         assert len(scripts) > 0
-        assert "ec2-export.py" in scripts
+        assert "ec2_export.py" in scripts
 
     def test_unknown_service_returns_empty(self):
         """Test that unknown services return empty list."""
@@ -218,7 +218,7 @@ class TestGetScriptsForService:
     def test_s3_service(self):
         """Test S3 service specifically."""
         scripts = get_scripts_for_service("s3")
-        assert "s3-export.py" in scripts
+        assert "s3_export.py" in scripts
 
 
 class TestMappingStatistics:
@@ -259,35 +259,35 @@ class TestGetCategoryForScript:
 
     def test_compute_script(self):
         """Test categorization of a compute script."""
-        assert get_category_for_script("ec2-export.py") == "Compute"
+        assert get_category_for_script("ec2_export.py") == "Compute"
 
     def test_storage_script(self):
         """Test categorization of a storage script."""
-        assert get_category_for_script("s3-export.py") == "Storage"
+        assert get_category_for_script("s3_export.py") == "Storage"
 
     def test_database_script(self):
         """Test categorization of a database script."""
-        assert get_category_for_script("rds-export.py") == "Database"
+        assert get_category_for_script("rds_export.py") == "Database"
 
     def test_networking_script(self):
         """Test categorization of a networking script."""
-        assert get_category_for_script("vpc-data-export.py") == "Networking"
+        assert get_category_for_script("vpc_data_export.py") == "Networking"
 
     def test_security_script(self):
         """Test categorization of a security script."""
-        assert get_category_for_script("iam-comprehensive-export.py") == "Security & Compliance"
+        assert get_category_for_script("iam_comprehensive_export.py") == "Security & Compliance"
 
     def test_cost_management_script(self):
         """Test categorization of a cost management script."""
-        assert get_category_for_script("budgets-export.py") == "Cost Management"
+        assert get_category_for_script("budgets_export.py") == "Cost Management"
 
     def test_management_monitoring_script(self):
         """Test categorization of a management/monitoring script."""
-        assert get_category_for_script("cloudwatch-export.py") == "Management & Monitoring"
+        assert get_category_for_script("cloudwatch_export.py") == "Management & Monitoring"
 
     def test_unknown_script_returns_other(self):
         """Test that an uncategorized script returns 'Other'."""
-        assert get_category_for_script("nonexistent-script.py") == "Other"
+        assert get_category_for_script("nonexistent_script.py") == "Other"
 
 
 if __name__ == "__main__":

@@ -138,8 +138,8 @@ class TestMapServicesToScripts:
         assert isinstance(result, dict)
         assert "Amazon Elastic Compute Cloud" in result
         assert "Amazon Simple Storage Service" in result
-        assert "ec2-export.py" in result["Amazon Elastic Compute Cloud"]
-        assert "s3-export.py" in result["Amazon Simple Storage Service"]
+        assert "ec2_export.py" in result["Amazon Elastic Compute Cloud"]
+        assert "s3_export.py" in result["Amazon Simple Storage Service"]
 
     def test_map_with_aliases(self):
         """Test that aliases are resolved."""
@@ -193,47 +193,47 @@ class TestGenerateRecommendations:
         assert "all_scripts" in result
         # Should include always-run scripts
         assert len(result["all_scripts"]) > 0
-        assert "iam-comprehensive-export.py" in result["all_scripts"]
-        assert "cloudtrail-export.py" in result["all_scripts"]
+        assert "iam_comprehensive_export.py" in result["all_scripts"]
+        assert "cloudtrail_export.py" in result["all_scripts"]
 
     def test_generate_without_always_run(self):
         """Test excluding always-run scripts."""
-        service_map = {"Amazon Elastic Compute Cloud": ["ec2-export.py"]}
+        service_map = {"Amazon Elastic Compute Cloud": ["ec2_export.py"]}
         result = generate_recommendations(service_map, include_always_run=False)
 
         assert result is not None
         assert "all_scripts" in result
         # Should only have ec2-export.py
-        assert "ec2-export.py" in result["all_scripts"]
+        assert "ec2_export.py" in result["all_scripts"]
         # Should not have always-run scripts
-        assert "iam-comprehensive-export.py" not in result["all_scripts"]
+        assert "iam_comprehensive_export.py" not in result["all_scripts"]
 
     def test_generate_with_services(self):
         """Test recommendations with actual services."""
         service_map = {
-            "Amazon Elastic Compute Cloud": ["ec2-export.py", "ami-export.py"],
-            "Amazon Simple Storage Service": ["s3-export.py"],
+            "Amazon Elastic Compute Cloud": ["ec2_export.py", "ami_export.py"],
+            "Amazon Simple Storage Service": ["s3_export.py"],
         }
         result = generate_recommendations(service_map, include_always_run=False)
 
         assert result["service_count"] == 2
         assert result["script_count"] == 3
-        assert "ec2-export.py" in result["all_scripts"]
-        assert "ami-export.py" in result["all_scripts"]
-        assert "s3-export.py" in result["all_scripts"]
+        assert "ec2_export.py" in result["all_scripts"]
+        assert "ami_export.py" in result["all_scripts"]
+        assert "s3_export.py" in result["all_scripts"]
 
     def test_generate_deduplicates_scripts(self):
         """Test that duplicate scripts are removed."""
         service_map = {
-            "Service1": ["ec2-export.py", "s3-export.py"],
-            "Service2": ["ec2-export.py"],  # Duplicate
+            "Service1": ["ec2_export.py", "s3_export.py"],
+            "Service2": ["ec2_export.py"],  # Duplicate
         }
         result = generate_recommendations(service_map, include_always_run=False)
 
         # Should only count ec2-export.py once
         assert result["script_count"] == 2
         script_list = list(result["all_scripts"])
-        assert script_list.count("ec2-export.py") == 1
+        assert script_list.count("ec2_export.py") == 1
 
     def test_generate_has_all_expected_fields(self):
         """Test that recommendations have all expected fields."""
@@ -321,9 +321,9 @@ class TestServiceAnalyzerIntegration:
 
         assert recommendations["service_count"] == 2
         assert recommendations["script_count"] > 2  # Scripts + always-run
-        assert "ec2-export.py" in recommendations["all_scripts"]
-        assert "s3-export.py" in recommendations["all_scripts"]
-        assert "iam-comprehensive-export.py" in recommendations["all_scripts"]
+        assert "ec2_export.py" in recommendations["all_scripts"]
+        assert "s3_export.py" in recommendations["all_scripts"]
+        assert "iam_comprehensive_export.py" in recommendations["all_scripts"]
 
 
 if __name__ == "__main__":
