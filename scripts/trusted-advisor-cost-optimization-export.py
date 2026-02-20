@@ -398,6 +398,12 @@ def main():
     Main function to execute the script.
     """
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("trustedadvisor", partition):
+            utils.log_warning("Trusted Advisor is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         # Check and install dependencies
         check_and_install_dependencies()
 

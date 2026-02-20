@@ -311,6 +311,12 @@ def main():
     Main function to execute the script.
     """
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("cost-optimization-hub", partition):
+            utils.log_warning("Cost Optimization Hub is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         check_and_install_dependencies()
 
         import pandas as pd

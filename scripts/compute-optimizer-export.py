@@ -569,6 +569,12 @@ def main():
     Main function to run the script.
     """
     try:
+        # Check partition availability
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("compute-optimizer", partition):
+            utils.log_warning("Compute Optimizer is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
