@@ -6,7 +6,7 @@
 ===========================
 
 Title: StratusScan Configuration Tool
-Version: v2.0.0
+Version: v0.1.0
 Date: DEC-24-2024
 
 Description:
@@ -54,6 +54,13 @@ except ImportError:
     class NoCredentialsError(Exception):
         pass
 
+# Import shared utilities (provides FIPS-aware get_boto3_client and detect_partition)
+try:
+    import utils
+except ImportError:
+    sys.path.append(str(Path(__file__).parent))
+    import utils
+
 # ============================================================================
 # GLOBAL STATE (for background checks)
 # ============================================================================
@@ -74,21 +81,9 @@ def detect_aws_partition() -> Tuple[str, str]:
     Returns:
         tuple: (partition, default_region) - e.g., ('aws', 'us-east-1') or ('aws-us-gov', 'us-gov-west-1')
     """
-    if not BOTO3_AVAILABLE:
-        return 'aws', 'us-east-1'
-
-    try:
-        sts = boto3.client('sts')
-        identity = sts.get_caller_identity()
-        arn = identity.get('Arn', '')
-
-        if 'aws-us-gov' in arn:
-            return 'aws-us-gov', 'us-gov-west-1'
-        else:
-            return 'aws', 'us-east-1'
-    except:
-        # Default to commercial if detection fails
-        return 'aws', 'us-east-1'
+    partition = utils.detect_partition()
+    default_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+    return partition, default_region
 
 def get_aws_identity() -> Optional[Dict]:
     """
@@ -106,9 +101,9 @@ def get_aws_identity() -> Optional[Dict]:
         return None
 
     try:
-        sts = boto3.client('sts')
-        identity = sts.get_caller_identity()
         partition, default_region = detect_aws_partition()
+        sts = utils.get_boto3_client('sts', default_region)
+        identity = sts.get_caller_identity()
 
         _aws_identity = {
             'arn': identity.get('Arn', 'Unknown'),
@@ -119,7 +114,7 @@ def get_aws_identity() -> Optional[Dict]:
             'default_region': default_region
         }
         return _aws_identity
-    except:
+    except Exception:
         return None
 
 # ============================================================================
@@ -220,19 +215,19 @@ def check_permissions_silent() -> Dict:
     # Simplified permission tests (subset for speed)
     permission_tests = {
         'sts:GetCallerIdentity': {
-            'test_function': lambda: boto3.client('sts').get_caller_identity(),
+            'test_function': lambda: utils.get_boto3_client('sts', test_region).get_caller_identity(),
             'required': True
         },
         'ec2:DescribeInstances': {
-            'test_function': lambda: boto3.client('ec2', region_name=test_region).describe_instances(MaxResults=5),
+            'test_function': lambda: utils.get_boto3_client('ec2', test_region).describe_instances(MaxResults=5),
             'required': True
         },
         's3:ListBuckets': {
-            'test_function': lambda: boto3.client('s3').list_buckets(),
+            'test_function': lambda: utils.get_boto3_client('s3', test_region).list_buckets(),
             'required': True
         },
         'iam:ListUsers': {
-            'test_function': lambda: boto3.client('iam').list_users(MaxItems=5),
+            'test_function': lambda: utils.get_boto3_client('iam', test_region).list_users(MaxItems=5),
             'required': True
         }
     }
@@ -249,7 +244,7 @@ def check_permissions_silent() -> Dict:
                 required_passed += 1
             else:
                 optional_passed += 1
-        except:
+        except Exception:
             if config['required']:
                 required_failed += 1
             else:
@@ -413,7 +408,7 @@ def get_config_status(config: Dict, config_path: Path) -> str:
         mtime = config_path.stat().st_mtime
         mod_date = datetime.fromtimestamp(mtime).strftime("%b %d")
         return f"✅ OK (Updated {mod_date})"
-    except:
+    except OSError:
         return "✅ OK"
 
 # ============================================================================
@@ -450,7 +445,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Header
     print("\n")
-    print_box("STRATUSSCAN CONFIGURATION TOOL v2.0.0", 70)
+    print_box("STRATUSSCAN CONFIGURATION TOOL v0.1.0", 70)
 
     # Status box
     print("╔" + "═" * 68 + "╗")
@@ -1354,7 +1349,7 @@ if __name__ == "__main__":
             sys.exit(0 if success else 1)
 
         elif arg in ['--help', '-h']:
-            print("StratusScan Configuration Tool v2.0.0")
+            print("StratusScan Configuration Tool v0.1.0")
             print("\nUsage:")
             print("  python configure.py                              # Interactive dashboard")
             print("  python configure.py --deps                       # Dependency check only")

@@ -7,7 +7,7 @@ Uses questionary library for rich checkbox/menu navigation.
 
 import os
 import sys
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # Add parent directory to path for utils import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -47,7 +47,7 @@ from .mapping import SCRIPT_CATEGORIES, ALWAYS_RUN_SCRIPTS
 class SmartScanSelector:
     """Interactive selector for Smart Scan script recommendations."""
 
-    def __init__(self, recommendations: Dict[str, any]):
+    def __init__(self, recommendations: Dict[str, Any]):
         """
         Initialize the selector with recommendations.
 
@@ -455,7 +455,7 @@ class SmartScanSelector:
                 return None
 
 
-def interactive_select(recommendations: Dict[str, any]) -> Optional[Set[str]]:
+def interactive_select(recommendations: Dict[str, Any]) -> Optional[Set[str]]:
     """
     Run interactive script selection.
 

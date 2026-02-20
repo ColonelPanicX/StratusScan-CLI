@@ -326,7 +326,7 @@ $ python scripts/s3-accesspoints-export.py
 ====================================================================
 AWS S3 ACCESS POINTS COMPREHENSIVE EXPORT SCRIPT
 ====================================================================
-Version: v1.0.0                       Date: NOV-13-2025
+Version: v0.1.0                       Date: NOV-13-2025
 Environment: AWS Commercial
 ====================================================================
 Account ID: 123456789012

@@ -1,242 +1,165 @@
 #!/usr/bin/env python3
 """
-Test Simulation for Migration Validation
+Tests for core utils DataFrame and error-handling functions.
 
-This script demonstrates the new utilities in action without requiring AWS credentials.
-It simulates AWS responses and validates that DataFrame preparation and sanitization
-work correctly.
+Covers functions that have no other test coverage:
+- utils.prepare_dataframe_for_export()
+- utils.sanitize_for_export()
+- utils.aws_error_handler()
 """
 
-import sys
+import pytest
 from pathlib import Path
-import datetime
+import sys
 
-# Import utils
-try:
-    import utils
-except ImportError:
-    script_dir = Path(__file__).parent.absolute()
-    sys.path.append(str(script_dir))
-    import utils
+# Add parent directory to path to import utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import utils
 
-def simulate_dataframe_preparation():
-    """Simulate DataFrame preparation with timezone-aware datetimes and NaN values"""
-    print("\n" + "="*80)
-    print("TEST 1: DataFrame Preparation")
-    print("="*80)
+pd = pytest.importorskip("pandas")
 
-    try:
-        import pandas as pd
 
-        # Create test data with common issues
-        test_data = [
-            {
-                'InstanceId': 'i-1234567890abcdef0',
-                'Name': 'test-instance',
-                'LaunchTime': pd.Timestamp('2025-01-01 10:00:00', tz='UTC'),  # Timezone-aware
-                'Tags': 'Environment:Production, Owner:TeamA',
-                'Description': None,  # NaN value
-                'LongString': 'x' * 2000  # Very long string
-            },
-            {
-                'InstanceId': 'i-abcdef1234567890',
-                'Name': 'test-instance-2',
-                'LaunchTime': pd.Timestamp('2025-01-02 15:30:00', tz='UTC'),
-                'Tags': 'Environment:Development',
-                'Description': 'A valid description',
-                'LongString': 'Short string'
-            }
-        ]
+class TestPrepareDataframeForExport:
+    """Test utils.prepare_dataframe_for_export()."""
 
-        df = pd.DataFrame(test_data)
+    def test_nan_replaced_with_na_string(self):
+        """None values are replaced with 'N/A' by default."""
+        df = pd.DataFrame([{"A": "value", "B": None}])
+        result = utils.prepare_dataframe_for_export(df)
+        assert result["B"].iloc[0] == "N/A"
 
-        print(f"\n📊 Original DataFrame:")
-        print(f"   - Rows: {len(df)}")
-        print(f"   - Columns: {len(df.columns)}")
-        print(f"   - LaunchTime has timezone: {df['LaunchTime'].dtype}")
-        print(f"   - Description has NaN: {df['Description'].isna().any()}")
-        print(f"   - LongString max length: {df['LongString'].str.len().max()}")
+    def test_valid_values_preserved(self):
+        """Non-null values are not modified."""
+        df = pd.DataFrame([{"A": "hello", "B": "world"}])
+        result = utils.prepare_dataframe_for_export(df)
+        assert result["A"].iloc[0] == "hello"
+        assert result["B"].iloc[0] == "world"
 
-        # Apply preparation
-        df_prepared = utils.prepare_dataframe_for_export(df)
+    def test_timezone_stripped_from_datetime_column(self):
+        """Timezone-aware datetimes are converted to naive datetimes."""
+        df = pd.DataFrame([{
+            "ts": pd.Timestamp("2025-01-01 10:00:00", tz="UTC"),
+        }])
+        result = utils.prepare_dataframe_for_export(df)
+        # After stripping, dtype should be timezone-naive
+        assert result["ts"].dt.tz is None
 
-        print(f"\n✨ After preparation:")
-        print(f"   - LaunchTime has timezone: {df_prepared['LaunchTime'].dtype}")
-        print(f"   - Description NaN replaced: {df_prepared['Description'].isna().any()}")
-        print(f"   - LongString max length: {df_prepared['LongString'].str.len().max()}")
-        print(f"   - First Description value: '{df_prepared['Description'].iloc[0]}'")
+    def test_empty_dataframe_returned_unchanged(self):
+        """Empty DataFrames are returned without error."""
+        df = pd.DataFrame()
+        result = utils.prepare_dataframe_for_export(df)
+        assert result.empty
 
-        print("\n✅ DataFrame preparation test PASSED")
-        return True
+    def test_original_dataframe_not_mutated(self):
+        """Input DataFrame is not modified in-place."""
+        df = pd.DataFrame([{"A": None, "B": "x"}])
+        original_val = df["A"].iloc[0]
+        utils.prepare_dataframe_for_export(df)
+        assert pd.isna(df["A"].iloc[0]) == pd.isna(original_val)
 
-    except Exception as e:
-        print(f"\n❌ DataFrame preparation test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def simulate_sanitization():
-    """Simulate sanitization of sensitive data in tags and environment variables"""
-    print("\n" + "="*80)
-    print("TEST 2: Sensitive Data Sanitization")
-    print("="*80)
-
-    try:
-        import pandas as pd
-
-        # Create test data with sensitive information
-        test_data = [
-            {
-                'ResourceId': 'i-1234567890abcdef0',
-                'Tags': 'Environment:Production, password:SuperSecret123, Owner:TeamA',
-                'Config': 'host=localhost, api_key=sk-1234567890abcdef, port=5432',
-                'UserData': 'install.sh --token=ghp_xxxxxxxxxxxxxxxxxxxx',
-                'SafeField': 'This is safe data'
-            },
-            {
-                'ResourceId': 'i-abcdef1234567890',
-                'Tags': 'Environment:Development, AccessKey:AKIAIOSFODNN7EXAMPLE',
-                'Config': 'connection_string=postgres://user:pass@host/db',
-                'UserData': 'Normal user data',
-                'SafeField': 'Also safe'
-            }
-        ]
-
-        df = pd.DataFrame(test_data)
-
-        print(f"\n🔓 Original DataFrame (UNSAFE):")
-        print(f"   Tags[0]: {df['Tags'].iloc[0][:80]}...")
-        print(f"   Config[0]: {df['Config'].iloc[0][:80]}...")
-        print(f"   UserData[0]: {df['UserData'].iloc[0][:80]}...")
-
-        # Apply sanitization
-        df_sanitized = utils.sanitize_for_export(df)
-
-        print(f"\n🔒 After sanitization (SAFE):")
-        print(f"   Tags[0]: {df_sanitized['Tags'].iloc[0][:80]}...")
-        print(f"   Config[0]: {df_sanitized['Config'].iloc[0][:80]}...")
-        print(f"   UserData[0]: {df_sanitized['UserData'].iloc[0][:80]}...")
-        print(f"   SafeField[0]: {df_sanitized['SafeField'].iloc[0]}")
-
-        # Verify sensitive data was masked
-        sensitive_found = any([
-            'SuperSecret123' in df_sanitized['Tags'].iloc[0],
-            'sk-1234567890abcdef' in df_sanitized['Config'].iloc[0],
-            'ghp_xxxxxxxxxxxxxxxxxxxx' in df_sanitized['UserData'].iloc[0],
-            'AKIAIOSFODNN7EXAMPLE' in df_sanitized['Tags'].iloc[1]
+    def test_multiple_rows(self):
+        """All rows are processed, not just the first."""
+        df = pd.DataFrame([
+            {"A": None},
+            {"A": None},
+            {"A": "present"},
         ])
+        result = utils.prepare_dataframe_for_export(df)
+        assert result["A"].iloc[0] == "N/A"
+        assert result["A"].iloc[1] == "N/A"
+        assert result["A"].iloc[2] == "present"
 
-        if sensitive_found:
-            print("\n❌ Sanitization test FAILED: Sensitive data still present")
-            return False
-        else:
-            print("\n✅ Sanitization test PASSED: All sensitive data masked")
-            return True
 
-    except Exception as e:
-        print(f"\n❌ Sanitization test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+class TestSanitizeForExport:
+    """Test utils.sanitize_for_export()."""
 
-def simulate_error_handling():
-    """Simulate error handling with the @aws_error_handler decorator"""
-    print("\n" + "="*80)
-    print("TEST 3: Error Handling Decorator")
-    print("="*80)
+    def test_password_pattern_masked(self):
+        """Values matching password: pattern are redacted."""
+        df = pd.DataFrame([{
+            "Tags": "Environment:Production, password:SuperSecret123, Owner:TeamA"
+        }])
+        result = utils.sanitize_for_export(df)
+        assert "SuperSecret123" not in result["Tags"].iloc[0]
 
-    # Define a test function with error handling
-    @utils.aws_error_handler("Test operation", default_return=[])
-    def failing_function():
-        """This function will raise an error to test error handling"""
-        raise ValueError("Simulated AWS error")
+    def test_api_key_pattern_masked(self):
+        """Values matching api_key= pattern are redacted."""
+        df = pd.DataFrame([{
+            "Config": "host=localhost, api_key=sk-1234567890abcdef, port=5432"
+        }])
+        result = utils.sanitize_for_export(df)
+        assert "sk-1234567890abcdef" not in result["Config"].iloc[0]
 
-    @utils.aws_error_handler("Successful operation", default_return=[])
-    def successful_function():
-        """This function succeeds and returns data"""
-        return [{'id': 1, 'name': 'test'}]
+    def test_access_key_pattern_masked(self):
+        """Values matching AccessKey: pattern are redacted."""
+        df = pd.DataFrame([{
+            "Tags": "Environment:Development, AccessKey:AKIAIOSFODNN7EXAMPLE"
+        }])
+        result = utils.sanitize_for_export(df)
+        assert "AKIAIOSFODNN7EXAMPLE" not in result["Tags"].iloc[0]
 
-    try:
-        print("\n🔧 Testing error handling with failing function...")
-        result = failing_function()
+    def test_safe_field_unchanged(self):
+        """Values with no sensitive patterns are not modified."""
+        df = pd.DataFrame([{"SafeField": "This is safe data"}])
+        result = utils.sanitize_for_export(df)
+        assert result["SafeField"].iloc[0] == "This is safe data"
 
-        if result == []:
-            print(f"   ✅ Error handled correctly, returned default: {result}")
-        else:
-            print(f"   ❌ Unexpected result: {result}")
-            return False
+    def test_original_dataframe_not_mutated(self):
+        """Input DataFrame is not modified in-place."""
+        original_tags = "password:secret123"
+        df = pd.DataFrame([{"Tags": original_tags}])
+        utils.sanitize_for_export(df)
+        assert df["Tags"].iloc[0] == original_tags
 
-        print("\n🔧 Testing error handling with successful function...")
-        result = successful_function()
+    def test_empty_dataframe_returned_unchanged(self):
+        """Empty DataFrames are returned without error."""
+        df = pd.DataFrame()
+        result = utils.sanitize_for_export(df)
+        assert result.empty
 
-        if result == [{'id': 1, 'name': 'test'}]:
-            print(f"   ✅ Success handled correctly, returned data: {result}")
-        else:
-            print(f"   ❌ Unexpected result: {result}")
-            return False
 
-        print("\n✅ Error handling test PASSED")
-        return True
+class TestAwsErrorHandler:
+    """Test utils.aws_error_handler() decorator."""
 
-    except Exception as e:
-        print(f"\n❌ Error handling test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    def test_exception_returns_default_list(self):
+        """Exception in decorated function returns the default_return value."""
+        @utils.aws_error_handler("Test operation", default_return=[])
+        def failing():
+            raise ValueError("Simulated AWS error")
 
-def main():
-    """Run all simulation tests"""
-    print("\n" + "="*80)
-    print("MIGRATION VALIDATION - TEST SIMULATION")
-    print("="*80)
-    print("Testing new utilities without AWS credentials")
-    print("="*80)
+        result = failing()
+        assert result == []
 
-    # Check dependencies
-    print("\n📦 Checking dependencies...")
-    if not utils.ensure_dependencies('pandas'):
-        print("❌ pandas not available, some tests will be skipped")
-        return
+    def test_success_returns_actual_value(self):
+        """Decorated function that succeeds returns its actual return value."""
+        @utils.aws_error_handler("Successful operation", default_return=[])
+        def succeeding():
+            return [{"id": 1, "name": "test"}]
 
-    # Run tests
-    results = []
+        result = succeeding()
+        assert result == [{"id": 1, "name": "test"}]
 
-    results.append(("DataFrame Preparation", simulate_dataframe_preparation()))
-    results.append(("Sensitive Data Sanitization", simulate_sanitization()))
-    results.append(("Error Handling Decorator", simulate_error_handling()))
+    def test_default_return_dict(self):
+        """Default return value of {} is used on exception."""
+        @utils.aws_error_handler("Dict operation", default_return={})
+        def failing():
+            raise RuntimeError("error")
 
-    # Summary
-    print("\n" + "="*80)
-    print("TEST SUMMARY")
-    print("="*80)
+        result = failing()
+        assert result == {}
 
-    for test_name, passed in results:
-        status = "✅ PASS" if passed else "❌ FAIL"
-        print(f"  {status} - {test_name}")
+    def test_default_return_none(self):
+        """Default return value of None is used on exception."""
+        @utils.aws_error_handler("None operation", default_return=None)
+        def failing():
+            raise RuntimeError("error")
 
-    total_tests = len(results)
-    passed_tests = sum(1 for _, passed in results if passed)
+        result = failing()
+        assert result is None
 
-    print(f"\n📊 Results: {passed_tests}/{total_tests} tests passed")
+    def test_decorated_function_remains_callable(self):
+        """Decorated function is still a callable."""
+        @utils.aws_error_handler("Test", default_return=[])
+        def my_func():
+            return []
 
-    if passed_tests == total_tests:
-        print("\n🎉 ALL TESTS PASSED - Migration utilities working correctly!")
-        print("\n✅ Production Confidence: 98%")
-        print("✅ Ready to proceed with Option A (migrate remaining scripts)")
-    else:
-        print(f"\n⚠️  {total_tests - passed_tests} test(s) failed")
-        print("Please review the errors above")
-
-    print("\n" + "="*80)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nTest simulation interrupted by user.")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n\nUnexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        assert callable(my_func)

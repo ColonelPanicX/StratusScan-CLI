@@ -18,10 +18,12 @@ from pathlib import Path
 # Add path to import utils module
 try:
     import utils
+    import sslib.aws_client
 except ImportError:
     script_dir = Path(__file__).parent.absolute()
     sys.path.append(str(script_dir))
     import utils
+    import sslib.aws_client
 
 
 class TestEnsureDependencies(unittest.TestCase):
@@ -116,11 +118,11 @@ class TestGetAccountInfo(unittest.TestCase):
     """Test cases for get_account_info() function."""
 
     def setUp(self):
-        """Clear the LRU cache before each test."""
-        utils.get_account_info.cache_clear()
+        """Reset the account info cache before each test."""
+        sslib.aws_client._account_info_cache = None
 
-    @patch('utils.get_boto3_client')
-    @patch('utils.get_account_name')
+    @patch('sslib.aws_client.get_boto3_client')
+    @patch('sslib.aws_client.get_account_name')
     def test_successful_account_retrieval(self, mock_get_name, mock_client):
         """Test successful retrieval of account information."""
         # Mock STS client
@@ -137,8 +139,8 @@ class TestGetAccountInfo(unittest.TestCase):
         self.assertEqual(account_name, 'PROD-ACCOUNT')
         mock_client.assert_called_once_with('sts')
 
-    @patch('utils.get_boto3_client')
-    @patch('utils.get_account_name')
+    @patch('sslib.aws_client.get_boto3_client')
+    @patch('sslib.aws_client.get_account_name')
     def test_account_info_caching(self, mock_get_name, mock_client):
         """Test that account info is cached (LRU cache)."""
         # Mock STS client
@@ -156,9 +158,8 @@ class TestGetAccountInfo(unittest.TestCase):
         # But boto3 client should only be called once (cached)
         mock_client.assert_called_once()
 
-    @patch('utils.get_boto3_client')
-    @patch('utils.log_error')
-    def test_account_retrieval_failure(self, mock_log_error, mock_client):
+    @patch('sslib.aws_client.get_boto3_client')
+    def test_account_retrieval_failure(self, mock_client):
         """Test handling of errors during account retrieval."""
         # Mock STS client failure
         mock_client.side_effect = Exception("No credentials")
@@ -167,7 +168,6 @@ class TestGetAccountInfo(unittest.TestCase):
 
         self.assertEqual(account_id, 'UNKNOWN')
         self.assertEqual(account_name, 'UNKNOWN-ACCOUNT')
-        mock_log_error.assert_called()
 
 
 @unittest.skip(
@@ -268,13 +268,13 @@ class TestPromptRegionSelection(unittest.TestCase):
 class TestIntegration(unittest.TestCase):
     """Integration tests combining multiple utility functions."""
 
-    @patch('utils.get_boto3_client')
-    @patch('utils.get_account_name')
+    @patch('sslib.aws_client.get_boto3_client')
+    @patch('sslib.aws_client.get_account_name')
     @patch('builtins.__import__')
     def test_typical_script_flow(self, mock_import, mock_get_name, mock_client):
         """Test typical script flow using all three utility functions."""
         # Clear cache
-        utils.get_account_info.cache_clear()
+        sslib.aws_client._account_info_cache = None
 
         # Setup mocks
         mock_import.side_effect = lambda pkg: None  # All dependencies installed

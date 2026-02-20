@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # Add parent directory to path for utils import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -163,8 +163,7 @@ class ScriptExecutor:
                 )
             else:
                 utils.log_error(
-                    f"✗ {script_name} failed with code {result.returncode}",
-                    Exception(error_message or "Script execution failed"),
+                    f"✗ {script_name} failed with code {result.returncode}: {error_message or 'Script execution failed'}",
                 )
 
             return execution_result
@@ -213,7 +212,8 @@ class ScriptExecutor:
             output_dir = utils.get_output_dir()
             snapshot_time = _time.time()
             return ({str(p) for p in output_dir.glob("*.xlsx")}, snapshot_time)
-        except Exception:
+        except Exception as e:
+            utils.log_debug(f"Output snapshot failed: {e}")
             return (set(), 0.0)
 
     def _find_output_file(self, script_name: str, pre_run_files=None) -> Optional[str]:
@@ -261,7 +261,8 @@ class ScriptExecutor:
             xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return str(xlsx_files[0])
 
-        except Exception:
+        except Exception as e:
+            utils.log_debug(f"Output detection failed: {e}")
             return None
 
     def _show_progress_header(self) -> None:
@@ -344,7 +345,7 @@ class ScriptExecutor:
         print("=" * 80)
         print()
 
-    def execute_all(self, show_progress: bool = True) -> Dict[str, any]:
+    def execute_all(self, show_progress: bool = True) -> Dict[str, Any]:
         """
         Execute all scripts in sequence.
 
@@ -482,7 +483,7 @@ class ScriptExecutor:
 
 def execute_scripts(
     scripts: Set[str], show_progress: bool = True, save_log: bool = False
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Execute multiple scripts in batch.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stratusscan-cli"
-version = "3.1.0"
+version = "0.1.0"
 description = "AWS defensive security scanning and auditing tool for resource exports"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -79,16 +79,16 @@ stratusscan = "stratusscan:main"
 stratusscan-configure = "configure:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/stratusscan-cli"
-Documentation = "https://github.com/yourusername/stratusscan-cli#readme"
-Repository = "https://github.com/yourusername/stratusscan-cli"
-Issues = "https://github.com/yourusername/stratusscan-cli/issues"
+Homepage = "https://github.com/ColonelPanicX/StratusScan-CLI"
+Documentation = "https://github.com/ColonelPanicX/StratusScan-CLI#readme"
+Repository = "https://github.com/ColonelPanicX/StratusScan-CLI"
+Issues = "https://github.com/ColonelPanicX/StratusScan-CLI/issues"
 
 # ===== Tool Configuration =====
 
 # Setuptools configuration
 [tool.setuptools]
-packages = ["scripts"]
+packages = ["sslib", "scripts.smart_scan"]
 include-package-data = true
 
 [tool.setuptools.package-data]
@@ -183,6 +183,7 @@ python_functions = ["test_*"]
 addopts = [
     "-v",                           # Verbose output
     "--strict-markers",             # Error on unknown markers
+    "-m", "not aws",                # Skip live-AWS tests by default (use -m aws to run them)
     "--cov=.",                      # Coverage for all code
     "--cov-report=html",            # HTML coverage report
     "--cov-report=term-missing",    # Terminal report with missing lines
