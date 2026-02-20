@@ -5,7 +5,18 @@ This package analyzes services-in-use export output and recommends
 relevant StratusScan export scripts to run based on discovered services.
 """
 
-__version__ = "0.1.0"
+import sys
+from pathlib import Path
+
+try:
+    import utils
+except ImportError:
+    _script_dir = Path(__file__).parent.absolute()
+    # smart_scan is inside scripts/, so go two levels up for project root
+    sys.path.append(str(_script_dir.parent.parent))
+    import utils
+
+__version__ = utils.get_version()
 
 from .analyzer import (
     find_latest_services_export,

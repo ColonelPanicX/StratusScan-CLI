@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS Cost Optimization Hub Export
-Version: v0.1.0
 Date: OCT-08-2025
 
 Description:
@@ -351,8 +350,7 @@ def main():
         print("  - AWS Cost Explorer")
         print("="*70)
 
-        confirm = input("\nHave you enabled Cost Optimization Hub? (y/n): ").lower()
-        if confirm != 'y':
+        if not utils.prompt_for_confirmation("Have you enabled Cost Optimization Hub?", default=False):
             print("Please enable Cost Optimization Hub first:")
             print("  1. Go to AWS Billing and Cost Management Console")
             print("  2. Select 'Cost Optimization Hub' from the left menu")

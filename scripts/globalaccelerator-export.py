@@ -5,7 +5,6 @@
 ===========================
 
 Title: AWS Global Accelerator Export Tool
-Version: v0.1.0
 Date: NOV-11-2025
 
 Description:
@@ -64,7 +63,6 @@ def print_title():
     print("====================================================================")
     print("           AWS GLOBAL ACCELERATOR EXPORT TOOL")
     print("====================================================================")
-    print("Version: v0.1.0                        Date: NOV-11-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
@@ -658,8 +656,7 @@ def export_globalaccelerator_data(account_id: str, account_name: str):
     print("If you don't have Global Accelerator configured, all sheets will be empty.")
     print()
 
-    proceed = input("Continue with export? (y/n): ").lower()
-    if proceed != 'y':
+    if not utils.prompt_for_confirmation("Continue with export?"):
         print("Export cancelled.")
         return
 
@@ -790,8 +787,7 @@ def main():
 
         # Check if account name is unknown
         if account_name == "unknown":
-            proceed = input("Unable to determine account name. Proceed anyway? (y/n): ").lower()
-            if proceed != 'y':
+            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
                 sys.exit(0)
 

@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS DataSync Comprehensive Export Script
-Version: v0.1.0
 Date: NOV-13-2025
 
 Description:

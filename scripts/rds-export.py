@@ -7,7 +7,6 @@
 ===========================
 
 Title: AWS RDS Instance Export Script
-Version: v0.1.0
 Date: NOV-15-2025
 
 Description:
@@ -601,83 +600,7 @@ def main():
             sys.exit(0)
     
     # Detect partition and set partition-aware example regions
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
-
-    # Display standardized region selection menu
-    print("\n" + "=" * 68)
-    print("REGION SELECTION")
-    print("=" * 68)
-    print()
-    print("Please select which AWS regions to scan:")
-    print()
-    print("1. Default Regions (recommended for most use cases)")
-    print(f"   └─ {example_regions}")
-    print()
-    print("2. All Available Regions")
-    print("   └─ Scans all regions (slower, more comprehensive)")
-    print()
-    print("3. Specific Region")
-    print("   └─ Choose a single region to scan")
-    print()
-
-    # Get user selection with validation
-    while True:
-        try:
-            selection = input("Enter your selection (1-3): ").strip()
-            selection_int = int(selection)
-            if 1 <= selection_int <= 3:
-                break
-            else:
-                print("Please enter a number between 1 and 3.")
-        except ValueError:
-            print("Please enter a valid number (1-3).")
-
-    # Get regions based on selection
-    all_available_regions = utils.get_aws_regions()
-    default_regions = utils.get_partition_regions(partition, all_regions=False)
-
-    # Process selection
-    if selection_int == 1:
-        # Default regions
-        regions_to_scan = default_regions
-        region_filter = None
-        region_text = f"default AWS regions ({len(regions_to_scan)} regions)"
-    elif selection_int == 2:
-        # All regions
-        regions_to_scan = all_available_regions
-        region_filter = None
-        region_text = f"all AWS regions ({len(regions_to_scan)} regions)"
-    else:  # selection_int == 3
-        # Specific region - show numbered list
-        print()
-        print("=" * 68)
-        print("AVAILABLE REGIONS")
-        print("=" * 68)
-        for idx, region in enumerate(all_available_regions, 1):
-            print(f"{idx}. {region}")
-        print()
-
-        while True:
-            try:
-                region_choice = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
-                region_idx = int(region_choice) - 1
-                if 0 <= region_idx < len(all_available_regions):
-                    selected_region = all_available_regions[region_idx]
-                    regions_to_scan = [selected_region]
-                    region_filter = selected_region
-                    region_text = f"AWS region {selected_region}"
-                    break
-                else:
-                    print(f"Please enter a number between 1 and {len(all_available_regions)}.")
-            except ValueError:
-                print("Please enter a valid number.")
-
-    utils.log_info(f"Scanning {region_text}: {', '.join(regions_to_scan)}")
-    
+    regions = utils.prompt_region_selection()
     # Initialize data collection list
     all_rds_instances = []
 

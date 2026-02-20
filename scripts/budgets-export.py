@@ -5,7 +5,6 @@
 ===========================
 
 Title: AWS Budgets Export Tool
-Version: v0.1.0
 Date: NOV-09-2025
 
 Description:
@@ -52,7 +51,6 @@ def print_title():
     print("====================================================================")
     print("                   AWS BUDGETS EXPORT TOOL")
     print("====================================================================")
-    print("Version: v0.1.0                        Date: NOV-09-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
@@ -385,8 +383,7 @@ def main():
 
         # Check if account name is unknown
         if account_name == "unknown":
-            proceed = input("Unable to determine account name. Proceed anyway? (y/n): ").lower()
-            if proceed != 'y':
+            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
                 sys.exit(0)
 

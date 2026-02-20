@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS IAM Roles Anywhere Export Script
-Version: v0.1.0
 Date: NOV-11-2025
 
 Description:
@@ -50,7 +49,6 @@ def print_title():
     print("====================================================================")
     print("AWS IAM ROLES ANYWHERE COMPREHENSIVE EXPORT")
     print("====================================================================")
-    print("Version: v0.1.0                       Date: NOV-11-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

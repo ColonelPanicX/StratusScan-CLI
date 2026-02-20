@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS Security Hub Information Collection Script
-Version: v0.1.0
 Date: SEP-25-2025
 
 Description:
@@ -80,7 +79,6 @@ def print_title():
     print("====================================================================")
     print("AWS SECURITY HUB INFORMATION COLLECTION")
     print("====================================================================")
-    print("Version: v0.1.0                       Date: SEP-25-2025")
     # Detect partition and set environment name
     partition = utils.detect_partition()
     partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"

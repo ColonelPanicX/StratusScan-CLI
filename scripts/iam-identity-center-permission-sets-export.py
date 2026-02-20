@@ -6,7 +6,6 @@
 ===========================
 
 Title: AWS Permission Sets Text Export Script
-Version: v0.1.0
 Date: SEP-26-2025
 
 Description:
