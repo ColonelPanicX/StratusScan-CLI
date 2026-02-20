@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # Add parent directory to path for utils import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -345,7 +345,7 @@ class ScriptExecutor:
         print("=" * 80)
         print()
 
-    def execute_all(self, show_progress: bool = True) -> Dict[str, any]:
+    def execute_all(self, show_progress: bool = True) -> Dict[str, Any]:
         """
         Execute all scripts in sequence.
 
@@ -483,7 +483,7 @@ class ScriptExecutor:
 
 def execute_scripts(
     scripts: Set[str], show_progress: bool = True, save_log: bool = False
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Execute multiple scripts in batch.
 
