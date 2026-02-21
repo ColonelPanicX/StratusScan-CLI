@@ -62,7 +62,7 @@ That's it! Select a resource to export from the menu and follow the prompts. Exp
 - **📋 Comprehensive Reports**: All-in-one reports for Compute, Storage, and Network resources
 
 ### Quality & Reliability
-- **✅ 75+ Automated Tests**: Comprehensive test coverage with pytest and CI/CD pipeline
+- **✅ 250+ Automated Tests**: Comprehensive test coverage with pytest
 - **🔧 Error Handling**: Standardized error handling with automatic retry and exponential backoff
 - **📝 Detailed Logging**: Complete audit trails with console and file output
 - **🔍 Type Safety**: Full type hints for improved IDE support and static analysis
@@ -188,9 +188,9 @@ Navigate through the hierarchical menu to select resources:
 Run individual export scripts directly:
 
 ```bash
-python scripts/ec2-export.py
-python scripts/route53-export.py
-python scripts/iam-comprehensive-export.py
+python scripts/ec2_export.py
+python scripts/route53_export.py
+python scripts/iam_comprehensive_export.py
 ```
 
 Each script will prompt for required information and save output to `output/`.
@@ -201,7 +201,7 @@ Each script will prompt for required information and save output to `output/`.
 
 #### How It Works
 
-1. **Service Discovery**: Run `services-in-use-export.py` to scan your AWS account
+1. **Service Discovery**: Run `services_in_use_export.py` to scan your AWS account
 2. **Automatic Analysis**: Smart Scan analyzes the export to identify which services you're using
 3. **Script Recommendations**: Get a curated list of export scripts matching your active services
 4. **Interactive Selection**: Choose which exports to run (or run all with Quick Scan)
@@ -211,26 +211,26 @@ Each script will prompt for required information and save output to `output/`.
 
 **Interactive Mode (Recommended)**:
 ```bash
-python scripts/services-in-use-export.py
+python scripts/services_in_use_export.py
 # After service discovery completes, you'll be prompted:
 # "Launch Smart Scan analyzer? (y/n):"
 ```
 
 **Automatic Smart Scan**:
 ```bash
-python scripts/services-in-use-export.py --smart-scan
+python scripts/services_in_use_export.py --smart-scan
 # Automatically launches Smart Scan after service discovery
 ```
 
 **Quick Scan (Full Automation)**:
 ```bash
-python scripts/services-in-use-export.py --smart-scan --quick-scan
+python scripts/services_in_use_export.py --smart-scan --quick-scan
 # Discovers services AND runs all recommended scripts automatically
 ```
 
 **Skip Smart Scan**:
 ```bash
-python scripts/services-in-use-export.py --no-smart-scan
+python scripts/services_in_use_export.py --no-smart-scan
 # Only run service discovery, skip Smart Scan prompt
 ```
 
@@ -258,7 +258,7 @@ When Smart Scan launches, you'll see a menu with these options:
 
 ```bash
 # 1. Discover active services
-$ python scripts/services-in-use-export.py --smart-scan
+$ python scripts/services_in_use_export.py --smart-scan
 
 # Smart Scan analyzes your environment...
 # Found 23 active services
@@ -274,9 +274,9 @@ Smart Scan Menu:
 # 3. Watch batch execution
 Executing Scripts
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1/31] (3%) ec2-export.py ✓ Success (2m 15s)
-[2/31] (6%) s3-export.py ✓ Success (1m 45s)
-[3/31] (10%) rds-export.py ✓ Success (3m 30s)
+[1/31] (3%) ec2_export.py ✓ Success (2m 15s)
+[2/31] (6%) s3_export.py ✓ Success (1m 45s)
+[3/31] (10%) rds_export.py ✓ Success (3m 30s)
 ...
 
 # 4. Review summary
@@ -570,8 +570,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 > before the 1.0.0 stable release. Breaking changes will be documented in the changelog.
 > All development happens on the `dev` branch.
 
-- ✅ **75+ Automated Tests** - Comprehensive test coverage
-- ✅ **CI/CD Pipeline** - GitHub Actions testing Python 3.9-3.12
+- ✅ **250+ Automated Tests** - Comprehensive test coverage
 - ✅ **Cost Estimation** - Built-in AWS cost calculators
 - ✅ **Type Safety** - Full type hints throughout codebase
 - ✅ **Security Scanning** - Pre-commit hooks with Bandit
