@@ -207,10 +207,9 @@ class ScriptExecutor:
         Returns:
             Tuple of (set of file path strings, epoch float of snapshot time)
         """
-        import time as _time
         try:
             output_dir = utils.get_output_dir()
-            snapshot_time = _time.time()
+            snapshot_time = time.time()
             return ({str(p) for p in output_dir.glob("*.xlsx")}, snapshot_time)
         except Exception as e:
             utils.log_debug(f"Output snapshot failed: {e}")

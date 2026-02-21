@@ -26,6 +26,7 @@ Features:
 """
 
 import os
+import platform
 import sys
 import datetime
 import json
@@ -38,6 +39,8 @@ from functools import wraps
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
+
+from openpyxl.utils import get_column_letter
 
 # Global logger instance
 logger = None
@@ -223,8 +226,6 @@ def prompt_region_selection(
             default_to_all=False
         )
     """
-    import sys
-
     # Automation mode: bypass interactive prompts when STRATUSSCAN_AUTO_RUN is set
     if is_auto_run():
         auto_regions = get_auto_regions()
@@ -544,9 +545,6 @@ def log_system_info() -> None:
     Log system information for debugging purposes.
     """
     current_logger = get_logger()
-    import platform
-    import sys
-
     current_logger.info("SYSTEM INFORMATION:")
     current_logger.info(f"  Platform: {platform.system()} {platform.release()}")
     current_logger.info(f"  Python version: {sys.version}")
@@ -762,6 +760,14 @@ def create_export_filename(
 
     return candidate
 
+def _adjust_column_widths(worksheet, df) -> None:
+    """Set Excel column widths to fit content (max 50 chars)."""
+    for i, column in enumerate(df.columns):
+        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+        column_width = min(column_width, 50)
+        worksheet.column_dimensions[get_column_letter(i + 1)].width = column_width
+
+
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_adjust_columns: bool = True, prepare: bool = False) -> Optional[str]:
     """
     Save a pandas DataFrame to an Excel file in the output directory.
@@ -799,15 +805,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
 
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
-                    worksheet = writer.sheets[sheet_name]
-                    for i, column in enumerate(df.columns):
-                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                        # Set a maximum column width to avoid extremely wide columns
-                        column_width = min(column_width, 50)
-                        # openpyxl column indices are 1-based
-                        from openpyxl.utils import get_column_letter
-                        column_letter = get_column_letter(i + 1)
-                        worksheet.column_dimensions[column_letter].width = column_width
+                    _adjust_column_widths(writer.sheets[sheet_name], df)
         else:
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
@@ -869,15 +867,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
 
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
-                    worksheet = writer.sheets[sheet_name]
-                    for i, column in enumerate(df.columns):
-                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                        # Set a maximum column width to avoid extremely wide columns
-                        column_width = min(column_width, 50)
-                        # openpyxl column indices are 1-based
-                        from openpyxl.utils import get_column_letter
-                        column_letter = get_column_letter(i + 1)
-                        worksheet.column_dimensions[column_letter].width = column_width
+                    _adjust_column_widths(writer.sheets[sheet_name], df)
         
         logger.info(f"Data successfully exported to: {output_path}")
         return str(output_path)
@@ -1402,9 +1392,8 @@ def sanitize_for_export(
         - Case-insensitive pattern matching
         - Processes only string (object) columns
     """
-    # Import pandas and re here to avoid requiring them at module load time
+    # Import pandas here to avoid requiring it at module load time
     import pandas as pd
-    import re
 
     # Handle empty DataFrame
     if df is None or df.empty:
