@@ -53,34 +53,6 @@ except ImportError:
 
 # Account info retrieval handled by utils.get_account_info()
 
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS IAM COMPREHENSIVE EXPORT")
-    print("====================================================================")
-
-    # Get account information using utils
-    account_id, account_name = utils.get_account_info()
-
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
 # Import functions from existing IAM scripts by copying their core logic
 
 def calculate_age_in_days(date_obj):
@@ -894,7 +866,7 @@ def main():
         import pandas as pd
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS IAM COMPREHENSIVE EXPORT")
 
         # Validate AWS credentials using utils
         is_valid, validated_account_id, error_message = utils.validate_aws_credentials()

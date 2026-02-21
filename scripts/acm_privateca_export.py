@@ -579,15 +579,7 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
-    print("\n" + "="*60)
-    print("ACM Private CA Export Tool")
-    print("="*60)
-
-    # Check dependencies
-    utils.ensure_dependencies('pandas', 'openpyxl')
-
-    # Get AWS account information
-    account_id, account_name = utils.get_account_info()
+    account_id, account_name = utils.print_script_banner("AWS ACM PRIVATE CA EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
         return

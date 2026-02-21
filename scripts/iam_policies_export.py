@@ -49,33 +49,6 @@ except ImportError:
 
 
 
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS IAM POLICY INFORMATION COLLECTION")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
 def calculate_days_since_updated(last_updated_date):
     """
     Calculate days since policy was last updated.
@@ -753,7 +726,7 @@ def main():
         import pandas as pd
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS IAM POLICY INFORMATION COLLECTION EXPORT")
 
         # Ask user about AWS managed policies
         include_aws_managed = input("\nInclude AWS managed policies in the export? (y/n): ").lower().strip() == 'y'

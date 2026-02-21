@@ -49,34 +49,6 @@ except ImportError:
 
 
 
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS IAM ROLE INFORMATION COLLECTION")
-    print("====================================================================")
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
 def calculate_days_since_last_used(last_used_date):
     """
     Calculate days since role was last used.
@@ -481,7 +453,7 @@ def main():
         import pandas as pd
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS IAM ROLE INFORMATION COLLECTION EXPORT")
 
         utils.log_info("Starting IAM role information collection from AWS...")
         print("====================================================================")

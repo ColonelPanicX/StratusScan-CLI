@@ -45,42 +45,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-def print_title():
-    """Print the title and header of the script to the console."""
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                    ")
-    print("====================================================================")
-    print("AWS VPC, SUBNET, NAT GATEWAY, PEERING, AND ELASTIC IP EXPORT TOOL")
-    print("====================================================================")
-
-    # Get the current AWS account ID and validate AWS environment
-    try:
-        # Create a new STS client to get the current account ID
-        sts_client = utils.get_boto3_client('sts')
-        # Call get-caller-identity to retrieve the account ID
-        account_id = sts_client.get_caller_identity().get('Account')
-
-        # Detect partition and set environment name
-        partition = utils.detect_partition()
-        partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-        # Validate we're in AWS
-        caller_arn = sts_client.get_caller_identity()['Arn']
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        print(f"Environment: {partition_name}")
-        print("====================================================================")
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print("Environment: Unknown (detection failed)")
-        print("====================================================================")
-        print("Could not determine account information.")
-        account_id = "unknown"
-        account_name = "unknown"
-
-    print("====================================================================")
-    return account_id, account_name
 @utils.aws_error_handler("Collecting VPC data for region", default_return=[])
 def collect_vpc_data_for_region(region):
     """
@@ -905,7 +869,7 @@ def main():
     """Main function to execute the script."""
     try:
         # Print title and get account information
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS VPC, SUBNET, NAT GATEWAY, PEERING, AND ELASTIC IP EXPORT")
 
         # Check and install dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):

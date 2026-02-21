@@ -50,33 +50,6 @@ except ImportError:
 
 
 
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS IAM IDENTITY CENTER COMPREHENSIVE COLLECTION")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
 @utils.aws_error_handler("Getting IAM Identity Center instance", default_return=(None, None))
 def get_identity_center_instance():
     """
@@ -997,7 +970,7 @@ def main():
         import pandas as pd
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS IAM IDENTITY CENTER COMPREHENSIVE COLLECTION EXPORT")
 
         utils.log_info("Starting comprehensive IAM Identity Center information collection from AWS...")
         print("====================================================================")

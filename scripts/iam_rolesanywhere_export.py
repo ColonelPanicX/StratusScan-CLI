@@ -37,33 +37,6 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-def print_title():
-    """
-    Print the script title and account information.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS IAM ROLES ANYWHERE COMPREHENSIVE EXPORT")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get account information using utils
-    account_id, account_name = utils.get_account_info()
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
 def format_tags(tags: List[Dict[str, str]]) -> str:
     """Format tags for display."""
     if not tags:
@@ -436,7 +409,7 @@ def main():
             return
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS IAM ROLES ANYWHERE COMPREHENSIVE EXPORT")
 
         # Validate AWS credentials
         is_valid, validated_account_id, error_message = utils.validate_aws_credentials()
