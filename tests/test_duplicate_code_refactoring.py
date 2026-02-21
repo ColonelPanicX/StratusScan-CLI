@@ -270,14 +270,10 @@ class TestIntegration(unittest.TestCase):
 
     @patch('sslib.aws_client.get_boto3_client')
     @patch('sslib.aws_client.get_account_name')
-    @patch('builtins.__import__')
-    def test_typical_script_flow(self, mock_import, mock_get_name, mock_client):
+    def test_typical_script_flow(self, mock_get_name, mock_client):
         """Test typical script flow using all three utility functions."""
         # Clear cache
         sslib.aws_client._account_info_cache = None
-
-        # Setup mocks
-        mock_import.side_effect = lambda pkg: None  # All dependencies installed
 
         mock_sts = MagicMock()
         mock_sts.get_caller_identity.return_value = {'Account': '123456789012'}
