@@ -47,38 +47,6 @@ except ImportError:
         sys.exit(1)
 
 
-def print_title():
-    """Print the title and header of the script to the console."""
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                    ")
-    print("====================================================================")
-    print("         AWS CLOUDFRONT DISTRIBUTION EXPORT TOOL")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get the current AWS account ID
-    try:
-        sts_client = utils.get_boto3_client('sts')
-        account_id = sts_client.get_caller_identity().get('Account')
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print("Could not determine account information.")
-        utils.log_error("Error getting account information", e)
-        account_id = "unknown"
-        account_name = "unknown"
-
-    print("====================================================================")
-    return account_id, account_name
-
-
 @utils.aws_error_handler("Collecting CloudFront distributions", default_return=[])
 def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
     """
@@ -527,7 +495,7 @@ def main():
             utils.log_error(f"CloudFront is not supported in GovCloud partition")
             sys.exit(1)
 
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS CLOUDFRONT DISTRIBUTION EXPORT")
 
         # Check and install dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):

@@ -44,39 +44,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-def print_title():
-    """
-    Print the script title banner and get account info.
-    
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                              ")
-    print("====================================================================")
-    print("AWS COMPUTE OPTIMIZER RECOMMENDATIONS EXPORT TOOL")
-    print("====================================================================")
-    print("====================================================================")
-    
-    # Get the current AWS account ID
-    try:
-        # Create a new STS client to get the current account ID
-        sts_client = utils.get_boto3_client('sts')
-        # Get account ID from caller identity
-        account_id = sts_client.get_caller_identity()['Account']
-        # Map the account ID to an account name using utils module
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print(f"Could not determine account information: {e}")
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
-    
-    print("====================================================================")
-    return account_id, account_name
-
 @utils.aws_error_handler("Getting available regions", default_return=[
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
     'ca-central-1', 'eu-west-1', 'eu-west-2', 'eu-central-1',
@@ -580,7 +547,7 @@ def main():
             sys.exit(1)
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS COMPUTE OPTIMIZER RECOMMENDATIONS EXPORT")
 
         # Validate AWS credentials
         try:

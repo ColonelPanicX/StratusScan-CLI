@@ -282,33 +282,6 @@ def get_ebs_volumes(region):
 
     return volumes_data
 
-def print_title():
-    """
-    Print a formatted title for the script.
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("               AWS EBS VOLUME DATA EXPORT                         ")
-    print("====================================================================")
-
-    # Get account information using utils
-    account_id, account_name = utils.get_account_info()
-
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-    return account_id, account_name
-
 def create_excel_file(account_name, volumes_data, region_input="all"):
     """
     Export volumes data to an Excel file using pandas.
@@ -360,7 +333,7 @@ def main():
     """
     try:
         # Print the script title and get account information
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS EBS VOLUME DATA EXPORT")
 
         # Check for required dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):

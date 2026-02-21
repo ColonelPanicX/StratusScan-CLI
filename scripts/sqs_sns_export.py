@@ -43,38 +43,6 @@ except ImportError:
         sys.exit(1)
 
 
-def print_title():
-    """Print the title and header of the script to the console."""
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                    ")
-    print("====================================================================")
-    print("                 AWS SQS/SNS EXPORT TOOL")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get the current AWS account ID
-    try:
-        sts_client = utils.get_boto3_client('sts')
-        account_id = sts_client.get_caller_identity().get('Account')
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print("Could not determine account information.")
-        utils.log_error("Error getting account information", e)
-        account_id = "unknown"
-        account_name = "unknown"
-
-    print("====================================================================")
-    return account_id, account_name
-
-
 def _scan_sqs_queues_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SQS queues."""
     queues_data = []
@@ -360,7 +328,7 @@ def main():
 
     try:
         # Print title and get account information
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS SQS/SNS EXPORT")
 
         # Check and install dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):

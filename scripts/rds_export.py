@@ -52,43 +52,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-def print_title():
-    """
-    Print the title banner for the script.
-    
-    Returns:
-        tuple: (account_id, account_name) - AWS account ID and mapped account name
-    """
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("            AWS RDS INSTANCE EXPORT SCRIPT v0.1.0        ")
-    print("====================================================================")
-    
-    # Get the current AWS account ID using STS (Security Token Service)
-    try:
-        sts_client = utils.get_boto3_client('sts')
-        account_id = sts_client.get_caller_identity()['Account']
-
-        # Detect partition and set environment name
-        partition = utils.detect_partition()
-        partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-        # Validate AWS environment
-        caller_arn = sts_client.get_caller_identity()['Arn']
-        account_name = utils.get_account_name(account_id, default="UNKNOWN-ACCOUNT")
-        print(f"Environment: {partition_name}")
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        utils.log_error("Unable to determine account information", e)
-        print("Environment: Unknown (detection failed)")
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
-
-    print("====================================================================")
-    return account_id, account_name
-
 # Dependency checking handled by utils.ensure_dependencies()
 def is_valid_aws_region(region_name):
     """
@@ -587,7 +550,7 @@ def main():
     This function orchestrates the entire workflow from user input to final export.
     """
     # Print script title and get account information
-    account_id, account_name = print_title()
+    account_id, account_name = utils.print_script_banner("AWS RDS INSTANCE EXPORT")
 
     # Check and install dependencies using utils function
     if not utils.ensure_dependencies('pandas', 'openpyxl'):

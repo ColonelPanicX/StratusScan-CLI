@@ -48,39 +48,6 @@ except ImportError:
 
 # Setup logging
 logger = utils.setup_logging('billing-export')
-def print_title():
-    """
-    Print the script title banner and get account info.
-    
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                              ")
-    print("====================================================================")
-    print("AWS ACCOUNT BILLING DATA EXPORT TOOL")
-    print("====================================================================")
-    print("====================================================================")
-    
-    # Get the current AWS account ID
-    try:
-        # Create a new STS client to get the current account ID
-        sts_client = utils.get_boto3_client('sts')
-        # Get account ID from caller identity
-        account_id = sts_client.get_caller_identity()['Account']
-        # Map the account ID to an account name using utils module
-        account_name = utils.get_account_name(account_id, default=account_id)
-        
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print(f"Could not determine account information: {e}")
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
-    
-    print("====================================================================")
-    return account_id, account_name
-
 def validate_date_input(date_input):
     """
     Validate user input for last 12 months or month-year.
@@ -420,7 +387,7 @@ def main():
             sys.exit(0)
 
         # Print title and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS ACCOUNT BILLING DATA EXPORT")
         
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl', 'python-dateutil'):

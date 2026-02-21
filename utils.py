@@ -1301,6 +1301,36 @@ def get_account_info() -> Tuple[str, str]:
     return account_id, account_name
 
 
+def print_script_banner(subtitle: str) -> Tuple[str, str]:
+    """
+    Print a standardized export script banner and return AWS account information.
+
+    Prints a consistent 60-character banner using the provided subtitle, then
+    retrieves and returns the current AWS account ID and name. Replaces the
+    per-script print_title() / print_header() functions that previously
+    duplicated this logic across every exporter.
+
+    Args:
+        subtitle: The script-specific title line displayed in the banner,
+                  e.g. "AWS EC2 INSTANCE EXPORT". Should be ALL CAPS with
+                  no trailing "TOOL", "SCRIPT", or "EXPORT TOOL" suffix.
+
+    Returns:
+        tuple: (account_id, account_name) as returned by get_account_info().
+
+    Example:
+        >>> account_id, account_name = utils.print_script_banner("AWS EC2 INSTANCE EXPORT")
+        >>> # Prints:
+        >>> # ============================================================
+        >>> # AWS EC2 INSTANCE EXPORT
+        >>> # ============================================================
+    """
+    print("\n" + "=" * 60)
+    print(subtitle)
+    print("=" * 60)
+    return get_account_info()
+
+
 # =============================================================================
 # DATAFRAME PREPARATION & EXPORT UTILITIES
 # =============================================================================

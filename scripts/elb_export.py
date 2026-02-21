@@ -46,42 +46,6 @@ except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
 
-def print_title_screen():
-    """
-    Prints a formatted title screen with script information
-
-    Returns:
-        str: The account name
-    """
-    # Get the AWS account ID using STS
-    try:
-        sts_client = utils.get_boto3_client('sts')
-        account_id = sts_client.get_caller_identity()['Account']
-
-        # Get the corresponding account name from utils module
-        account_name = utils.get_account_name(account_id, default="UNKNOWN-ACCOUNT")
-    except Exception as e:
-        utils.log_error("Unable to determine AWS account ID", e)
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
-
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-    # Print the title screen with account information
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("AWS ELB INVENTORY EXPORT SCRIPT")
-    print("====================================================================")
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_name
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region
@@ -290,7 +254,7 @@ def main():
     Main function to run the script
     """
     # Print the title screen and get the account name
-    account_name = print_title_screen()
+    account_id, account_name = utils.print_script_banner("AWS ELB INVENTORY EXPORT")
     
     # Check for required dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl'):

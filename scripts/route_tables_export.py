@@ -46,39 +46,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-def print_title():
-    """
-    Print the script title banner and get account info.
-    
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                              ")
-    print("====================================================================")
-    print("AWS ROUTE TABLES EXPORT TOOL")
-    print("====================================================================")
-    print("====================================================================")
-    
-    # Get the current AWS account ID
-    try:
-        # Create a new STS client to get the current account ID
-        sts_client = utils.get_boto3_client('sts')
-        # Get account ID from caller identity
-        account_id = sts_client.get_caller_identity()['Account']
-        # Map the account ID to an account name using utils module
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print(f"Could not determine account information: {e}")
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
-    
-    print("====================================================================")
-    return account_id, account_name
-
 def get_all_regions():
     """Get list of all available AWS regions for the current partition."""
     try:
@@ -391,7 +358,7 @@ def main():
     """
     try:
         # Print script header and get account info
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS ROUTE TABLES EXPORT")
         
         # Check for required dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):

@@ -32,11 +32,12 @@ Deployment Structure:
 - Account mappings and configuration are stored in config.json
 """
 
-import os
-import sys
-import subprocess
-import zipfile
+import contextlib
 import datetime
+import os
+import subprocess
+import sys
+import zipfile
 from pathlib import Path
 
 # Add the current directory to the path to ensure we can import utils
@@ -54,6 +55,66 @@ SCRIPT_START_TIME = datetime.datetime.now()
 utils.setup_logging("main-menu", log_to_file=True)
 utils.log_script_start("stratusscan.py", "AWS Resource Scanner Main Menu")
 utils.log_system_info()
+
+# ---------------------------------------------------------------------------
+# Navigation signals — raised by prompt_with_navigation() for b / x / q input
+# ---------------------------------------------------------------------------
+
+class BackSignal(BaseException):
+    """Raised when the user enters 'b' to return to the parent menu."""
+
+
+class ExitToMainSignal(BaseException):
+    """Raised when the user enters 'x' to exit directly to the main menu."""
+
+
+class QuitSignal(BaseException):
+    """Raised when the user enters 'q' to quit StratusScan."""
+
+
+def prompt_with_navigation(prompt_text: str) -> str:
+    """
+    Wrap input() and raise navigation signals for b, x, and q.
+
+    Args:
+        prompt_text: The prompt string to display.
+
+    Returns:
+        The raw user input string for all other input.
+
+    Raises:
+        BackSignal: user entered 'b'.
+        ExitToMainSignal: user entered 'x'.
+        QuitSignal: user entered 'q'.
+    """
+    value = input(prompt_text).strip()
+    lower = value.lower()
+    if lower == 'b':
+        raise BackSignal
+    if lower == 'x':
+        raise ExitToMainSignal
+    if lower == 'q':
+        raise QuitSignal
+    return value
+
+
+def _confirm(message: str) -> bool:
+    """
+    Prompt for y/n confirmation, supporting b/x/q navigation signals.
+
+    Args:
+        message: The confirmation question to display.
+
+    Returns:
+        True if the user answered 'y', False for any other non-navigation input.
+
+    Raises:
+        BackSignal, ExitToMainSignal, QuitSignal: propagated from
+            prompt_with_navigation().
+    """
+    response = prompt_with_navigation(f"{message} (y/n): ")
+    return response.lower() == 'y'
+
 
 def clear_screen():
     """
@@ -566,24 +627,21 @@ def get_menu_structure():
 def display_main_menu():
     """
     Display the main menu with categories.
-    
+
     Returns:
-        tuple: (menu_structure, exit_option) - The menu structure and exit option
+        dict: The menu structure.
     """
-    # Get the menu structure
     menu_structure = get_menu_structure()
-    
-    # Display the main menu options
+
     print("\nMAIN MENU:")
     print("====================================================================")
-    
+
     for option, info in menu_structure.items():
         print(f"{option}. {info['name']}")
-    
-    # Add exit option
-    print("x. Exit")
 
-    return menu_structure, 'x'
+    print("\n  b = back  |  x = main menu  |  q = quit")
+
+    return menu_structure
 
 def display_submenu(submenu, category_name):
     """
@@ -603,8 +661,6 @@ def display_submenu(submenu, category_name):
     print(f"                  {category_name.upper()}")
     print(f"====================================================================")
 
-    # Display the submenu options
-    print("\nSelect an option:")
     for option, info in submenu.items():
         # Handle items with or without descriptions
         if 'description' in info:
@@ -612,145 +668,158 @@ def display_submenu(submenu, category_name):
         else:
             print(f"{option}. {info['name']}")
 
+    print("\n  b = back  |  x = main menu  |  q = quit")
+
     return submenu
 
 
 def handle_submenu(category_option, account_name):
     """
-    Handle the submenu navigation and script execution.
-    
+    Handle submenu navigation and script execution.
+
+    BackSignal raised at the selection prompt causes this function to return
+    (go back one level). ExitToMainSignal and QuitSignal propagate to the caller.
+
     Args:
-        category_option (dict): The selected main menu option with submenu
-        account_name (str): The AWS account name for archive creation
+        category_option (dict): The selected main menu option containing a submenu.
+        account_name (str): The AWS account name for archive creation.
+
+    Raises:
+        ExitToMainSignal: propagated when the user enters 'x' or selects
+            'Return to Main Menu'.
+        QuitSignal: propagated when the user enters 'q'.
     """
     while True:
-        # Display submenu for this category
         submenu = display_submenu(category_option["submenu"], category_option["name"])
-        
-        # Get user choice
+
         print("\nSelect an option:")
-        user_choice = input("> ")
-        
-        # Handle return to main menu
-        if user_choice in submenu:
-            selected_option = submenu[user_choice]
+        try:
+            user_choice = prompt_with_navigation("> ")
+        except BackSignal:
+            return  # Go back to parent menu
+        # ExitToMainSignal and QuitSignal propagate to the caller
 
-            # Log submenu selection
-            submenu_path = f"{category_option.get('name', 'Unknown')}.{user_choice}"
-            utils.log_menu_selection(submenu_path, selected_option['name'])
-
-            # Check if this is the "Return to Main Menu" or "Return to Previous Menu" option
-            if selected_option["name"] in ["Return to Main Menu", "Return to Previous Menu"]:
-                utils.log_info(f"User selected: {selected_option['name']}")
-                return
-
-            # Check if this option has its own submenu (nested submenu)
-            if "submenu" in selected_option:
-                handle_submenu(selected_option, account_name)
-                continue
-
-            # Check if this is a special action (like Create Output Archive)
-            if selected_option.get("action") == "create_archive":
-                print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
-
-                # Confirm execution
-                if utils.prompt_for_confirmation("Do you want to continue?"):
-                    create_output_archive(account_name)
-                    # Ask if user wants to perform another action from this submenu
-                    if not utils.prompt_for_confirmation("Would you like to perform another action from this menu?"):
-                        return  # Return to main menu
-                continue
-
-            # Handle regular script execution
-            print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
-
-            # Confirm execution
-            if utils.prompt_for_confirmation("Do you want to continue?"):
-                # Execute the script
-                if selected_option["file"]:
-                    success = execute_script(selected_option["file"])
-
-                    # Ask if user wants to run another tool from this submenu
-                    if not utils.prompt_for_confirmation("Would you like to run another tool from this menu?"):
-                        return  # Return to main menu
-                
-            # If user didn't confirm, stay in the submenu
-        
-        else:
+        if user_choice not in submenu:
             print("Invalid selection. Please try again.")
+            continue
+
+        selected_option = submenu[user_choice]
+        submenu_path = f"{category_option.get('name', 'Unknown')}.{user_choice}"
+        utils.log_menu_selection(submenu_path, selected_option['name'])
+
+        # Legacy "Return to" entries remain functional
+        if selected_option["name"] == "Return to Main Menu":
+            utils.log_info(f"User selected: {selected_option['name']}")
+            raise ExitToMainSignal
+        if selected_option["name"] == "Return to Previous Menu":
+            utils.log_info(f"User selected: {selected_option['name']}")
+            return
+
+        # Nested submenu
+        if "submenu" in selected_option:
+            with contextlib.suppress(BackSignal):
+                # ExitToMainSignal and QuitSignal propagate
+                handle_submenu(selected_option, account_name)
+            continue
+
+        # Special action (e.g. Create Output Archive)
+        if selected_option.get("action") == "create_archive":
+            print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
+            with contextlib.suppress(BackSignal):
+                # ExitToMainSignal and QuitSignal propagate
+                if _confirm("Do you want to continue?"):
+                    create_output_archive(account_name)
+                    if not _confirm("Would you like to perform another action from this menu?"):
+                        return
+            continue
+
+        # Regular script execution
+        print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
+        try:
+            confirmed = _confirm("Do you want to continue?")
+        except BackSignal:
+            continue  # Cancel confirmation, stay in submenu
+        # ExitToMainSignal and QuitSignal propagate
+
+        if confirmed:
+            if selected_option["file"]:
+                execute_script(selected_option["file"])
+            with contextlib.suppress(BackSignal):
+                # ExitToMainSignal and QuitSignal propagate
+                if not _confirm("Would you like to run another tool from this menu?"):
+                    return
 
 def navigate_menus():
     """
     Display the main menu and handle user navigation through nested menus.
     """
     try:
-        # Print header and get account information
         account_id, account_name = print_header()
-        
-        # Check dependencies
+
         if not check_dependencies():
             print("Required dependencies are missing. Please install them to continue.")
             sys.exit(1)
-        
-        # Ensure directory structure
+
         ensure_directory_structure()
-        
-        # Main menu loop
+
         while True:
-            # Get menu structure
-            menu_structure, exit_option = display_main_menu()
-            
+            menu_structure = display_main_menu()
+
             if not menu_structure:
                 print("\nNo scripts found in the mapping. Please ensure script files exist in the scripts directory.")
                 sys.exit(1)
-            
+
             print("\nSelect an option:")
-            user_choice = input("> ")
-            
-            # Exit option
-            if user_choice.lower() == exit_option.lower():
+            try:
+                user_choice = prompt_with_navigation("> ")
+            except QuitSignal:
                 clear_screen()
                 print("Exiting StratusScan. Thank you for using the tool.")
-                break
-            
-            # Main menu option
-            elif user_choice in menu_structure:
-                selected_option = menu_structure[user_choice]
+                return
+            except (BackSignal, ExitToMainSignal):
+                continue  # Already at main menu — just redisplay
 
-                # Log menu selection
-                utils.log_menu_selection(user_choice, selected_option['name'])
-
-                # If it's a direct script (like Create Output Archive or Configure StratusScan)
-                if "file" in selected_option and "submenu" not in selected_option:
-                    print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
-
-                    # Confirm execution
-                    if utils.prompt_for_confirmation("Do you want to continue?"):
-                        utils.log_info(f"User confirmed execution of: {selected_option['name']}")
-                        # Handle special case for creating output archive
-                        if selected_option["name"] == "Create Output Archive":
-                            create_output_archive(account_name)
-                        # Handle Configure StratusScan
-                        elif selected_option["name"] == "Configure StratusScan":
-                            if selected_option["file"]:
-                                success = execute_script(selected_option["file"])
-                                if success:
-                                    print("\nConfiguration completed successfully!")
-                                    print("You may need to restart StratusScan for changes to take effect.")
-                                else:
-                                    print("\nConfiguration may not have completed successfully.")
-                        # Handle other direct scripts
-                        elif selected_option.get("file"):
-                            execute_script(selected_option["file"])
-                
-                # If it's a submenu
-                elif "submenu" in selected_option:
-                    # Display the submenu and handle selection
-                    handle_submenu(selected_option, account_name)
-            
-            else:
+            if user_choice not in menu_structure:
                 print("Invalid selection. Please try again.")
-    
+                continue
+
+            selected_option = menu_structure[user_choice]
+            utils.log_menu_selection(user_choice, selected_option['name'])
+
+            # Direct script (e.g. Configure StratusScan, Service Discovery)
+            if "file" in selected_option and "submenu" not in selected_option:
+                print(f"\nYou selected: {selected_option['name']} - {selected_option['description']}")
+
+                try:
+                    confirmed = _confirm("Do you want to continue?")
+                except (BackSignal, ExitToMainSignal):
+                    continue  # Return to main menu
+                # QuitSignal propagates to outer except
+
+                if confirmed:
+                    utils.log_info(f"User confirmed execution of: {selected_option['name']}")
+                    if selected_option["name"] == "Create Output Archive":
+                        create_output_archive(account_name)
+                    elif selected_option["name"] == "Configure StratusScan":
+                        if selected_option["file"]:
+                            success = execute_script(selected_option["file"])
+                            if success:
+                                print("\nConfiguration completed successfully!")
+                                print("You may need to restart StratusScan for changes to take effect.")
+                            else:
+                                print("\nConfiguration may not have completed successfully.")
+                    elif selected_option.get("file"):
+                        execute_script(selected_option["file"])
+
+            # Submenu
+            elif "submenu" in selected_option:
+                with contextlib.suppress(ExitToMainSignal, BackSignal):
+                    # QuitSignal propagates to outer except
+                    handle_submenu(selected_option, account_name)
+
+    except QuitSignal:
+        clear_screen()
+        print("Exiting StratusScan. Thank you for using the tool.")
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

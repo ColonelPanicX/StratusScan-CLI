@@ -35,35 +35,6 @@ except ImportError:
     import utils
 
 
-def print_title() -> tuple:
-    """
-    Prints a formatted title banner for the script to the console and validates AWS environment
-
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                              ")
-    print("====================================================================")
-    print("AWS S3 ACCESS POINTS COMPREHENSIVE EXPORT SCRIPT")
-    print("====================================================================")
-    # Detect partition and set environment name
-    partition = utils.detect_partition()
-    partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-    
-    print(f"Environment: {partition_name}")
-    print("====================================================================")
-
-    # Get account information using utils
-    account_id, account_name = utils.get_account_info()
-
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-
-    return account_id, account_name
-
-
 @utils.aws_error_handler("Collecting standard access points", default_return=[])
 def collect_standard_access_points(region: str, account_id: str) -> List[Dict[str, Any]]:
     """
@@ -492,7 +463,7 @@ def main():
     utils.log_script_start("S3 Access Points Export", "Export comprehensive S3 Access Points data")
 
     # Print script title and get account information
-    account_id, account_name = print_title()
+    account_id, account_name = utils.print_script_banner("AWS S3 ACCESS POINTS COMPREHENSIVE EXPORT")
 
     # Check dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl'):

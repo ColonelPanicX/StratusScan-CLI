@@ -55,29 +55,6 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
-def print_title():
-    """
-    Print the script title and header, and return account information.
-    
-    Returns:
-        tuple: account_id, account_name
-    """
-    print("====================================================================")
-    print("                  AWS RESOURCE SCANNER                              ")
-    print("====================================================================")
-    print("AWS ECS (ELASTIC CONTAINER SERVICE) RESOURCE EXPORT")
-    print("====================================================================")
-    print("====================================================================")
-    
-    # Get account information
-    account_id, account_name = get_account_info()
-    
-    print(f"Account ID: {account_id}")
-    print(f"Account Name: {account_name}")
-    print("====================================================================")
-    
-    return account_id, account_name
-
 @utils.aws_error_handler("Getting account information", default_return=("UNKNOWN", "UNKNOWN-ACCOUNT"))
 def get_account_info():
     """
@@ -451,7 +428,7 @@ def main():
     """
     try:
         # Print the script title and get account information
-        account_id, account_name = print_title()
+        account_id, account_name = utils.print_script_banner("AWS ECS (ELASTIC CONTAINER SERVICE) RESOURCE EXPORT")
         
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
