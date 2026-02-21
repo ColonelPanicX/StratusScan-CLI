@@ -38,8 +38,6 @@ SERVICE_ALIASES: Dict[str, str] = {
     "ecs": "Amazon Elastic Container Service",
     "Amazon ECS": "Amazon Elastic Container Service",
     "fargate": "AWS Fargate",
-    "batch": "AWS Batch",
-    "lightsail": "Amazon Lightsail",
     "app runner": "AWS App Runner",
     "apprunner": "AWS App Runner",
 
@@ -66,9 +64,6 @@ SERVICE_ALIASES: Dict[str, str] = {
     "neptune": "Amazon Neptune",
     "documentdb": "Amazon DocumentDB",
     "aurora": "Amazon Aurora",
-    "keyspaces": "Amazon Keyspaces",
-    "timestream": "Amazon Timestream",
-    "memorydb": "Amazon MemoryDB for Redis",
 
     # Networking
     "vpc": "Amazon Virtual Private Cloud",
@@ -104,7 +99,6 @@ SERVICE_ALIASES: Dict[str, str] = {
     "securityhub": "AWS Security Hub",
     "waf": "AWS WAF",
     "shield": "AWS Shield",
-    "firewall manager": "AWS Firewall Manager",
     "network firewall": "AWS Network Firewall",
     "detective": "Amazon Detective",
     "access analyzer": "AWS IAM Access Analyzer",
@@ -119,7 +113,6 @@ SERVICE_ALIASES: Dict[str, str] = {
     "control tower": "AWS Control Tower",
     "service catalog": "AWS Service Catalog",
     "trusted advisor": "AWS Trusted Advisor",
-    "cost explorer": "AWS Cost Explorer",
 
     # Application Integration
     "sns": "Amazon Simple Notification Service",
@@ -129,14 +122,10 @@ SERVICE_ALIASES: Dict[str, str] = {
     "eventbridge": "Amazon EventBridge",
     "step functions": "AWS Step Functions",
     "stepfunctions": "AWS Step Functions",
-    "appflow": "Amazon AppFlow",
 
     # Analytics
     "athena": "Amazon Athena",
     "glue": "AWS Glue",
-    "emr": "Amazon EMR",
-    "kinesis": "Amazon Kinesis",
-    "quicksight": "Amazon QuickSight",
     "opensearch": "Amazon OpenSearch Service",
     "elasticsearch": "Amazon OpenSearch Service",
 
@@ -145,15 +134,12 @@ SERVICE_ALIASES: Dict[str, str] = {
     "codebuild": "AWS CodeBuild",
     "codedeploy": "AWS CodeDeploy",
     "codepipeline": "AWS CodePipeline",
-    "codeartifact": "AWS CodeArtifact",
-    "cloud9": "AWS Cloud9",
 
     # Machine Learning
     "sagemaker": "Amazon SageMaker",
     "bedrock": "Amazon Bedrock",
     "comprehend": "Amazon Comprehend",
     "rekognition": "Amazon Rekognition",
-    "textract": "Amazon Textract",
 
     # Containers
     "ecr": "Amazon Elastic Container Registry",
