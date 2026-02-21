@@ -34,6 +34,7 @@ import logging
 import re
 import subprocess
 import threading
+import warnings
 from contextlib import contextmanager
 from functools import wraps
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
@@ -617,14 +618,43 @@ def format_bytes(size_bytes: Union[int, float]) -> str:
     
     return f"{size_bytes:.2f} {size_names[i]}"
 
+def get_log_timestamp() -> str:
+    """
+    Get current timestamp in ISO-style format for log messages.
+
+    Returns:
+        str: Timestamp string in ``YYYY-MM-DD HH:MM:SS`` format
+    """
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_export_date() -> str:
+    """
+    Get current date in the StratusScan export-filename format.
+
+    Returns:
+        str: Date string in ``MM.DD.YYYY`` format
+    """
+    return datetime.datetime.now().strftime("%m.%d.%Y")
+
+
 def get_current_timestamp() -> str:
     """
     Get current timestamp in a standardized format.
 
+    .. deprecated::
+        Use :func:`get_log_timestamp` (ISO format) or :func:`get_export_date`
+        (``MM.DD.YYYY`` for filenames) instead.
+
     Returns:
         str: Formatted timestamp
     """
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    warnings.warn(
+        "get_current_timestamp() is deprecated; use get_log_timestamp() or get_export_date().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_log_timestamp()
 
 def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> Any:
     """
@@ -891,6 +921,11 @@ def create_aws_arn(service: str, resource: str, region: Optional[str] = None, ac
     Returns:
         str: Properly formatted AWS ARN
     """
+    warnings.warn(
+        "create_aws_arn() is deprecated; use build_arn() for partition-aware ARN construction.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Delegate to the new partition-aware function
     return build_arn(service, resource, region=region, account_id=account_id)
 

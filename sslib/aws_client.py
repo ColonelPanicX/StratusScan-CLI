@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import threading
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
@@ -89,12 +90,22 @@ def validate_aws_region(region: str) -> bool:
     """
     Validate that a region is a valid AWS region and provide helpful error if not.
 
+    .. deprecated::
+        Use :func:`is_aws_region` for pure validation.  ``validate_aws_region``
+        couples validation with error logging; prefer calling ``is_aws_region``
+        and logging at the call site instead.
+
     Args:
         region: AWS region name
 
     Returns:
         bool: True if valid, False otherwise
     """
+    warnings.warn(
+        "validate_aws_region() is deprecated; use is_aws_region() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if region == "all":
         return True
 
@@ -425,12 +436,20 @@ def get_partition_default_regions(partition: Optional[str] = None) -> List[str]:
     """
     Get the default AWS regions (alias for get_default_regions for consistency).
 
+    .. deprecated::
+        Use :func:`get_default_regions` directly — this function is a redundant alias.
+
     Args:
         partition: Optional partition to filter regions ('aws' or 'aws-us-gov')
 
     Returns:
         list: List of default AWS region names
     """
+    warnings.warn(
+        "get_partition_default_regions() is deprecated; use get_default_regions() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return get_default_regions(partition)
 
 

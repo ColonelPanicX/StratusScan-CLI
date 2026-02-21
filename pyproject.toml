@@ -77,6 +77,7 @@ dev = [
 [project.scripts]
 stratusscan = "stratusscan:main"
 stratusscan-configure = "configure:main"
+stratusscan-advanced = "advanced_settings:main"
 
 [project.urls]
 Homepage = "https://github.com/ColonelPanicX/StratusScan-CLI"

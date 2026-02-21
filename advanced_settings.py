@@ -15,7 +15,7 @@ Features:
 - Performance tuning options
 
 Usage:
-    python advanced-settings.py
+    python advanced_settings.py
 """
 
 import json

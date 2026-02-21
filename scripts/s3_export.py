@@ -78,14 +78,14 @@ def print_title():
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region
-    
+
     Args:
         region_name (str): The region name to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
-    return utils.validate_aws_region(region_name)
+    return utils.is_aws_region(region_name)
 
 @utils.aws_error_handler("Getting bucket region", default_return="unknown")
 def get_bucket_region(bucket_name):
