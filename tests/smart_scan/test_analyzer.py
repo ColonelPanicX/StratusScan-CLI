@@ -67,8 +67,8 @@ class TestFindLatestServicesExport:
     def test_find_with_single_file(self):
         """Test finding single services export file."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a mock services export file
-            filename = "test-account-services-in-use-export-12.04.2025.xlsx"
+            # Create a mock services export file (must match glob *-services-in-use-*-export-*.xlsx)
+            filename = "test-account-services-in-use-all-export-12.04.2025.xlsx"
             filepath = Path(tmpdir) / filename
             filepath.touch()
 
@@ -79,9 +79,9 @@ class TestFindLatestServicesExport:
     def test_find_returns_most_recent(self):
         """Test that most recent file is returned when multiple exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create multiple files with different dates
-            old_file = Path(tmpdir) / "test-services-in-use-export-01.01.2025.xlsx"
-            new_file = Path(tmpdir) / "test-services-in-use-export-12.04.2025.xlsx"
+            # Create multiple files with different dates (must match glob *-services-in-use-*-export-*.xlsx)
+            old_file = Path(tmpdir) / "test-services-in-use-all-export-01.01.2025.xlsx"
+            new_file = Path(tmpdir) / "test-services-in-use-all-export-12.04.2025.xlsx"
 
             old_file.touch()
             new_file.touch()
@@ -180,10 +180,9 @@ class TestGenerateRecommendations:
 
         assert result is not None
         assert isinstance(result, dict)
-        assert "service_count" in result
-        assert "script_count" in result
-        assert "services" in result
+        assert "coverage_stats" in result
         assert "all_scripts" in result
+        assert "by_category" in result
 
     def test_generate_with_always_run(self):
         """Test that always-run scripts are included."""
@@ -216,8 +215,8 @@ class TestGenerateRecommendations:
         }
         result = generate_recommendations(service_map, include_always_run=False)
 
-        assert result["service_count"] == 2
-        assert result["script_count"] == 3
+        assert result["coverage_stats"]["services_with_scripts"] == 2
+        assert result["coverage_stats"]["total_scripts_recommended"] == 3
         assert "ec2_export.py" in result["all_scripts"]
         assert "ami_export.py" in result["all_scripts"]
         assert "s3_export.py" in result["all_scripts"]
@@ -230,8 +229,8 @@ class TestGenerateRecommendations:
         }
         result = generate_recommendations(service_map, include_always_run=False)
 
-        # Should only count ec2-export.py once
-        assert result["script_count"] == 2
+        # Should only count ec2_export.py once
+        assert result["coverage_stats"]["total_scripts_recommended"] == 2
         script_list = list(result["all_scripts"])
         assert script_list.count("ec2_export.py") == 1
 
@@ -240,11 +239,11 @@ class TestGenerateRecommendations:
         result = generate_recommendations({}, include_always_run=False)
 
         expected_fields = [
-            "service_count",
-            "script_count",
-            "services",
+            "always_run",
+            "service_based",
             "all_scripts",
             "by_category",
+            "coverage_stats",
         ]
         for field in expected_fields:
             assert field in result, f"Missing field: {field}"
@@ -282,8 +281,7 @@ class TestAnalyzeServices:
 
         assert result is not None
         assert isinstance(result, dict)
-        assert "service_count" in result
-        assert "script_count" in result
+        assert "coverage_stats" in result
         assert "all_scripts" in result
 
 
@@ -308,8 +306,8 @@ class TestServiceAnalyzerIntegration:
         # Test recommendations
         recommendations = analyzer.generate_recommendations(service_map)
         assert isinstance(recommendations, dict)
-        assert "service_count" in recommendations
-        assert "script_count" in recommendations
+        assert "coverage_stats" in recommendations
+        assert "all_scripts" in recommendations
 
     def test_analyzer_with_known_services(self):
         """Test analyzer with pre-defined services."""
@@ -317,10 +315,10 @@ class TestServiceAnalyzerIntegration:
 
         services = {"Amazon Elastic Compute Cloud", "Amazon Simple Storage Service"}
         service_map = analyzer.map_services_to_scripts(services)
-        recommendations = analyzer.generate_recommendations(service_map, include_always_run=True)
+        recommendations = analyzer.generate_recommendations(include_always_run=True)
 
-        assert recommendations["service_count"] == 2
-        assert recommendations["script_count"] > 2  # Scripts + always-run
+        assert recommendations["coverage_stats"]["services_with_scripts"] == 2
+        assert recommendations["coverage_stats"]["total_scripts_recommended"] > 2  # Scripts + always-run
         assert "ec2_export.py" in recommendations["all_scripts"]
         assert "s3_export.py" in recommendations["all_scripts"]
         assert "iam_comprehensive_export.py" in recommendations["all_scripts"]
