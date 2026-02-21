@@ -5,17 +5,23 @@ Analyzes services-in-use export output and maps discovered services
 to relevant export scripts. Core intelligence engine for Smart Scan.
 """
 
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError as exc:
+    raise ImportError(
+        "pandas is required for smart_scan.analyzer: pip install pandas"
+    ) from exc
 
-# Add parent directory to path for utils import
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-import utils
+try:
+    import utils
+except ImportError:
+    sys.path.append(str(Path(__file__).parent.parent))
+    import utils
 
 from .mapping import (
     ALWAYS_RUN_SCRIPTS,

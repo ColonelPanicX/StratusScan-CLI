@@ -1,0 +1,5 @@
+storage_type,price_per_gb_month
+gp2,0.115
+gp3,0.08
+io1,0.125
+magnetic,0.10

@@ -5,7 +5,6 @@ Executes multiple export scripts sequentially with progress tracking,
 error handling, and result aggregation.
 """
 
-import os
 import subprocess
 import sys
 import time
@@ -14,9 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-# Add parent directory to path for utils import
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-import utils
+try:
+    import utils
+except ImportError:
+    sys.path.append(str(Path(__file__).parent.parent))
+    import utils
 
 
 @dataclass
