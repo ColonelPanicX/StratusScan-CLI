@@ -172,6 +172,11 @@ module = [
 ]
 ignore_missing_imports = true
 
+# Enforce strict typing on the sslib/ package (Sprint 4+)
+[[tool.mypy.overrides]]
+module = ["sslib.*"]
+disallow_untyped_defs = true
+
 # Pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"

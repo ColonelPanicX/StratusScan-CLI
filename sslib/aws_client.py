@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 import botocore
+from botocore.client import BaseClient
 from botocore.config import Config
 
 from sslib.config import config_value, get_account_name, get_config
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_REGIONS = ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"]
+_GOVCLOUD_DEFAULT_REGIONS = ["us-gov-west-1", "us-gov-east-1"]
 _AWS_PARTITION = "aws"
 
 # ---------------------------------------------------------------------------
@@ -161,7 +163,7 @@ def detect_partition(region_name: Optional[str] = None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_aws_session(region_name: Optional[str] = None):
+def get_aws_session(region_name: Optional[str] = None) -> boto3.Session:
     """
     Create a boto3 session for the specified region.
 
@@ -174,7 +176,7 @@ def get_aws_session(region_name: Optional[str] = None):
     return boto3.Session(region_name=region_name)
 
 
-def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs):
+def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) -> BaseClient:
     """
     Create boto3 client with standard configuration including retries.
 
@@ -350,7 +352,7 @@ def get_partition_regions(partition: str = "aws", all_regions: bool = False) -> 
         list: List of region names for the partition
     """
     if partition == "aws-us-gov":
-        return ["us-gov-west-1", "us-gov-east-1"]
+        return _GOVCLOUD_DEFAULT_REGIONS
     elif partition == "aws":
         if all_regions:
             try:
@@ -368,7 +370,10 @@ def get_partition_regions(partition: str = "aws", all_regions: bool = False) -> 
         else:
             return _DEFAULT_REGIONS
     else:
-        logger.warning("Unknown partition: %s, returning commercial regions", partition)
+        logger.error(
+            "Unknown partition '%s' — cannot determine valid regions; returning commercial defaults",
+            partition,
+        )
         return _DEFAULT_REGIONS
 
 

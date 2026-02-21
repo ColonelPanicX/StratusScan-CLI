@@ -10,7 +10,7 @@ Zero dependency on utils.py.
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import pandas as pd
 
@@ -193,7 +193,7 @@ def paginate_with_progress(
     operation: str,
     operation_label: str = "resources",
     **kwargs,
-):
+) -> Iterator[Dict[str, Any]]:
     """
     Paginate AWS API calls with progress tracking (Phase 4B optimization).
 
@@ -235,7 +235,7 @@ def paginate_with_progress(
 def build_dataframe_in_batches(
     data: List[Dict],
     batch_size: int = 1000,
-):
+) -> pd.DataFrame:
     """
     Build DataFrame from large data lists in batches for memory efficiency (Phase 4B).
 

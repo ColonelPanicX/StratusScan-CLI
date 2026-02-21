@@ -626,7 +626,7 @@ def get_current_timestamp() -> str:
     """
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None):
+def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> Any:
     """
     Convert a list of dictionaries to a pandas DataFrame with specific columns.
 

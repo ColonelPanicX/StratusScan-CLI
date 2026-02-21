@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import sslib.aws_client as aws_mod
 from sslib.aws_client import (
     _DEFAULT_REGIONS,
+    _GOVCLOUD_DEFAULT_REGIONS,
     build_arn,
     check_aws_region_access,
     detect_partition,
@@ -193,9 +194,28 @@ class TestGetPartitionRegions:
         regions = get_partition_regions("aws-us-gov")
         assert set(regions) == {"us-gov-west-1", "us-gov-east-1"}
 
+    def test_govcloud_uses_govcloud_constant(self):
+        """GovCloud path must return _GOVCLOUD_DEFAULT_REGIONS, not commercial ones."""
+        regions = get_partition_regions("aws-us-gov")
+        assert set(regions) == set(_GOVCLOUD_DEFAULT_REGIONS)
+        assert "us-east-1" not in regions
+        assert "us-west-2" not in regions
+
     def test_commercial_returns_default_list(self):
         regions = get_partition_regions("aws")
         assert set(regions) == set(_DEFAULT_REGIONS)
+
+    def test_unknown_partition_returns_commercial_fallback(self):
+        """Unknown partition must fall back to commercial defaults (not GovCloud)."""
+        regions = get_partition_regions("aws-cn")
+        assert set(regions) == set(_DEFAULT_REGIONS)
+
+    def test_unknown_partition_logs_error(self, caplog):
+        """Unknown partition must log an ERROR (not just a warning)."""
+        import logging
+        with caplog.at_level(logging.ERROR, logger="sslib.aws_client"):
+            get_partition_regions("aws-cn")
+        assert any("aws-cn" in r.message for r in caplog.records if r.levelno == logging.ERROR)
 
 
 # ---------------------------------------------------------------------------
