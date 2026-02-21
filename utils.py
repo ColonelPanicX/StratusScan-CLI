@@ -1205,6 +1205,25 @@ def ensure_dependencies(*packages: str) -> bool:
     return True
 
 
+def mask_account_id(account_id: str) -> str:
+    """
+    Mask an AWS account ID for safe inclusion in INFO-level log output.
+
+    Returns the last 4 digits prefixed with '...' so log consumers can identify
+    the account without the full 12-digit ID being indexed by log aggregators.
+    Full account IDs should be logged at DEBUG level for troubleshooting.
+
+    Examples:
+        >>> mask_account_id('123456789012')
+        '...9012'
+        >>> mask_account_id('')
+        ''
+    """
+    if not account_id or len(account_id) < 4:
+        return account_id
+    return f"...{account_id[-4:]}"
+
+
 def get_account_info() -> Tuple[str, str]:
     """
     Get AWS account ID and name with caching.

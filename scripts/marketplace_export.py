@@ -258,7 +258,7 @@ def main():
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
         return
 
-    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+    utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
 
     # Note: Marketplace APIs are global services
     print("\nNote: AWS Marketplace is a global service (not region-specific)")

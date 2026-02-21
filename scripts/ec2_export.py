@@ -92,56 +92,30 @@ def get_os_info_from_ssm(instance_id, region):
         utils.log_warning(f"SSM error for instance {instance_id} in region {region}: {e}")
         return "Unknown OS"
 
-def get_instance_memory(ec2_client, instance_type):
+def get_instance_stop_date(instance, state):
     """
-    Get RAM information for a given instance type using EC2 API
-    Returns memory in MiB
-    """
-    try:
-        response = ec2_client.describe_instance_types(InstanceTypes=[instance_type])
-        if response['InstanceTypes']:
-            return response['InstanceTypes'][0]['MemoryInfo']['SizeInMiB']
-        return 'N/A'
-    except Exception as e:
-        utils.log_warning(f"Could not get memory info for instance type {instance_type}: {e}")
-        return 'N/A'
+    Extract the stop date from an instance dict using the StateTransitionReason field.
 
-def get_instance_stop_date(ec2_client, instance_id, state):
-    """
-    Get the date when an instance was stopped using state transition reason
-    Returns the stop date or 'N/A' for running instances
+    StateTransitionReason is present in the describe_instances paginator response so
+    no additional API call is needed — the caller passes the instance dict directly.
+
+    Returns the stop date string or 'N/A' for non-stopped instances.
     """
     if state != 'stopped':
         return 'N/A'
-        
-    try:
-        # Get the state transition reason directly from instance metadata
-        response = ec2_client.describe_instances(InstanceIds=[instance_id])
-        
-        if response['Reservations']:
-            for reservation in response['Reservations']:
-                for instance in reservation['Instances']:
-                    if instance['InstanceId'] == instance_id and instance.get('State', {}).get('Name') == 'stopped':
-                        # Check the StateTransitionReason field
-                        state_reason = instance.get('StateTransitionReason', '')
-                        
-                        # For user initiated shutdowns, the format is typically:
-                        # "User initiated (YYYY-MM-DD HH:MM:SS GMT)"
-                        if 'User initiated' in state_reason and '(' in state_reason and ')' in state_reason:
-                            date_start = state_reason.find('(') + 1
-                            date_end = state_reason.find(')')
-                            if date_start > 0 and date_end > date_start:
-                                return state_reason[date_start:date_end]
-                        # For system or auto-scaling initiated stops, return the reason
-                        elif state_reason:
-                            return f"System initiated ({state_reason})"
-        
-        # If we couldn't get the stop date from the state reason, return unknown
-        return 'Stopped (Date Unknown)'
-        
-    except Exception as e:
-        utils.log_warning(f"Could not determine stop date for instance {instance_id}: {e}")
-        return 'Stopped (Date Unknown)'
+
+    state_reason = instance.get('StateTransitionReason', '')
+
+    # User initiated shutdowns: "User initiated (YYYY-MM-DD HH:MM:SS GMT)"
+    if 'User initiated' in state_reason and '(' in state_reason and ')' in state_reason:
+        date_start = state_reason.find('(') + 1
+        date_end = state_reason.find(')')
+        if date_start > 0 and date_end > date_start:
+            return state_reason[date_start:date_end]
+    elif state_reason:
+        return f"System initiated ({state_reason})"
+
+    return 'Stopped (Date Unknown)'
 
 def get_os_info_from_ami(ec2_client, image_id, platform_details, platform):
     """
@@ -516,6 +490,25 @@ def get_instance_data(region, instance_filter=None):
                 except Exception as e:
                     utils.log_warning(f"Error prefetching volumes in {region}: {e}")
 
+        # Prefetch instance type metadata in batches to avoid N+1 describe_instance_types calls
+        # AWS limit: 100 instance types per request
+        instance_types_map = {}
+        if total_instances > 0:
+            unique_types = list({
+                inst.get('InstanceType')
+                for reservation in all_reservations
+                for inst in reservation['Instances']
+                if inst.get('InstanceType')
+            })
+            for i in range(0, len(unique_types), 100):
+                chunk = unique_types[i:i + 100]
+                try:
+                    resp = ec2.describe_instance_types(InstanceTypes=chunk)
+                    for it in resp.get('InstanceTypes', []):
+                        instance_types_map[it['InstanceType']] = it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A')
+                except Exception as e:
+                    utils.log_warning(f"Error prefetching instance types in {region}: {e}")
+
         processed = 0
         for reservation in all_reservations:
             for instance in reservation['Instances']:
@@ -539,9 +532,9 @@ def get_instance_data(region, instance_filter=None):
                     instance.get('Platform', '')
                 )
                 
-                # Get RAM info based on instance type
+                # Get RAM info from the prefetched instance types map
                 instance_type = instance.get('InstanceType', 'N/A')
-                ram_mib = get_instance_memory(ec2, instance_type)
+                ram_mib = instance_types_map.get(instance_type, 'N/A')
                 
                 # For root device size and type, we need to ensure we're fetching it correctly
                 root_device_size = 'N/A'
@@ -573,7 +566,7 @@ def get_instance_data(region, instance_filter=None):
                 
                 # Get instance state and stopped date if applicable
                 instance_state = instance.get('State', {}).get('Name', 'N/A')
-                stop_date = get_instance_stop_date(ec2, instance.get('InstanceId', ''), instance_state)
+                stop_date = get_instance_stop_date(instance, instance_state)
                 
                 # Format tags
                 instance_tags = format_tags(instance.get('Tags', []))

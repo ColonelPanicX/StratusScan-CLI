@@ -280,7 +280,7 @@ def main():
     try:
         # Get account information
         account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({account_id})")
+        utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({utils.mask_account_id(account_id)})")
 
         # Prompt for regions
         utils.log_info("Reserved Instances are regional resources.")

@@ -475,7 +475,7 @@ def main():
 
     # Get account information
     account_id, account_name = utils.get_account_info()
-    utils.log_info(f"Account: {account_name} ({account_id})")
+    utils.log_info(f"Account: {account_name} ({utils.mask_account_id(account_id)})")
 
     # Detect partition for region examples
     regions = utils.prompt_region_selection()
