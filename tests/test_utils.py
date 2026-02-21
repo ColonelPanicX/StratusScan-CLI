@@ -22,6 +22,25 @@ import sslib.config
 import sslib.aws_client
 
 
+class TestMaskAccountId:
+    """Test mask_account_id() helper for safe log output."""
+
+    def test_standard_account_id(self):
+        assert utils.mask_account_id('123456789012') == '...9012'
+
+    def test_short_id_returned_unchanged(self):
+        assert utils.mask_account_id('123') == '123'
+
+    def test_empty_string(self):
+        assert utils.mask_account_id('') == ''
+
+    def test_exactly_four_chars(self):
+        assert utils.mask_account_id('1234') == '...1234'
+
+    def test_last_four_are_used(self):
+        assert utils.mask_account_id('000000009999') == '...9999'
+
+
 class TestAccountMapping:
     """Test account ID to name mapping functions."""
 

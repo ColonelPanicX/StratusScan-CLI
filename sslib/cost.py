@@ -8,12 +8,53 @@ pricing.  For accurate pricing use AWS Pricing Calculator or Cost Explorer.
 Zero dependency on utils.py — uses only stdlib + third-party packages.
 """
 
+import csv
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd  # noqa: F401 – used for type hint in _estimate_excel_size
 
 logger = logging.getLogger(__name__)
+
+# Path to the reference/ directory (two levels up from this file: sslib/ → repo root → reference/)
+_REFERENCE_DIR = Path(__file__).parent.parent / "reference"
+
+
+def _load_pricing_csv(filename: str, key_col: str, val_col: str, default: Dict[str, float]) -> Dict[str, float]:
+    """
+    Load a two-column pricing CSV from the reference/ directory.
+
+    Falls back to ``default`` on any I/O or parse error so cost estimation
+    continues to work even when the CSV is missing or malformed.
+
+    Args:
+        filename: CSV filename inside reference/ (e.g. 's3-pricing.csv')
+        key_col:  Name of the column to use as dict key
+        val_col:  Name of the column to use as dict value (must be numeric)
+        default:  Fallback dict returned on error
+
+    Returns:
+        Dict mapping key_col values → float(val_col values)
+    """
+    csv_path = _REFERENCE_DIR / filename
+    try:
+        pricing: Dict[str, float] = {}
+        with csv_path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                key = row.get(key_col, "").strip()
+                val_str = row.get(val_col, "").strip()
+                if key and val_str:
+                    pricing[key] = float(val_str)
+        if pricing:
+            return pricing
+        logger.warning("Pricing CSV %s is empty — using built-in defaults", filename)
+    except FileNotFoundError:
+        logger.warning("Pricing CSV not found: %s — using built-in defaults", csv_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Error reading pricing CSV %s: %s — using built-in defaults", filename, exc)
+    return default
 
 
 # =============================================================================
@@ -80,7 +121,7 @@ def estimate_rds_monthly_cost(
         - Multi-AZ deployments approximately double instance costs
     """
     # Approximate instance pricing per hour (us-east-1, on-demand)
-    instance_pricing = {
+    _instance_defaults: Dict[str, float] = {
         "db.t3.micro": 0.017,
         "db.t3.small": 0.034,
         "db.t3.medium": 0.068,
@@ -96,14 +137,20 @@ def estimate_rds_monthly_cost(
         "db.r5.2xlarge": 0.96,
         "db.r5.4xlarge": 1.92,
     }
+    instance_pricing = _load_pricing_csv(
+        "rds-instance-pricing.csv", "instance_class", "hourly_rate_usd", _instance_defaults
+    )
 
     # Storage pricing per GB/month
-    storage_pricing = {
+    _storage_defaults: Dict[str, float] = {
         "gp2": 0.115,
         "gp3": 0.08,
         "io1": 0.125,
         "magnetic": 0.10,
     }
+    storage_pricing = _load_pricing_csv(
+        "rds-storage-pricing.csv", "storage_type", "price_per_gb_month", _storage_defaults
+    )
 
     # Get instance cost
     hourly_instance_cost = instance_pricing.get(instance_class, 0.10)
@@ -161,7 +208,7 @@ def estimate_s3_monthly_cost(
         - Request costs are minimal unless very high volume
     """
     # S3 storage pricing per GB/month (us-east-1)
-    storage_pricing = {
+    _s3_defaults: Dict[str, float] = {
         "STANDARD": 0.023,
         "INTELLIGENT_TIERING": 0.023,
         "STANDARD_IA": 0.0125,
@@ -170,6 +217,9 @@ def estimate_s3_monthly_cost(
         "GLACIER_IR": 0.0036,
         "DEEP_ARCHIVE": 0.00099,
     }
+    storage_pricing = _load_pricing_csv(
+        "s3-pricing.csv", "storage_class", "price_per_gb_month", _s3_defaults
+    )
 
     # Request pricing (per 1,000 requests)
     request_pricing = {
@@ -245,8 +295,15 @@ def calculate_nat_gateway_monthly_cost(
         - Each NAT Gateway incurs these costs independently
     """
     # NAT Gateway pricing (us-east-1)
-    hourly_rate = 0.045
-    data_processing_rate = 0.045
+    _natgw_defaults: Dict[str, float] = {
+        "hourly": 0.045,
+        "data_processing_per_gb": 0.045,
+    }
+    natgw_pricing = _load_pricing_csv(
+        "natgw-pricing.csv", "rate_type", "rate_usd", _natgw_defaults
+    )
+    hourly_rate = natgw_pricing.get("hourly", 0.045)
+    data_processing_rate = natgw_pricing.get("data_processing_per_gb", 0.045)
 
     hourly_cost = hours_per_month * hourly_rate
     data_processing_cost = data_processed_gb * data_processing_rate

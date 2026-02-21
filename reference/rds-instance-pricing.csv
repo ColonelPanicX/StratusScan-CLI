@@ -1,0 +1,15 @@
+instance_class,hourly_rate_usd
+db.t3.micro,0.017
+db.t3.small,0.034
+db.t3.medium,0.068
+db.t3.large,0.136
+db.t3.xlarge,0.272
+db.t3.2xlarge,0.544
+db.m5.large,0.192
+db.m5.xlarge,0.384
+db.m5.2xlarge,0.768
+db.m5.4xlarge,1.536
+db.r5.large,0.24
+db.r5.xlarge,0.48
+db.r5.2xlarge,0.96
+db.r5.4xlarge,1.92

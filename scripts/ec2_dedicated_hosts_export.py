@@ -188,7 +188,7 @@ def main():
     try:
         # Get account information
         account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting EC2 Dedicated Hosts for account: {account_name} ({account_id})")
+        utils.log_info(f"Exporting EC2 Dedicated Hosts for account: {account_name} ({utils.mask_account_id(account_id)})")
 
         # Prompt for regions
         utils.log_info("EC2 Dedicated Hosts are regional resources.")

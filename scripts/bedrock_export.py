@@ -513,7 +513,7 @@ def main():
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
         return
 
-    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+    utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
 
     # Detect partition for region examples
     regions = utils.prompt_region_selection()

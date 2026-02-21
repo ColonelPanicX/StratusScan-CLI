@@ -160,7 +160,7 @@ def main():
     try:
         # Get account information
         account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting AWS Health events for account: {account_name} ({account_id})")
+        utils.log_info(f"Exporting AWS Health events for account: {account_name} ({utils.mask_account_id(account_id)})")
 
         # Health API is global but accessed through us-east-1
         utils.log_info("AWS Health is a global service accessed through us-east-1.")

@@ -26,6 +26,7 @@ Features:
 """
 
 import os
+import platform
 import sys
 import datetime
 import json
@@ -33,11 +34,14 @@ import logging
 import re
 import subprocess
 import threading
+import warnings
 from contextlib import contextmanager
 from functools import wraps
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
+
+from openpyxl.utils import get_column_letter
 
 # Global logger instance
 logger = None
@@ -223,8 +227,6 @@ def prompt_region_selection(
             default_to_all=False
         )
     """
-    import sys
-
     # Automation mode: bypass interactive prompts when STRATUSSCAN_AUTO_RUN is set
     if is_auto_run():
         auto_regions = get_auto_regions()
@@ -544,9 +546,6 @@ def log_system_info() -> None:
     Log system information for debugging purposes.
     """
     current_logger = get_logger()
-    import platform
-    import sys
-
     current_logger.info("SYSTEM INFORMATION:")
     current_logger.info(f"  Platform: {platform.system()} {platform.release()}")
     current_logger.info(f"  Python version: {sys.version}")
@@ -619,16 +618,45 @@ def format_bytes(size_bytes: Union[int, float]) -> str:
     
     return f"{size_bytes:.2f} {size_names[i]}"
 
+def get_log_timestamp() -> str:
+    """
+    Get current timestamp in ISO-style format for log messages.
+
+    Returns:
+        str: Timestamp string in ``YYYY-MM-DD HH:MM:SS`` format
+    """
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_export_date() -> str:
+    """
+    Get current date in the StratusScan export-filename format.
+
+    Returns:
+        str: Date string in ``MM.DD.YYYY`` format
+    """
+    return datetime.datetime.now().strftime("%m.%d.%Y")
+
+
 def get_current_timestamp() -> str:
     """
     Get current timestamp in a standardized format.
 
+    .. deprecated::
+        Use :func:`get_log_timestamp` (ISO format) or :func:`get_export_date`
+        (``MM.DD.YYYY`` for filenames) instead.
+
     Returns:
         str: Formatted timestamp
     """
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    warnings.warn(
+        "get_current_timestamp() is deprecated; use get_log_timestamp() or get_export_date().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_log_timestamp()
 
-def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None):
+def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> Any:
     """
     Convert a list of dictionaries to a pandas DataFrame with specific columns.
 
@@ -762,6 +790,14 @@ def create_export_filename(
 
     return candidate
 
+def _adjust_column_widths(worksheet, df) -> None:
+    """Set Excel column widths to fit content (max 50 chars)."""
+    for i, column in enumerate(df.columns):
+        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+        column_width = min(column_width, 50)
+        worksheet.column_dimensions[get_column_letter(i + 1)].width = column_width
+
+
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_adjust_columns: bool = True, prepare: bool = False) -> Optional[str]:
     """
     Save a pandas DataFrame to an Excel file in the output directory.
@@ -799,15 +835,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
 
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
-                    worksheet = writer.sheets[sheet_name]
-                    for i, column in enumerate(df.columns):
-                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                        # Set a maximum column width to avoid extremely wide columns
-                        column_width = min(column_width, 50)
-                        # openpyxl column indices are 1-based
-                        from openpyxl.utils import get_column_letter
-                        column_letter = get_column_letter(i + 1)
-                        worksheet.column_dimensions[column_letter].width = column_width
+                    _adjust_column_widths(writer.sheets[sheet_name], df)
         else:
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
@@ -869,15 +897,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
 
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
-                    worksheet = writer.sheets[sheet_name]
-                    for i, column in enumerate(df.columns):
-                        column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                        # Set a maximum column width to avoid extremely wide columns
-                        column_width = min(column_width, 50)
-                        # openpyxl column indices are 1-based
-                        from openpyxl.utils import get_column_letter
-                        column_letter = get_column_letter(i + 1)
-                        worksheet.column_dimensions[column_letter].width = column_width
+                    _adjust_column_widths(writer.sheets[sheet_name], df)
         
         logger.info(f"Data successfully exported to: {output_path}")
         return str(output_path)
@@ -901,6 +921,11 @@ def create_aws_arn(service: str, resource: str, region: Optional[str] = None, ac
     Returns:
         str: Properly formatted AWS ARN
     """
+    warnings.warn(
+        "create_aws_arn() is deprecated; use build_arn() for partition-aware ARN construction.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Delegate to the new partition-aware function
     return build_arn(service, resource, region=region, account_id=account_id)
 
@@ -1215,6 +1240,25 @@ def ensure_dependencies(*packages: str) -> bool:
     return True
 
 
+def mask_account_id(account_id: str) -> str:
+    """
+    Mask an AWS account ID for safe inclusion in INFO-level log output.
+
+    Returns the last 4 digits prefixed with '...' so log consumers can identify
+    the account without the full 12-digit ID being indexed by log aggregators.
+    Full account IDs should be logged at DEBUG level for troubleshooting.
+
+    Examples:
+        >>> mask_account_id('123456789012')
+        '...9012'
+        >>> mask_account_id('')
+        ''
+    """
+    if not account_id or len(account_id) < 4:
+        return account_id
+    return f"...{account_id[-4:]}"
+
+
 def get_account_info() -> Tuple[str, str]:
     """
     Get AWS account ID and name with caching.
@@ -1402,9 +1446,8 @@ def sanitize_for_export(
         - Case-insensitive pattern matching
         - Processes only string (object) columns
     """
-    # Import pandas and re here to avoid requiring them at module load time
+    # Import pandas here to avoid requiring it at module load time
     import pandas as pd
-    import re
 
     # Handle empty DataFrame
     if df is None or df.empty:

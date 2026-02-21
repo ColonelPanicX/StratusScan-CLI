@@ -140,7 +140,7 @@ def main():
 
         # Get account information
         account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Cost Categories for account: {account_name} ({account_id})")
+        utils.log_info(f"Exporting Cost Categories for account: {account_name} ({utils.mask_account_id(account_id)})")
 
         utils.log_info("Cost Categories are global (accessed via us-east-1)...")
 

@@ -218,7 +218,7 @@ def main():
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
         return
 
-    utils.log_info(f"AWS Account: {account_name} ({account_id})")
+    utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
 
     # Note about Glacier service
     print("\nNote: This exports original Glacier vaults (separate from S3 Glacier storage classes)")

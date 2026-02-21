@@ -5,13 +5,15 @@ Provides interactive CLI interface for selecting export scripts to run.
 Uses questionary library for rich checkbox/menu navigation.
 """
 
-import os
 import sys
 from typing import Any, Dict, List, Optional, Set
+from pathlib import Path
 
-# Add parent directory to path for utils import
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-import utils
+try:
+    import utils
+except ImportError:
+    sys.path.append(str(Path(__file__).parent.parent))
+    import utils
 
 # Try to import questionary, provide helpful message if not available
 try:
