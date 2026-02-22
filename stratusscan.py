@@ -507,28 +507,14 @@ def get_menu_structure():
             "submenu": {
                 "1": {
                     "name": "IAM",
-                    "description": "Traditional IAM resources (users, roles, policies)",
-                    "submenu": {
-                        "1": {"name": "IAM Users", "file": scripts_dir / "iam_export.py", "description": "Export IAM user information"},
-                        "2": {"name": "IAM Roles", "file": scripts_dir / "iam_roles_export.py", "description": "Export IAM role information"},
-                        "3": {"name": "IAM Policies", "file": scripts_dir / "iam_policies_export.py", "description": "Export IAM policy information"},
-                        "4": {"name": "All IAM Resources", "file": scripts_dir / "iam_comprehensive_export.py", "description": "Export all IAM resources in one report"},
-                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to IAM menu"}
-                    }
+                    "file": scripts_dir / "iam_export.py",
+                    "description": "Export IAM users, roles, and policies"
                 },
-                "2": {"name": "AWS Organizations", "file": scripts_dir / "organizations_export.py", "description": "Export AWS Organizations structure"},
-                "3": {
+                "2": {
                     "name": "IAM Identity Center",
-                    "description": "IAM Identity Center (formerly AWS SSO) resources",
-                    "submenu": {
-                        "1": {"name": "IAM Identity Center", "file": scripts_dir / "iam_identity_center_export.py", "description": "Export users, groups, and permission sets"},
-                        "2": {"name": "Groups", "file": scripts_dir / "iam_identity_center_groups_export.py", "description": "Export Identity Center groups"},
-                        "3": {"name": "Permission Sets", "file": scripts_dir / "iam_identity_center_permission_sets_export.py", "description": "Export permission sets"},
-                        "4": {"name": "Comprehensive", "file": scripts_dir / "iam_identity_center_comprehensive_export.py", "description": "Export all Identity Center data"},
-                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to IAM menu"}
-                    }
+                    "file": scripts_dir / "iam_identity_center_export.py",
+                    "description": "Export IAM Identity Center users, groups, and permission sets"
                 },
-                "4": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "5": {
