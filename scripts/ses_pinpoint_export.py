@@ -38,12 +38,7 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('ses-pinpoint-export')
-utils.log_script_start('ses-pinpoint-export', 'Export SES and Pinpoint email/marketing resources')
+utils.setup_logging('ses-pinpoint-export')
 
 
 @utils.aws_error_handler("Collecting SES identities", default_return=[])
@@ -306,165 +301,183 @@ def collect_pinpoint_segments(region: str, app_ids: List[str]) -> List[Dict[str,
     return segments
 
 
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect SES and Pinpoint data and write the Excel export."""
+    # Collect all resources
+    all_ses_identities = []
+    all_ses_config_sets = []
+    all_ses_templates = []
+    all_ses_account = []
+    all_pinpoint_apps = []
+    all_pinpoint_campaigns = []
+    all_pinpoint_segments = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect SES resources
+        identities = collect_ses_identities(region)
+        if identities:
+            utils.log_info(f"  Found {len(identities)} SES identit(ies)")
+            all_ses_identities.extend(identities)
+
+        config_sets = collect_ses_config_sets(region)
+        if config_sets:
+            utils.log_info(f"  Found {len(config_sets)} SES configuration set(s)")
+            all_ses_config_sets.extend(config_sets)
+
+        templates = collect_ses_templates(region)
+        if templates:
+            utils.log_info(f"  Found {len(templates)} SES template(s)")
+            all_ses_templates.extend(templates)
+
+        # Get SES account info
+        account_info = collect_ses_account_info(region)
+        all_ses_account.append(account_info)
+
+        # Collect Pinpoint resources
+        pinpoint_apps = collect_pinpoint_apps(region)
+        if pinpoint_apps:
+            utils.log_info(f"  Found {len(pinpoint_apps)} Pinpoint application(s)")
+            all_pinpoint_apps.extend(pinpoint_apps)
+
+            # Get app IDs for campaigns and segments
+            app_ids = [app['ApplicationId'] for app in pinpoint_apps if app['ApplicationId'] != 'N/A']
+
+            # Collect campaigns and segments
+            campaigns = collect_pinpoint_campaigns(region, app_ids)
+            all_pinpoint_campaigns.extend(campaigns)
+
+            segments = collect_pinpoint_segments(region, app_ids)
+            all_pinpoint_segments.extend(segments)
+
+    if not all_ses_identities and not all_pinpoint_apps:
+        utils.log_warning("No SES or Pinpoint resources found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total SES identities found: {len(all_ses_identities)}")
+    utils.log_info(f"Total SES configuration sets found: {len(all_ses_config_sets)}")
+    utils.log_info(f"Total SES templates found: {len(all_ses_templates)}")
+    utils.log_info(f"Total Pinpoint applications found: {len(all_pinpoint_apps)}")
+    utils.log_info(f"Total Pinpoint campaigns found: {len(all_pinpoint_campaigns)}")
+    utils.log_info(f"Total Pinpoint segments found: {len(all_pinpoint_segments)}")
+
+    # Create DataFrames
+    df_ses_identities = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_identities))
+    df_ses_config_sets = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_config_sets))
+    df_ses_templates = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_templates))
+    df_ses_account = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_account))
+    df_pinpoint_apps = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_apps))
+    df_pinpoint_campaigns = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_campaigns))
+    df_pinpoint_segments = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_segments))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total SES Identities', 'Value': len(all_ses_identities)})
+    summary_data.append({'Metric': 'Total SES Configuration Sets', 'Value': len(all_ses_config_sets)})
+    summary_data.append({'Metric': 'Total SES Templates', 'Value': len(all_ses_templates)})
+    summary_data.append({'Metric': 'Total Pinpoint Applications', 'Value': len(all_pinpoint_apps)})
+    summary_data.append({'Metric': 'Total Pinpoint Campaigns', 'Value': len(all_pinpoint_campaigns)})
+    summary_data.append({'Metric': 'Total Pinpoint Segments', 'Value': len(all_pinpoint_segments)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_ses_identities.empty:
+        verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == True])
+        dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])
+        summary_data.append({'Metric': 'Verified Identities', 'Value': verified_identities})
+        summary_data.append({'Metric': 'DKIM Enabled Identities', 'Value': dkim_enabled})
+
+    if not df_ses_account.empty:
+        production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])
+        summary_data.append({'Metric': 'Regions with Production Access', 'Value': production_regions})
+
+    if not df_pinpoint_campaigns.empty:
+        active_campaigns = len(df_pinpoint_campaigns[df_pinpoint_campaigns['State'] == 'RUNNING'])
+        summary_data.append({'Metric': 'Active Pinpoint Campaigns', 'Value': active_campaigns})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create filtered views
+    df_verified_identities = pd.DataFrame()
+    df_active_campaigns = pd.DataFrame()
+
+    if not df_ses_identities.empty:
+        df_verified_identities = df_ses_identities[df_ses_identities['VerificationStatus'] == True]
+
+    if not df_pinpoint_campaigns.empty:
+        df_active_campaigns = df_pinpoint_campaigns[df_pinpoint_campaigns['State'] == 'RUNNING']
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'ses-pinpoint', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'SES Account Info': df_ses_account,
+        'SES Identities': df_ses_identities,
+        'Verified Identities': df_verified_identities,
+        'SES Configuration Sets': df_ses_config_sets,
+        'SES Templates': df_ses_templates,
+        'Pinpoint Apps': df_pinpoint_apps,
+        'Pinpoint Campaigns': df_pinpoint_campaigns,
+        'Active Campaigns': df_active_campaigns,
+        'Pinpoint Segments': df_pinpoint_segments,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    total_resources = (len(all_ses_identities) + len(all_ses_config_sets) +
+                      len(all_ses_templates) + len(all_pinpoint_apps) +
+                      len(all_pinpoint_campaigns) + len(all_pinpoint_segments))
+
+    utils.log_export_summary(
+        total_items=total_resources,
+        item_type='SES/Pinpoint Resources',
+        filename=filename
+    )
+    utils.log_success("SES/Pinpoint export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting SES and Pinpoint resources for account: {account_name} ({utils.mask_account_id(account_id)})")
+        account_id, account_name = utils.print_script_banner("AWS SES AND PINPOINT EXPORT")
 
-        # Prompt for regions
-        utils.log_info("SES and Pinpoint are regional services.")
+        step = 1
+        regions = None
 
-        # Detect partition for region examples
-        regions = utils.prompt_region_selection()
-        # Collect all resources
-        all_ses_identities = []
-        all_ses_config_sets = []
-        all_ses_templates = []
-        all_ses_account = []
-        all_pinpoint_apps = []
-        all_pinpoint_campaigns = []
-        all_pinpoint_segments = []
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="SES/Pinpoint")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export SES and Pinpoint data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-            # Collect SES resources
-            identities = collect_ses_identities(region)
-            if identities:
-                utils.log_info(f"  Found {len(identities)} SES identit(ies)")
-                all_ses_identities.extend(identities)
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-            config_sets = collect_ses_config_sets(region)
-            if config_sets:
-                utils.log_info(f"  Found {len(config_sets)} SES configuration set(s)")
-                all_ses_config_sets.extend(config_sets)
-
-            templates = collect_ses_templates(region)
-            if templates:
-                utils.log_info(f"  Found {len(templates)} SES template(s)")
-                all_ses_templates.extend(templates)
-
-            # Get SES account info
-            account_info = collect_ses_account_info(region)
-            all_ses_account.append(account_info)
-
-            # Collect Pinpoint resources
-            pinpoint_apps = collect_pinpoint_apps(region)
-            if pinpoint_apps:
-                utils.log_info(f"  Found {len(pinpoint_apps)} Pinpoint application(s)")
-                all_pinpoint_apps.extend(pinpoint_apps)
-
-                # Get app IDs for campaigns and segments
-                app_ids = [app['ApplicationId'] for app in pinpoint_apps if app['ApplicationId'] != 'N/A']
-
-                # Collect campaigns and segments
-                campaigns = collect_pinpoint_campaigns(region, app_ids)
-                all_pinpoint_campaigns.extend(campaigns)
-
-                segments = collect_pinpoint_segments(region, app_ids)
-                all_pinpoint_segments.extend(segments)
-
-        if not all_ses_identities and not all_pinpoint_apps:
-            utils.log_warning("No SES or Pinpoint resources found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total SES identities found: {len(all_ses_identities)}")
-        utils.log_info(f"Total SES configuration sets found: {len(all_ses_config_sets)}")
-        utils.log_info(f"Total SES templates found: {len(all_ses_templates)}")
-        utils.log_info(f"Total Pinpoint applications found: {len(all_pinpoint_apps)}")
-        utils.log_info(f"Total Pinpoint campaigns found: {len(all_pinpoint_campaigns)}")
-        utils.log_info(f"Total Pinpoint segments found: {len(all_pinpoint_segments)}")
-
-        # Create DataFrames
-        df_ses_identities = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_identities))
-        df_ses_config_sets = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_config_sets))
-        df_ses_templates = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_templates))
-        df_ses_account = utils.prepare_dataframe_for_export(pd.DataFrame(all_ses_account))
-        df_pinpoint_apps = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_apps))
-        df_pinpoint_campaigns = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_campaigns))
-        df_pinpoint_segments = utils.prepare_dataframe_for_export(pd.DataFrame(all_pinpoint_segments))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total SES Identities', 'Value': len(all_ses_identities)})
-        summary_data.append({'Metric': 'Total SES Configuration Sets', 'Value': len(all_ses_config_sets)})
-        summary_data.append({'Metric': 'Total SES Templates', 'Value': len(all_ses_templates)})
-        summary_data.append({'Metric': 'Total Pinpoint Applications', 'Value': len(all_pinpoint_apps)})
-        summary_data.append({'Metric': 'Total Pinpoint Campaigns', 'Value': len(all_pinpoint_campaigns)})
-        summary_data.append({'Metric': 'Total Pinpoint Segments', 'Value': len(all_pinpoint_segments)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_ses_identities.empty:
-            verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == True])
-            dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])
-
-            summary_data.append({'Metric': 'Verified Identities', 'Value': verified_identities})
-            summary_data.append({'Metric': 'DKIM Enabled Identities', 'Value': dkim_enabled})
-
-        if not df_ses_account.empty:
-            # Find regions with production access
-            production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])
-            summary_data.append({'Metric': 'Regions with Production Access', 'Value': production_regions})
-
-        if not df_pinpoint_campaigns.empty:
-            active_campaigns = len(df_pinpoint_campaigns[df_pinpoint_campaigns['State'] == 'RUNNING'])
-            summary_data.append({'Metric': 'Active Pinpoint Campaigns', 'Value': active_campaigns})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_verified_identities = pd.DataFrame()
-        df_active_campaigns = pd.DataFrame()
-
-        if not df_ses_identities.empty:
-            df_verified_identities = df_ses_identities[df_ses_identities['VerificationStatus'] == True]
-
-        if not df_pinpoint_campaigns.empty:
-            df_active_campaigns = df_pinpoint_campaigns[df_pinpoint_campaigns['State'] == 'RUNNING']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'ses-pinpoint', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'SES Account Info': df_ses_account,
-            'SES Identities': df_ses_identities,
-            'Verified Identities': df_verified_identities,
-            'SES Configuration Sets': df_ses_config_sets,
-            'SES Templates': df_ses_templates,
-            'Pinpoint Apps': df_pinpoint_apps,
-            'Pinpoint Campaigns': df_pinpoint_campaigns,
-            'Active Campaigns': df_active_campaigns,
-            'Pinpoint Segments': df_pinpoint_segments,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        total_resources = (len(all_ses_identities) + len(all_ses_config_sets) +
-                          len(all_ses_templates) + len(all_pinpoint_apps) +
-                          len(all_pinpoint_campaigns) + len(all_pinpoint_segments))
-
-        utils.log_export_summary(
-            total_items=total_resources,
-            item_type='SES/Pinpoint Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  SES Identities: {len(all_ses_identities)}")
-        utils.log_info(f"  SES Configuration Sets: {len(all_ses_config_sets)}")
-        utils.log_info(f"  SES Templates: {len(all_ses_templates)}")
-        utils.log_info(f"  Pinpoint Applications: {len(all_pinpoint_apps)}")
-        utils.log_info(f"  Pinpoint Campaigns: {len(all_pinpoint_campaigns)}")
-        utils.log_info(f"  Pinpoint Segments: {len(all_pinpoint_segments)}")
-
-        utils.log_success("SES/Pinpoint export completed successfully!")
-
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
+        raise
     except Exception as e:
         utils.log_error(f"Failed to export SES/Pinpoint resources: {str(e)}")
-        raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":
