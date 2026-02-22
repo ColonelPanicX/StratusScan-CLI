@@ -293,3 +293,143 @@ class TestARNBuilding:
         assert parts[2] == 'iam'
         assert parts[3] == ''  # Empty region for global service
         assert parts[4] == '123456789012'
+
+
+class TestPromptMenu:
+    """Tests for the new prompt_menu() utility function."""
+
+    def test_valid_choice_returns_int(self):
+        with patch('builtins.input', return_value='1'):
+            result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
+        assert result == 1
+
+    def test_back_returns_string(self):
+        with patch('builtins.input', return_value='b'):
+            result = utils.prompt_menu("TEST MENU", ["Option A"])
+        assert result == 'back'
+
+    def test_exit_returns_string(self):
+        with patch('builtins.input', return_value='x'):
+            result = utils.prompt_menu("TEST MENU", ["Option A"])
+        assert result == 'exit'
+
+    def test_invalid_then_valid(self):
+        with patch('builtins.input', side_effect=['z', '2']):
+            result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
+        assert result == 2
+
+    def test_auto_run_returns_first(self, monkeypatch):
+        monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
+        result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
+        assert result == 1
+
+
+class TestPromptRegionSelectionNew:
+    """Tests for the rewritten prompt_region_selection() function."""
+
+    def test_default_regions(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        defaults = ['us-east-1', 'us-west-2']
+        with patch('utils.prompt_menu', return_value=1), \
+             patch('utils.get_default_regions', return_value=defaults), \
+             patch('utils.detect_partition', return_value='aws'):
+            result = utils.prompt_region_selection()
+        assert result == defaults
+
+    def test_all_regions(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        all_r = ['us-east-1', 'us-west-2', 'eu-west-1']
+        with patch('utils.prompt_menu', return_value=2), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'), \
+             patch('utils.get_partition_regions', return_value=all_r):
+            result = utils.prompt_region_selection()
+        assert result == all_r
+
+    def test_back_returns_string(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('utils.prompt_menu', return_value='back'), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'):
+            result = utils.prompt_region_selection()
+        assert result == 'back'
+
+    def test_exit_returns_string(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('utils.prompt_menu', return_value='exit'), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'):
+            result = utils.prompt_region_selection()
+        assert result == 'exit'
+
+    def test_select_single(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        available = ['us-east-1', 'us-west-2', 'eu-west-1']
+        with patch('utils.prompt_menu', return_value=3), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'), \
+             patch('utils.get_partition_regions', return_value=available), \
+             patch('builtins.input', return_value='2'):
+            result = utils.prompt_region_selection()
+        assert result == ['us-west-2']
+
+    def test_select_multi(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        available = ['us-east-1', 'us-west-2', 'eu-west-1']
+        with patch('utils.prompt_menu', return_value=3), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'), \
+             patch('utils.get_partition_regions', return_value=available), \
+             patch('builtins.input', return_value='1 3'):
+            result = utils.prompt_region_selection()
+        assert result == ['us-east-1', 'eu-west-1']
+
+    def test_back_from_sublist_returns_to_menu(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        available = ['us-east-1', 'us-west-2']
+        defaults = ['us-east-1']
+        # First call to prompt_menu → 3 (Select Regions), user types 'b', then
+        # second call to prompt_menu → 1 (Default Regions)
+        menu_calls = iter([3, 1])
+        with patch('utils.prompt_menu', side_effect=menu_calls), \
+             patch('utils.get_default_regions', return_value=defaults), \
+             patch('utils.detect_partition', return_value='aws'), \
+             patch('utils.get_partition_regions', return_value=available), \
+             patch('builtins.input', return_value='b'):
+            result = utils.prompt_region_selection()
+        assert result == defaults
+
+    def test_auto_run_bypass(self, monkeypatch):
+        monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
+        monkeypatch.setenv("STRATUSSCAN_REGIONS", "us-east-1,us-west-2")
+        result = utils.prompt_region_selection()
+        assert result == ['us-east-1', 'us-west-2']
+
+
+class TestPromptConfirmation:
+    """Tests for the new prompt_confirmation() utility function."""
+
+    def test_enter_confirms(self):
+        with patch('builtins.input', return_value=''):
+            result = utils.prompt_confirmation("Ready to export?")
+        assert result == 'confirm'
+
+    def test_back_returns_string(self):
+        with patch('builtins.input', return_value='b'):
+            result = utils.prompt_confirmation("Ready to export?")
+        assert result == 'back'
+
+    def test_exit_returns_string(self):
+        with patch('builtins.input', return_value='x'):
+            result = utils.prompt_confirmation("Ready to export?")
+        assert result == 'exit'
+
+    def test_invalid_then_confirm(self):
+        with patch('builtins.input', side_effect=['z', '']):
+            result = utils.prompt_confirmation("Ready to export?")
+        assert result == 'confirm'
+
+    def test_auto_run_confirms(self, monkeypatch):
+        monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
+        result = utils.prompt_confirmation("Ready to export?")
+        assert result == 'confirm'
