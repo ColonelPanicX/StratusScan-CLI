@@ -424,7 +424,6 @@ def get_menu_structure():
                         "10": {"name": "EC2 Capacity Reservations", "file": scripts_dir / "ec2_capacity_reservations_export.py", "description": "Export EC2 Capacity Reservations"},
                         "11": {"name": "EC2 Dedicated Hosts", "file": scripts_dir / "ec2_dedicated_hosts_export.py", "description": "Export EC2 Dedicated Hosts"},
                         "12": {"name": "All Compute Resources", "file": scripts_dir / "compute_resources.py", "description": "Export all compute resources in one report"},
-                        "13": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
                     }
                 },
                 "2": {
@@ -442,7 +441,6 @@ def get_menu_structure():
                         "10": {"name": "Storage Gateway", "file": scripts_dir / "storagegateway_export.py", "description": "Export Storage Gateway"},
                         "11": {"name": "Glacier Vaults", "file": scripts_dir / "glacier_export.py", "description": "Export Glacier vaults"},
                         "12": {"name": "All Storage Resources", "file": scripts_dir / "storage_resources.py", "description": "Export all storage resources in one report"},
-                        "13": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
                     }
                 },
                 "3": {
@@ -462,7 +460,6 @@ def get_menu_structure():
                         "12": {"name": "Network Firewall", "file": scripts_dir / "network_firewall_export.py", "description": "Export Network Firewall"},
                         "13": {"name": "Network Manager", "file": scripts_dir / "network_manager_export.py", "description": "Export Network Manager topology"},
                         "14": {"name": "All Network Resources", "file": scripts_dir / "network_resources.py", "description": "Export network resources (select regions during run)"},
-                        "15": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
                     }
                 },
                 "4": {
@@ -472,34 +469,41 @@ def get_menu_structure():
                         "2": {"name": "ElastiCache", "file": scripts_dir / "elasticache_export.py", "description": "Export ElastiCache clusters"},
                         "3": {"name": "DocumentDB", "file": scripts_dir / "documentdb_export.py", "description": "Export DocumentDB clusters"},
                         "4": {"name": "Neptune", "file": scripts_dir / "neptune_export.py", "description": "Export Neptune graph databases"},
-                        "5": {"name": "Return to Previous Menu", "file": None, "description": "Return to Infrastructure menu"}
                     }
                 },
-                "5": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "3": {
             "name": "Security & Compliance",
             "submenu": {
-                "1": {"name": "Security Hub", "file": scripts_dir / "security_hub_export.py", "description": "Export Security Hub findings"},
-                "2": {"name": "GuardDuty", "file": scripts_dir / "guardduty_export.py", "description": "Export GuardDuty findings"},
-                "3": {"name": "AWS WAF", "file": scripts_dir / "waf_export.py", "description": "Export WAF web ACLs and rules"},
-                "4": {"name": "CloudTrail", "file": scripts_dir / "cloudtrail_export.py", "description": "Export CloudTrail trails"},
-                "5": {"name": "AWS Config", "file": scripts_dir / "config_export.py", "description": "Export Config rules and compliance"},
-                "6": {"name": "KMS", "file": scripts_dir / "kms_export.py", "description": "Export KMS keys and encryption configs"},
-                "7": {"name": "Secrets Manager", "file": scripts_dir / "secrets_manager_export.py", "description": "Export Secrets Manager metadata"},
-                "8": {"name": "ACM", "file": scripts_dir / "acm_export.py", "description": "Export ACM SSL/TLS certificates"},
-                "9": {"name": "IAM Access Analyzer", "file": scripts_dir / "access_analyzer_export.py", "description": "Export Access Analyzer findings"},
-                "10": {"name": "Detective", "file": scripts_dir / "detective_export.py", "description": "Export Detective behavior graphs"},
-                "11": {"name": "Shield Advanced", "file": scripts_dir / "shield_export.py", "description": "Export Shield DDoS protection"},
-                "12": {"name": "IAM Roles Anywhere", "file": scripts_dir / "iam_rolesanywhere_export.py", "description": "Export IAM Roles Anywhere"},
-                "13": {"name": "Verified Access", "file": scripts_dir / "verifiedaccess_export.py", "description": "Export Verified Access zero-trust"},
-                "14": {"name": "Macie", "file": scripts_dir / "macie_export.py", "description": "Export Macie data security findings"},
-                "15": {"name": "Cognito", "file": scripts_dir / "cognito_export.py", "description": "Export Cognito user pools"},
-                "16": {"name": "ACM Private CA", "file": scripts_dir / "acm_privateca_export.py", "description": "Export ACM Private CAs"},
-                "17": {"name": "IAM Identity Providers", "file": scripts_dir / "iam_identity_providers_export.py", "description": "Export IAM SAML/OIDC providers"},
-                "18": {"name": "Verified Permissions", "file": scripts_dir / "verifiedpermissions_export.py", "description": "Export Verified Permissions Cedar policies"},
-                "19": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
+                "1": {
+                    "name": "Security Monitoring",
+                    "submenu": {
+                        "1": {"name": "Security Hub", "file": scripts_dir / "security_hub_export.py", "description": "Export Security Hub findings"},
+                        "2": {"name": "GuardDuty", "file": scripts_dir / "guardduty_export.py", "description": "Export GuardDuty findings"},
+                        "3": {"name": "Detective", "file": scripts_dir / "detective_export.py", "description": "Export Detective behavior graphs"},
+                        "4": {"name": "Macie", "file": scripts_dir / "macie_export.py", "description": "Export Macie data security findings"},
+                        "5": {"name": "AWS WAF", "file": scripts_dir / "waf_export.py", "description": "Export WAF web ACLs and rules"},
+                        "6": {"name": "Shield Advanced", "file": scripts_dir / "shield_export.py", "description": "Export Shield DDoS protection"},
+                        "7": {"name": "IAM Access Analyzer", "file": scripts_dir / "access_analyzer_export.py", "description": "Export Access Analyzer findings"},
+                    }
+                },
+                "2": {
+                    "name": "Identity, Certs & Config",
+                    "submenu": {
+                        "1": {"name": "KMS", "file": scripts_dir / "kms_export.py", "description": "Export KMS keys and encryption configs"},
+                        "2": {"name": "ACM", "file": scripts_dir / "acm_export.py", "description": "Export ACM SSL/TLS certificates"},
+                        "3": {"name": "ACM Private CA", "file": scripts_dir / "acm_privateca_export.py", "description": "Export ACM Private CAs"},
+                        "4": {"name": "Secrets Manager", "file": scripts_dir / "secrets_manager_export.py", "description": "Export Secrets Manager metadata"},
+                        "5": {"name": "Cognito", "file": scripts_dir / "cognito_export.py", "description": "Export Cognito user pools"},
+                        "6": {"name": "Verified Access", "file": scripts_dir / "verifiedaccess_export.py", "description": "Export Verified Access zero-trust"},
+                        "7": {"name": "Verified Permissions", "file": scripts_dir / "verifiedpermissions_export.py", "description": "Export Verified Permissions Cedar policies"},
+                        "8": {"name": "IAM Roles Anywhere", "file": scripts_dir / "iam_rolesanywhere_export.py", "description": "Export IAM Roles Anywhere"},
+                        "9": {"name": "IAM Identity Providers", "file": scripts_dir / "iam_identity_providers_export.py", "description": "Export IAM SAML/OIDC providers"},
+                        "10": {"name": "CloudTrail", "file": scripts_dir / "cloudtrail_export.py", "description": "Export CloudTrail trails"},
+                        "11": {"name": "AWS Config", "file": scripts_dir / "config_export.py", "description": "Export Config rules and compliance"},
+                    }
+                },
             }
         },
         "4": {
@@ -529,7 +533,6 @@ def get_menu_structure():
                 "7": {"name": "Reserved Instances", "file": scripts_dir / "reserved_instances_export.py", "description": "Export Reserved Instances"},
                 "8": {"name": "Cost Categories", "file": scripts_dir / "cost_categories_export.py", "description": "Export Cost Categories"},
                 "9": {"name": "Cost Anomaly Detection", "file": scripts_dir / "cost_anomaly_detection_export.py", "description": "Export Cost Anomaly Detection"},
-                "10": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "6": {
@@ -546,7 +549,6 @@ def get_menu_structure():
                 "9": {"name": "Cloud Map", "file": scripts_dir / "cloudmap_export.py", "description": "Export Cloud Map service discovery"},
                 "10": {"name": "SES", "file": scripts_dir / "ses_export.py", "description": "Export SES email identities"},
                 "11": {"name": "SES & Pinpoint", "file": scripts_dir / "ses_pinpoint_export.py", "description": "Export SES and Pinpoint combined"},
-                "12": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "7": {
@@ -562,17 +564,15 @@ def get_menu_structure():
                 "8": {"name": "Rekognition", "file": scripts_dir / "rekognition_export.py", "description": "Export Rekognition computer vision"},
                 "9": {"name": "CloudWatch", "file": scripts_dir / "cloudwatch_export.py", "description": "Export CloudWatch alarms and logs"},
                 "10": {"name": "X-Ray", "file": scripts_dir / "xray_export.py", "description": "Export X-Ray distributed tracing"},
-                "11": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "8": {
-            "name": "Developer Tools",
+            "name": "DevOps Services",
             "submenu": {
                 "1": {"name": "CodeBuild", "file": scripts_dir / "codebuild_export.py", "description": "Export CodeBuild projects"},
                 "2": {"name": "CodePipeline", "file": scripts_dir / "codepipeline_export.py", "description": "Export CodePipeline pipelines"},
                 "3": {"name": "CodeCommit", "file": scripts_dir / "codecommit_export.py", "description": "Export CodeCommit repositories"},
                 "4": {"name": "CodeDeploy", "file": scripts_dir / "codedeploy_export.py", "description": "Export CodeDeploy applications"},
-                "5": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "9": {
@@ -585,16 +585,13 @@ def get_menu_structure():
                 "5": {"name": "AWS Marketplace", "file": scripts_dir / "marketplace_export.py", "description": "Export AWS Marketplace configuration"},
                 "6": {"name": "AWS Control Tower", "file": scripts_dir / "controltower_export.py", "description": "Export Control Tower landing zone"},
                 "7": {"name": "Systems Manager Fleet", "file": scripts_dir / "ssm_fleet_export.py", "description": "Export SSM managed instances"},
-                "8": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
             }
         },
         "10": {
             "name": "Output Management",
-            "submenu": {
-                "1": {"name": "Create Output Archive", "file": None, "description": "Create a zip archive of all exported files", "action": "create_archive"},
-                "2": {"name": "Return to Main Menu", "file": None, "description": "Return to the main menu"}
-            }
-        }
+            "file": scripts_dir / "output_archive.py",
+            "description": "Create a zip archive of all exported files"
+        },
     }
 
     # Verify the script files exist (only for actual scripts)
