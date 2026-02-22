@@ -40,12 +40,7 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('reserved-instances-export')
-utils.log_script_start('reserved-instances-export', 'Export Reserved Instance data across AWS services')
+utils.setup_logging('reserved-instances-export')
 
 
 @utils.aws_error_handler("Collecting EC2 Reserved Instances", default_return=[])
@@ -275,142 +270,169 @@ def calculate_expiration_status(end_date) -> str:
         return 'Unknown'
 
 
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect Reserved Instance data and write the Excel export."""
+    utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({utils.mask_account_id(account_id)})")
+    utils.log_info(f"Scanning {len(regions)} region(s) for Reserved Instances...")
+
+    # Collect all RIs across all services and regions
+    all_ris = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect from each service
+        ec2_ris = collect_ec2_reserved_instances(region)
+        rds_ris = collect_rds_reserved_instances(region)
+        elasticache_ris = collect_elasticache_reserved_instances(region)
+        opensearch_ris = collect_opensearch_reserved_instances(region)
+        redshift_ris = collect_redshift_reserved_instances(region)
+        memorydb_ris = collect_memorydb_reserved_instances(region)
+
+        region_count = (len(ec2_ris) + len(rds_ris) + len(elasticache_ris) +
+                      len(opensearch_ris) + len(redshift_ris) + len(memorydb_ris))
+
+        if region_count > 0:
+            utils.log_info(f"  Found {region_count} Reserved Instances in {region}")
+            utils.log_info(f"    EC2: {len(ec2_ris)}, RDS: {len(rds_ris)}, "
+                         f"ElastiCache: {len(elasticache_ris)}, OpenSearch: {len(opensearch_ris)}, "
+                         f"Redshift: {len(redshift_ris)}, MemoryDB: {len(memorydb_ris)}")
+
+        all_ris.extend(ec2_ris)
+        all_ris.extend(rds_ris)
+        all_ris.extend(elasticache_ris)
+        all_ris.extend(opensearch_ris)
+        all_ris.extend(redshift_ris)
+        all_ris.extend(memorydb_ris)
+
+    if not all_ris:
+        utils.log_warning("No Reserved Instances found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total Reserved Instances found: {len(all_ris)}")
+
+    # Create DataFrame
+    df_all = utils.prepare_dataframe_for_export(pd.DataFrame(all_ris))
+
+    # Add expiration status if we have End dates
+    if not df_all.empty and 'End' in df_all.columns:
+        df_all['ExpirationStatus'] = df_all['End'].apply(calculate_expiration_status)
+
+    # Create summary by service
+    summary_data = []
+    if not df_all.empty:
+        for service in df_all['Service'].unique():
+            service_ris = df_all[df_all['Service'] == service]
+            active_ris = service_ris[service_ris['State'].isin(['active', 'payment-pending'])]
+
+            summary_data.append({
+                'Service': service,
+                'TotalReservations': len(service_ris),
+                'ActiveReservations': len(active_ris),
+                'TotalInstances': service_ris['InstanceCount'].sum(),
+                'RegionsWithRIs': service_ris['Region'].nunique(),
+                'UniqueInstanceTypes': service_ris['InstanceType'].nunique(),
+            })
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create active RIs view
+    df_active = df_all[df_all['State'].isin(['active', 'payment-pending'])] if not df_all.empty else pd.DataFrame()
+
+    # Create expiring RIs view (within 90 days)
+    df_expiring = pd.DataFrame()
+    if not df_all.empty and 'ExpirationStatus' in df_all.columns:
+        df_expiring = df_all[
+            (df_all['State'] == 'active') &
+            (df_all['ExpirationStatus'].str.contains('alert', na=False))
+        ]
+
+    # Create payment option breakdown
+    payment_data = []
+    if not df_all.empty and 'OfferingType' in df_all.columns:
+        for offering_type in df_all['OfferingType'].unique():
+            if offering_type == 'N/A':
+                continue
+            type_ris = df_all[df_all['OfferingType'] == offering_type]
+            payment_data.append({
+                'OfferingType': offering_type,
+                'Count': len(type_ris),
+                'TotalInstances': type_ris['InstanceCount'].sum(),
+                'Services': ', '.join(type_ris['Service'].unique()),
+            })
+
+    df_payment = utils.prepare_dataframe_for_export(pd.DataFrame(payment_data))
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'reserved-instances', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'All Reservations': df_all,
+        'Active Reservations': df_active,
+        'Expiring Soon': df_expiring,
+        'Payment Options': df_payment,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    # Log summary
+    utils.log_export_summary(
+        total_items=len(all_ris),
+        item_type='Reserved Instances',
+        filename=filename
+    )
+
+    if not df_expiring.empty:
+        utils.log_warning(f"  {len(df_expiring)} Reserved Instance(s) expiring within 90 days")
+
+    utils.log_success("Reserved Instances export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({utils.mask_account_id(account_id)})")
+        account_id, account_name = utils.print_script_banner("AWS RESERVED INSTANCES EXPORT")
 
-        # Prompt for regions
-        utils.log_info("Reserved Instances are regional resources.")
-        regions = utils.prompt_region_selection(
-            service_name="Reserved Instances",
-            default_to_all=False
-        )
+        step = 1
+        regions = None
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
-            return
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(
+                    service_name="Reserved Instances",
+                    default_to_all=False
+                )
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for Reserved Instances...")
-
-        # Collect all RIs across all services and regions
-        all_ris = []
-
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-            # Collect from each service
-            ec2_ris = collect_ec2_reserved_instances(region)
-            rds_ris = collect_rds_reserved_instances(region)
-            elasticache_ris = collect_elasticache_reserved_instances(region)
-            opensearch_ris = collect_opensearch_reserved_instances(region)
-            redshift_ris = collect_redshift_reserved_instances(region)
-            memorydb_ris = collect_memorydb_reserved_instances(region)
-
-            region_count = (len(ec2_ris) + len(rds_ris) + len(elasticache_ris) +
-                          len(opensearch_ris) + len(redshift_ris) + len(memorydb_ris))
-
-            if region_count > 0:
-                utils.log_info(f"  Found {region_count} Reserved Instances in {region}")
-                utils.log_info(f"    EC2: {len(ec2_ris)}, RDS: {len(rds_ris)}, "
-                             f"ElastiCache: {len(elasticache_ris)}, OpenSearch: {len(opensearch_ris)}, "
-                             f"Redshift: {len(redshift_ris)}, MemoryDB: {len(memorydb_ris)}")
-
-            all_ris.extend(ec2_ris)
-            all_ris.extend(rds_ris)
-            all_ris.extend(elasticache_ris)
-            all_ris.extend(opensearch_ris)
-            all_ris.extend(redshift_ris)
-            all_ris.extend(memorydb_ris)
-
-        if not all_ris:
-            utils.log_warning("No Reserved Instances found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total Reserved Instances found: {len(all_ris)}")
-
-        # Create DataFrame
-        df_all = utils.prepare_dataframe_for_export(pd.DataFrame(all_ris))
-
-        # Add expiration status if we have End dates
-        if not df_all.empty and 'End' in df_all.columns:
-            df_all['ExpirationStatus'] = df_all['End'].apply(calculate_expiration_status)
-
-        # Create summary by service
-        summary_data = []
-        if not df_all.empty:
-            for service in df_all['Service'].unique():
-                service_ris = df_all[df_all['Service'] == service]
-                active_ris = service_ris[service_ris['State'].isin(['active', 'payment-pending'])]
-
-                summary_data.append({
-                    'Service': service,
-                    'TotalReservations': len(service_ris),
-                    'ActiveReservations': len(active_ris),
-                    'TotalInstances': service_ris['InstanceCount'].sum(),
-                    'RegionsWithRIs': service_ris['Region'].nunique(),
-                    'UniqueInstanceTypes': service_ris['InstanceType'].nunique(),
-                })
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create active RIs view
-        df_active = df_all[df_all['State'].isin(['active', 'payment-pending'])] if not df_all.empty else pd.DataFrame()
-
-        # Create expiring RIs view (within 90 days)
-        df_expiring = pd.DataFrame()
-        if not df_all.empty and 'ExpirationStatus' in df_all.columns:
-            df_expiring = df_all[
-                (df_all['State'] == 'active') &
-                (df_all['ExpirationStatus'].str.contains('alert', na=False))
-            ]
-
-        # Create payment option breakdown
-        payment_data = []
-        if not df_all.empty and 'OfferingType' in df_all.columns:
-            for offering_type in df_all['OfferingType'].unique():
-                if offering_type == 'N/A':
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export Reserved Instances data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
                     continue
-                type_ris = df_all[df_all['OfferingType'] == offering_type]
-                payment_data.append({
-                    'OfferingType': offering_type,
-                    'Count': len(type_ris),
-                    'TotalInstances': type_ris['InstanceCount'].sum(),
-                    'Services': ', '.join(type_ris['Service'].unique()),
-                })
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-        df_payment = utils.prepare_dataframe_for_export(pd.DataFrame(payment_data))
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'reserved-instances', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'All Reservations': df_all,
-            'Active Reservations': df_active,
-            'Expiring Soon': df_expiring,
-            'Payment Options': df_payment,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        utils.log_export_summary(
-            total_items=len(all_ris),
-            item_type='Reserved Instances',
-            filename=filename
-        )
-
-        if not df_expiring.empty:
-            utils.log_warning(f"⚠️  {len(df_expiring)} Reserved Instance(s) expiring within 90 days")
-
-        utils.log_success("Reserved Instances export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export Reserved Instances: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

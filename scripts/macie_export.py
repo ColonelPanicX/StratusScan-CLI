@@ -42,6 +42,8 @@ except ImportError:
     utils.log_error("Install with: pip install pandas")
     sys.exit(1)
 
+utils.setup_logging("macie-export")
+
 
 @utils.aws_error_handler("Collecting Macie status from region", default_return=[])
 def collect_macie_status_from_region(region: str) -> List[Dict[str, Any]]:
@@ -559,23 +561,13 @@ def generate_summary(status: List[Dict[str, Any]],
     return summary
 
 
-def main():
-    """Main execution function."""
-    script_name = Path(__file__).stem
-    utils.setup_logging(script_name)
-    utils.log_script_start(script_name)
-
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect Macie data and write the Excel export."""
     # Check dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
         utils.log_error("Required dependencies not installed")
         return
 
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    utils.log_info(f"Account: {account_name} ({utils.mask_account_id(account_id)})")
-
-    # Detect partition for region examples
-    regions = utils.prompt_region_selection()
     # Collect data
     print("\n=== Collecting Macie Data ===")
     status = collect_macie_status(regions)
@@ -637,7 +629,54 @@ def main():
             }
         )
 
-    utils.log_script_end(script_name)
+
+def main():
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    try:
+        account_id, account_name = utils.print_script_banner("AWS MACIE DATA EXPORT")
+
+        # GovCloud availability guard — Macie is not available in GovCloud
+        partition = utils.detect_partition()
+        if not utils.is_service_available_in_partition("macie2", partition):
+            utils.log_warning("Amazon Macie is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
+
+        step = 1
+        regions = None
+
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="Macie")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
+
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export Macie data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
+
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
+
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
