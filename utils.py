@@ -115,9 +115,9 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Console handler (always enabled)
+    # Console handler — WARNING+ only; INFO goes to the log file exclusively
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
