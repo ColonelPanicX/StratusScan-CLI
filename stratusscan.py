@@ -629,7 +629,7 @@ def display_main_menu():
     for option, info in menu_structure.items():
         print(f"{option}. {info['name']}")
 
-    print("\n  b = back  |  x = main menu  |  q = quit")
+    print("\n  q = quit")
 
     return menu_structure
 
