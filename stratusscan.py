@@ -792,14 +792,20 @@ def navigate_menus():
                         create_output_archive(account_name)
                     elif selected_option["name"] == "Configure StratusScan":
                         if selected_option["file"]:
-                            success = execute_script(selected_option["file"])
+                            try:
+                                success = execute_script(selected_option["file"])
+                            except (BackSignal, ExitToMainSignal):
+                                continue
                             if success:
                                 print("\nConfiguration completed successfully!")
                                 print("You may need to restart StratusScan for changes to take effect.")
                             else:
                                 print("\nConfiguration may not have completed successfully.")
                     elif selected_option.get("file"):
-                        execute_script(selected_option["file"])
+                        try:
+                            execute_script(selected_option["file"])
+                        except (BackSignal, ExitToMainSignal):
+                            continue  # Script returned 'b' or 'x' — redisplay main menu
 
             # Submenu
             elif "submenu" in selected_option:
