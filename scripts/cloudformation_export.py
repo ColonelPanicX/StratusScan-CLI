@@ -43,10 +43,6 @@ except ImportError:
 # Check required packages
 utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
 
-# Setup logging
-logger = utils.setup_logging('cloudformation-export')
-utils.log_script_start('cloudformation-export', 'Export AWS CloudFormation stacks and StackSets')
-
 
 @utils.aws_error_handler("Collecting CloudFormation stacks", default_return=[])
 def collect_stacks(region: str) -> List[Dict[str, Any]]:
@@ -200,114 +196,149 @@ def collect_stackset_instances(region: str, stackset_name: str) -> List[Dict[str
     return instances
 
 
+def _run_export(account_id: str, account_name: str, regions: list) -> None:
+    """Collect CloudFormation data and write the Excel export."""
+    all_stacks = []
+    all_resources = []
+    all_stacksets = []
+    all_stackset_instances = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect stacks
+        stacks = collect_stacks(region)
+        if stacks:
+            utils.log_info(f"  Found {len(stacks)} stack(s)")
+            all_stacks.extend(stacks)
+
+            # Collect resources for each stack (sample first 10 to avoid too much data)
+            for stack in stacks[:10]:
+                stack_name = stack['StackName']
+                resources = collect_stack_resources(region, stack_name)
+                all_resources.extend(resources)
+
+        # Collect StackSets
+        stacksets = collect_stacksets(region)
+        if stacksets:
+            utils.log_info(f"  Found {len(stacksets)} StackSet(s)")
+            all_stacksets.extend(stacksets)
+
+            # Collect instances for each StackSet
+            for stackset in stacksets:
+                stackset_name = stackset['StackSetName']
+                instances = collect_stackset_instances(region, stackset_name)
+                all_stackset_instances.extend(instances)
+
+    if not all_stacks and not all_stacksets:
+        utils.log_warning("No CloudFormation stacks or StackSets found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total stacks found: {len(all_stacks)}")
+    utils.log_info(f"Total StackSets found: {len(all_stacksets)}")
+
+    # Create DataFrames
+    df_stacks = utils.prepare_dataframe_for_export(pd.DataFrame(all_stacks))
+    df_resources = utils.prepare_dataframe_for_export(pd.DataFrame(all_resources))
+    df_stacksets = utils.prepare_dataframe_for_export(pd.DataFrame(all_stacksets))
+    df_instances = utils.prepare_dataframe_for_export(pd.DataFrame(all_stackset_instances))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total Stacks', 'Value': len(all_stacks)})
+    summary_data.append({'Metric': 'Total StackSets', 'Value': len(all_stacksets)})
+    summary_data.append({'Metric': 'Total StackSet Instances', 'Value': len(all_stackset_instances)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_stacks.empty:
+        active_stacks = len(df_stacks[df_stacks['Status'].str.contains('COMPLETE', na=False)])
+        failed_stacks = len(df_stacks[df_stacks['Status'].str.contains('FAILED', na=False)])
+        protected_stacks = len(df_stacks[df_stacks['TerminationProtection'] == True])
+
+        summary_data.append({'Metric': 'Active Stacks (COMPLETE)', 'Value': active_stacks})
+        summary_data.append({'Metric': 'Failed Stacks', 'Value': failed_stacks})
+        summary_data.append({'Metric': 'Termination Protected', 'Value': protected_stacks})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create active stacks view
+    df_active = pd.DataFrame()
+    if not df_stacks.empty:
+        df_active = df_stacks[df_stacks['Status'].str.contains('COMPLETE', na=False)]
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'cloudformation', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'All Stacks': df_stacks,
+        'Active Stacks': df_active,
+        'Stack Resources': df_resources,
+        'StackSets': df_stacksets,
+        'StackSet Instances': df_instances,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    # Log summary
+    utils.log_export_summary(
+        total_items=len(all_stacks) + len(all_stacksets),
+        item_type='CloudFormation Resources',
+        filename=filename
+    )
+
+    utils.log_info(f"  Stacks: {len(all_stacks)}")
+    utils.log_info(f"  StackSets: {len(all_stacksets)}")
+    utils.log_info(f"  StackSet Instances: {len(all_stackset_instances)}")
+
+    utils.log_success("CloudFormation export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main function — 3-step state machine with b/x navigation."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting CloudFormation resources for account: {account_name} ({utils.mask_account_id(account_id)})")
+        utils.setup_logging("cloudformation-export")
+        account_id, account_name = utils.print_script_banner("AWS CLOUDFORMATION EXPORT")
 
-        # Detect partition for region examples
-        regions = utils.prompt_region_selection()
-        # Collect all stacks and related resources
-        all_stacks = []
-        all_resources = []
-        all_stacksets = []
-        all_stackset_instances = []
+        step = 1
+        regions = None
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="CloudFormation")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-            # Collect stacks
-            stacks = collect_stacks(region)
-            if stacks:
-                utils.log_info(f"  Found {len(stacks)} stack(s)")
-                all_stacks.extend(stacks)
+            elif step == 2:
+                if len(regions) <= 3:
+                    region_str = ', '.join(regions)
+                else:
+                    region_str = f"{len(regions)} regions"
+                msg = f"Ready to export CloudFormation data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-                # Collect resources for each stack (sample first 10 to avoid too much data)
-                for stack in stacks[:10]:
-                    stack_name = stack['StackName']
-                    resources = collect_stack_resources(region, stack_name)
-                    all_resources.extend(resources)
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-            # Collect StackSets
-            stacksets = collect_stacksets(region)
-            if stacksets:
-                utils.log_info(f"  Found {len(stacksets)} StackSet(s)")
-                all_stacksets.extend(stacksets)
-
-                # Collect instances for each StackSet
-                for stackset in stacksets:
-                    stackset_name = stackset['StackSetName']
-                    instances = collect_stackset_instances(region, stackset_name)
-                    all_stackset_instances.extend(instances)
-
-        if not all_stacks and not all_stacksets:
-            utils.log_warning("No CloudFormation stacks or StackSets found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total stacks found: {len(all_stacks)}")
-        utils.log_info(f"Total StackSets found: {len(all_stacksets)}")
-
-        # Create DataFrames
-        df_stacks = utils.prepare_dataframe_for_export(pd.DataFrame(all_stacks))
-        df_resources = utils.prepare_dataframe_for_export(pd.DataFrame(all_resources))
-        df_stacksets = utils.prepare_dataframe_for_export(pd.DataFrame(all_stacksets))
-        df_instances = utils.prepare_dataframe_for_export(pd.DataFrame(all_stackset_instances))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Stacks', 'Value': len(all_stacks)})
-        summary_data.append({'Metric': 'Total StackSets', 'Value': len(all_stacksets)})
-        summary_data.append({'Metric': 'Total StackSet Instances', 'Value': len(all_stackset_instances)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_stacks.empty:
-            active_stacks = len(df_stacks[df_stacks['Status'].str.contains('COMPLETE', na=False)])
-            failed_stacks = len(df_stacks[df_stacks['Status'].str.contains('FAILED', na=False)])
-            protected_stacks = len(df_stacks[df_stacks['TerminationProtection'] == True])
-
-            summary_data.append({'Metric': 'Active Stacks (COMPLETE)', 'Value': active_stacks})
-            summary_data.append({'Metric': 'Failed Stacks', 'Value': failed_stacks})
-            summary_data.append({'Metric': 'Termination Protected', 'Value': protected_stacks})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create active stacks view
-        df_active = pd.DataFrame()
-        if not df_stacks.empty:
-            df_active = df_stacks[df_stacks['Status'].str.contains('COMPLETE', na=False)]
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'cloudformation', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'All Stacks': df_stacks,
-            'Active Stacks': df_active,
-            'Stack Resources': df_resources,
-            'StackSets': df_stacksets,
-            'StackSet Instances': df_instances,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        utils.log_export_summary(
-            total_items=len(all_stacks) + len(all_stacksets),
-            item_type='CloudFormation Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  Stacks: {len(all_stacks)}")
-        utils.log_info(f"  StackSets: {len(all_stacksets)}")
-        utils.log_info(f"  StackSet Instances: {len(all_stackset_instances)}")
-
-        utils.log_success("CloudFormation export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export CloudFormation resources: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
