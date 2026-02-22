@@ -733,7 +733,10 @@ def handle_submenu(category_option, account_name):
 
         if confirmed:
             if selected_option["file"]:
-                execute_script(selected_option["file"])
+                try:
+                    execute_script(selected_option["file"])
+                except BackSignal:
+                    continue  # Script returned 'b' — stay in this submenu
             with contextlib.suppress(BackSignal):
                 # ExitToMainSignal and QuitSignal propagate
                 if not _confirm("Would you like to run another tool from this menu?"):

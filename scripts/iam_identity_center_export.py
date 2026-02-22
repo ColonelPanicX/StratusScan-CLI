@@ -16,10 +16,10 @@ to Excel format with AWS-specific naming conventions for security auditing and c
 reporting.
 
 Menu:
-  1. Users, Groups & Permission Sets (combined)
+  1. Users
   2. Groups
   3. Permission Sets
-  4. Comprehensive
+  4. All IAM Identity Center Resources (Users + Groups + Permission Sets)
 """
 
 import sys
@@ -1215,6 +1215,78 @@ def collect_comprehensive_permission_sets(instance_arn):
 # Export functions (private, prefixed with _)
 # ---------------------------------------------------------------------------
 
+def _export_users_to_excel(users_data, account_id, account_name):
+    """
+    Export Identity Center users data to Excel file.
+
+    Args:
+        users_data: List of user information dictionaries
+        account_id: AWS account ID
+        account_name: AWS account name
+
+    Returns:
+        str: Filename of exported file or None if failed
+    """
+    if not users_data:
+        utils.log_warning("No Identity Center users data to export.")
+        return None
+
+    try:
+        import pandas as pd
+
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        filename = utils.create_export_filename(account_name, "iam-identity-center-users", "", current_date)
+
+        users_df = pd.DataFrame(users_data)
+        users_df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(users_df))
+
+        total_users = len(users_data)
+        active_users = len([u for u in users_data if u.get('Status') == 'Active'])
+        inactive_users = len([u for u in users_data if u.get('Status') == 'Inactive'])
+        users_with_groups = len([u for u in users_data if u.get('Groups', 'None') != 'None'])
+        users_with_accounts = len([u for u in users_data if u.get('AWS Accounts', 'None') not in ['None', 'Unknown']])
+
+        summary_data = {
+            'Metric': [
+                'Total Users',
+                'Active Users',
+                'Inactive Users',
+                'Users with Group Memberships',
+                'Users with AWS Account Assignments',
+            ],
+            'Count': [
+                total_users,
+                active_users,
+                inactive_users,
+                users_with_groups,
+                users_with_accounts,
+            ]
+        }
+
+        summary_df = pd.DataFrame(summary_data)
+        summary_df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(summary_df))
+
+        data_frames = {
+            'Users Summary': summary_df,
+            'Identity Center Users': users_df,
+        }
+
+        output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
+
+        if output_path:
+            utils.log_success("AWS IAM Identity Center users exported successfully!")
+            utils.log_info(f"File location: {output_path}")
+            utils.log_info(f"Export contains {total_users} users ({active_users} active, {inactive_users} inactive)")
+            return str(output_path)
+        else:
+            utils.log_error("Error exporting to Excel. Please check the logs.")
+            return None
+
+    except Exception as e:
+        utils.log_error("Error exporting to Excel", e)
+        return None
+
+
 def _export_combined_to_excel(users_data, groups_data, permission_sets_data, account_id, account_name):
     """
     Export combined Identity Center data (users, groups, permission sets) to Excel.
@@ -1555,6 +1627,23 @@ def _export_comprehensive_to_excel(users_data, groups_data, permission_sets_data
 # Run functions
 # ---------------------------------------------------------------------------
 
+def _run_users_export(account_id, account_name):
+    """Collect Identity Center users; export users-only workbook."""
+    instance_arn, identity_store_id = get_identity_center_instance()
+    if not identity_store_id:
+        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
+        return
+
+    utils.log_info("Collecting Identity Center users...")
+    users_data = collect_identity_center_users(identity_store_id, instance_arn)
+
+    if not users_data:
+        utils.log_warning("No Identity Center users collected.")
+        return
+
+    _export_users_to_excel(users_data, account_id, account_name)
+
+
 def _run_combined_export(account_id, account_name):
     """Collect Identity Center users, groups, and permission sets; export combined workbook."""
     instance_arn, identity_store_id = get_identity_center_instance()
@@ -1656,10 +1745,10 @@ def main():
                 result = utils.prompt_menu(
                     "IAM IDENTITY CENTER EXPORT OPTIONS",
                     [
-                        "Users, Groups & Permission Sets (combined)",
+                        "Users",
                         "Groups",
                         "Permission Sets",
-                        "Comprehensive",
+                        "All IAM Identity Center Resources (Users + Groups + Permission Sets)",
                     ],
                 )
                 if result == 'back':
@@ -1671,10 +1760,10 @@ def main():
 
             elif step == 2:
                 choice_labels = {
-                    1: "Users, Groups & Permission Sets (combined)",
+                    1: "Users",
                     2: "Groups (with member details)",
                     3: "Permission Sets",
-                    4: "Comprehensive (all data, extended fields)",
+                    4: "All IAM Identity Center Resources (Users + Groups + Permission Sets)",
                 }
                 msg = f"Ready to export: {choice_labels[choice]}."
                 result = utils.prompt_confirmation(msg)
@@ -1687,13 +1776,13 @@ def main():
 
             elif step == 3:
                 if choice == 1:
-                    _run_combined_export(account_id, account_name)
+                    _run_users_export(account_id, account_name)
                 elif choice == 2:
                     _run_groups_export(account_id, account_name)
                 elif choice == 3:
                     _run_permission_sets_export(account_id, account_name)
                 elif choice == 4:
-                    _run_comprehensive_export(account_id, account_name)
+                    _run_combined_export(account_id, account_name)
 
                 print("\nScript execution completed.")
                 break
