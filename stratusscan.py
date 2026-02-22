@@ -307,6 +307,10 @@ def execute_script(script_path):
             return False
 
     except subprocess.CalledProcessError as e:
+        if e.returncode == 10:
+            raise BackSignal
+        if e.returncode == 11:
+            raise ExitToMainSignal
         print(f"Error executing script: {e}")
         utils.log_error(f"Script execution error: {script_name}", e)
         return False
