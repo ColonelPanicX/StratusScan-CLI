@@ -38,12 +38,7 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('ec2-dedicated-hosts-export')
-utils.log_script_start('ec2-dedicated-hosts-export', 'Export EC2 Dedicated Hosts')
+utils.setup_logging('ec2-dedicated-hosts-export')
 
 
 @utils.aws_error_handler("Collecting dedicated hosts", default_return=[])
@@ -183,158 +178,174 @@ def collect_host_instances(region: str, hosts: List[Dict[str, Any]]) -> List[Dic
     return host_instances
 
 
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect EC2 Dedicated Host data and write the Excel export."""
+    utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Dedicated Hosts...")
+
+    # Collect all resources
+    all_hosts = []
+    all_reservations = []
+    all_host_instances = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect dedicated hosts
+        hosts = collect_dedicated_hosts(region)
+        if hosts:
+            utils.log_info(f"  Found {len(hosts)} dedicated host(s)")
+            all_hosts.extend(hosts)
+
+            # Extract instance-to-host mappings
+            host_instances = collect_host_instances(region, hosts)
+            all_host_instances.extend(host_instances)
+
+        # Collect host reservations
+        reservations = collect_host_reservations(region)
+        if reservations:
+            utils.log_info(f"  Found {len(reservations)} host reservation(s)")
+            all_reservations.extend(reservations)
+
+    if not all_hosts and not all_reservations:
+        utils.log_warning("No EC2 Dedicated Hosts found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total dedicated hosts found: {len(all_hosts)}")
+    utils.log_info(f"Total host reservations found: {len(all_reservations)}")
+    utils.log_info(f"Total instance placements found: {len(all_host_instances)}")
+
+    # Create DataFrames
+    df_hosts = utils.prepare_dataframe_for_export(pd.DataFrame(all_hosts))
+    df_reservations = utils.prepare_dataframe_for_export(pd.DataFrame(all_reservations))
+    df_host_instances = utils.prepare_dataframe_for_export(pd.DataFrame(all_host_instances))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total Dedicated Hosts', 'Value': len(all_hosts)})
+    summary_data.append({'Metric': 'Total Host Reservations', 'Value': len(all_reservations)})
+    summary_data.append({'Metric': 'Total Instance Placements', 'Value': len(all_host_instances)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_hosts.empty:
+        available_hosts = len(df_hosts[df_hosts['State'] == 'available'])
+        released_hosts = len(df_hosts[df_hosts['State'] == 'released'])
+        under_assessment = len(df_hosts[df_hosts['State'] == 'under-assessment'])
+
+        summary_data.append({'Metric': 'Available Hosts', 'Value': available_hosts})
+        summary_data.append({'Metric': 'Released Hosts', 'Value': released_hosts})
+        summary_data.append({'Metric': 'Under Assessment', 'Value': under_assessment})
+
+        # Calculate total instances on hosts
+        total_instances = df_hosts['InstancesCount'].sum() if 'InstancesCount' in df_hosts.columns else 0
+        summary_data.append({'Metric': 'Total Instances on Hosts', 'Value': int(total_instances)})
+
+        # Find underutilized hosts
+        if 'UtilizationPercent' in df_hosts.columns:
+            # Extract numeric value from percentage string
+            df_hosts['UtilizationNumeric'] = df_hosts['UtilizationPercent'].str.rstrip('%').apply(
+                lambda x: float(x) if x != 'N/A' else 0
+            )
+            underutilized = len(df_hosts[
+                (df_hosts['State'] == 'available') &
+                (df_hosts['UtilizationNumeric'] < 50) &
+                (df_hosts['UtilizationNumeric'] > 0)
+            ])
+            summary_data.append({'Metric': 'Underutilized Hosts (<50%)', 'Value': underutilized})
+
+    if not df_reservations.empty:
+        active_reservations = len(df_reservations[df_reservations['State'] == 'active'])
+        expired_reservations = len(df_reservations[df_reservations['State'] == 'expired'])
+
+        summary_data.append({'Metric': 'Active Host Reservations', 'Value': active_reservations})
+        summary_data.append({'Metric': 'Expired Host Reservations', 'Value': expired_reservations})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create filtered views
+    df_available = pd.DataFrame()
+    df_underutilized = pd.DataFrame()
+    df_active_reservations = pd.DataFrame()
+
+    if not df_hosts.empty:
+        df_available = df_hosts[df_hosts['State'] == 'available']
+
+        # Underutilized hosts
+        if 'UtilizationNumeric' in df_hosts.columns:
+            df_underutilized = df_hosts[
+                (df_hosts['State'] == 'available') &
+                (df_hosts['UtilizationNumeric'] < 50) &
+                (df_hosts['UtilizationNumeric'] > 0)
+            ][df_hosts.columns.difference(['UtilizationNumeric'])]  # Remove temp column
+
+            # Remove temp column from main DataFrame
+            df_hosts = df_hosts.drop(columns=['UtilizationNumeric'])
+
+    if not df_reservations.empty:
+        df_active_reservations = df_reservations[df_reservations['State'] == 'active']
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'ec2-dedicated-hosts', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'All Hosts': df_hosts,
+        'Available Hosts': df_available,
+        'Underutilized Hosts': df_underutilized,
+        'Host Reservations': df_reservations,
+        'Active Reservations': df_active_reservations,
+        'Instance Placements': df_host_instances,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    utils.log_info(f"  Dedicated Hosts: {len(all_hosts)}")
+    utils.log_info(f"  Host Reservations: {len(all_reservations)}")
+    utils.log_info(f"  Instance Placements: {len(all_host_instances)}")
+
+    utils.log_success("EC2 Dedicated Hosts export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting EC2 Dedicated Hosts for account: {account_name} ({utils.mask_account_id(account_id)})")
+        account_id, account_name = utils.print_script_banner("AWS EC2 DEDICATED HOSTS EXPORT")
 
-        # Prompt for regions
-        utils.log_info("EC2 Dedicated Hosts are regional resources.")
-        regions = utils.prompt_region_selection(
-            service_name="EC2 Dedicated Hosts",
-            default_to_all=False
-        )
+        step = 1
+        regions = None
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
-            return
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="EC2 Dedicated Hosts")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Dedicated Hosts...")
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export EC2 Dedicated Hosts ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-        # Collect all resources
-        all_hosts = []
-        all_reservations = []
-        all_host_instances = []
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-            # Collect dedicated hosts
-            hosts = collect_dedicated_hosts(region)
-            if hosts:
-                utils.log_info(f"  Found {len(hosts)} dedicated host(s)")
-                all_hosts.extend(hosts)
-
-                # Extract instance-to-host mappings
-                host_instances = collect_host_instances(region, hosts)
-                all_host_instances.extend(host_instances)
-
-            # Collect host reservations
-            reservations = collect_host_reservations(region)
-            if reservations:
-                utils.log_info(f"  Found {len(reservations)} host reservation(s)")
-                all_reservations.extend(reservations)
-
-        if not all_hosts and not all_reservations:
-            utils.log_warning("No EC2 Dedicated Hosts found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total dedicated hosts found: {len(all_hosts)}")
-        utils.log_info(f"Total host reservations found: {len(all_reservations)}")
-        utils.log_info(f"Total instance placements found: {len(all_host_instances)}")
-
-        # Create DataFrames
-        df_hosts = utils.prepare_dataframe_for_export(pd.DataFrame(all_hosts))
-        df_reservations = utils.prepare_dataframe_for_export(pd.DataFrame(all_reservations))
-        df_host_instances = utils.prepare_dataframe_for_export(pd.DataFrame(all_host_instances))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Dedicated Hosts', 'Value': len(all_hosts)})
-        summary_data.append({'Metric': 'Total Host Reservations', 'Value': len(all_reservations)})
-        summary_data.append({'Metric': 'Total Instance Placements', 'Value': len(all_host_instances)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_hosts.empty:
-            available_hosts = len(df_hosts[df_hosts['State'] == 'available'])
-            released_hosts = len(df_hosts[df_hosts['State'] == 'released'])
-            under_assessment = len(df_hosts[df_hosts['State'] == 'under-assessment'])
-
-            summary_data.append({'Metric': 'Available Hosts', 'Value': available_hosts})
-            summary_data.append({'Metric': 'Released Hosts', 'Value': released_hosts})
-            summary_data.append({'Metric': 'Under Assessment', 'Value': under_assessment})
-
-            # Calculate total instances on hosts
-            total_instances = df_hosts['InstancesCount'].sum() if 'InstancesCount' in df_hosts.columns else 0
-            summary_data.append({'Metric': 'Total Instances on Hosts', 'Value': int(total_instances)})
-
-            # Find underutilized hosts
-            if 'UtilizationPercent' in df_hosts.columns:
-                # Extract numeric value from percentage string
-                df_hosts['UtilizationNumeric'] = df_hosts['UtilizationPercent'].str.rstrip('%').apply(
-                    lambda x: float(x) if x != 'N/A' else 0
-                )
-                underutilized = len(df_hosts[
-                    (df_hosts['State'] == 'available') &
-                    (df_hosts['UtilizationNumeric'] < 50) &
-                    (df_hosts['UtilizationNumeric'] > 0)
-                ])
-                summary_data.append({'Metric': 'Underutilized Hosts (<50%)', 'Value': underutilized})
-
-        if not df_reservations.empty:
-            active_reservations = len(df_reservations[df_reservations['State'] == 'active'])
-            expired_reservations = len(df_reservations[df_reservations['State'] == 'expired'])
-
-            summary_data.append({'Metric': 'Active Host Reservations', 'Value': active_reservations})
-            summary_data.append({'Metric': 'Expired Host Reservations', 'Value': expired_reservations})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_available = pd.DataFrame()
-        df_underutilized = pd.DataFrame()
-        df_active_reservations = pd.DataFrame()
-
-        if not df_hosts.empty:
-            df_available = df_hosts[df_hosts['State'] == 'available']
-
-            # Underutilized hosts
-            if 'UtilizationNumeric' in df_hosts.columns:
-                df_underutilized = df_hosts[
-                    (df_hosts['State'] == 'available') &
-                    (df_hosts['UtilizationNumeric'] < 50) &
-                    (df_hosts['UtilizationNumeric'] > 0)
-                ][df_hosts.columns.difference(['UtilizationNumeric'])]  # Remove temp column
-
-                # Remove temp column from main DataFrame
-                df_hosts = df_hosts.drop(columns=['UtilizationNumeric'])
-
-        if not df_reservations.empty:
-            df_active_reservations = df_reservations[df_reservations['State'] == 'active']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'ec2-dedicated-hosts', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'All Hosts': df_hosts,
-            'Available Hosts': df_available,
-            'Underutilized Hosts': df_underutilized,
-            'Host Reservations': df_reservations,
-            'Active Reservations': df_active_reservations,
-            'Instance Placements': df_host_instances,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        utils.log_export_summary(
-            total_items=len(all_hosts) + len(all_reservations),
-            item_type='EC2 Dedicated Hosts',
-            filename=filename
-        )
-
-        utils.log_info(f"  Dedicated Hosts: {len(all_hosts)}")
-        utils.log_info(f"  Host Reservations: {len(all_reservations)}")
-        utils.log_info(f"  Instance Placements: {len(all_host_instances)}")
-
-        utils.log_success("EC2 Dedicated Hosts export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export EC2 Dedicated Hosts: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
