@@ -413,17 +413,16 @@ def get_menu_structure():
                     "name": "Compute Resources",
                     "submenu": {
                         "1": {"name": "EC2", "file": scripts_dir / "ec2_export.py", "description": "Export EC2 instance data"},
-                        "2": {"name": "RDS", "file": scripts_dir / "rds_export.py", "description": "Export RDS instance information"},
-                        "3": {"name": "EKS", "file": scripts_dir / "eks_export.py", "description": "Export EKS cluster information"},
-                        "4": {"name": "ECS", "file": scripts_dir / "ecs_export.py", "description": "Export ECS cluster and service information"},
-                        "5": {"name": "Auto Scaling Groups", "file": scripts_dir / "autoscaling_export.py", "description": "Export Auto Scaling Group configurations"},
-                        "6": {"name": "Lambda Functions", "file": scripts_dir / "lambda_export.py", "description": "Export Lambda function configurations"},
-                        "7": {"name": "ECR", "file": scripts_dir / "ecr_export.py", "description": "Export ECR repositories and images"},
-                        "8": {"name": "AMI", "file": scripts_dir / "ami_export.py", "description": "Export account-owned AMIs"},
-                        "9": {"name": "EC2 Image Builder", "file": scripts_dir / "image_builder_export.py", "description": "Export Image Builder pipelines"},
-                        "10": {"name": "EC2 Capacity Reservations", "file": scripts_dir / "ec2_capacity_reservations_export.py", "description": "Export EC2 Capacity Reservations"},
-                        "11": {"name": "EC2 Dedicated Hosts", "file": scripts_dir / "ec2_dedicated_hosts_export.py", "description": "Export EC2 Dedicated Hosts"},
-                        "12": {"name": "All Compute Resources", "file": scripts_dir / "compute_resources.py", "description": "Export all compute resources in one report"},
+                        "2": {"name": "EKS", "file": scripts_dir / "eks_export.py", "description": "Export EKS cluster information"},
+                        "3": {"name": "ECS", "file": scripts_dir / "ecs_export.py", "description": "Export ECS cluster and service information"},
+                        "4": {"name": "Auto Scaling Groups", "file": scripts_dir / "autoscaling_export.py", "description": "Export Auto Scaling Group configurations"},
+                        "5": {"name": "Lambda Functions", "file": scripts_dir / "lambda_export.py", "description": "Export Lambda function configurations"},
+                        "6": {"name": "ECR", "file": scripts_dir / "ecr_export.py", "description": "Export ECR repositories and images"},
+                        "7": {"name": "AMI", "file": scripts_dir / "ami_export.py", "description": "Export account-owned AMIs"},
+                        "8": {"name": "EC2 Image Builder", "file": scripts_dir / "image_builder_export.py", "description": "Export Image Builder pipelines"},
+                        "9": {"name": "EC2 Capacity Reservations", "file": scripts_dir / "ec2_capacity_reservations_export.py", "description": "Export EC2 Capacity Reservations"},
+                        "10": {"name": "EC2 Dedicated Hosts", "file": scripts_dir / "ec2_dedicated_hosts_export.py", "description": "Export EC2 Dedicated Hosts"},
+                        "11": {"name": "All Compute Resources", "file": scripts_dir / "compute_resources.py", "description": "Export all compute resources in one report"},
                     }
                 },
                 "2": {
@@ -465,10 +464,11 @@ def get_menu_structure():
                 "4": {
                     "name": "Database Resources",
                     "submenu": {
-                        "1": {"name": "DynamoDB", "file": scripts_dir / "dynamodb_export.py", "description": "Export DynamoDB tables and GSIs"},
-                        "2": {"name": "ElastiCache", "file": scripts_dir / "elasticache_export.py", "description": "Export ElastiCache clusters"},
-                        "3": {"name": "DocumentDB", "file": scripts_dir / "documentdb_export.py", "description": "Export DocumentDB clusters"},
-                        "4": {"name": "Neptune", "file": scripts_dir / "neptune_export.py", "description": "Export Neptune graph databases"},
+                        "1": {"name": "RDS", "file": scripts_dir / "rds_export.py", "description": "Export RDS instance information"},
+                        "2": {"name": "DynamoDB", "file": scripts_dir / "dynamodb_export.py", "description": "Export DynamoDB tables and GSIs"},
+                        "3": {"name": "ElastiCache", "file": scripts_dir / "elasticache_export.py", "description": "Export ElastiCache clusters"},
+                        "4": {"name": "DocumentDB", "file": scripts_dir / "documentdb_export.py", "description": "Export DocumentDB clusters"},
+                        "5": {"name": "Neptune", "file": scripts_dir / "neptune_export.py", "description": "Export Neptune graph databases"},
                     }
                 },
             }
