@@ -63,7 +63,7 @@ def collect_autoscaling_groups(regions: List[str]) -> List[Dict[str, Any]]:
     all_asgs = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             utils.log_error(f"Skipping invalid AWS region: {region}")
             continue
 
@@ -189,7 +189,7 @@ def collect_asg_instances(regions: List[str]) -> List[Dict[str, Any]]:
     all_instances = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             continue
 
         print(f"\nProcessing region: {region}")
@@ -251,7 +251,7 @@ def collect_scaling_policies(regions: List[str]) -> List[Dict[str, Any]]:
     all_policies = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             continue
 
         print(f"\nProcessing region: {region}")

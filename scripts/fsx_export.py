@@ -48,7 +48,7 @@ def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for FSx file systems."""
     file_systems_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return file_systems_data
 
     try:
@@ -178,7 +178,7 @@ def _scan_fsx_backups_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for FSx backups."""
     backups_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return backups_data
 
     try:
