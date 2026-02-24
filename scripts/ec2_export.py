@@ -25,6 +25,7 @@ Features:
 import sys
 import datetime
 import csv
+import json
 from pathlib import Path
 import re
 
@@ -199,42 +200,50 @@ def format_tags(tags):
     else:
         return 'N/A'
 
-def load_pricing_data():
+def load_pricing_data(region='us-east-1'):
     """
-    Load EC2 pricing data from the reference CSV file
+    Load EC2 pricing data from the reference JSON file.
+    Selects the correct pricing block based on the region's partition.
+
+    Args:
+        region (str): AWS region being scanned, used to detect partition and
+                      select the appropriate pricing block (us-east-1 for
+                      commercial, us-gov-west-1 for GovCloud).
 
     Returns:
-        dict: Dictionary mapping instance types to pricing data
+        dict: {instance_type: {'linux': float|None, 'windows': float|None,
+                                'memory_gib': float|None}}
     """
     pricing_data = {}
     try:
-        # Get the reference directory path relative to the script
         script_dir = Path(__file__).parent.absolute()
-        pricing_file = script_dir.parent / 'reference' / 'ec2-pricing.csv'
+        pricing_file = script_dir.parent / 'reference' / 'ec2-pricing.json'
 
         if not pricing_file.exists():
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                instance_type = row.get('API Name', '').strip()
-                if instance_type:
-                    # Parse Linux pricing (On Demand Monthly)
-                    linux_price_str = row.get(' On Demand (Monthly) ', '').strip()
-                    linux_price = parse_price(linux_price_str)
+        with open(pricing_file, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
 
-                    # Parse Windows pricing (Windows On Demand cost Monthly)
-                    windows_price_str = row.get(' Windows On Demand cost (Monthly) ', '').strip()
-                    windows_price = parse_price(windows_price_str)
+        partition = utils.detect_partition(region)
+        pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
 
-                    pricing_data[instance_type] = {
-                        'linux': linux_price,
-                        'windows': windows_price
-                    }
+        for instance_type, data in json_data.get('records', {}).items():
+            regional = (
+                data.get('pricing', {}).get(pricing_region)
+                or data.get('pricing', {}).get('us-east-1', {})
+            )
+            pricing_data[instance_type] = {
+                'linux': regional.get('linux_on_demand_monthly_usd'),
+                'windows': regional.get('windows_on_demand_monthly_usd'),
+                'memory_gib': data.get('memory_gib'),
+            }
 
-        utils.log_info(f"Loaded pricing data for {len(pricing_data)} instance types")
+        utils.log_info(
+            f"Loaded pricing data for {len(pricing_data)} instance types "
+            f"({pricing_region} pricing)"
+        )
         return pricing_data
 
     except Exception as e:
@@ -440,7 +449,7 @@ def get_instance_data(region, instance_filter=None):
     instances = []
 
     # Load pricing data
-    pricing_data = load_pricing_data()
+    pricing_data = load_pricing_data(region)
     storage_pricing = load_storage_pricing_data()
     
     try:
@@ -490,8 +499,8 @@ def get_instance_data(region, instance_filter=None):
                 except Exception as e:
                     utils.log_warning(f"Error prefetching volumes in {region}: {e}")
 
-        # Prefetch instance type metadata in batches to avoid N+1 describe_instance_types calls
-        # AWS limit: 100 instance types per request
+        # Build RAM map from pricing JSON (memory_gib -> MiB); fall back to
+        # describe_instance_types for any types absent from the JSON.
         instance_types_map = {}
         if total_instances > 0:
             unique_types = list({
@@ -500,14 +509,28 @@ def get_instance_data(region, instance_filter=None):
                 for inst in reservation['Instances']
                 if inst.get('InstanceType')
             })
-            for i in range(0, len(unique_types), 100):
-                chunk = unique_types[i:i + 100]
+            unknown_types = []
+            for it in unique_types:
+                memory_gib = pricing_data.get(it, {}).get('memory_gib')
+                if memory_gib is not None:
+                    instance_types_map[it] = int(memory_gib * 1024)
+                else:
+                    unknown_types.append(it)
+            for i in range(0, len(unknown_types), 100):
+                chunk = unknown_types[i:i + 100]
                 try:
                     resp = ec2.describe_instance_types(InstanceTypes=chunk)
                     for it in resp.get('InstanceTypes', []):
                         instance_types_map[it['InstanceType']] = it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A')
                 except Exception as e:
-                    utils.log_warning(f"Error prefetching instance types in {region}: {e}")
+                    utils.log_warning(f"Error fetching instance types in {region}: {e}")
+
+        _partition = utils.detect_partition(region)
+        cost_note = (
+            "Estimate (us-gov-west-1 pricing)"
+            if _partition == 'aws-us-gov'
+            else "Estimate (us-east-1 pricing)"
+        )
 
         processed = 0
         for reservation in all_reservations:
@@ -608,7 +631,7 @@ def get_instance_data(region, instance_filter=None):
                     'Monthly Cost (On-Demand)': monthly_cost,
                     'Monthly Storage Cost': storage_cost,
                     'Total Monthly Cost': total_monthly_cost,
-                    'Cost Note': 'Estimate (us-east-1 pricing)',
+                    'Cost Note': cost_note,
                     'Operating System': os_info,
                     'AMI Name': ami_name,
                     'Private IPv4': instance.get('PrivateIpAddress', 'N/A'),
