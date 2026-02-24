@@ -225,10 +225,12 @@ def collect_opensearch_domains(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect OpenSearch Service domain information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_domains = utils.scan_regions_concurrent(
+    all_domains = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_opensearch_domains_in_region,
-    )
+    ):
+        all_domains.extend(region_data)
 
     return all_domains
 
@@ -292,10 +294,12 @@ def collect_opensearch_tags(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect OpenSearch Service domain tags from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_tags = utils.scan_regions_concurrent(
+    all_tags = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_opensearch_tags_in_region,
-    )
+    ):
+        all_tags.extend(region_data)
 
     return all_tags
 
