@@ -428,45 +428,36 @@ def main():
     """
     try:
         # Print the script title and get account information
+        utils.setup_logging("ecs-export")
         account_id, account_name = utils.print_script_banner("AWS ECS (ELASTIC CONTAINER SERVICE) RESOURCE EXPORT")
-        
+
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-        
+
         # Import pandas after checking dependencies
         import pandas as pd
 
-        # Detect partition for region examples
         regions = utils.prompt_region_selection()
-        region_suffix = 'all'
+
+        all_ecs_resources = get_ecs_resources(regions)
+
         # Create DataFrame
         df = pd.DataFrame(all_ecs_resources)
-        
-        # Generate filename with current date
-        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-        
-        # Specify region in filename if a specific region was chosen
-        region_suffix = "" if region_choice == 'all' else f"-{region_choice}"
-        
+
         # Create export filename using utils
-        filename = utils.create_export_filename(
-            account_name, 
-            "ecs-resources", 
-            region_suffix, 
-            current_date
-        )
-        
+        filename = utils.create_export_filename(account_name, "ecs-resources", "all")
+
         # Export to Excel
         output_path = utils.save_dataframe_to_excel(df, filename)
-        
+
         if output_path:
             print(f"\nExport completed successfully!")
             print(f"File saved as: {output_path}")
             print(f"Total ECS resources collected: {len(all_ecs_resources)}")
         else:
             print("\nError exporting data to Excel.")
-        
+
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         sys.exit(1)

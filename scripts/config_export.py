@@ -57,7 +57,7 @@ def collect_configuration_recorders_from_region(region: str) -> List[Dict[str, A
     Returns:
         list: List of dictionaries with recorder information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -178,7 +178,7 @@ def collect_delivery_channels_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with delivery channel information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     channels_data = []
@@ -262,7 +262,7 @@ def collect_config_rules_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with config rule information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     rules_data = []
@@ -378,7 +378,7 @@ def collect_conformance_packs_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with conformance pack information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     packs_data = []

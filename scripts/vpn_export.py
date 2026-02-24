@@ -147,7 +147,6 @@ def collect_vpn_connections(regions: List[str]) -> List[Dict[str, Any]]:
     vpn_connections = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_vpn_connections_in_region,
-        resource_type="VPN connections"
     )
 
     utils.log_success(f"Total Site-to-Site VPN connections collected: {len(vpn_connections)}")
@@ -271,7 +270,6 @@ def collect_vpn_tunnels(regions: List[str]) -> List[Dict[str, Any]]:
     tunnels = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_vpn_tunnels_in_region,
-        resource_type="VPN tunnels"
     )
 
     utils.log_success(f"Total VPN tunnels collected: {len(tunnels)}")
@@ -353,7 +351,6 @@ def collect_customer_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     gateways = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_customer_gateways_in_region,
-        resource_type="customer gateways"
     )
 
     utils.log_success(f"Total customer gateways collected: {len(gateways)}")
@@ -443,7 +440,6 @@ def collect_virtual_private_gateways(regions: List[str]) -> List[Dict[str, Any]]
     vgws = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_virtual_private_gateways_in_region,
-        resource_type="virtual private gateways"
     )
 
     utils.log_success(f"Total virtual private gateways collected: {len(vgws)}")
@@ -626,7 +622,6 @@ def collect_client_vpn_authorization_rules(regions: List[str]) -> List[Dict[str,
     rules = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_client_vpn_authorization_rules_in_region,
-        resource_type="Client VPN authorization rules"
     )
 
     utils.log_success(f"Total Client VPN authorization rules collected: {len(rules)}")

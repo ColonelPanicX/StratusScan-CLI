@@ -57,7 +57,7 @@ def collect_detectors_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with detector information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -175,7 +175,7 @@ def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with finding information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     findings_data = []
@@ -324,7 +324,7 @@ def collect_threat_intel_sets_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with threat intel set information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     threat_sets_data = []
@@ -421,7 +421,7 @@ def collect_ip_sets_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with IP set information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     ip_sets_data = []

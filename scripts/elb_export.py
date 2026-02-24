@@ -56,7 +56,7 @@ def is_valid_aws_region(region_name):
     Returns:
         bool: True if valid, False otherwise
     """
-    return utils.validate_aws_region(region_name)
+    return utils.is_aws_region(region_name)
 
 @utils.aws_error_handler("Fetching security group names", default_return={})
 def get_security_group_names(security_group_ids, region):
@@ -74,7 +74,7 @@ def get_security_group_names(security_group_ids, region):
         return {}
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return {}
 
@@ -102,7 +102,7 @@ def get_classic_load_balancers(region):
         list: List of dictionaries containing Classic Load Balancer information
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 
@@ -179,7 +179,7 @@ def get_application_network_load_balancers(region):
         list: List of dictionaries containing ALB/NLB information
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 
@@ -254,6 +254,7 @@ def main():
     Main function to run the script
     """
     # Print the title screen and get the account name
+    utils.setup_logging("elb-export")
     account_id, account_name = utils.print_script_banner("AWS ELB INVENTORY EXPORT")
     
     # Check for required dependencies

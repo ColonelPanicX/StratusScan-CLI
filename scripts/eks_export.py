@@ -592,6 +592,7 @@ def main():
         import pandas as pd
 
         # Print title and get account info
+        utils.setup_logging("eks-export")
         account_id, account_name = utils.print_script_banner("AWS EKS CLUSTER INFORMATION COLLECTION EXPORT")
 
         try:
