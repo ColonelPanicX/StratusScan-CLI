@@ -155,11 +155,13 @@ def collect_efs_file_systems(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_file_systems = utils.scan_regions_concurrent(
+    all_file_systems = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_efs_file_systems_in_region,
         show_progress=True
-    )
+    ):
+        all_file_systems.extend(region_data)
 
     utils.log_success(f"Total EFS file systems collected: {len(all_file_systems)}")
     return all_file_systems
@@ -241,11 +243,13 @@ def collect_mount_targets(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_mount_targets = utils.scan_regions_concurrent(
+    all_mount_targets = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_mount_targets_in_region,
         show_progress=True
-    )
+    ):
+        all_mount_targets.extend(region_data)
 
     utils.log_success(f"Total mount targets collected: {len(all_mount_targets)}")
     return all_mount_targets
@@ -329,11 +333,13 @@ def collect_access_points(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_access_points = utils.scan_regions_concurrent(
+    all_access_points = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_access_points_in_region,
         show_progress=True
-    )
+    ):
+        all_access_points.extend(region_data)
 
     utils.log_success(f"Total access points collected: {len(all_access_points)}")
     return all_access_points
