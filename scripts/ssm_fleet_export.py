@@ -47,7 +47,7 @@ def _scan_managed_instances_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SSM managed instances."""
     instances_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return instances_data
 
     try:
@@ -151,7 +151,7 @@ def _scan_patch_compliance_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SSM patch compliance."""
     compliance_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return compliance_data
 
     try:
@@ -247,7 +247,7 @@ def _scan_ssm_parameters_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SSM parameters."""
     parameters_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return parameters_data
 
     try:

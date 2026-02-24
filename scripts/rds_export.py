@@ -63,7 +63,7 @@ def is_valid_aws_region(region_name):
     Returns:
         bool: True if valid, False otherwise
     """
-    return utils.validate_aws_region(region_name)
+    return utils.is_aws_region(region_name)
 
 def get_security_group_info(rds_client, sg_ids):
     """
@@ -323,7 +323,7 @@ def get_rds_instances(region):
         list: List of dictionaries containing RDS instance information
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 

@@ -96,7 +96,7 @@ def get_bucket_object_count(bucket_name, region):
         int: Total number of objects in the bucket
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return 0
 
@@ -311,7 +311,7 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
     account_id = utils.get_boto3_client('sts').get_caller_identity()["Account"]
 
     # Validate target region if specified
-    if target_region and not utils.validate_aws_region(target_region):
+    if target_region and not utils.is_aws_region(target_region):
         utils.log_error(f"Invalid AWS region: {target_region}")
         return []
 

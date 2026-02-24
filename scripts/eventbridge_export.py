@@ -46,7 +46,7 @@ except ImportError:
 def _scan_event_buses_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for EventBridge event buses."""
     buses_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return buses_data
 
     try:
@@ -80,7 +80,7 @@ def collect_event_buses(regions: List[str]) -> List[Dict[str, Any]]:
 def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for EventBridge rules."""
     rules_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return rules_data
 
     try:
@@ -131,7 +131,7 @@ def collect_event_rules(regions: List[str]) -> List[Dict[str, Any]]:
 def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for EventBridge rule targets."""
     targets_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return targets_data
 
     try:
