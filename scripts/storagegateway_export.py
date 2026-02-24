@@ -35,9 +35,6 @@ from botocore.exceptions import ClientError
 
 
 # ============================================================================
-# DEPENDENCY CHECKING
-# ============================================================================
-# ============================================================================
 # DATA COLLECTION FUNCTIONS
 # ============================================================================
 
@@ -650,28 +647,8 @@ def create_summary_sheet(gateways: List[Dict[str, Any]], file_shares: List[Dict[
 # MAIN EXECUTION
 # ============================================================================
 
-def main():
-    """Main execution function."""
-    script_name = Path(__file__).stem
-    utils.setup_logging(script_name)
-
-    utils.log_info("=" * 80)
-    utils.log_info("StratusScan - AWS Storage Gateway Export")
-    utils.log_info("=" * 80)
-
-    # Check dependencies
-    if not utils.ensure_dependencies('pandas', 'openpyxl'):
-        utils.log_error("Missing required dependencies. Please install them and try again.")
-        sys.exit(1)
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
-
-    # Get regions to scan
-    # Detect partition for region examples
-    regions = utils.prompt_region_selection()
-    # Collect all data
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect Storage Gateway data and write the Excel export."""
     utils.log_info("\n" + "=" * 80)
     utils.log_info("Collecting Storage Gateway Data")
     utils.log_info("=" * 80)
@@ -763,6 +740,56 @@ def main():
         utils.log_info(f"  - Local Disks: {len(local_disks)}")
     else:
         utils.log_error("Export failed. Check the log file for details.")
+        sys.exit(1)
+
+
+def main():
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            utils.log_error("Missing required dependencies. Please install them and try again.")
+            sys.exit(1)
+
+        utils.setup_logging('storagegateway-export')
+        account_id, account_name = utils.print_script_banner("AWS STORAGE GATEWAY EXPORT")
+
+        utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
+
+        step = 1
+        regions = None
+
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="Storage Gateway")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
+
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export Storage Gateway data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
+
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
+
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
         sys.exit(1)
 
 

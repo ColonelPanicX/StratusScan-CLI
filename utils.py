@@ -115,9 +115,9 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Console handler (always enabled)
+    # Console handler — WARNING+ only; INFO goes to the log file exclusively
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
@@ -187,179 +187,179 @@ def get_logger() -> logging.Logger:
 DEFAULT_REGIONS = ['us-east-1', 'us-west-2', 'us-west-1', 'eu-west-1']
 AWS_PARTITION = 'aws'
 
-def prompt_region_selection(
-    service_name: Optional[str] = None,
-    prompt_message: Optional[str] = None,
-    default_to_all: bool = False,
-    allow_all: bool = True
-) -> List[str]:
+def prompt_menu(
+    title: str,
+    options: List[str],
+    allow_back: bool = True,
+    allow_exit: bool = True,
+) -> Union[int, str]:
     """
-    Prompt user for AWS region selection with standardized 3-option menu.
-
-    This function provides a consistent user experience across all export scripts
-    with partition-aware region examples and robust input validation.
+    Display a bordered numbered menu and return the user's choice.
 
     Args:
-        service_name: Name of the AWS service (e.g., "Lambda", "S3")
-                     Used to customize the prompt message if prompt_message not provided
-        prompt_message: Custom message to display before menu
-                       If provided, overrides service_name in message
-        default_to_all: If True, make "All Regions" the default choice
-                       If False, make "Default Regions" the default choice
-        allow_all: If True, include "All Regions" option (default: True)
+        title: Menu title displayed above the border
+        options: List of option strings (displayed as 1..N)
+        allow_back: If True, show and accept 'b' to go back (default: True)
+        allow_exit: If True, show and accept 'x' to exit (default: True)
 
     Returns:
-        list: List of selected AWS region names
+        int 1..N if the user picks a numbered option,
+        'back' if the user enters 'b' (and allow_back is True),
+        'exit' if the user enters 'x' (and allow_exit is True).
+    """
+    if is_auto_run():
+        return 1
 
-    Examples:
-        # Basic usage with service name
-        regions = utils.prompt_region_selection(service_name="Lambda")
+    print(f"\n{title}")
+    print("=" * 64)
+    for i, opt in enumerate(options, 1):
+        print(f"  {i}. {opt}")
+    print("-" * 64)
+    footer_parts = []
+    if allow_back:
+        footer_parts.append("b. Back")
+    if allow_exit:
+        footer_parts.append("x. Exit")
+    if footer_parts:
+        print("  " + "    ".join(footer_parts))
+    print("=" * 64)
 
-        # Custom prompt message
-        regions = utils.prompt_region_selection(
-            prompt_message="Select regions for DataSync export:",
-            allow_all=True
-        )
+    valid = set(str(i) for i in range(1, len(options) + 1))
+    if allow_back:
+        valid.add("b")
+    if allow_exit:
+        valid.add("x")
 
-        # Default to all regions
-        regions = utils.prompt_region_selection(
-            service_name="Detective",
-            default_to_all=False
-        )
+    while True:
+        try:
+            choice = input("Enter your choice: ").strip().lower()
+        except KeyboardInterrupt:
+            print()
+            if allow_exit:
+                return 'exit'
+            continue
+
+        if choice in valid:
+            if choice == 'b':
+                return 'back'
+            if choice == 'x':
+                return 'exit'
+            return int(choice)
+        print("Invalid choice. Please try again.")
+
+
+def prompt_region_selection(
+    service_name: Optional[str] = None,
+) -> Union[List[str], str]:
+    """
+    Prompt user for AWS region selection with a standardized 3-option menu.
+
+    Args:
+        service_name: Optional name of the AWS service (e.g. "EC2", "Lambda").
+                      Displayed as context before the menu.
+
+    Returns:
+        List[str] of selected region names, 'back', or 'exit'.
+        Never calls sys.exit() directly.
     """
     # Automation mode: bypass interactive prompts when STRATUSSCAN_AUTO_RUN is set
     if is_auto_run():
         auto_regions = get_auto_regions()
         if auto_regions:
             return auto_regions
-        # Fall through: return all regions when auto-run set but no STRATUSSCAN_REGIONS
         _partition = detect_partition()
         return get_partition_regions(_partition, all_regions=True)
 
-    # Detect partition for region examples
     partition = detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
+    default_regions = get_default_regions()
+    default_str = ", ".join(default_regions[:4])
+    if len(default_regions) > 4:
+        default_str += ", ..."
 
-    # Build prompt message
-    if prompt_message:
-        print(f"\n{prompt_message}")
-    elif service_name:
-        print(f"\n{service_name} is a regional service.")
+    if service_name:
+        print(f"\n{service_name} region selection")
 
-    # Display standardized region selection menu
-    print("\n" + "=" * 68)
-    print("REGION SELECTION")
-    print("=" * 68)
-    print("\nPlease select an option for region selection:")
-    print("\n  1. Default Regions")
-    print(f"     ({example_regions})")
+    options = [
+        f"Default Regions    ({default_str})",
+        "All Regions        (scan every region in the partition)",
+        "Select Regions     (choose one or more from a list)",
+    ]
 
-    if allow_all:
-        print("\n  2. All Available Regions")
-        print("     (Scan all regions where the service is available)")
-        print("\n  3. Specific Region")
-        print("     (Enter a specific AWS region code)")
-    else:
-        print("\n  2. Specific Region")
-        print("     (Enter a specific AWS region code)")
+    while True:
+        choice = prompt_menu("REGION SELECTION", options)
+        if choice == 'back':
+            return 'back'
+        if choice == 'exit':
+            return 'exit'
 
-    print("\n" + "-" * 68)
+        if choice == 1:
+            return default_regions
 
-    # Get and validate region choice
-    regions = []
-    while not regions:
-        try:
-            if allow_all:
-                region_choice = input("\nEnter your choice (1, 2, or 3): ").strip()
-            else:
-                region_choice = input("\nEnter your choice (1 or 2): ").strip()
+        if choice == 2:
+            all_regions = get_partition_regions(partition, all_regions=True)
+            print(f"\nScanning all {len(all_regions)} available regions.")
+            return all_regions
 
-            if region_choice == '1':
-                # Default regions
-                regions = get_default_regions()
-                print(f"\nUsing default regions: {', '.join(regions)}")
-
-            elif region_choice == '2':
-                if allow_all:
-                    # All available regions
-                    regions = get_partition_regions(partition, all_regions=True)
-                    print(f"\nScanning all {len(regions)} available regions")
-                else:
-                    # Specific region (when allow_all=False, option 2 is specific region)
-                    available_regions = get_partition_regions(partition, all_regions=True)
-                    print("\n" + "=" * 68)
-                    print("AVAILABLE REGIONS")
-                    print("=" * 68)
-                    for idx, region in enumerate(available_regions, 1):
-                        print(f"  {idx:2d}. {region}")
-                    print("=" * 68)
-
-                    # Get region selection with validation
-                    region_selected = False
-                    while not region_selected:
-                        try:
-                            region_num = input(f"\nEnter region number (1-{len(available_regions)}): ").strip()
-                            region_idx = int(region_num) - 1
-
-                            if 0 <= region_idx < len(available_regions):
-                                selected_region = available_regions[region_idx]
-                                regions = [selected_region]
-                                print(f"\nSelected region: {selected_region}")
-                                region_selected = True
-                            else:
-                                print(f"Invalid selection. Please enter a number between 1 and {len(available_regions)}.")
-                        except ValueError:
-                            print("Invalid input. Please enter a number.")
-                        except KeyboardInterrupt:
-                            print("\n\nOperation cancelled by user.")
-                            sys.exit(0)
-
-            elif region_choice == '3' and allow_all:
-                # Specific region (when allow_all=True, option 3 is specific region)
-                available_regions = get_partition_regions(partition, all_regions=True)
-                print("\n" + "=" * 68)
-                print("AVAILABLE REGIONS")
-                print("=" * 68)
-                for idx, region in enumerate(available_regions, 1):
-                    print(f"  {idx:2d}. {region}")
-                print("=" * 68)
-
-                # Get region selection with validation
-                region_selected = False
-                while not region_selected:
-                    try:
-                        region_num = input(f"\nEnter region number (1-{len(available_regions)}): ").strip()
-                        region_idx = int(region_num) - 1
-
-                        if 0 <= region_idx < len(available_regions):
-                            selected_region = available_regions[region_idx]
-                            regions = [selected_region]
-                            print(f"\nSelected region: {selected_region}")
-                            region_selected = True
+        if choice == 3:
+            # Sub-list: let user pick one or more regions by number
+            available = get_partition_regions(partition, all_regions=True)
+            while True:
+                print("\nAVAILABLE REGIONS")
+                print("=" * 64)
+                # 2-column layout when > 8 regions
+                if len(available) > 8:
+                    half = (len(available) + 1) // 2
+                    for i in range(half):
+                        left = f"  {i + 1:2d}. {available[i]}"
+                        if i + half < len(available):
+                            right = f"  {i + half + 1:2d}. {available[i + half]}"
+                            print(f"{left:<34}{right}")
                         else:
-                            print(f"Invalid selection. Please enter a number between 1 and {len(available_regions)}.")
-                    except ValueError:
-                        print("Invalid input. Please enter a number.")
-                    except KeyboardInterrupt:
-                        print("\n\nOperation cancelled by user.")
-                        sys.exit(0)
-            else:
-                if allow_all:
-                    print("\nInvalid choice. Please enter 1, 2, or 3.")
+                            print(left)
                 else:
-                    print("\nInvalid choice. Please enter 1 or 2.")
+                    for i, r in enumerate(available, 1):
+                        print(f"  {i:2d}. {r}")
+                print("=" * 64)
+                print("  b. Back    x. Exit")
+                print("=" * 64)
 
-        except KeyboardInterrupt:
-            print("\n\nOperation cancelled by user.")
-            sys.exit(0)
-        except Exception as e:
-            log_error(f"Error getting region selection: {str(e)}")
-            print("Please try again.")
+                try:
+                    raw = input(
+                        "Enter region number(s) separated by spaces (e.g. 1  or  1 4 7): "
+                    ).strip().lower()
+                except KeyboardInterrupt:
+                    print()
+                    return 'exit'
 
-    return regions
+                if raw == 'b':
+                    break  # back to main region menu
+                if raw == 'x':
+                    return 'exit'
+
+                tokens = raw.split()
+                valid = True
+                selected = []
+                for tok in tokens:
+                    try:
+                        idx = int(tok)
+                        if 1 <= idx <= len(available):
+                            selected.append(available[idx - 1])
+                        else:
+                            print(
+                                f"Invalid number {tok}. "
+                                f"Please enter values between 1 and {len(available)}."
+                            )
+                            valid = False
+                            break
+                    except ValueError:
+                        print(f"Invalid input '{tok}'. Please enter numbers only.")
+                        valid = False
+                        break
+
+                if valid and selected:
+                    return selected
+                if valid and not selected:
+                    print("No regions selected. Please enter at least one number.")
 
 def get_organization_name() -> str:
     """
@@ -575,6 +575,38 @@ def get_current_log_file() -> Optional[str]:
         if isinstance(handler, logging.FileHandler):
             return handler.baseFilename
     return None
+
+def prompt_confirmation(message: str) -> str:
+    """
+    Display a confirmation prompt and return the user's navigation choice.
+
+    Args:
+        message: Confirmation message to display before the prompt.
+
+    Returns:
+        'confirm' if the user presses Enter,
+        'back' if the user enters 'b',
+        'exit' if the user enters 'x'.
+    """
+    if is_auto_run():
+        return 'confirm'
+
+    print(f"\n{message}")
+    while True:
+        try:
+            raw = input("Press Enter to confirm, b to go back, x to exit: ").strip().lower()
+        except KeyboardInterrupt:
+            print()
+            return 'exit'
+
+        if raw == '':
+            return 'confirm'
+        if raw == 'b':
+            return 'back'
+        if raw == 'x':
+            return 'exit'
+        print("Please press Enter, b, or x.")
+
 
 def prompt_for_confirmation(message: str = "Do you want to continue?", default: bool = True) -> bool:
     """

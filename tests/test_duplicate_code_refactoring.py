@@ -170,99 +170,87 @@ class TestGetAccountInfo(unittest.TestCase):
         self.assertEqual(account_name, 'UNKNOWN-ACCOUNT')
 
 
-@unittest.skip(
-    "STABILIZATION-SKIP: TestPromptRegionSelection tests were written for a direct "
-    "region-name input API (e.g. 'all', 'us-east-1') but the implemented "
-    "prompt_region_selection() uses a numbered menu (choices '1'/'2'/'3'). "
-    "Mocking builtins.input with non-numeric values causes an infinite loop in the "
-    "'while not regions:' guard, hanging pytest non-interactively. "
-    "Additionally, test_custom_default_regions passes a 'default_regions' kwarg that "
-    "does not exist in the current function signature (TypeError before hang). "
-    "Resolution: these tests require a full rewrite to match the numbered-menu contract "
-    "or the function signature must be aligned with the original design intent. "
-    "Deferred to the next audit remediation cycle. Ref: audit t-011, u-001."
-)
 class TestPromptRegionSelection(unittest.TestCase):
-    """Test cases for prompt_region_selection() function.
+    """Test cases for prompt_region_selection() — numbered-menu API."""
 
-    NOTE: Entire class skipped — see class-level @unittest.skip decorator above.
-    Tests were written against a different API contract than the one implemented.
-    The actual function uses a numbered interactive menu (1/2/3), but the mocks
-    supply raw values ('all', 'us-east-1') that the while-loop never accepts,
-    causing an infinite hang when pytest is run non-interactively.
-    """
+    def setUp(self):
+        """Ensure auto-run mode is off for all interactive tests."""
+        import os
+        os.environ.pop("STRATUSSCAN_AUTO_RUN", None)
+        os.environ.pop("STRATUSSCAN_REGIONS", None)
 
-    @patch('builtins.input', return_value='all')
-    @patch('utils.get_default_regions')
-    @patch('utils.log_info')
-    def test_select_all_regions(self, mock_log_info, mock_get_regions, mock_input):
-        """Test selecting all regions."""
-        mock_get_regions.return_value = ['us-east-1', 'us-west-2', 'us-west-1', 'eu-west-1']
-
+    @patch('utils.prompt_menu', return_value=1)
+    @patch('utils.get_default_regions', return_value=['us-east-1', 'us-west-2'])
+    @patch('utils.detect_partition', return_value='aws')
+    def test_select_default_regions(self, mock_partition, mock_defaults, mock_menu):
+        """Choice 1 returns the configured default regions."""
         regions = utils.prompt_region_selection()
-
-        self.assertEqual(len(regions), 4)
-        self.assertIn('us-east-1', regions)
-        mock_log_info.assert_called()
-
-    @patch('builtins.input', return_value='us-east-1')
-    @patch('utils.validate_aws_region')
-    @patch('utils.log_info')
-    def test_select_single_valid_region(self, mock_log_info, mock_validate, mock_input):
-        """Test selecting a single valid region."""
-        mock_validate.return_value = True
-
-        regions = utils.prompt_region_selection()
-
-        self.assertEqual(regions, ['us-east-1'])
-        mock_validate.assert_called_once_with('us-east-1')
-
-    @patch('builtins.input', return_value='invalid-region')
-    @patch('utils.validate_aws_region')
-    @patch('utils.get_default_regions')
-    @patch('utils.log_warning')
-    def test_invalid_region_fallback(self, mock_log_warning, mock_get_regions,
-                                    mock_validate, mock_input):
-        """Test fallback to default regions when invalid region provided."""
-        mock_validate.return_value = False
-        mock_get_regions.return_value = ['us-east-1', 'us-west-2']
-
-        regions = utils.prompt_region_selection()
-
         self.assertEqual(regions, ['us-east-1', 'us-west-2'])
-        mock_log_warning.assert_called()
 
-    @patch('builtins.input', return_value='all')
-    def test_custom_default_regions(self, mock_input):
-        """Test using custom default regions."""
-        custom_regions = ['us-gov-west-1', 'us-gov-east-1']
+    @patch('utils.prompt_menu', return_value=2)
+    @patch('utils.get_default_regions', return_value=['us-east-1'])
+    @patch('utils.detect_partition', return_value='aws')
+    @patch('utils.get_partition_regions', return_value=['us-east-1', 'us-west-2', 'eu-west-1'])
+    def test_select_all_regions(self, mock_all, mock_partition, mock_defaults, mock_menu):
+        """Choice 2 returns all regions for the partition."""
+        regions = utils.prompt_region_selection()
+        self.assertIsInstance(regions, list)
+        self.assertGreater(len(regions), 0)
 
-        regions = utils.prompt_region_selection(default_regions=custom_regions)
+    @patch('utils.prompt_menu', return_value='back')
+    @patch('utils.get_default_regions', return_value=['us-east-1'])
+    @patch('utils.detect_partition', return_value='aws')
+    def test_back_returns_string(self, mock_partition, mock_defaults, mock_menu):
+        """'b' input returns the string 'back'."""
+        result = utils.prompt_region_selection()
+        self.assertEqual(result, 'back')
 
-        self.assertEqual(regions, custom_regions)
+    @patch('utils.prompt_menu', return_value='exit')
+    @patch('utils.get_default_regions', return_value=['us-east-1'])
+    @patch('utils.detect_partition', return_value='aws')
+    def test_exit_returns_string(self, mock_partition, mock_defaults, mock_menu):
+        """'x' input returns the string 'exit'."""
+        result = utils.prompt_region_selection()
+        self.assertEqual(result, 'exit')
 
-    @patch('builtins.input', return_value='us-west-2')
-    @patch('utils.validate_aws_region')
-    def test_disallow_all_option(self, mock_validate, mock_input):
-        """Test when allow_all is False."""
-        mock_validate.return_value = True
+    @patch('utils.prompt_menu', return_value=3)
+    @patch('utils.get_default_regions', return_value=['us-east-1'])
+    @patch('utils.detect_partition', return_value='aws')
+    @patch('utils.get_partition_regions', return_value=['us-east-1', 'us-west-2', 'eu-west-1'])
+    @patch('builtins.input', return_value='2')
+    def test_select_single_region_by_number(
+        self, mock_input, mock_all, mock_partition, mock_defaults, mock_menu
+    ):
+        """Choice 3 + single number returns a one-element list."""
+        result = utils.prompt_region_selection()
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], 'us-west-2')
 
-        regions = utils.prompt_region_selection(allow_all=False)
+    @patch('utils.prompt_menu', return_value=3)
+    @patch('utils.get_default_regions', return_value=['us-east-1'])
+    @patch('utils.detect_partition', return_value='aws')
+    @patch('utils.get_partition_regions', return_value=['us-east-1', 'us-west-2', 'eu-west-1'])
+    @patch('builtins.input', return_value='1 3')
+    def test_select_multiple_regions(
+        self, mock_input, mock_all, mock_partition, mock_defaults, mock_menu
+    ):
+        """Choice 3 + multiple numbers returns the corresponding regions."""
+        result = utils.prompt_region_selection()
+        self.assertIsInstance(result, list)
+        self.assertEqual(result, ['us-east-1', 'eu-west-1'])
 
-        self.assertEqual(regions, ['us-west-2'])
-
-    @patch('builtins.input', return_value='eu-west-1')
-    @patch('utils.validate_aws_region')
-    @patch('utils.log_info')
-    def test_custom_prompt_message(self, mock_log_info, mock_validate, mock_input):
-        """Test custom prompt message."""
-        mock_validate.return_value = True
-
-        regions = utils.prompt_region_selection(
-            prompt_message="Select region for RDS export:"
-        )
-
-        self.assertEqual(regions, ['eu-west-1'])
+    def test_auto_run_with_env_regions(self):
+        """STRATUSSCAN_AUTO_RUN + STRATUSSCAN_REGIONS bypasses the menu."""
+        import os
+        os.environ["STRATUSSCAN_AUTO_RUN"] = "1"
+        os.environ["STRATUSSCAN_REGIONS"] = "us-east-1,eu-west-1"
+        try:
+            result = utils.prompt_region_selection()
+            self.assertEqual(result, ['us-east-1', 'eu-west-1'])
+        finally:
+            os.environ.pop("STRATUSSCAN_AUTO_RUN", None)
+            os.environ.pop("STRATUSSCAN_REGIONS", None)
 
 
 class TestIntegration(unittest.TestCase):
@@ -270,14 +258,10 @@ class TestIntegration(unittest.TestCase):
 
     @patch('sslib.aws_client.get_boto3_client')
     @patch('sslib.aws_client.get_account_name')
-    @patch('builtins.__import__')
-    def test_typical_script_flow(self, mock_import, mock_get_name, mock_client):
+    def test_typical_script_flow(self, mock_get_name, mock_client):
         """Test typical script flow using all three utility functions."""
         # Clear cache
         sslib.aws_client._account_info_cache = None
-
-        # Setup mocks
-        mock_import.side_effect = lambda pkg: None  # All dependencies installed
 
         mock_sts = MagicMock()
         mock_sts.get_caller_identity.return_value = {'Account': '123456789012'}

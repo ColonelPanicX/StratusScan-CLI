@@ -295,10 +295,11 @@ class ServiceAnalyzer:
                 services_file = self.find_latest_services_export()
 
             if not services_file:
-                utils.log_error_with_exit(
+                utils.log_warning(
                     "No services-in-use export file found. "
-                    "Please run services-in-use-export.py first."
+                    "Please run services_in_use_export.py first."
                 )
+                return self.generate_recommendations(include_always_run)
 
             self.services_file = services_file
 

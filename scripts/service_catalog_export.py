@@ -41,10 +41,6 @@ except ImportError:
 # Check required packages
 utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
 
-# Setup logging
-logger = utils.setup_logging('service-catalog-export')
-utils.log_script_start('service-catalog-export', 'Export AWS Service Catalog portfolios and products')
-
 
 @utils.aws_error_handler("Listing portfolios", default_return=[])
 def list_portfolios(region: str) -> List[Dict[str, Any]]:
@@ -178,127 +174,159 @@ def list_portfolio_principals(region: str, portfolio_id: str) -> List[Dict[str, 
     return principals
 
 
+def _run_export(account_id: str, account_name: str, regions: list) -> None:
+    """Collect Service Catalog data and write the Excel export."""
+    all_portfolios = []
+    all_products = []
+    all_provisioned = []
+    all_artifacts = []
+    all_principals = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect portfolios
+        portfolios = list_portfolios(region)
+        if portfolios:
+            utils.log_info(f"  Found {len(portfolios)} portfolio(s)")
+            all_portfolios.extend(portfolios)
+
+            # Collect principals for each portfolio
+            for portfolio in portfolios:
+                portfolio_id = portfolio['PortfolioId']
+                principals = list_portfolio_principals(region, portfolio_id)
+                all_principals.extend(principals)
+
+        # Collect products
+        products = search_products_as_admin(region)
+        if products:
+            utils.log_info(f"  Found {len(products)} product(s)")
+            all_products.extend(products)
+
+            # Collect artifacts for each product (sample first 10)
+            for product in products[:10]:
+                product_id = product['ProductId']
+                artifacts = list_provisioning_artifacts(region, product_id)
+                all_artifacts.extend(artifacts)
+
+        # Collect provisioned products
+        provisioned = scan_provisioned_products(region)
+        if provisioned:
+            utils.log_info(f"  Found {len(provisioned)} provisioned product(s)")
+            all_provisioned.extend(provisioned)
+
+    if not all_portfolios and not all_products:
+        utils.log_warning("No Service Catalog portfolios or products found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total portfolios found: {len(all_portfolios)}")
+    utils.log_info(f"Total products found: {len(all_products)}")
+    utils.log_info(f"Total provisioned products found: {len(all_provisioned)}")
+
+    # Create DataFrames
+    df_portfolios = utils.prepare_dataframe_for_export(pd.DataFrame(all_portfolios))
+    df_products = utils.prepare_dataframe_for_export(pd.DataFrame(all_products))
+    df_provisioned = utils.prepare_dataframe_for_export(pd.DataFrame(all_provisioned))
+    df_artifacts = utils.prepare_dataframe_for_export(pd.DataFrame(all_artifacts))
+    df_principals = utils.prepare_dataframe_for_export(pd.DataFrame(all_principals))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total Portfolios', 'Value': len(all_portfolios)})
+    summary_data.append({'Metric': 'Total Products', 'Value': len(all_products)})
+    summary_data.append({'Metric': 'Total Provisioned Products', 'Value': len(all_provisioned)})
+    summary_data.append({'Metric': 'Total Provisioning Artifacts', 'Value': len(all_artifacts)})
+    summary_data.append({'Metric': 'Total Portfolio Principals', 'Value': len(all_principals)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_provisioned.empty:
+        active_provisioned = len(df_provisioned[df_provisioned['Status'] == 'AVAILABLE'])
+        error_provisioned = len(df_provisioned[df_provisioned['Status'] == 'ERROR'])
+
+        summary_data.append({'Metric': 'Active Provisioned Products', 'Value': active_provisioned})
+        summary_data.append({'Metric': 'Error Provisioned Products', 'Value': error_provisioned})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create active provisioned products view
+    df_active_provisioned = pd.DataFrame()
+    if not df_provisioned.empty:
+        df_active_provisioned = df_provisioned[df_provisioned['Status'] == 'AVAILABLE']
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'service-catalog', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'Portfolios': df_portfolios,
+        'Products': df_products,
+        'Provisioned Products': df_provisioned,
+        'Active Provisioned': df_active_provisioned,
+        'Provisioning Artifacts': df_artifacts,
+        'Portfolio Access': df_principals,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    # Log summary
+    utils.log_export_summary(
+        total_items=len(all_portfolios) + len(all_products) + len(all_provisioned),
+        item_type='Service Catalog Resources',
+        filename=filename
+    )
+
+    utils.log_info(f"  Portfolios: {len(all_portfolios)}")
+    utils.log_info(f"  Products: {len(all_products)}")
+    utils.log_info(f"  Provisioned Products: {len(all_provisioned)}")
+
+    utils.log_success("Service Catalog export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main function — 3-step state machine with b/x navigation."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Service Catalog resources for account: {account_name} ({utils.mask_account_id(account_id)})")
+        utils.setup_logging("service-catalog-export")
+        account_id, account_name = utils.print_script_banner("AWS SERVICE CATALOG EXPORT")
 
-        # Prompt for regions
-        utils.log_info("Service Catalog is a regional service.")
+        step = 1
+        regions = None
 
-        # Detect partition for region examples
-        regions = utils.prompt_region_selection()
-        # Collect all resources
-        all_portfolios = []
-        all_products = []
-        all_provisioned = []
-        all_artifacts = []
-        all_principals = []
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="Service Catalog")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+            elif step == 2:
+                if len(regions) <= 3:
+                    region_str = ', '.join(regions)
+                else:
+                    region_str = f"{len(regions)} regions"
+                msg = f"Ready to export Service Catalog data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-            # Collect portfolios
-            portfolios = list_portfolios(region)
-            if portfolios:
-                utils.log_info(f"  Found {len(portfolios)} portfolio(s)")
-                all_portfolios.extend(portfolios)
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-                # Collect principals for each portfolio
-                for portfolio in portfolios:
-                    portfolio_id = portfolio['PortfolioId']
-                    principals = list_portfolio_principals(region, portfolio_id)
-                    all_principals.extend(principals)
-
-            # Collect products
-            products = search_products_as_admin(region)
-            if products:
-                utils.log_info(f"  Found {len(products)} product(s)")
-                all_products.extend(products)
-
-                # Collect artifacts for each product (sample first 10)
-                for product in products[:10]:
-                    product_id = product['ProductId']
-                    artifacts = list_provisioning_artifacts(region, product_id)
-                    all_artifacts.extend(artifacts)
-
-            # Collect provisioned products
-            provisioned = scan_provisioned_products(region)
-            if provisioned:
-                utils.log_info(f"  Found {len(provisioned)} provisioned product(s)")
-                all_provisioned.extend(provisioned)
-
-        if not all_portfolios and not all_products:
-            utils.log_warning("No Service Catalog portfolios or products found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total portfolios found: {len(all_portfolios)}")
-        utils.log_info(f"Total products found: {len(all_products)}")
-        utils.log_info(f"Total provisioned products found: {len(all_provisioned)}")
-
-        # Create DataFrames
-        df_portfolios = utils.prepare_dataframe_for_export(pd.DataFrame(all_portfolios))
-        df_products = utils.prepare_dataframe_for_export(pd.DataFrame(all_products))
-        df_provisioned = utils.prepare_dataframe_for_export(pd.DataFrame(all_provisioned))
-        df_artifacts = utils.prepare_dataframe_for_export(pd.DataFrame(all_artifacts))
-        df_principals = utils.prepare_dataframe_for_export(pd.DataFrame(all_principals))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Portfolios', 'Value': len(all_portfolios)})
-        summary_data.append({'Metric': 'Total Products', 'Value': len(all_products)})
-        summary_data.append({'Metric': 'Total Provisioned Products', 'Value': len(all_provisioned)})
-        summary_data.append({'Metric': 'Total Provisioning Artifacts', 'Value': len(all_artifacts)})
-        summary_data.append({'Metric': 'Total Portfolio Principals', 'Value': len(all_principals)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_provisioned.empty:
-            active_provisioned = len(df_provisioned[df_provisioned['Status'] == 'AVAILABLE'])
-            error_provisioned = len(df_provisioned[df_provisioned['Status'] == 'ERROR'])
-
-            summary_data.append({'Metric': 'Active Provisioned Products', 'Value': active_provisioned})
-            summary_data.append({'Metric': 'Error Provisioned Products', 'Value': error_provisioned})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create active provisioned products view
-        df_active_provisioned = pd.DataFrame()
-        if not df_provisioned.empty:
-            df_active_provisioned = df_provisioned[df_provisioned['Status'] == 'AVAILABLE']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'service-catalog', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'Portfolios': df_portfolios,
-            'Products': df_products,
-            'Provisioned Products': df_provisioned,
-            'Active Provisioned': df_active_provisioned,
-            'Provisioning Artifacts': df_artifacts,
-            'Portfolio Access': df_principals,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        utils.log_export_summary(
-            total_items=len(all_portfolios) + len(all_products) + len(all_provisioned),
-            item_type='Service Catalog Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  Portfolios: {len(all_portfolios)}")
-        utils.log_info(f"  Products: {len(all_products)}")
-        utils.log_info(f"  Provisioned Products: {len(all_provisioned)}")
-
-        utils.log_success("Service Catalog export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export Service Catalog resources: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

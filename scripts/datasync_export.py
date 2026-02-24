@@ -40,6 +40,9 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
+utils.setup_logging('datasync-export')
+
+
 def format_bytes_human_readable(bytes_value: int) -> str:
     """
     Format bytes to human-readable format (GB, TB).
@@ -615,152 +618,158 @@ def create_summary_data(tasks: List[Dict], locations: List[Dict],
 
     return summary
 
-def main():
-    """Main function to execute the DataSync export script."""
-    try:
-        # Setup logging
-        utils.setup_logging('datasync-export')
 
-        # Check for required dependencies
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect DataSync data and write the Excel export."""
+    import pandas as pd
+
+    utils.log_info(f"Scanning {len(regions)} region(s): {', '.join(regions)}")
+
+    # Collect data from all regions
+    all_tasks = []
+    all_locations = []
+    all_agents = []
+    all_executions = []
+
+    for region in regions:
+        utils.log_info(f"Processing region: {region}")
+        utils.log_section(f"DataSync data collection - {region}")
+
+        # Collect tasks
+        tasks = collect_datasync_tasks(region)
+        all_tasks.extend(tasks)
+
+        # Collect locations
+        locations = collect_datasync_locations(region)
+        all_locations.extend(locations)
+
+        # Collect agents
+        agents = collect_datasync_agents(region)
+        all_agents.extend(agents)
+
+        # Collect executions for tasks in this region
+        task_arns = [t['Task ARN'] for t in tasks]
+        if task_arns:
+            executions = collect_task_executions(region, task_arns)
+            all_executions.extend(executions)
+
+    # Check if we have any data
+    if not all_tasks and not all_locations and not all_agents:
+        utils.log_warning("No DataSync resources found in any region. Exiting...")
+        return
+
+    utils.log_success(f"Collection complete:")
+    utils.log_info(f"  Tasks: {len(all_tasks)}")
+    utils.log_info(f"  Locations: {len(all_locations)}")
+    utils.log_info(f"  Agents: {len(all_agents)}")
+    utils.log_info(f"  Executions (30 days): {len(all_executions)}")
+
+    # Create DataFrames
+    utils.log_info("Preparing data for export...")
+
+    dataframes = {}
+
+    # Summary sheet
+    summary_data = create_summary_data(all_tasks, all_locations, all_agents, all_executions)
+    summary_df = pd.DataFrame(summary_data)
+    dataframes['Summary'] = utils.prepare_dataframe_for_export(summary_df)
+
+    # Tasks sheet
+    if all_tasks:
+        tasks_df = pd.DataFrame(all_tasks)
+        dataframes['Tasks'] = utils.prepare_dataframe_for_export(tasks_df)
+
+    # Locations sheet
+    if all_locations:
+        locations_df = pd.DataFrame(all_locations)
+        dataframes['Locations'] = utils.prepare_dataframe_for_export(locations_df)
+
+    # Agents sheet
+    if all_agents:
+        agents_df = pd.DataFrame(all_agents)
+        dataframes['Agents'] = utils.prepare_dataframe_for_export(agents_df)
+
+    # Recent Executions sheet
+    if all_executions:
+        executions_df = pd.DataFrame(all_executions)
+        dataframes['Recent Executions'] = utils.prepare_dataframe_for_export(executions_df)
+
+    # Active Tasks sheet (AVAILABLE status)
+    active_tasks = [t for t in all_tasks if t.get('Status') == 'AVAILABLE']
+    if active_tasks:
+        active_tasks_df = pd.DataFrame(active_tasks)
+        dataframes['Active Tasks'] = utils.prepare_dataframe_for_export(active_tasks_df)
+
+    # Failed Executions sheet
+    failed_executions = [e for e in all_executions if e.get('Status') == 'ERROR']
+    if failed_executions:
+        failed_df = pd.DataFrame(failed_executions)
+        dataframes['Failed Executions'] = utils.prepare_dataframe_for_export(failed_df)
+
+    # Generate filename
+    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+    filename = utils.create_export_filename(
+        account_name,
+        "datasync",
+        "all",
+        current_date
+    )
+
+    # Export to Excel
+    output_path = utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    if output_path:
+        utils.log_success("AWS DataSync data exported successfully!")
+        utils.log_info(f"File location: {output_path}")
+        utils.log_info(f"Export contains data from {len(regions)} region(s)")
+        utils.log_info(f"Total sheets: {len(dataframes)}")
+        print("\nScript execution completed.")
+    else:
+        utils.log_error("Error exporting data. Please check the logs.")
+        sys.exit(1)
+
+
+def main():
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    try:
         if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
             return
 
-        # Import pandas after dependency check
-        import pandas as pd
+        account_id, account_name = utils.print_script_banner("AWS DATASYNC COMPREHENSIVE EXPORT")
 
-        # Get account information
-        utils.log_info("Getting AWS account information...")
-        account_id, account_name = utils.get_account_info()
+        step = 1
+        regions = None
 
-        # Detect partition and set environment name
-        partition = utils.detect_partition()
-        partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="DataSync")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        # Print script header
-        print("\n====================================================================")
-        print("                   AWS RESOURCE SCANNER                            ")
-        print("====================================================================")
-        print("            AWS DATASYNC COMPREHENSIVE EXPORT                      ")
-        print("====================================================================")
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-        print(f"Environment: {partition_name}")
-        print("====================================================================\n")
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export DataSync data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-        # Region selection
-        regions = utils.prompt_region_selection(
-            prompt_message="Select AWS region(s) for DataSync export:",
-            allow_all=True
-        )
-
-        utils.log_info(f"Scanning {len(regions)} region(s): {', '.join(regions)}")
-
-        # Collect data from all regions
-        all_tasks = []
-        all_locations = []
-        all_agents = []
-        all_executions = []
-
-        for region in regions:
-            utils.log_info(f"Processing region: {region}")
-            utils.log_section(f"DataSync data collection - {region}")
-
-            # Collect tasks
-            tasks = collect_datasync_tasks(region)
-            all_tasks.extend(tasks)
-
-            # Collect locations
-            locations = collect_datasync_locations(region)
-            all_locations.extend(locations)
-
-            # Collect agents
-            agents = collect_datasync_agents(region)
-            all_agents.extend(agents)
-
-            # Collect executions for tasks in this region
-            task_arns = [t['Task ARN'] for t in tasks]
-            if task_arns:
-                executions = collect_task_executions(region, task_arns)
-                all_executions.extend(executions)
-
-        # Check if we have any data
-        if not all_tasks and not all_locations and not all_agents:
-            utils.log_warning("No DataSync resources found in any region. Exiting...")
-            return
-
-        utils.log_success(f"Collection complete:")
-        utils.log_info(f"  Tasks: {len(all_tasks)}")
-        utils.log_info(f"  Locations: {len(all_locations)}")
-        utils.log_info(f"  Agents: {len(all_agents)}")
-        utils.log_info(f"  Executions (30 days): {len(all_executions)}")
-
-        # Create DataFrames
-        utils.log_info("Preparing data for export...")
-
-        dataframes = {}
-
-        # Summary sheet
-        summary_data = create_summary_data(all_tasks, all_locations, all_agents, all_executions)
-        summary_df = pd.DataFrame(summary_data)
-        dataframes['Summary'] = utils.prepare_dataframe_for_export(summary_df)
-
-        # Tasks sheet
-        if all_tasks:
-            tasks_df = pd.DataFrame(all_tasks)
-            dataframes['Tasks'] = utils.prepare_dataframe_for_export(tasks_df)
-
-        # Locations sheet
-        if all_locations:
-            locations_df = pd.DataFrame(all_locations)
-            dataframes['Locations'] = utils.prepare_dataframe_for_export(locations_df)
-
-        # Agents sheet
-        if all_agents:
-            agents_df = pd.DataFrame(all_agents)
-            dataframes['Agents'] = utils.prepare_dataframe_for_export(agents_df)
-
-        # Recent Executions sheet
-        if all_executions:
-            executions_df = pd.DataFrame(all_executions)
-            dataframes['Recent Executions'] = utils.prepare_dataframe_for_export(executions_df)
-
-        # Active Tasks sheet (AVAILABLE status)
-        active_tasks = [t for t in all_tasks if t.get('Status') == 'AVAILABLE']
-        if active_tasks:
-            active_tasks_df = pd.DataFrame(active_tasks)
-            dataframes['Active Tasks'] = utils.prepare_dataframe_for_export(active_tasks_df)
-
-        # Failed Executions sheet
-        failed_executions = [e for e in all_executions if e.get('Status') == 'ERROR']
-        if failed_executions:
-            failed_df = pd.DataFrame(failed_executions)
-            dataframes['Failed Executions'] = utils.prepare_dataframe_for_export(failed_df)
-
-        # Generate filename
-        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-        filename = utils.create_export_filename(
-            account_name,
-            "datasync",
-            "all",
-            current_date
-        )
-
-        # Export to Excel
-        output_path = utils.save_multiple_dataframes_to_excel(dataframes, filename)
-
-        if output_path:
-            utils.log_success("AWS DataSync data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} region(s)")
-            utils.log_info(f"Total sheets: {len(dataframes)}")
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Error exporting data. Please check the logs.")
-            sys.exit(1)
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)
+    except SystemExit:
+        raise
     except Exception as e:
         utils.log_error("Unexpected error occurred", e)
         sys.exit(1)

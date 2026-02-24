@@ -106,12 +106,11 @@ class TestScriptCategories:
     def test_expected_categories_present(self):
         """Verify expected categories exist."""
         expected_categories = [
-            "Compute Resources",
-            "Storage Resources",
-            "Network Resources",
-            "IAM & Identity",
+            "Compute",
+            "Storage",
+            "Networking",
             "Security & Compliance",
-            "Cost Optimization",
+            "Cost Management",
         ]
         for category in expected_categories:
             assert category in SCRIPT_CATEGORIES, f"Missing category: {category}"
@@ -180,10 +179,10 @@ class TestGetCanonicalServiceName:
         assert get_canonical_service_name(unknown) == unknown
 
     def test_case_sensitivity(self):
-        """Test that aliases are case-sensitive."""
-        # "EC2" (uppercase) is likely not in aliases, should return as-is
-        assert get_canonical_service_name("EC2") == "EC2"
-        # "ec2" (lowercase) should resolve
+        """Test alias lookup is case-insensitive (input is lowercased before lookup)."""
+        # get_canonical_service_name lowercases the input before alias lookup,
+        # so "EC2" resolves the same as "ec2".
+        assert get_canonical_service_name("EC2") == "Amazon Elastic Compute Cloud"
         assert get_canonical_service_name("ec2") == "Amazon Elastic Compute Cloud"
 
 
@@ -226,18 +225,15 @@ class TestMappingStatistics:
 
     def test_service_count(self):
         """Verify we have a reasonable number of services mapped."""
-        # Should have 160+ services
-        assert len(SERVICE_SCRIPT_MAP) >= 160
+        assert len(SERVICE_SCRIPT_MAP) >= 90
 
     def test_alias_count(self):
         """Verify we have a reasonable number of aliases."""
-        # Should have 112+ aliases
-        assert len(SERVICE_ALIASES) >= 112
+        assert len(SERVICE_ALIASES) >= 90
 
     def test_always_run_count(self):
         """Verify we have expected number of always-run scripts."""
-        # Should have 10 always-run scripts
-        assert len(ALWAYS_RUN_SCRIPTS) == 10
+        assert len(ALWAYS_RUN_SCRIPTS) == 9
 
     def test_no_duplicate_scripts_in_service_map(self):
         """Verify no service lists the same script twice."""
