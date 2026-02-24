@@ -358,6 +358,7 @@ def main():
     """
     try:
         # Print script header and get account info
+        utils.setup_logging("route-tables-export")
         account_id, account_name = utils.print_script_banner("AWS ROUTE TABLES EXPORT")
         
         # Check for required dependencies

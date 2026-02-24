@@ -525,6 +525,7 @@ def main():
     Main function to execute the script
     """
     # Print script title and get account information
+    utils.setup_logging("s3-export")
     account_id, account_name = utils.print_script_banner("AWS S3 BUCKET INVENTORY EXPORT")
 
     # Check if required dependencies are installed

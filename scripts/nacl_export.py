@@ -200,6 +200,7 @@ def main():
     """
     try:
         # Print title and get account information
+        utils.setup_logging("nacl-export")
         account_id, account_name = utils.print_script_banner("AWS NETWORK ACL (NACL) DATA EXPORT")
         
         # Check for required dependencies

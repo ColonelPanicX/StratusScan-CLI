@@ -550,6 +550,7 @@ def main():
     This function orchestrates the entire workflow from user input to final export.
     """
     # Print script title and get account information
+    utils.setup_logging("rds-export")
     account_id, account_name = utils.print_script_banner("AWS RDS INSTANCE EXPORT")
 
     # Check and install dependencies using utils function

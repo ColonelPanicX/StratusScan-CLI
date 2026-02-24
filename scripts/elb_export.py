@@ -254,6 +254,7 @@ def main():
     Main function to run the script
     """
     # Print the title screen and get the account name
+    utils.setup_logging("elb-export")
     account_id, account_name = utils.print_script_banner("AWS ELB INVENTORY EXPORT")
     
     # Check for required dependencies

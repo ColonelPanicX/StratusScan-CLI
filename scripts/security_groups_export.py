@@ -627,6 +627,7 @@ def main():
     """
     try:
         # Print title and get account information
+        utils.setup_logging("security-groups-export")
         account_id, account_name = utils.print_script_banner("AWS SECURITY GROUPS EXPORT")
         
         # Check dependencies

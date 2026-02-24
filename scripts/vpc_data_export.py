@@ -869,6 +869,7 @@ def main():
     """Main function to execute the script."""
     try:
         # Print title and get account information
+        utils.setup_logging("vpc-data-export")
         account_id, account_name = utils.print_script_banner("AWS VPC, SUBNET, NAT GATEWAY, PEERING, AND ELASTIC IP EXPORT")
 
         # Check and install dependencies

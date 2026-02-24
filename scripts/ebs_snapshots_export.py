@@ -187,6 +187,7 @@ def main():
     """
     try:
         # Print title and get account information
+        utils.setup_logging("ebs-snapshots-export")
         account_id, account_name = utils.print_script_banner("AWS EBS SNAPSHOTS EXPORT")
 
         # Check dependencies

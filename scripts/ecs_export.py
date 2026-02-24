@@ -428,6 +428,7 @@ def main():
     """
     try:
         # Print the script title and get account information
+        utils.setup_logging("ecs-export")
         account_id, account_name = utils.print_script_banner("AWS ECS (ELASTIC CONTAINER SERVICE) RESOURCE EXPORT")
         
         # Check dependencies
