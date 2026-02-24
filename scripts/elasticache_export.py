@@ -166,7 +166,6 @@ def collect_replication_groups(regions: List[str]) -> List[Dict[str, Any]]:
     all_replication_groups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_replication_groups_in_region,
-        resource_type="ElastiCache replication groups"
     )
 
     utils.log_success(f"Total ElastiCache replication groups collected: {len(all_replication_groups)}")
@@ -280,7 +279,6 @@ def collect_cache_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     all_clusters = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_cache_clusters_in_region,
-        resource_type="ElastiCache cache clusters"
     )
 
     utils.log_success(f"Total ElastiCache cache clusters collected: {len(all_clusters)}")
@@ -366,7 +364,6 @@ def collect_cache_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
     all_subnet_groups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_cache_subnet_groups_in_region,
-        resource_type="ElastiCache subnet groups"
     )
 
     utils.log_success(f"Total ElastiCache subnet groups collected: {len(all_subnet_groups)}")

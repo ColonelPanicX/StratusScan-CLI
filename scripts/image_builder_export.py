@@ -60,7 +60,7 @@ def collect_image_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
     all_pipelines = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             utils.log_error(f"Skipping invalid AWS region: {region}")
             continue
 
@@ -162,7 +162,7 @@ def collect_image_recipes(regions: List[str]) -> List[Dict[str, Any]]:
     all_recipes = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             continue
 
         print(f"\nProcessing region: {region}")
@@ -247,7 +247,7 @@ def collect_components(regions: List[str]) -> List[Dict[str, Any]]:
     all_components = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             continue
 
         print(f"\nProcessing region: {region}")
@@ -324,7 +324,7 @@ def collect_infrastructure_configurations(regions: List[str]) -> List[Dict[str, 
     all_configs = []
 
     for region in regions:
-        if not utils.validate_aws_region(region):
+        if not utils.is_aws_region(region):
             continue
 
         print(f"\nProcessing region: {region}")

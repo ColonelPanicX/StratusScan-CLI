@@ -57,7 +57,7 @@ def collect_trails_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with trail information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -209,7 +209,7 @@ def collect_event_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with event selector information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     selectors_data = []
@@ -309,7 +309,7 @@ def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with insight selector information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     insights_data = []
