@@ -153,10 +153,12 @@ def collect_transit_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING TRANSIT GATEWAYS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_tgws = utils.scan_regions_concurrent(
+    all_tgws = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateways_in_region,
-    )
+    ):
+        all_tgws.extend(region_data)
 
     utils.log_success(f"Total Transit Gateways collected: {len(all_tgws)}")
     return all_tgws
@@ -256,10 +258,12 @@ def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, An
     print("\n=== COLLECTING TRANSIT GATEWAY ATTACHMENTS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_attachments = utils.scan_regions_concurrent(
+    all_attachments = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_attachments_in_region,
-    )
+    ):
+        all_attachments.extend(region_data)
 
     utils.log_success(f"Total attachments collected: {len(all_attachments)}")
     return all_attachments
@@ -346,10 +350,12 @@ def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, A
     print("\n=== COLLECTING TRANSIT GATEWAY ROUTE TABLES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_route_tables = utils.scan_regions_concurrent(
+    all_route_tables = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_route_tables_in_region,
-    )
+    ):
+        all_route_tables.extend(region_data)
 
     utils.log_success(f"Total route tables collected: {len(all_route_tables)}")
     return all_route_tables
@@ -458,10 +464,12 @@ def collect_transit_gateway_routes(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING TRANSIT GATEWAY ROUTES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_routes = utils.scan_regions_concurrent(
+    all_routes = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_routes_in_region,
-    )
+    ):
+        all_routes.extend(region_data)
 
     utils.log_success(f"Total routes collected: {len(all_routes)}")
     return all_routes
