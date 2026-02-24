@@ -181,7 +181,6 @@ def collect_kms_keys(regions: List[str], account_id: str) -> List[Dict[str, Any]
     all_keys = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_keys_in_region,
-        resource_type="KMS keys",
         account_id=account_id
     )
 
@@ -260,7 +259,6 @@ def collect_kms_aliases(regions: List[str]) -> List[Dict[str, Any]]:
     all_aliases = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_aliases_in_region,
-        resource_type="KMS aliases"
     )
 
     utils.log_success(f"Total KMS aliases collected: {len(all_aliases)}")
@@ -366,7 +364,6 @@ def collect_kms_grants(regions: List[str]) -> List[Dict[str, Any]]:
     all_grants = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_grants_in_region,
-        resource_type="KMS grants"
     )
 
     utils.log_success(f"Total KMS grants collected: {len(all_grants)}")
