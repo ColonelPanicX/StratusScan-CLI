@@ -144,7 +144,6 @@ def collect_ecr_repositories(regions: List[str]) -> List[Dict[str, Any]]:
     all_repos = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_ecr_repositories_in_region,
-        resource_type="ECR repositories"
     )
 
     utils.log_success(f"Total ECR repositories collected: {len(all_repos)}")
@@ -257,7 +256,6 @@ def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
     all_images = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_ecr_images_in_region,
-        resource_type="ECR images"
     )
 
     utils.log_success(f"Total ECR images collected: {len(all_images)}")
@@ -355,7 +353,6 @@ def collect_lifecycle_policies(regions: List[str]) -> List[Dict[str, Any]]:
     all_policies = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_lifecycle_policies_in_region,
-        resource_type="ECR lifecycle policies"
     )
 
     utils.log_success(f"Total lifecycle policy records collected: {len(all_policies)}")

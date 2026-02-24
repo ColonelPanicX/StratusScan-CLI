@@ -196,7 +196,6 @@ def collect_dynamodb_tables(regions: List[str]) -> List[Dict[str, Any]]:
     all_tables = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_dynamodb_tables_in_region,
-        resource_type="DynamoDB tables"
     )
 
     utils.log_success(f"Total DynamoDB tables collected: {len(all_tables)}")
@@ -314,7 +313,6 @@ def collect_global_secondary_indexes(regions: List[str]) -> List[Dict[str, Any]]
     all_gsis = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_global_secondary_indexes_in_region,
-        resource_type="Global Secondary Indexes"
     )
 
     utils.log_success(f"Total Global Secondary Indexes collected: {len(all_gsis)}")
@@ -403,7 +401,6 @@ def collect_dynamodb_backups(regions: List[str]) -> List[Dict[str, Any]]:
     all_backups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_dynamodb_backups_in_region,
-        resource_type="DynamoDB backups"
     )
 
     utils.log_success(f"Total DynamoDB backups collected: {len(all_backups)}")
