@@ -374,7 +374,7 @@ For detailed policy information, implementation guides, and service limitations:
 
 ## 📦 Supported AWS Resources
 
-StratusScan supports **40+ AWS resource exporters** across multiple categories:
+StratusScan supports **100+ AWS resource exporters** across multiple categories:
 
 <details>
 <summary><b>Compute Resources (5 exporters)</b></summary>
@@ -474,6 +474,38 @@ All exports follow a consistent naming pattern:
 
 ---
 
+## ⚠️ Known Issues
+
+The following bugs are confirmed in v0.1.0 and are tracked for resolution in **v0.2.0**. Workarounds are noted where available.
+
+### Silent Export Failures — 12 Scripts
+
+The scripts listed below execute without crashing but **return no data**. This is caused by a keyword argument mismatch introduced during the `sslib` refactor in Sprint 4. Each affected script passes an unsupported `resource_type=` argument to `scan_regions_concurrent()`, which the function does not accept. The error is caught internally and the script exits with code 0, making the failure invisible in the summary output.
+
+**Affected exporters:** `acm_export`, `api_gateway_export`, `cognito_export`, `dynamodb_export`, `ecr_export`, `elasticache_export`, `kms_export`, `opensearch_export`, `redshift_export`, `secrets_manager_export`, `transit_gateway_export`, `vpn_export`
+
+**Workaround:** None in v0.1.0. All 12 will be fixed in the v0.2.0 backend stabilization pass.
+
+### ECS Export Crash
+
+`ecs_export.py` crashes on execution with `NameError: name 'all_ecs_resources' is not defined`. ECS data cannot be exported in this release.
+
+**Workaround:** None. Fixed in v0.2.0.
+
+### Multi-Region Archive Duplicate Filenames
+
+When running aggregate exports (`compute_resources`, `storage_resources`, `network_resources`, `database_resources`) across multiple regions, the output ZIP archive contains duplicate filenames for EC2, Lambda, and AMI exports. The second region's data silently overwrites the first in the archive.
+
+**Workaround:** Use single-region scans, or extract individual `.xlsx` files before they are zipped. Fixed in v0.2.0.
+
+### Test Suite Failures (13 tests)
+
+13 pre-existing test failures exist in `tests/smart_scan/` (test_mapping, test_executor, test_analyzer) and `tests/test_utils.py`. These do not affect runtime behavior but will cause CI to report failures on those test files.
+
+**Workaround:** `pytest -m "not slow"` passes cleanly. Fixed in v0.2.0.
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Common Issues
@@ -519,7 +551,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret"
 Contributions are welcome! We've made it easy to get started:
 
 - **⚡ 30-Minute Onboarding**: Complete [contributor guide](CONTRIBUTING.md) with script templates
-- **🧪 Automated Testing**: 75+ tests with pytest and CI/CD pipeline
+- **🧪 Automated Testing**: 250+ tests with pytest and CI/CD pipeline
 - **✨ Code Quality**: Pre-commit hooks with Black, Ruff, and Bandit
 - **📚 API Documentation**: Full [API reference](API_REFERENCE.md) with examples
 - **🔒 Security First**: Automated credential detection and security scanning
