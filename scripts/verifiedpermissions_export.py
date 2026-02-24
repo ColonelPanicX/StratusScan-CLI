@@ -38,12 +38,7 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-# Setup logging
-logger = utils.setup_logging('verifiedpermissions-export')
-utils.log_script_start('verifiedpermissions-export', 'Export AWS Verified Permissions Cedar policies and configurations')
+utils.setup_logging('verifiedpermissions-export')
 
 
 @utils.aws_error_handler("Collecting policy stores", default_return=[])
@@ -219,127 +214,161 @@ def collect_identity_sources(region: str, policy_store_id: str) -> List[Dict[str
     return sources
 
 
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect Verified Permissions data and write the Excel export."""
+    utils.log_info(f"Exporting Verified Permissions for account: {account_name} ({utils.mask_account_id(account_id)})")
+
+    # Collect all resources
+    all_stores = []
+    all_policies = []
+    all_templates = []
+    all_identity_sources = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect policy stores
+        stores = collect_policy_stores(region)
+        if stores:
+            utils.log_info(f"  Found {len(stores)} policy store(s)")
+            all_stores.extend(stores)
+
+            # Collect resources for each policy store
+            for store in stores:
+                policy_store_id = store['PolicyStoreId']
+
+                # Collect policies
+                policies = collect_policies(region, policy_store_id)
+                if policies:
+                    utils.log_info(f"    Found {len(policies)} policy(ies) in store {policy_store_id}")
+                    all_policies.extend(policies)
+
+                # Collect policy templates
+                templates = collect_policy_templates(region, policy_store_id)
+                if templates:
+                    utils.log_info(f"    Found {len(templates)} policy template(s) in store {policy_store_id}")
+                    all_templates.extend(templates)
+
+                # Collect identity sources
+                identity_sources = collect_identity_sources(region, policy_store_id)
+                if identity_sources:
+                    utils.log_info(f"    Found {len(identity_sources)} identity source(s) in store {policy_store_id}")
+                    all_identity_sources.extend(identity_sources)
+
+    if not all_stores:
+        utils.log_warning("No Verified Permissions policy stores found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total policy stores found: {len(all_stores)}")
+    utils.log_info(f"Total policies found: {len(all_policies)}")
+    utils.log_info(f"Total policy templates found: {len(all_templates)}")
+    utils.log_info(f"Total identity sources found: {len(all_identity_sources)}")
+
+    # Create DataFrames
+    df_stores = utils.prepare_dataframe_for_export(pd.DataFrame(all_stores))
+    df_policies = utils.prepare_dataframe_for_export(pd.DataFrame(all_policies))
+    df_templates = utils.prepare_dataframe_for_export(pd.DataFrame(all_templates))
+    df_identity_sources = utils.prepare_dataframe_for_export(pd.DataFrame(all_identity_sources))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total Policy Stores', 'Value': len(all_stores)})
+    summary_data.append({'Metric': 'Total Policies', 'Value': len(all_policies)})
+    summary_data.append({'Metric': 'Total Policy Templates', 'Value': len(all_templates)})
+    summary_data.append({'Metric': 'Total Identity Sources', 'Value': len(all_identity_sources)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_policies.empty:
+        static_policies = len(df_policies[df_policies['PolicyType'] == 'STATIC'])
+        template_linked = len(df_policies[df_policies['PolicyType'] == 'TEMPLATE_LINKED'])
+
+        summary_data.append({'Metric': 'Static Policies', 'Value': static_policies})
+        summary_data.append({'Metric': 'Template-Linked Policies', 'Value': template_linked})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create filtered views
+    df_static_policies = pd.DataFrame()
+    df_template_linked = pd.DataFrame()
+
+    if not df_policies.empty:
+        df_static_policies = df_policies[df_policies['PolicyType'] == 'STATIC']
+        df_template_linked = df_policies[df_policies['PolicyType'] == 'TEMPLATE_LINKED']
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'verifiedpermissions', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'Policy Stores': df_stores,
+        'Policies': df_policies,
+        'Static Policies': df_static_policies,
+        'Template-Linked Policies': df_template_linked,
+        'Policy Templates': df_templates,
+        'Identity Sources': df_identity_sources,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    # Log summary
+    total_resources = (len(all_stores) + len(all_policies) +
+                      len(all_templates) + len(all_identity_sources))
+
+    utils.log_export_summary(
+        total_items=total_resources,
+        item_type='Verified Permissions Resources',
+        filename=filename
+    )
+
+    utils.log_info(f"  Policy Stores: {len(all_stores)}")
+    utils.log_info(f"  Policies: {len(all_policies)}")
+    utils.log_info(f"  Policy Templates: {len(all_templates)}")
+    utils.log_info(f"  Identity Sources: {len(all_identity_sources)}")
+
+    utils.log_success("Verified Permissions export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting Verified Permissions for account: {account_name} ({utils.mask_account_id(account_id)})")
+        account_id, account_name = utils.print_script_banner("AWS VERIFIED PERMISSIONS EXPORT")
 
-        # Detect partition for region examples
-        regions = utils.prompt_region_selection()
-        # Collect all resources
-        all_stores = []
-        all_policies = []
-        all_templates = []
-        all_identity_sources = []
+        step = 1
+        regions = None
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="Verified Permissions")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-            # Collect policy stores
-            stores = collect_policy_stores(region)
-            if stores:
-                utils.log_info(f"  Found {len(stores)} policy store(s)")
-                all_stores.extend(stores)
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export Verified Permissions data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-                # Collect resources for each policy store
-                for store in stores:
-                    policy_store_id = store['PolicyStoreId']
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-                    # Collect policies
-                    policies = collect_policies(region, policy_store_id)
-                    if policies:
-                        utils.log_info(f"    Found {len(policies)} policy(ies) in store {policy_store_id}")
-                        all_policies.extend(policies)
-
-                    # Collect policy templates
-                    templates = collect_policy_templates(region, policy_store_id)
-                    if templates:
-                        utils.log_info(f"    Found {len(templates)} policy template(s) in store {policy_store_id}")
-                        all_templates.extend(templates)
-
-                    # Collect identity sources
-                    identity_sources = collect_identity_sources(region, policy_store_id)
-                    if identity_sources:
-                        utils.log_info(f"    Found {len(identity_sources)} identity source(s) in store {policy_store_id}")
-                        all_identity_sources.extend(identity_sources)
-
-        if not all_stores:
-            utils.log_warning("No Verified Permissions policy stores found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total policy stores found: {len(all_stores)}")
-        utils.log_info(f"Total policies found: {len(all_policies)}")
-        utils.log_info(f"Total policy templates found: {len(all_templates)}")
-        utils.log_info(f"Total identity sources found: {len(all_identity_sources)}")
-
-        # Create DataFrames
-        df_stores = utils.prepare_dataframe_for_export(pd.DataFrame(all_stores))
-        df_policies = utils.prepare_dataframe_for_export(pd.DataFrame(all_policies))
-        df_templates = utils.prepare_dataframe_for_export(pd.DataFrame(all_templates))
-        df_identity_sources = utils.prepare_dataframe_for_export(pd.DataFrame(all_identity_sources))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total Policy Stores', 'Value': len(all_stores)})
-        summary_data.append({'Metric': 'Total Policies', 'Value': len(all_policies)})
-        summary_data.append({'Metric': 'Total Policy Templates', 'Value': len(all_templates)})
-        summary_data.append({'Metric': 'Total Identity Sources', 'Value': len(all_identity_sources)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_policies.empty:
-            static_policies = len(df_policies[df_policies['PolicyType'] == 'STATIC'])
-            template_linked = len(df_policies[df_policies['PolicyType'] == 'TEMPLATE_LINKED'])
-
-            summary_data.append({'Metric': 'Static Policies', 'Value': static_policies})
-            summary_data.append({'Metric': 'Template-Linked Policies', 'Value': template_linked})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_static_policies = pd.DataFrame()
-        df_template_linked = pd.DataFrame()
-
-        if not df_policies.empty:
-            df_static_policies = df_policies[df_policies['PolicyType'] == 'STATIC']
-            df_template_linked = df_policies[df_policies['PolicyType'] == 'TEMPLATE_LINKED']
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'verifiedpermissions', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'Policy Stores': df_stores,
-            'Policies': df_policies,
-            'Static Policies': df_static_policies,
-            'Template-Linked Policies': df_template_linked,
-            'Policy Templates': df_templates,
-            'Identity Sources': df_identity_sources,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        total_resources = (len(all_stores) + len(all_policies) +
-                          len(all_templates) + len(all_identity_sources))
-
-        utils.log_export_summary(
-            total_items=total_resources,
-            item_type='Verified Permissions Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  Policy Stores: {len(all_stores)}")
-        utils.log_info(f"  Policies: {len(all_policies)}")
-        utils.log_info(f"  Policy Templates: {len(all_templates)}")
-        utils.log_info(f"  Identity Sources: {len(all_identity_sources)}")
-
-        utils.log_success("Verified Permissions export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export Verified Permissions resources: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

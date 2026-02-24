@@ -506,6 +506,7 @@ def main():
             return
 
         # Print title and get account info
+        utils.setup_logging("verifiedaccess-export")
         account_id, account_name = utils.print_script_banner("AWS VERIFIED ACCESS COMPREHENSIVE EXPORT")
 
         # Validate AWS credentials

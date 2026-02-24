@@ -663,131 +663,152 @@ def get_instance_data(region, instance_filter=None):
     
     return instances
 
+def _prompt_instance_filter():
+    """Prompt user to choose an instance state filter.
+
+    Returns:
+        tuple (instance_filter, filter_desc) on valid choice,
+        'back' if user pressed b,
+        'exit' if user pressed x.
+    """
+    choice = utils.prompt_menu(
+        "INSTANCE FILTER",
+        [
+            "All instances",
+            "Running instances only",
+            "Stopped instances only",
+        ],
+    )
+    if choice in ('back', 'exit'):
+        return choice
+    filters = {
+        1: (None, "all"),
+        2: ("running", "running"),
+        3: ("stopped", "stopped"),
+    }
+    return filters[choice]
+
+
+def _run_export(account_id, account_name, regions, instance_filter, filter_desc):
+    """Collect EC2 data and write the Excel export."""
+    import pandas as pd
+
+    utils.log_info(f"Scanning {len(regions)} region(s) for EC2 instances...")
+
+    def scan_region(region):
+        utils.log_info(f"Collecting data from AWS region: {region}")
+        instances = get_instance_data(region, instance_filter)
+        utils.log_info(f"Found {len(instances)} instances in {region}")
+        return instances
+
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=scan_region,
+        show_progress=True,
+    )
+
+    all_instances = []
+    for instances in region_results:
+        all_instances.extend(instances)
+
+    total_instances = len(all_instances)
+
+    if not all_instances:
+        utils.log_warning("No instances found in any AWS region. Exiting...")
+        sys.exit(0)
+
+    utils.log_success(f"Total EC2 Instances found across all AWS regions: {total_instances}")
+
+    utils.log_info("Preparing data for export to Excel format...")
+    df = pd.DataFrame(all_instances)
+    df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(df))
+
+    region_desc = regions[0] if len(regions) == 1 else 'all'
+    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+    filename = utils.create_export_filename(
+        account_name,
+        "ec2",
+        f"{filter_desc}-{region_desc}",
+        current_date,
+    )
+
+    output_path = utils.save_dataframe_to_excel(df, filename)
+
+    if output_path:
+        utils.log_success("AWS EC2 data exported successfully!")
+        utils.log_info(f"File location: {output_path}")
+        utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+        utils.log_info(f"Total instances exported: {total_instances}")
+        print("\nScript execution completed.")
+    else:
+        utils.log_error("Error exporting data. Please check the logs.")
+        sys.exit(1)
+
+
 def main():
-    """Main function to execute the script"""
+    """Main function — 4-step state machine with b/x navigation."""
     try:
-        # Check for required dependencies using utils function
         if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
             return
 
-        # Import pandas after dependency check
-        import pandas as pd
+        utils.setup_logging("ec2-export")
+        account_id, account_name = utils.print_script_banner("AWS EC2 INSTANCES DATA EXPORT")
 
-        # Get account information using utils function
-        utils.log_info("Getting AWS account information...")
-        account_id, account_name = utils.get_account_info()
-
-        # Detect partition and set environment name
-        partition = utils.detect_partition()
-        partition_name = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
-
-        # Print script header
-        print("\n====================================================================")
-        print("                   AWS RESOURCE SCANNER                            ")
-        print("====================================================================")
-        print("                  AWS EC2 INSTANCES DATA EXPORT                   ")
-        print("====================================================================")
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-        print(f"Environment: {partition_name}")
-        print("====================================================================\n")
-        
         if account_name == "UNKNOWN-ACCOUNT":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            if not utils.prompt_for_confirmation(
+                "Unable to determine account name. Proceed anyway?", default=False
+            ):
                 print("Exiting script...")
                 sys.exit(0)
-        
-        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-        
-        # Get instance state filter preference
-        print("Choose one of the following (enter the corresponding number):")
-        print("1. Export all instances")
-        print("2. Export only running instances")
-        print("3. Export only stopped instances")
-        
-        while True:
-            filter_choice = input("Enter your choice (1-3): ")
-            if filter_choice in ["1", "2", "3"]:
-                break
-            print("Invalid choice. Please enter 1, 2, or 3.")
-        
-        # Set instance filter based on user choice
+
+        step = 1
+        regions = None
         instance_filter = None
-        filter_desc = "all"  # Default for filename
-        if filter_choice == "2":
-            instance_filter = "running"
-            filter_desc = "running"
-        elif filter_choice == "3":
-            instance_filter = "stopped"
-            filter_desc = "stopped"
-        
-        regions = utils.prompt_region_selection()
-        
-        # Collect instance data from specified AWS regions (Phase 4B: concurrent scanning)
-        utils.log_info(f"Scanning {len(regions)} region(s) for EC2 instances...")
+        filter_desc = "all"
 
-        # Define region scan function that wraps get_instance_data
-        def scan_region(region):
-            utils.log_info(f"Collecting data from AWS region: {region}")
-            instances = get_instance_data(region, instance_filter)
-            utils.log_info(f"Found {len(instances)} instances in {region}")
-            return instances
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="EC2")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        # Use concurrent region scanning (with automatic fallback to sequential on errors)
-        region_results = utils.scan_regions_concurrent(
-            regions=regions,
-            scan_function=scan_region,
-            show_progress=True
-        )
+            elif step == 2:
+                result = _prompt_instance_filter()
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                instance_filter, filter_desc = result
+                step = 3
 
-        # Flatten results
-        all_instances = []
-        total_instances = 0
-        for instances in region_results:
-            instance_count = len(instances)
-            total_instances += instance_count
-            all_instances.extend(instances)
+            elif step == 3:
+                if len(regions) <= 3:
+                    region_str = ', '.join(regions)
+                else:
+                    region_str = f"{len(regions)} regions"
+                msg = f"Ready to export EC2 data ({filter_desc}, {region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 2
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 4
 
-        if not all_instances:
-            utils.log_warning("No instances found in any AWS region. Exiting...")
-            sys.exit(0)
+            elif step == 4:
+                _run_export(account_id, account_name, regions, instance_filter, filter_desc)
+                break
 
-        utils.log_success(f"Total EC2 Instances found across all AWS regions: {total_instances}")
-
-        # Create DataFrame and prepare for export
-        utils.log_info("Preparing data for export to Excel format...")
-        df = pd.DataFrame(all_instances)
-
-        # Sanitize and prepare EC2 data (tags may contain sensitive data)
-        df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(df))
-
-        # Generate filename with filter and region info
-        region_desc = regions[0] if len(regions) == 1 else 'all'
-
-        # Use utils module to generate filename and save data
-        filename = utils.create_export_filename(
-            account_name,
-            "ec2",
-            f"{filter_desc}-{region_desc}",
-            current_date
-        )
-        
-        # Save data using the utility function
-        output_path = utils.save_dataframe_to_excel(df, filename)
-        
-        if output_path:
-            utils.log_success(f"AWS EC2 data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-            utils.log_info(f"Total instances exported: {total_instances}")
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Error exporting data. Please check the logs.")
-            sys.exit(1)
-    
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)
+    except SystemExit:
+        raise
     except Exception as e:
         utils.log_error("Unexpected error occurred", e)
         sys.exit(1)

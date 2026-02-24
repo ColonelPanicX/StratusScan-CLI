@@ -128,7 +128,6 @@ def collect_rest_apis(regions: List[str]) -> List[Dict[str, Any]]:
     all_apis = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_rest_apis_in_region,
-        resource_type="REST APIs"
     )
 
     utils.log_success(f"Total REST APIs collected: {len(all_apis)}")
@@ -222,7 +221,6 @@ def collect_http_apis(regions: List[str]) -> List[Dict[str, Any]]:
     all_apis = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_http_apis_in_region,
-        resource_type="HTTP APIs"
     )
 
     utils.log_success(f"Total HTTP APIs collected: {len(all_apis)}")
@@ -342,7 +340,6 @@ def collect_api_stages(regions: List[str]) -> List[Dict[str, Any]]:
     all_stages = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_api_stages_in_region,
-        resource_type="API stages"
     )
 
     utils.log_success(f"Total API stages collected: {len(all_stages)}")

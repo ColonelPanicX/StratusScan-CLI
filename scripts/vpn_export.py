@@ -144,11 +144,12 @@ def collect_vpn_connections(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING SITE-TO-SITE VPN CONNECTIONS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    vpn_connections = utils.scan_regions_concurrent(
+    vpn_connections = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_vpn_connections_in_region,
-        resource_type="VPN connections"
-    )
+    ):
+        vpn_connections.extend(region_data)
 
     utils.log_success(f"Total Site-to-Site VPN connections collected: {len(vpn_connections)}")
     return vpn_connections
@@ -268,11 +269,12 @@ def collect_vpn_tunnels(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING VPN TUNNEL DETAILS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    tunnels = utils.scan_regions_concurrent(
+    tunnels = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_vpn_tunnels_in_region,
-        resource_type="VPN tunnels"
-    )
+    ):
+        tunnels.extend(region_data)
 
     utils.log_success(f"Total VPN tunnels collected: {len(tunnels)}")
     return tunnels
@@ -350,11 +352,12 @@ def collect_customer_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING CUSTOMER GATEWAYS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    gateways = utils.scan_regions_concurrent(
+    gateways = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_customer_gateways_in_region,
-        resource_type="customer gateways"
-    )
+    ):
+        gateways.extend(region_data)
 
     utils.log_success(f"Total customer gateways collected: {len(gateways)}")
     return gateways
@@ -440,11 +443,12 @@ def collect_virtual_private_gateways(regions: List[str]) -> List[Dict[str, Any]]
     print("\n=== COLLECTING VIRTUAL PRIVATE GATEWAYS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    vgws = utils.scan_regions_concurrent(
+    vgws = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_virtual_private_gateways_in_region,
-        resource_type="virtual private gateways"
-    )
+    ):
+        vgws.extend(region_data)
 
     utils.log_success(f"Total virtual private gateways collected: {len(vgws)}")
     return vgws
@@ -623,11 +627,12 @@ def collect_client_vpn_authorization_rules(regions: List[str]) -> List[Dict[str,
     print("\n=== COLLECTING CLIENT VPN AUTHORIZATION RULES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    rules = utils.scan_regions_concurrent(
+    rules = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_client_vpn_authorization_rules_in_region,
-        resource_type="Client VPN authorization rules"
-    )
+    ):
+        rules.extend(region_data)
 
     utils.log_success(f"Total Client VPN authorization rules collected: {len(rules)}")
     return rules

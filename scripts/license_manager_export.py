@@ -41,10 +41,6 @@ except ImportError:
 # Check required packages
 utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
 
-# Setup logging
-logger = utils.setup_logging('license-manager-export')
-utils.log_script_start('license-manager-export', 'Export AWS License Manager configurations and usage')
-
 
 @utils.aws_error_handler("Collecting license configurations", default_return=[])
 def collect_license_configurations(region: str) -> List[Dict[str, Any]]:
@@ -233,158 +229,184 @@ def collect_resource_inventory(region: str) -> List[Dict[str, Any]]:
     return inventory
 
 
+def _run_export(account_id: str, account_name: str, regions: list) -> None:
+    """Collect License Manager data and write the Excel export."""
+    utils.log_info(f"Scanning {len(regions)} region(s) for License Manager resources...")
+
+    all_configs = []
+    all_usage = []
+    all_grants = []
+    all_licenses = []
+    all_inventory = []
+
+    for idx, region in enumerate(regions, 1):
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+
+        # Collect license configurations
+        configs = collect_license_configurations(region)
+        if configs:
+            utils.log_info(f"  Found {len(configs)} license configuration(s)")
+            all_configs.extend(configs)
+
+            # Collect usage for first 10 configurations
+            for config in configs[:10]:
+                config_arn = config['LicenseConfigurationArn']
+                usage = collect_license_usage(region, config_arn)
+                all_usage.extend(usage)
+
+        # Collect grants
+        grants = collect_grants(region)
+        if grants:
+            utils.log_info(f"  Found {len(grants)} grant(s)")
+            all_grants.extend(grants)
+
+        # Collect licenses
+        licenses = collect_licenses(region)
+        if licenses:
+            utils.log_info(f"  Found {len(licenses)} license(s)")
+            all_licenses.extend(licenses)
+
+        # Collect resource inventory
+        inventory = collect_resource_inventory(region)
+        if inventory:
+            utils.log_info(f"  Found {len(inventory)} inventory item(s)")
+            all_inventory.extend(inventory)
+
+    if not all_configs and not all_licenses and not all_grants:
+        utils.log_warning("No License Manager resources found in any selected region.")
+        utils.log_info("Creating empty export file...")
+
+    utils.log_info(f"Total license configurations found: {len(all_configs)}")
+    utils.log_info(f"Total licenses found: {len(all_licenses)}")
+    utils.log_info(f"Total grants found: {len(all_grants)}")
+
+    # Create DataFrames
+    df_configs = utils.prepare_dataframe_for_export(pd.DataFrame(all_configs))
+    df_usage = utils.prepare_dataframe_for_export(pd.DataFrame(all_usage))
+    df_grants = utils.prepare_dataframe_for_export(pd.DataFrame(all_grants))
+    df_licenses = utils.prepare_dataframe_for_export(pd.DataFrame(all_licenses))
+    df_inventory = utils.prepare_dataframe_for_export(pd.DataFrame(all_inventory))
+
+    # Create summary
+    summary_data = []
+    summary_data.append({'Metric': 'Total License Configurations', 'Value': len(all_configs)})
+    summary_data.append({'Metric': 'Total Licenses', 'Value': len(all_licenses)})
+    summary_data.append({'Metric': 'Total Grants', 'Value': len(all_grants)})
+    summary_data.append({'Metric': 'Total Usage Records', 'Value': len(all_usage)})
+    summary_data.append({'Metric': 'Total Inventory Items', 'Value': len(all_inventory)})
+    summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
+
+    if not df_configs.empty:
+        active_configs = len(df_configs[df_configs['Status'] == 'AVAILABLE'])
+        disabled_configs = len(df_configs[df_configs['Status'] == 'DISABLED'])
+
+        summary_data.append({'Metric': 'Active Configurations', 'Value': active_configs})
+        summary_data.append({'Metric': 'Disabled Configurations', 'Value': disabled_configs})
+
+        # Calculate total license consumption
+        total_consumed = df_configs['ConsumedLicenses'].sum() if 'ConsumedLicenses' in df_configs.columns else 0
+        summary_data.append({'Metric': 'Total Licenses Consumed', 'Value': int(total_consumed)})
+
+    if not df_grants.empty:
+        received_grants = len(df_grants[df_grants['GrantType'] == 'Received'])
+        distributed_grants = len(df_grants[df_grants['GrantType'] == 'Distributed'])
+
+        summary_data.append({'Metric': 'Received Grants', 'Value': received_grants})
+        summary_data.append({'Metric': 'Distributed Grants', 'Value': distributed_grants})
+
+    df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
+
+    # Create filtered views
+    df_active_configs = pd.DataFrame()
+    df_over_limit = pd.DataFrame()
+
+    if not df_configs.empty:
+        df_active_configs = df_configs[df_configs['Status'] == 'AVAILABLE']
+
+        # Find configurations near or over limit
+        if 'LicenseCount' in df_configs.columns and 'ConsumedLicenses' in df_configs.columns:
+            df_over_limit = df_configs[
+                (df_configs['LicenseCount'] != 'N/A') &
+                (df_configs['ConsumedLicenses'] >= df_configs['LicenseCount'] * 0.8)
+            ]
+
+    # Export to Excel
+    filename = utils.create_export_filename(account_name, 'license-manager', 'all')
+
+    sheets = {
+        'Summary': df_summary,
+        'License Configurations': df_configs,
+        'Active Configurations': df_active_configs,
+        'Near Limit': df_over_limit,
+        'Licenses': df_licenses,
+        'Grants': df_grants,
+        'License Usage': df_usage,
+        'Resource Inventory': df_inventory,
+    }
+
+    utils.save_multiple_dataframes_to_excel(sheets, filename)
+
+    # Log summary
+    utils.log_export_summary(
+        total_items=len(all_configs) + len(all_licenses) + len(all_grants),
+        item_type='License Manager Resources',
+        filename=filename
+    )
+
+    utils.log_info(f"  License Configurations: {len(all_configs)}")
+    utils.log_info(f"  Licenses: {len(all_licenses)}")
+    utils.log_info(f"  Grants: {len(all_grants)}")
+    utils.log_info(f"  Usage Records: {len(all_usage)}")
+    utils.log_info(f"  Inventory Items: {len(all_inventory)}")
+
+    utils.log_success("License Manager export completed successfully!")
+
+
 def main():
-    """Main execution function."""
+    """Main function — 3-step state machine with b/x navigation."""
     try:
-        # Get account information
-        account_id, account_name = utils.get_account_info()
-        utils.log_info(f"Exporting License Manager resources for account: {account_name} ({utils.mask_account_id(account_id)})")
+        utils.setup_logging("license-manager-export")
+        account_id, account_name = utils.print_script_banner("AWS LICENSE MANAGER EXPORT")
 
-        # Prompt for regions
-        utils.log_info("License Manager is a regional service.")
-        regions = utils.prompt_region_selection(
-            service_name="License Manager",
-            default_to_all=False
-        )
+        step = 1
+        regions = None
 
-        if not regions:
-            utils.log_error("No regions selected. Exiting.")
-            return
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="License Manager")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
 
-        utils.log_info(f"Scanning {len(regions)} region(s) for License Manager resources...")
+            elif step == 2:
+                if len(regions) <= 3:
+                    region_str = ', '.join(regions)
+                else:
+                    region_str = f"{len(regions)} regions"
+                msg = f"Ready to export License Manager data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
 
-        # Collect all resources
-        all_configs = []
-        all_usage = []
-        all_grants = []
-        all_licenses = []
-        all_inventory = []
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
 
-        for idx, region in enumerate(regions, 1):
-            utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-            # Collect license configurations
-            configs = collect_license_configurations(region)
-            if configs:
-                utils.log_info(f"  Found {len(configs)} license configuration(s)")
-                all_configs.extend(configs)
-
-                # Collect usage for first 10 configurations
-                for config in configs[:10]:
-                    config_arn = config['LicenseConfigurationArn']
-                    usage = collect_license_usage(region, config_arn)
-                    all_usage.extend(usage)
-
-            # Collect grants
-            grants = collect_grants(region)
-            if grants:
-                utils.log_info(f"  Found {len(grants)} grant(s)")
-                all_grants.extend(grants)
-
-            # Collect licenses
-            licenses = collect_licenses(region)
-            if licenses:
-                utils.log_info(f"  Found {len(licenses)} license(s)")
-                all_licenses.extend(licenses)
-
-            # Collect resource inventory
-            inventory = collect_resource_inventory(region)
-            if inventory:
-                utils.log_info(f"  Found {len(inventory)} inventory item(s)")
-                all_inventory.extend(inventory)
-
-        if not all_configs and not all_licenses and not all_grants:
-            utils.log_warning("No License Manager resources found in any selected region.")
-            utils.log_info("Creating empty export file...")
-
-        utils.log_info(f"Total license configurations found: {len(all_configs)}")
-        utils.log_info(f"Total licenses found: {len(all_licenses)}")
-        utils.log_info(f"Total grants found: {len(all_grants)}")
-
-        # Create DataFrames
-        df_configs = utils.prepare_dataframe_for_export(pd.DataFrame(all_configs))
-        df_usage = utils.prepare_dataframe_for_export(pd.DataFrame(all_usage))
-        df_grants = utils.prepare_dataframe_for_export(pd.DataFrame(all_grants))
-        df_licenses = utils.prepare_dataframe_for_export(pd.DataFrame(all_licenses))
-        df_inventory = utils.prepare_dataframe_for_export(pd.DataFrame(all_inventory))
-
-        # Create summary
-        summary_data = []
-        summary_data.append({'Metric': 'Total License Configurations', 'Value': len(all_configs)})
-        summary_data.append({'Metric': 'Total Licenses', 'Value': len(all_licenses)})
-        summary_data.append({'Metric': 'Total Grants', 'Value': len(all_grants)})
-        summary_data.append({'Metric': 'Total Usage Records', 'Value': len(all_usage)})
-        summary_data.append({'Metric': 'Total Inventory Items', 'Value': len(all_inventory)})
-        summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
-
-        if not df_configs.empty:
-            active_configs = len(df_configs[df_configs['Status'] == 'AVAILABLE'])
-            disabled_configs = len(df_configs[df_configs['Status'] == 'DISABLED'])
-
-            summary_data.append({'Metric': 'Active Configurations', 'Value': active_configs})
-            summary_data.append({'Metric': 'Disabled Configurations', 'Value': disabled_configs})
-
-            # Calculate total license consumption
-            total_consumed = df_configs['ConsumedLicenses'].sum() if 'ConsumedLicenses' in df_configs.columns else 0
-            summary_data.append({'Metric': 'Total Licenses Consumed', 'Value': int(total_consumed)})
-
-        if not df_grants.empty:
-            received_grants = len(df_grants[df_grants['GrantType'] == 'Received'])
-            distributed_grants = len(df_grants[df_grants['GrantType'] == 'Distributed'])
-
-            summary_data.append({'Metric': 'Received Grants', 'Value': received_grants})
-            summary_data.append({'Metric': 'Distributed Grants', 'Value': distributed_grants})
-
-        df_summary = utils.prepare_dataframe_for_export(pd.DataFrame(summary_data))
-
-        # Create filtered views
-        df_active_configs = pd.DataFrame()
-        df_over_limit = pd.DataFrame()
-
-        if not df_configs.empty:
-            df_active_configs = df_configs[df_configs['Status'] == 'AVAILABLE']
-
-            # Find configurations near or over limit
-            if 'LicenseCount' in df_configs.columns and 'ConsumedLicenses' in df_configs.columns:
-                df_over_limit = df_configs[
-                    (df_configs['LicenseCount'] != 'N/A') &
-                    (df_configs['ConsumedLicenses'] >= df_configs['LicenseCount'] * 0.8)
-                ]
-
-        # Export to Excel
-        filename = utils.create_export_filename(account_name, 'license-manager', 'all')
-
-        sheets = {
-            'Summary': df_summary,
-            'License Configurations': df_configs,
-            'Active Configurations': df_active_configs,
-            'Near Limit': df_over_limit,
-            'Licenses': df_licenses,
-            'Grants': df_grants,
-            'License Usage': df_usage,
-            'Resource Inventory': df_inventory,
-        }
-
-        utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-        # Log summary
-        utils.log_export_summary(
-            total_items=len(all_configs) + len(all_licenses) + len(all_grants),
-            item_type='License Manager Resources',
-            filename=filename
-        )
-
-        utils.log_info(f"  License Configurations: {len(all_configs)}")
-        utils.log_info(f"  Licenses: {len(all_licenses)}")
-        utils.log_info(f"  Grants: {len(all_grants)}")
-        utils.log_info(f"  Usage Records: {len(all_usage)}")
-        utils.log_info(f"  Inventory Items: {len(all_inventory)}")
-
-        utils.log_success("License Manager export completed successfully!")
-
-    except Exception as e:
-        utils.log_error(f"Failed to export License Manager resources: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
         raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

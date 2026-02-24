@@ -82,7 +82,8 @@ def is_aws_region(region: str) -> bool:
         bool: True if valid AWS region, False otherwise
     """
     # Pattern supports: us-east-1, us-gov-west-1, ap-southeast-2, etc.
-    pattern = r"^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$"
+    # Digit is limited to [1-9] (no AWS region uses 0 or multi-digit numbers).
+    pattern = r"^[a-z]{2}(-gov)?-[a-z]+-[1-9]$"
     return bool(re.match(pattern, region)) or region in _DEFAULT_REGIONS
 
 

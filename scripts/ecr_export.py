@@ -140,12 +140,12 @@ def collect_ecr_repositories(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ECR REPOSITORIES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_repos = utils.scan_regions_concurrent(
+    all_repos = []
+    for region_repos in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_ecr_repositories_in_region,
-        resource_type="ECR repositories"
-    )
+    ):
+        all_repos.extend(region_repos)
 
     utils.log_success(f"Total ECR repositories collected: {len(all_repos)}")
     return all_repos
@@ -253,12 +253,12 @@ def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ECR IMAGES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_images = utils.scan_regions_concurrent(
+    all_images = []
+    for region_images in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_ecr_images_in_region,
-        resource_type="ECR images"
-    )
+    ):
+        all_images.extend(region_images)
 
     utils.log_success(f"Total ECR images collected: {len(all_images)}")
     return all_images
@@ -351,12 +351,12 @@ def collect_lifecycle_policies(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING LIFECYCLE POLICIES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_policies = utils.scan_regions_concurrent(
+    all_policies = []
+    for region_policies in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_lifecycle_policies_in_region,
-        resource_type="ECR lifecycle policies"
-    )
+    ):
+        all_policies.extend(region_policies)
 
     utils.log_success(f"Total lifecycle policy records collected: {len(all_policies)}")
     return all_policies

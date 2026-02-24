@@ -513,24 +513,8 @@ def generate_summary(clusters: List[Dict[str, Any]],
     return summary
 
 
-def main():
-    """Main execution function."""
-    script_name = Path(__file__).stem
-    utils.setup_logging(script_name)
-    utils.log_script_start(script_name)
-
-    # Check dependencies
-    if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
-        utils.log_error("Required dependencies not installed")
-        return
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    utils.log_info(f"Account: {account_name} ({utils.mask_account_id(account_id)})")
-
-    # Detect partition for region examples
-    regions = utils.prompt_region_selection()
-    # Collect data
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect Neptune data and write the Excel export."""
     print("\n=== Collecting Neptune Data ===")
     clusters = collect_neptune_clusters(regions)
     instances = collect_neptune_instances(regions)
@@ -575,17 +559,56 @@ def main():
 
     if utils.save_multiple_dataframes_to_excel(dataframes, filename):
         utils.log_export_summary(
-            filename=filename,
-            total_items=len(clusters) + len(instances) + len(snapshots) + len(endpoints),
-            details={
-                'Clusters': len(clusters),
-                'Instances': len(instances),
-                'Snapshots': len(snapshots),
-                'Endpoints': len(endpoints)
-            }
+            resource_type='Neptune',
+            count=len(clusters) + len(instances) + len(snapshots) + len(endpoints),
+            output_file=filename
         )
 
-    utils.log_script_end(script_name)
+
+def main():
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    try:
+        utils.setup_logging('neptune-export')
+        account_id, account_name = utils.print_script_banner("AWS NEPTUNE EXPORT")
+
+        utils.log_info(f"Account: {account_name} ({utils.mask_account_id(account_id)})")
+
+        step = 1
+        regions = None
+
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="Neptune")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
+
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export Neptune data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
+
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
+
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

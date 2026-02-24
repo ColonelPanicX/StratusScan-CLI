@@ -39,8 +39,11 @@ class ExecutionResult:
     def duration_formatted(self) -> str:
         """Format duration as human-readable string."""
         seconds = int(self.duration_seconds)
-        minutes = seconds // 60
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
         secs = seconds % 60
+        if hours > 0:
+            return f"{hours}h {minutes}m {secs}s"
         if minutes > 0:
             return f"{minutes}m {secs}s"
         return f"{secs}s"
@@ -63,7 +66,7 @@ class ScriptExecutor:
             scripts_dir: Directory containing the scripts (uses utils.get_scripts_dir() if None)
             python_executable: Python interpreter to use
         """
-        self.scripts = sorted(scripts)  # Sort for consistent ordering
+        self.scripts = sorted(set(scripts))  # Deduplicate and sort for consistent ordering
 
         # Use utils to get the proper scripts directory
         if scripts_dir is None:

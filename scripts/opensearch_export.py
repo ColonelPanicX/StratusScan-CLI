@@ -225,11 +225,12 @@ def collect_opensearch_domains(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect OpenSearch Service domain information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_domains = utils.scan_regions_concurrent(
+    all_domains = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_opensearch_domains_in_region,
-        resource_type="OpenSearch domains"
-    )
+    ):
+        all_domains.extend(region_data)
 
     return all_domains
 
@@ -293,11 +294,12 @@ def collect_opensearch_tags(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect OpenSearch Service domain tags from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_tags = utils.scan_regions_concurrent(
+    all_tags = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_opensearch_tags_in_region,
-        resource_type="OpenSearch domain tags"
-    )
+    ):
+        all_tags.extend(region_data)
 
     return all_tags
 
@@ -439,23 +441,8 @@ def generate_summary(domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return summary
 
 
-def main():
-    """Main execution function."""
-    script_name = Path(__file__).stem
-    utils.setup_logging(script_name)
-    utils.log_script_start(script_name)
-
-    # Check dependencies
-    if not utils.check_dependencies(['pandas', 'openpyxl', 'boto3']):
-        utils.log_error("Required dependencies not installed")
-        return
-
-    # Get account information
-    account_id, account_name = utils.get_account_info()
-    utils.log_info(f"Account: {account_name} ({utils.mask_account_id(account_id)})")
-
-    # Detect partition for region examples
-    regions = utils.prompt_region_selection()
+def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+    """Collect OpenSearch data and write the Excel export."""
     # Collect data
     print("\n=== Collecting OpenSearch Data ===")
     domains = collect_opensearch_domains(regions)
@@ -499,7 +486,50 @@ def main():
             }
         )
 
-    utils.log_script_end(script_name)
+
+def main():
+    """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    utils.setup_logging("opensearch-export")
+
+    try:
+        account_id, account_name = utils.print_script_banner("AWS OPENSEARCH SERVICE EXPORT")
+
+        step = 1
+        regions = None
+
+        while True:
+            if step == 1:
+                result = utils.prompt_region_selection(service_name="OpenSearch")
+                if result == 'back':
+                    sys.exit(10)
+                if result == 'exit':
+                    sys.exit(11)
+                regions = result
+                step = 2
+
+            elif step == 2:
+                region_str = regions[0] if len(regions) == 1 else f"{len(regions)} regions"
+                msg = f"Ready to export OpenSearch data ({region_str})."
+                result = utils.prompt_confirmation(msg)
+                if result == 'back':
+                    step = 1
+                    continue
+                if result == 'exit':
+                    sys.exit(11)
+                step = 3
+
+            elif step == 3:
+                _run_export(account_id, account_name, regions)
+                break
+
+    except KeyboardInterrupt:
+        print("\n\nScript interrupted by user. Exiting...")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        utils.log_error("Unexpected error occurred", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
