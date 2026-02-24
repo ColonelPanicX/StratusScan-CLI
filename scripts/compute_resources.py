@@ -83,9 +83,6 @@ def _detect_new_xlsx(
         ]
         if candidates:
             return str(max(candidates, key=lambda p: p.stat().st_mtime))
-        all_xlsx = list(output_dir.glob("*.xlsx"))
-        if all_xlsx:
-            return str(max(all_xlsx, key=lambda p: p.stat().st_mtime))
         return None
     except Exception:
         return None
