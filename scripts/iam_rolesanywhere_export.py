@@ -409,6 +409,7 @@ def main():
             return
 
         # Print title and get account info
+        utils.setup_logging("iam-rolesanywhere-export")
         account_id, account_name = utils.print_script_banner("AWS IAM ROLES ANYWHERE COMPREHENSIVE EXPORT")
 
         # Validate AWS credentials

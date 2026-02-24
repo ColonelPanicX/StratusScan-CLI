@@ -201,7 +201,6 @@ def collect_redshift_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     all_clusters = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_clusters_in_region,
-        resource_type="Redshift clusters"
     )
 
     return all_clusters
@@ -302,7 +301,6 @@ def collect_redshift_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
     all_snapshots = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_snapshots_in_region,
-        resource_type="Redshift snapshots"
     )
 
     return all_snapshots
@@ -351,7 +349,6 @@ def collect_redshift_parameter_groups(regions: List[str]) -> List[Dict[str, Any]
     all_parameter_groups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_parameter_groups_in_region,
-        resource_type="Redshift parameter groups"
     )
 
     return all_parameter_groups
@@ -419,7 +416,6 @@ def collect_redshift_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
     all_subnet_groups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_subnet_groups_in_region,
-        resource_type="Redshift subnet groups"
     )
 
     return all_subnet_groups

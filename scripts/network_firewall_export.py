@@ -57,7 +57,7 @@ def collect_network_firewalls_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with firewall information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     firewalls = []
@@ -188,7 +188,7 @@ def collect_firewall_policies_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with firewall policy information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     policies = []
@@ -297,7 +297,7 @@ def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with rule group information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     rule_groups = []
@@ -405,7 +405,7 @@ def collect_logging_configurations_from_region(region: str) -> List[Dict[str, An
     Returns:
         list: List of dictionaries with logging configuration information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     logging_configs = []

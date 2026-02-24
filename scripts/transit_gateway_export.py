@@ -156,7 +156,6 @@ def collect_transit_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     all_tgws = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateways_in_region,
-        resource_type="Transit Gateways"
     )
 
     utils.log_success(f"Total Transit Gateways collected: {len(all_tgws)}")
@@ -260,7 +259,6 @@ def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, An
     all_attachments = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_attachments_in_region,
-        resource_type="Transit Gateway attachments"
     )
 
     utils.log_success(f"Total attachments collected: {len(all_attachments)}")
@@ -351,7 +349,6 @@ def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, A
     all_route_tables = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_route_tables_in_region,
-        resource_type="Transit Gateway route tables"
     )
 
     utils.log_success(f"Total route tables collected: {len(all_route_tables)}")
@@ -464,7 +461,6 @@ def collect_transit_gateway_routes(regions: List[str]) -> List[Dict[str, Any]]:
     all_routes = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateway_routes_in_region,
-        resource_type="Transit Gateway routes"
     )
 
     utils.log_success(f"Total routes collected: {len(all_routes)}")

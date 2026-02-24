@@ -191,7 +191,6 @@ def collect_user_pools(regions: List[str]) -> List[Dict[str, Any]]:
     all_pools = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pools_in_region,
-        resource_type="Cognito user pools"
     )
 
     utils.log_info(f"Collected {len(all_pools)} user pools")
@@ -289,7 +288,6 @@ def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
     all_identity_pools = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_identity_pools_in_region,
-        resource_type="Cognito identity pools"
     )
 
     utils.log_info(f"Collected {len(all_identity_pools)} identity pools")
@@ -432,7 +430,6 @@ def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
     all_clients = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pool_clients_in_region,
-        resource_type="Cognito user pool clients"
     )
 
     utils.log_info(f"Collected {len(all_clients)} user pool clients")
@@ -561,7 +558,6 @@ def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
     all_providers = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_identity_providers_in_region,
-        resource_type="Cognito identity providers"
     )
 
     utils.log_info(f"Collected {len(all_providers)} identity providers")
@@ -651,7 +647,6 @@ def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
     all_groups = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pool_groups_in_region,
-        resource_type="Cognito user pool groups"
     )
 
     utils.log_info(f"Collected {len(all_groups)} user pool groups")

@@ -65,7 +65,7 @@ def collect_amis_in_region(region: str, account_id: str) -> List[Dict[str, Any]]
     """
     region_amis = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 

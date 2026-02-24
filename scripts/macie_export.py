@@ -48,7 +48,7 @@ utils.setup_logging("macie-export")
 @utils.aws_error_handler("Collecting Macie status from region", default_return=[])
 def collect_macie_status_from_region(region: str) -> List[Dict[str, Any]]:
     """Collect Macie account status from a single AWS region."""
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     status_data = []
@@ -128,7 +128,7 @@ def collect_macie_status(regions: List[str]) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting Macie classification jobs from region", default_return=[])
 def collect_classification_jobs_from_region(region: str) -> List[Dict[str, Any]]:
     """Collect Macie classification job information from a single AWS region."""
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     jobs_data = []
@@ -228,7 +228,7 @@ def collect_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting Macie findings from region", default_return=[])
 def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
     """Collect Macie finding information from a single AWS region (recent findings only)."""
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     findings_data = []
@@ -323,7 +323,7 @@ def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting Macie S3 buckets from region", default_return=[])
 def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
     """Collect Macie S3 bucket inventory from a single AWS region."""
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     buckets_data = []
@@ -405,7 +405,7 @@ def collect_s3_buckets(regions: List[str]) -> List[Dict[str, Any]]:
 @utils.aws_error_handler("Collecting Macie custom data identifiers from region", default_return=[])
 def collect_custom_data_identifiers_from_region(region: str) -> List[Dict[str, Any]]:
     """Collect Macie custom data identifier information from a single AWS region."""
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     identifiers_data = []

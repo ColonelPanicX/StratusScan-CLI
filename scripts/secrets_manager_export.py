@@ -181,7 +181,6 @@ def collect_secrets(regions: List[str]) -> List[Dict[str, Any]]:
     all_secrets = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secrets_in_region,
-        resource_type="Secrets Manager secrets"
     )
 
     utils.log_success(f"Total secrets collected: {len(all_secrets)}")
@@ -279,7 +278,6 @@ def collect_secret_versions(regions: List[str]) -> List[Dict[str, Any]]:
     all_versions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secret_versions_in_region,
-        resource_type="secret versions"
     )
 
     utils.log_success(f"Total secret versions collected: {len(all_versions)}")
@@ -364,7 +362,6 @@ def collect_secret_replications(regions: List[str]) -> List[Dict[str, Any]]:
     all_replications = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secret_replications_in_region,
-        resource_type="secret replications"
     )
 
     utils.log_success(f"Total secret replications collected: {len(all_replications)}")

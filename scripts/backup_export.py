@@ -48,7 +48,7 @@ def _scan_backup_vaults_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for backup vaults."""
     vaults_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return vaults_data
 
     try:
@@ -120,7 +120,7 @@ def _scan_backup_plans_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for backup plans."""
     plans_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return plans_data
 
     try:
@@ -208,7 +208,7 @@ def _scan_backup_selections_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for backup selections."""
     selections_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return selections_data
 
     try:

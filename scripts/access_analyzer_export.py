@@ -55,7 +55,7 @@ def collect_analyzers_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with analyzer information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     analyzers_data = []
@@ -149,7 +149,7 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with finding information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     findings_data = []
@@ -277,7 +277,7 @@ def collect_archived_findings_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with archived finding information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     findings_data = []
@@ -375,7 +375,7 @@ def collect_archive_rules_from_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with archive rule information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     rules_data = []

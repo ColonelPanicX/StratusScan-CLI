@@ -214,7 +214,6 @@ def collect_acm_certificates(regions: List[str]) -> List[Dict[str, Any]]:
     all_certificates = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_acm_certificates_in_region,
-        resource_type="ACM certificates"
     )
 
     utils.log_success(f"Total ACM certificates collected: {len(all_certificates)}")
@@ -310,7 +309,6 @@ def collect_certificate_validation_details(regions: List[str]) -> List[Dict[str,
     all_validations = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_certificate_validation_details_in_region,
-        resource_type="certificate validation details"
     )
 
     utils.log_success(f"Total validation details collected: {len(all_validations)}")

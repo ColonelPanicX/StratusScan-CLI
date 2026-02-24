@@ -59,7 +59,7 @@ def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> List[D
     Returns:
         list: List of dictionaries with web ACL information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     web_acls_data = []
@@ -190,7 +190,7 @@ def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> List[
     Returns:
         list: List of dictionaries with rule information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     rules_data = []
@@ -347,7 +347,7 @@ def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> List[Di
     Returns:
         list: List of dictionaries with IP set information
     """
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     ip_sets_data = []
