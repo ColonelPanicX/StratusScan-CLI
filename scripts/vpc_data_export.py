@@ -59,7 +59,7 @@ def collect_vpc_data_for_region(region):
     vpc_data = []
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -283,7 +283,7 @@ def collect_vpc_subnet_data_for_region(region):
     subnet_data = []
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -424,7 +424,7 @@ def collect_nat_gateway_data_for_region(region):
     nat_gateways = []
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -534,7 +534,7 @@ def collect_vpc_peering_data_for_region(region):
     vpc_peerings = []
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -640,7 +640,7 @@ def collect_elastic_ip_data_for_region(region):
     elastic_ips = []
 
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -869,6 +869,7 @@ def main():
     """Main function to execute the script."""
     try:
         # Print title and get account information
+        utils.setup_logging("vpc-data-export")
         account_id, account_name = utils.print_script_banner("AWS VPC, SUBNET, NAT GATEWAY, PEERING, AND ELASTIC IP EXPORT")
 
         # Check and install dependencies

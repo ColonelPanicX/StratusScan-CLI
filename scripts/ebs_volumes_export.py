@@ -333,6 +333,7 @@ def main():
     """
     try:
         # Print the script title and get account information
+        utils.setup_logging("ebs-volumes-export")
         account_id, account_name = utils.print_script_banner("AWS EBS VOLUME DATA EXPORT")
 
         # Check for required dependencies

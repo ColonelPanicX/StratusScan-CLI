@@ -55,7 +55,7 @@ def is_valid_aws_region(region_name):
     Returns:
         bool: True if valid, False otherwise
     """
-    return utils.validate_aws_region(region_name)
+    return utils.is_aws_region(region_name)
 
 def get_tag_value(tags, key='Name'):
     """
@@ -122,7 +122,7 @@ def get_nacl_data(region):
         list: List of dictionaries with NACL information
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 
@@ -200,6 +200,7 @@ def main():
     """
     try:
         # Print title and get account information
+        utils.setup_logging("nacl-export")
         account_id, account_name = utils.print_script_banner("AWS NETWORK ACL (NACL) DATA EXPORT")
         
         # Check for required dependencies
