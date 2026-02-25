@@ -25,6 +25,7 @@ Features:
 - Phase 4B Performance Optimization (concurrent region scanning, session-level caching)
 """
 
+import importlib
 import os
 import platform
 import sys
@@ -1339,22 +1340,35 @@ def ensure_dependencies(*packages: str) -> bool:
         return False
 
     # Install missing packages
-    log_info("Installing missing packages...")
+    print(f"Installing: {' '.join(missing)}")
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install"] + missing
+        )
+    except subprocess.CalledProcessError as e:
+        log_error(f"pip install failed (exit {e.returncode}). Run manually: pip install {' '.join(missing)}")
+        return False
+    except Exception as e:
+        log_error("Unexpected error running pip", e)
+        return False
+
+    # Refresh Python's import cache so newly installed packages are visible
+    importlib.invalidate_caches()
+
+    # Verify each package is now importable
+    still_missing = []
     for package in missing:
         try:
-            log_info(f"Installing {package}...")
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", package],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE
-            )
-            log_success(f"Successfully installed {package}")
-        except subprocess.CalledProcessError as e:
-            log_error(f"Failed to install {package}", e)
-            return False
-        except Exception as e:
-            log_error(f"Unexpected error installing {package}", e)
-            return False
+            __import__(package)
+        except ImportError:
+            still_missing.append(package)
+
+    if still_missing:
+        log_error(
+            f"pip reported success but {', '.join(still_missing)} still not importable. "
+            "Try opening a new shell and re-running the script."
+        )
+        return False
 
     log_success("All dependencies installed successfully")
     return True
