@@ -568,7 +568,7 @@ def main():
     # Initialize data collection list
     all_rds_instances = []
 
-    utils.log_info(f"Collecting RDS instance data across {len(regions_to_scan)} AWS region(s)...")
+    utils.log_info(f"Collecting RDS instance data across {len(regions)} AWS region(s)...")
 
     # Define region scan function for concurrent execution (Phase 4B)
     def scan_region_rds(region):
@@ -579,7 +579,7 @@ def main():
 
     # Use concurrent region scanning (with automatic fallback to sequential on errors)
     region_results = utils.scan_regions_concurrent(
-        regions=regions_to_scan,
+        regions=regions,
         scan_function=scan_region_rds,
         show_progress=True
     )
@@ -587,14 +587,14 @@ def main():
     # Flatten results
     for instances in region_results:
         all_rds_instances.extend(instances)
-    
+
     # Export results to Excel file
     utils.log_success(f"Found {len(all_rds_instances)} RDS instances in total across all AWS regions.")
-    
+
     if all_rds_instances:
-        output_file = export_to_excel(all_rds_instances, account_name, region_filter)
+        output_file = export_to_excel(all_rds_instances, account_name)
         if output_file:
-            utils.log_info(f"Export contains data from {len(regions_to_scan)} AWS region(s)")
+            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total RDS instances exported: {len(all_rds_instances)}")
             print("\nScript execution completed.")
         else:
