@@ -157,10 +157,14 @@ def collect_multi_region_access_points(account_id: str) -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries containing MRAP information
     """
-    # Multi-Region Access Points are always accessed via us-west-2
-    # S3Control is a global service - use partition-aware home region
-    home_region = utils.get_partition_default_region()
-    s3control = utils.get_boto3_client('s3control', region_name=home_region)
+    # Multi-Region Access Points are only available in commercial us-west-2.
+    # The API rejects calls from any other region with PermanentRedirect.
+    partition = utils.detect_partition()
+    if partition == "aws-us-gov":
+        utils.log_info("Multi-Region Access Points are not available in GovCloud — skipping.")
+        return []
+
+    s3control = utils.get_boto3_client('s3control', region_name='us-west-2')
 
     mraps = []
     next_token = None
