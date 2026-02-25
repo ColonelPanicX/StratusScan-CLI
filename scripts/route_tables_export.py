@@ -370,6 +370,9 @@ def main():
         
         # Detect partition and set partition-aware example regions
         regions = utils.prompt_region_selection()
+
+        output_file = export_route_tables(account_name, regions)
+
         # Report results
         if output_file:
             print("\nExport completed successfully!")

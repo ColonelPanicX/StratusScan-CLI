@@ -619,13 +619,16 @@ def prompt_for_confirmation(message: str = "Do you want to continue?", default: 
     Returns:
         bool: True if confirmed, False otherwise
     """
+    if is_auto_run():
+        return default
+
     # TODO: Issue #C — add b/x navigation support here
     default_prompt = " (Y/n): " if default else " (y/N): "
     response = input(f"{message}{default_prompt}").strip().lower()
-    
+
     if not response:
         return default
-    
+
     return response.lower() in ['y', 'yes']
 
 def format_bytes(size_bytes: Union[int, float]) -> str:
