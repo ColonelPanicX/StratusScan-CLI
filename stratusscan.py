@@ -469,6 +469,7 @@ def get_menu_structure():
                         "3": {"name": "ElastiCache", "file": scripts_dir / "elasticache_export.py", "description": "Export ElastiCache clusters"},
                         "4": {"name": "DocumentDB", "file": scripts_dir / "documentdb_export.py", "description": "Export DocumentDB clusters"},
                         "5": {"name": "Neptune", "file": scripts_dir / "neptune_export.py", "description": "Export Neptune graph databases"},
+                        "6": {"name": "All Database Resources", "file": scripts_dir / "database_resources.py", "description": "Export all database resources (multi-select, zip output)"},
                     }
                 },
             }
