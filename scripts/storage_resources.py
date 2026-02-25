@@ -1,446 +1,433 @@
 #!/usr/bin/env python3
-
 """
-===========================
-= AWS RESOURCE SCANNER =
-===========================
+Storage Resources All-in-One Export Script
 
-Title: AWS Storage Resources All-in-One Export Script
-Date: SEP-25-2025
+Orchestrates all storage resource exporters as subprocesses and archives
+every output file into a single zip.  Runs non-interactively against each
+child script via STRATUSSCAN_AUTO_RUN / STRATUSSCAN_REGIONS env vars so
+the individual exporters receive region selection without prompting.
 
-Description:
-This script performs a comprehensive export of all storage resources from AWS
-environments including EBS volumes, EBS snapshots, and S3 buckets. Each resource type
-is exported to a separate Excel file, and all files are automatically archived into a
-single zip file for easy distribution and storage.
-
-Collected information includes:
-- EBS volumes with detailed configuration, encryption, and attachment information
-- EBS snapshots with creation details, encryption status, and sharing permissions
-- S3 buckets with configuration, security settings, and usage statistics
-- Automatic archiving of all exports into a single zip file
+Covered services (multi-select at runtime):
+  EBS Volumes, EBS Snapshots, S3, EFS, FSx, AWS Backup, S3 Access Points,
+  DataSync, Transfer Family, Storage Gateway, Glacier Vaults
 """
 
 import os
 import sys
-import datetime
-import time
-import json
-import zipfile
 import subprocess
+import time
+import zipfile
+from dataclasses import dataclass
 from pathlib import Path
-from botocore.exceptions import ClientError, NoCredentialsError
+from typing import List, Optional, Tuple
 
-# Add path to import utils module
 try:
-    # Try to import directly (if utils.py is in Python path)
     import utils
 except ImportError:
-    # If import fails, try to find the module relative to this script
-    script_dir = Path(__file__).parent.absolute()
+    sys.path.append(str(Path(__file__).parent.parent))
+    import utils
 
-    # Check if we're in the scripts directory
-    if script_dir.name.lower() == 'scripts':
-        # Add the parent directory (StratusScan root) to the path
-        sys.path.append(str(script_dir.parent))
-    else:
-        # Add the current directory to the path
-        sys.path.append(str(script_dir))
+utils.setup_logging('storage-resources')
 
-    # Try import again
+# ---------------------------------------------------------------------------
+# Script registry — (display_name, filename) ordered to match the menu
+# ---------------------------------------------------------------------------
+STORAGE_SCRIPTS: List[Tuple[str, str]] = [
+    ("EBS Volumes",       "ebs_volumes_export.py"),
+    ("EBS Snapshots",     "ebs_snapshots_export.py"),
+    ("S3",                "s3_export.py"),
+    ("EFS",               "efs_export.py"),
+    ("FSx",               "fsx_export.py"),
+    ("AWS Backup",        "backup_export.py"),
+    ("S3 Access Points",  "s3_accesspoints_export.py"),
+    ("DataSync",          "datasync_export.py"),
+    ("Transfer Family",   "transfer_family_export.py"),
+    ("Storage Gateway",   "storagegateway_export.py"),
+    ("Glacier Vaults",    "glacier_export.py"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _fmt_duration(seconds: float) -> str:
+    """Format a duration in seconds as a human-readable string."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}h {m}m {sec}s"
+    if m:
+        return f"{m}m {sec}s"
+    return f"{sec}s"
+
+
+def _snapshot_xlsx(output_dir: Path) -> Tuple[set, float]:
+    """Capture existing .xlsx filenames and current epoch time."""
     try:
-        import utils
-    except ImportError:
-        print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
-        sys.exit(1)
+        return {str(p) for p in output_dir.glob("*.xlsx")}, time.time()
+    except Exception:
+        return set(), 0.0
 
-# Setup logging
-logger = utils.setup_logging('storage-resources')
-@utils.aws_error_handler("Getting account information", default_return=("Unknown", "Unknown-AWS-Account"))
-def get_account_info():
-    """
-    Get the current AWS account ID and name with AWS validation.
 
-    Returns:
-        tuple: (account_id, account_name)
-    """
-    sts = utils.get_boto3_client('sts')
-    account_id = sts.get_caller_identity()['Account']
-
-    # Validate AWS environment
-    caller_arn = sts.get_caller_identity()['Arn']
-    account_name = utils.get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
-
-    return account_id, account_name
-
-def get_region_selection():
-    """
-    Get region selection from user for storage resources scanning.
-
-    Returns:
-        list: List of selected regions to scan
-    """
-    # Detect partition for region examples
-    regions = utils.prompt_region_selection()
-    """
-    Run an individual export script and capture its output file.
-
-    Args:
-        script_path: Path to the script to run
-        script_name: Human-readable name of the script
-        regions: List of regions to process
-
-    Returns:
-        str: Path to generated output file or None if failed
-    """
+def _detect_new_xlsx(
+    output_dir: Path,
+    pre: Tuple[set, float],
+) -> Optional[str]:
+    """Return the path of the newest .xlsx file created after *pre*."""
     try:
-        utils.log_info(f"Starting {script_name} export...")
-        print(f"\n{'='*70}")
-        print(f"EXECUTING {script_name.upper()} EXPORT")
-        print(f"{'='*70}")
+        pre_set, snap_time = pre
+        candidates = [
+            p for p in output_dir.glob("*.xlsx")
+            if str(p) not in pre_set and p.stat().st_mtime >= snap_time
+        ]
+        if candidates:
+            return str(max(candidates, key=lambda p: p.stat().st_mtime))
+        return None
+    except Exception:
+        return None
 
-        # Check if script exists
-        if not script_path.exists():
-            utils.log_error(f"Script not found: {script_path}")
-            return None
 
-        # Run the script
-        env = os.environ.copy()
+# ---------------------------------------------------------------------------
+# Multi-select script menu
+# ---------------------------------------------------------------------------
 
-        # Set environment variables to indicate automated run if needed
-        env['STRATUSSCAN_AUTO_RUN'] = '1'
-        env['STRATUSSCAN_REGIONS'] = ','.join(regions)
+def prompt_script_selection(
+    scripts: List[Tuple[str, str]],
+) -> List[Tuple[str, str]]:
+    """
+    Present a numbered multi-select menu for script selection.
 
+    Returns a list of selected (display_name, filename) tuples,
+    or the strings 'back' or 'exit'.
+    """
+    if utils.is_auto_run():
+        return list(scripts)
+
+    while True:
+        print("\nSELECT STORAGE RESOURCES TO EXPORT")
+        print("=" * 64)
+        print("   0. All  (export all storage resources)")
+        for i, (name, _) in enumerate(scripts, 1):
+            print(f"  {i:2d}. {name}")
+        print("=" * 64)
+        print("   b. Back    x. Exit")
+        print("=" * 64)
+
+        try:
+            raw = input(
+                "Enter number(s) separated by spaces (e.g. 1  or  1 3 5): "
+            ).strip().lower()
+        except KeyboardInterrupt:
+            print()
+            return 'exit'  # type: ignore[return-value]
+
+        if raw == 'b':
+            return 'back'  # type: ignore[return-value]
+        if raw == 'x':
+            return 'exit'  # type: ignore[return-value]
+        if raw == '0':
+            return list(scripts)
+
+        tokens = raw.split()
+        selected: List[Tuple[str, str]] = []
+        seen: set = set()
+        valid = True
+
+        for tok in tokens:
+            try:
+                idx = int(tok)
+                if 1 <= idx <= len(scripts):
+                    if idx not in seen:
+                        selected.append(scripts[idx - 1])
+                        seen.add(idx)
+                else:
+                    print(
+                        f"  Invalid number {tok}. "
+                        f"Enter values between 0 and {len(scripts)}."
+                    )
+                    valid = False
+                    break
+            except ValueError:
+                print(f"  Invalid input '{tok}'. Please enter numbers only.")
+                valid = False
+                break
+
+        if valid and selected:
+            return selected
+        if valid and not selected:
+            print("  No scripts selected. Please enter at least one number.")
+
+
+# ---------------------------------------------------------------------------
+# Subprocess execution
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ScriptResult:
+    """Result of a single child-script execution."""
+    name: str
+    filename: str
+    success: bool
+    duration_seconds: float
+    output_file: Optional[str] = None
+    error: Optional[str] = None
+
+
+def run_script(
+    name: str,
+    script_path: Path,
+    regions: List[str],
+    output_dir: Path,
+    index: int,
+    total: int,
+) -> ScriptResult:
+    """Invoke a single exporter script as a subprocess."""
+    print(f"\n{'=' * 70}")
+    print(f"[{index}/{total}] {name.upper()}")
+    print(f"{'=' * 70}")
+
+    if not script_path.exists():
+        utils.log_error(f"Script not found: {script_path.name}")
+        return ScriptResult(
+            name=name,
+            filename=script_path.name,
+            success=False,
+            duration_seconds=0.0,
+            error="Script file not found",
+        )
+
+    env = os.environ.copy()
+    env['STRATUSSCAN_AUTO_RUN'] = '1'
+    env['STRATUSSCAN_REGIONS'] = ','.join(regions)
+
+    pre = _snapshot_xlsx(output_dir)
+    start = time.time()
+
+    try:
         result = subprocess.run(
             [sys.executable, str(script_path)],
-            capture_output=False,  # Allow real-time output
+            capture_output=False,
             text=True,
             env=env,
-            timeout=1800  # 30-minute timeout
+            timeout=1800,
         )
+        duration = time.time() - start
+        success = result.returncode == 0
+        output_file = _detect_new_xlsx(output_dir, pre) if success else None
 
-        if result.returncode == 0:
-            utils.log_success(f"{script_name} export completed successfully")
-
-            # Try to find the most recent output file
-            output_dir = script_path.parent.parent / "output"
-            if output_dir.exists():
-                # Look for recent files that match the script pattern
-                pattern_map = {
-                    'EBS Volumes': '*ebs*volume*export*.xlsx',
-                    'EBS Snapshots': '*ebs*snapshot*export*.xlsx',
-                    'S3': '*s3*export*.xlsx'
-                }
-
-                pattern = pattern_map.get(script_name, f'*{script_name.lower().replace(" ", "*")}*.xlsx')
-
-                # Find the most recent matching file
-                matching_files = list(output_dir.glob(pattern))
-                if matching_files:
-                    # Sort by modification time, get most recent
-                    most_recent = max(matching_files, key=lambda f: f.stat().st_mtime)
-                    utils.log_info(f"Found output file: {most_recent.name}")
-                    return str(most_recent)
-                else:
-                    utils.log_warning(f"Could not find output file for {script_name}")
-
-                    # Fallback: try broader pattern matching
-                    all_xlsx_files = list(output_dir.glob('*.xlsx'))
-                    if all_xlsx_files:
-                        # Get the most recent xlsx file
-                        most_recent = max(all_xlsx_files, key=lambda f: f.stat().st_mtime)
-
-                        # Check if it might be from our script based on timestamp
-                        file_time = most_recent.stat().st_mtime
-                        current_time = time.time()
-
-                        # If file was created in the last 5 minutes, assume it's ours
-                        if (current_time - file_time) < 300:
-                            utils.log_info(f"Found recent output file (fallback): {most_recent.name}")
-                            return str(most_recent)
-
-                    return None
-            else:
-                utils.log_warning("Output directory not found")
-                return None
+        if success:
+            utils.log_success(
+                f"{name} completed in {_fmt_duration(duration)}"
+            )
         else:
-            utils.log_error(f"{script_name} export failed with return code {result.returncode}")
-            return None
-
-    except subprocess.TimeoutExpired:
-        utils.log_error(f"{script_name} export timed out after 30 minutes")
-        return None
-    except Exception as e:
-        utils.log_error(f"Error running {script_name} export", e)
-        return None
-
-def create_storage_archive(output_files, account_name):
-    """
-    Create a zip archive containing all storage resource exports.
-
-    Args:
-        output_files: List of output file paths
-        account_name: AWS account name for filename
-
-    Returns:
-        str: Path to created archive or None if failed
-    """
-    try:
-        # Filter out None values (failed exports)
-        valid_files = [f for f in output_files if f and Path(f).exists()]
-
-        if not valid_files:
-            utils.log_error("No valid output files to archive")
-            return None
-
-        # Generate archive filename
-        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-        archive_filename = utils.create_export_filename(
-            account_name,
-            "storage-resources-all",
-            "",
-            current_date,
-            extension=".zip"
-        )
-
-        utils.log_info(f"Creating archive: {archive_filename}")
-        print(f"\n{'='*70}")
-        print(f"CREATING STORAGE RESOURCES ARCHIVE")
-        print(f"{'='*70}")
-
-        # Create the zip file
-        with zipfile.ZipFile(archive_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for file_path in valid_files:
-                file_path_obj = Path(file_path)
-                if file_path_obj.exists():
-                    # Add file to zip with just the filename (no path)
-                    zipf.write(file_path_obj, file_path_obj.name)
-                    utils.log_info(f"Added to archive: {file_path_obj.name}")
-
-        if Path(archive_filename).exists():
-            archive_size = Path(archive_filename).stat().st_size / (1024 * 1024)  # MB
-            utils.log_success(f"Archive created successfully: {archive_filename}")
-            utils.log_info(f"Archive size: {archive_size:.2f} MB")
-            utils.log_info(f"Files included: {len(valid_files)}")
-            return archive_filename
-        else:
-            utils.log_error("Archive creation failed")
-            return None
-
-    except Exception as e:
-        utils.log_error("Error creating archive", e)
-        return None
-
-def cleanup_individual_files(output_files, keep_originals=False):
-    """
-    Optionally clean up individual export files after archiving.
-
-    Args:
-        output_files: List of output file paths
-        keep_originals: Whether to keep the original files
-    """
-    if keep_originals:
-        utils.log_info("Keeping original export files as requested")
-        return
-
-    try:
-        valid_files = [f for f in output_files if f and Path(f).exists()]
-
-        if not valid_files:
-            return
-
-        # Ask user if they want to keep individual files
-        print(f"\nCleanup Options:")
-        print(f"Archive created with {len(valid_files)} files.")
-        response = input("Keep individual export files? (y/n): ").lower().strip()
-
-        if response == 'n':
-            utils.log_info("Removing individual export files...")
-            removed_count = 0
-            for file_path in valid_files:
-                try:
-                    Path(file_path).unlink()
-                    utils.log_info(f"Removed: {Path(file_path).name}")
-                    removed_count += 1
-                except Exception as e:
-                    utils.log_warning(f"Could not remove {Path(file_path).name}: {e}")
-
-            utils.log_success(f"Removed {removed_count} individual files")
-        else:
-            utils.log_info("Keeping individual export files")
-
-    except Exception as e:
-        utils.log_error("Error during cleanup", e)
-
-def main():
-    """
-    Main function to orchestrate the all-in-one storage resources collection.
-    """
-    try:
-        # Check dependencies first
-        if not utils.ensure_dependencies('pandas', 'openpyxl'):
-            return
-
-        # Print title and get account info
-        account_id, account_name = utils.print_script_banner("AWS STORAGE RESOURCES ALL-IN-ONE COLLECTION EXPORT")
-
-        # Validate AWS credentials
-        try:
-            # Test AWS credentials
-            sts = utils.get_boto3_client('sts')
-            sts.get_caller_identity()
-            utils.log_success("AWS credentials validated")
-
-        except NoCredentialsError:
-            utils.log_error("AWS credentials not found. Please configure your credentials using:")
-            print("  - AWS CLI: aws configure")
-            print("  - Environment variables: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
-            print("  - IAM role (if running on EC2)")
-            return
-        except Exception as e:
-            utils.log_error("Error validating AWS credentials", e)
-            return
-
-        # Get region selection
-        selected_regions = get_region_selection()
-
-        utils.log_info(f"Starting comprehensive storage resources collection from AWS...")
-        utils.log_info(f"Selected regions: {', '.join(selected_regions)}")
-        print(f"\n{'='*70}")
-        print(f"STORAGE RESOURCES ALL-IN-ONE EXPORT")
-        print(f"Regions: {', '.join(selected_regions)}")
-        print(f"{'='*70}")
-
-        # Define storage resource scripts to run
-        scripts_dir = Path(__file__).parent
-        storage_scripts = [
-            {
-                'name': 'EBS Volumes',
-                'script': scripts_dir / 'ebs-volumes-export.py',
-                'description': 'EBS volumes with attachment and encryption details'
-            },
-            {
-                'name': 'EBS Snapshots',
-                'script': scripts_dir / 'ebs-snapshots-export.py',
-                'description': 'EBS snapshots with creation and sharing information'
-            },
-            {
-                'name': 'S3',
-                'script': scripts_dir / 's3-export.py',
-                'description': 'S3 buckets with configuration and security settings'
-            }
-        ]
-
-        # Track output files and execution results
-        output_files = []
-        execution_results = {}
-        start_time = datetime.datetime.now()
-
-        print(f"\nPlanned exports:")
-        for i, script_info in enumerate(storage_scripts, 1):
-            print(f"  {i}. {script_info['name']}: {script_info['description']}")
-
-        print(f"\nStarting exports...\n")
-
-        # Execute each script
-        for i, script_info in enumerate(storage_scripts, 1):
-            script_start = datetime.datetime.now()
-
-            utils.log_info(f"[{i}/{len(storage_scripts)}] Processing {script_info['name']}...")
-
-            output_file = run_individual_script(
-                script_info['script'],
-                script_info['name'],
-                selected_regions
+            utils.log_error(
+                f"{name} failed (exit code {result.returncode})"
             )
 
-            script_end = datetime.datetime.now()
-            execution_time = (script_end - script_start).total_seconds()
+        return ScriptResult(
+            name=name,
+            filename=script_path.name,
+            success=success,
+            duration_seconds=duration,
+            output_file=output_file,
+            error=None if success else f"Exit code {result.returncode}",
+        )
 
-            if output_file:
-                output_files.append(output_file)
-                execution_results[script_info['name']] = {
-                    'status': 'SUCCESS',
-                    'file': output_file,
-                    'duration': execution_time
-                }
-                utils.log_success(f"{script_info['name']} completed in {execution_time:.1f} seconds")
-            else:
-                execution_results[script_info['name']] = {
-                    'status': 'FAILED',
-                    'file': None,
-                    'duration': execution_time
-                }
-                utils.log_error(f"{script_info['name']} failed after {execution_time:.1f} seconds")
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start
+        utils.log_error(f"{name} timed out after 30 minutes")
+        return ScriptResult(
+            name=name,
+            filename=script_path.name,
+            success=False,
+            duration_seconds=duration,
+            error="Timed out (30 min)",
+        )
 
-        # Summary of individual exports
-        total_time = (datetime.datetime.now() - start_time).total_seconds()
-
-        print(f"\n{'='*70}")
-        print(f"INDIVIDUAL EXPORTS SUMMARY")
-        print(f"{'='*70}")
-
-        successful_exports = []
-        failed_exports = []
-
-        for script_name, result in execution_results.items():
-            status_symbol = "✓" if result['status'] == 'SUCCESS' else "✗"
-            duration = result['duration']
-
-            print(f"{status_symbol} {script_name:<15} {result['status']:<10} ({duration:.1f}s)")
-
-            if result['status'] == 'SUCCESS':
-                successful_exports.append(script_name)
-                if result['file']:
-                    print(f"    Output: {Path(result['file']).name}")
-            else:
-                failed_exports.append(script_name)
-
-        print(f"\nExecution Summary:")
-        print(f"  Total time: {total_time:.1f} seconds")
-        print(f"  Successful: {len(successful_exports)}/{len(storage_scripts)}")
-        print(f"  Failed: {len(failed_exports)}")
-
-        if failed_exports:
-            utils.log_warning(f"Failed exports: {', '.join(failed_exports)}")
-
-        # Create archive if we have any successful exports
-        if output_files:
-            utils.log_info(f"Creating comprehensive archive with {len(output_files)} files...")
-            archive_path = create_storage_archive(output_files, account_name)
-
-            if archive_path:
-                print(f"\n{'='*70}")
-                print(f"ALL-IN-ONE EXPORT COMPLETED SUCCESSFULLY")
-                print(f"{'='*70}")
-
-                utils.log_info(f"Storage resources archive created with AWS compliance markers")
-                utils.log_info(f"Archive location: {archive_path}")
-                utils.log_info(f"Total execution time: {total_time:.1f} seconds")
-
-                # Cleanup individual files
-                cleanup_individual_files(output_files)
-
-                print(f"\nStorage Resources All-in-One Export Summary:")
-                print(f"  ✓ Archive: {Path(archive_path).name}")
-                print(f"  ✓ Resources: {', '.join(successful_exports)}")
-                print(f"  ✓ Regions: {', '.join(selected_regions)}")
-                if failed_exports:
-                    print(f"  ! Failed: {', '.join(failed_exports)}")
-            else:
-                utils.log_error("Failed to create archive")
-        else:
-            utils.log_error("No successful exports to archive")
-            print(f"\nAll exports failed. Please check the logs and try individual scripts.")
-
-        print(f"\nScript execution completed.")
-
-    except KeyboardInterrupt:
-        print("\n\nOperation cancelled by user.")
-        sys.exit(0)
     except Exception as e:
-        utils.log_error("Unexpected error occurred", e)
-        sys.exit(1)
+        duration = time.time() - start
+        utils.log_error(f"{name} failed with exception", e)
+        return ScriptResult(
+            name=name,
+            filename=script_path.name,
+            success=False,
+            duration_seconds=duration,
+            error=str(e),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Zip archive
+# ---------------------------------------------------------------------------
+
+def create_zip_archive(
+    output_files: List[str],
+    account_name: str,
+    output_dir: Path,
+) -> Optional[Path]:
+    """Zip all successful export files into a single archive."""
+    valid = [f for f in output_files if f and Path(f).exists()]
+    if not valid:
+        utils.log_error("No output files to archive")
+        return None
+
+    date = utils.get_export_date()
+    zip_name = f"{account_name}-storage-resources-all-export-{date}.zip"
+    zip_path = output_dir / zip_name
+
+    if zip_path.exists():
+        v = 2
+        while True:
+            candidate = output_dir / (
+                f"{account_name}-storage-resources-all-export-{date}-v{v}.zip"
+            )
+            if not candidate.exists():
+                zip_path = candidate
+                break
+            v += 1
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in valid:
+                p = Path(f)
+                zf.write(p, p.name)
+                utils.log_info(f"  Archived: {p.name}")
+
+        size_mb = zip_path.stat().st_size / (1024 * 1024)
+        utils.log_success(
+            f"Archive created: {zip_path.name} "
+            f"({size_mb:.1f} MB, {len(valid)} file(s))"
+        )
+        return zip_path
+
+    except Exception as e:
+        utils.log_error("Failed to create zip archive", e)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+def print_summary(
+    results: List[ScriptResult],
+    zip_path: Optional[Path],
+) -> None:
+    """Print a formatted completion summary table."""
+    print(f"\n{'=' * 70}")
+    print("STORAGE RESOURCES EXPORT — SUMMARY")
+    print(f"{'=' * 70}")
+
+    for r in results:
+        status = "✓" if r.success else "✗"
+        print(f"  {status} {r.name:<35} {_fmt_duration(r.duration_seconds):>8}")
+        if not r.success and r.error:
+            print(f"      Error: {r.error}")
+
+    successful = sum(1 for r in results if r.success)
+    failed = len(results) - successful
+
+    print(f"{'=' * 70}")
+    print(f"  Completed: {successful}/{len(results)}   Failed: {failed}")
+    if zip_path:
+        print(f"  Archive:   {zip_path.name}")
+    elif failed == len(results):
+        print("  No archive created — all exports failed")
+    print(f"{'=' * 70}")
+
+
+# ---------------------------------------------------------------------------
+# Main — gold-standard 3-step state machine
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    account_id, account_name = utils.print_script_banner(
+        "STORAGE RESOURCES ALL-IN-ONE EXPORT"
+    )
+
+    scripts_dir = utils.get_scripts_dir()
+    output_dir  = utils.get_output_dir()
+
+    step = 1
+    selected_regions: List[str] = []
+    selected_scripts: List[Tuple[str, str]] = []
+
+    while True:
+        # ── Step 1: Region selection ──────────────────────────────────────
+        if step == 1:
+            result = utils.prompt_region_selection("Storage Resources")
+            if result == 'back':
+                sys.exit(10)
+            if result == 'exit':
+                sys.exit(11)
+            selected_regions = result
+            step = 2
+
+        # ── Step 2: Script selection ──────────────────────────────────────
+        elif step == 2:
+            result = prompt_script_selection(STORAGE_SCRIPTS)
+            if result == 'back':
+                step = 1
+                continue
+            if result == 'exit':
+                sys.exit(11)
+            selected_scripts = result
+            step = 3
+
+        # ── Step 3: Confirmation ──────────────────────────────────────────
+        elif step == 3:
+            script_lines = '\n'.join(
+                f"    • {name}" for name, _ in selected_scripts
+            )
+            region_str = ', '.join(selected_regions)
+            msg = (
+                f"Ready to export {len(selected_scripts)} "
+                f"storage resource(s):\n"
+                f"{script_lines}\n\n"
+                f"  Regions : {region_str}\n"
+                f"  Output  : {output_dir / (account_name + '-storage-resources-all-export-<date>.zip')}"
+            )
+            result = utils.prompt_confirmation(msg)
+            if result == 'back':
+                step = 2
+                continue
+            if result == 'exit':
+                sys.exit(11)
+            break
+
+    # ── Execution ─────────────────────────────────────────────────────────
+    print(f"\n{'=' * 70}")
+    print(f"EXECUTING {len(selected_scripts)} EXPORT SCRIPT(S)")
+    print(f"Regions: {', '.join(selected_regions)}")
+    print(f"{'=' * 70}")
+
+    results: List[ScriptResult] = []
+    total = len(selected_scripts)
+
+    for i, (name, filename) in enumerate(selected_scripts, 1):
+        script_path = scripts_dir / filename
+        r = run_script(name, script_path, selected_regions, output_dir, i, total)
+        results.append(r)
+
+    # ── Archive ───────────────────────────────────────────────────────────
+    output_files = [r.output_file for r in results if r.output_file]
+    zip_path: Optional[Path] = None
+
+    if output_files:
+        print(f"\n{'=' * 70}")
+        print("CREATING ARCHIVE")
+        print(f"{'=' * 70}")
+        zip_path = create_zip_archive(output_files, account_name, output_dir)
+    else:
+        utils.log_warning(
+            "No output files were generated — skipping archive creation"
+        )
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    print_summary(results, zip_path)
+
 
 if __name__ == "__main__":
     main()
