@@ -215,6 +215,7 @@ def collect_origin_details() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING ORIGIN DETAILS ===")
 
     origins_data = []
+    home_region = utils.get_partition_default_region()
     cloudfront = utils.get_boto3_client('cloudfront', region_name=home_region)
 
     paginator = cloudfront.get_paginator('list_distributions')
@@ -299,6 +300,7 @@ def collect_cache_behaviors() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING CACHE BEHAVIOR DETAILS ===")
 
     behaviors_data = []
+    home_region = utils.get_partition_default_region()
     cloudfront = utils.get_boto3_client('cloudfront', region_name=home_region)
 
     paginator = cloudfront.get_paginator('list_distributions')
