@@ -169,6 +169,7 @@ def collect_dns_records() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING DNS RECORDS ===")
 
     records = []
+    home_region = utils.get_partition_default_region()
     route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Get all hosted zones
@@ -267,6 +268,7 @@ def collect_health_checks() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING HEALTH CHECKS ===")
 
     health_checks = []
+    home_region = utils.get_partition_default_region()
     route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Use paginator
@@ -511,6 +513,7 @@ def collect_query_logging_configs() -> List[Dict[str, Any]]:
     print("\n=== COLLECTING QUERY LOGGING CONFIGS ===")
 
     configs = []
+    home_region = utils.get_partition_default_region()
     route53 = utils.get_boto3_client('route53', region_name=home_region)
 
     # Use paginator

@@ -358,6 +358,7 @@ def main():
     """
     try:
         # Print script header and get account info
+        utils.setup_logging("route-tables-export")
         account_id, account_name = utils.print_script_banner("AWS ROUTE TABLES EXPORT")
         
         # Check for required dependencies
@@ -369,6 +370,9 @@ def main():
         
         # Detect partition and set partition-aware example regions
         regions = utils.prompt_region_selection()
+
+        output_file = export_route_tables(account_name, regions)
+
         # Report results
         if output_file:
             print("\nExport completed successfully!")

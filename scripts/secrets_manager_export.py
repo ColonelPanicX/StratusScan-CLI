@@ -178,11 +178,12 @@ def collect_secrets(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_secrets = utils.scan_regions_concurrent(
+    all_secrets = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secrets_in_region,
-        resource_type="Secrets Manager secrets"
-    )
+    ):
+        all_secrets.extend(region_data)
 
     utils.log_success(f"Total secrets collected: {len(all_secrets)}")
     return all_secrets
@@ -276,11 +277,12 @@ def collect_secret_versions(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_versions = utils.scan_regions_concurrent(
+    all_versions = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secret_versions_in_region,
-        resource_type="secret versions"
-    )
+    ):
+        all_versions.extend(region_data)
 
     utils.log_success(f"Total secret versions collected: {len(all_versions)}")
     return all_versions
@@ -361,11 +363,12 @@ def collect_secret_replications(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_replications = utils.scan_regions_concurrent(
+    all_replications = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secret_replications_in_region,
-        resource_type="secret replications"
-    )
+    ):
+        all_replications.extend(region_data)
 
     utils.log_success(f"Total secret replications collected: {len(all_replications)}")
     return all_replications

@@ -178,12 +178,13 @@ def collect_kms_keys(regions: List[str], account_id: str) -> List[Dict[str, Any]
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning with account_id parameter
-    all_keys = utils.scan_regions_concurrent(
+    all_keys = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_keys_in_region,
-        resource_type="KMS keys",
         account_id=account_id
-    )
+    ):
+        all_keys.extend(region_data)
 
     utils.log_success(f"Total KMS keys collected: {len(all_keys)}")
     return all_keys
@@ -257,11 +258,12 @@ def collect_kms_aliases(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_aliases = utils.scan_regions_concurrent(
+    all_aliases = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_aliases_in_region,
-        resource_type="KMS aliases"
-    )
+    ):
+        all_aliases.extend(region_data)
 
     utils.log_success(f"Total KMS aliases collected: {len(all_aliases)}")
     return all_aliases
@@ -363,11 +365,12 @@ def collect_kms_grants(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_grants = utils.scan_regions_concurrent(
+    all_grants = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_kms_grants_in_region,
-        resource_type="KMS grants"
-    )
+    ):
+        all_grants.extend(region_data)
 
     utils.log_success(f"Total KMS grants collected: {len(all_grants)}")
     return all_grants

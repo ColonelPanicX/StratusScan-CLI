@@ -91,11 +91,13 @@ def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
 
                 creation_date = vault.get('CreationDate', 'N/A')
                 if creation_date != 'N/A':
-                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
+                    if isinstance(creation_date, datetime):
+                        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
 
                 last_inventory = vault.get('LastInventoryDate', 'N/A')
                 if last_inventory != 'N/A':
-                    last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
+                    if isinstance(last_inventory, datetime):
+                        last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
 
                 size_bytes = vault.get('SizeInBytes', 0)
                 size_gb = round(size_bytes / (1024**3), 2) if size_bytes else 0
@@ -261,9 +263,7 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Glacier Vaults': len(vaults)
-        })
+        utils.log_export_summary('Glacier Vaults', len(vaults), filename)
     else:
         utils.log_warning("No Glacier vaults found to export")
 

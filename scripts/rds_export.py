@@ -25,6 +25,7 @@ Phase 4B Update:
 import sys
 import datetime
 import csv
+import json
 import re
 from pathlib import Path
 from botocore.exceptions import ClientError
@@ -63,7 +64,7 @@ def is_valid_aws_region(region_name):
     Returns:
         bool: True if valid, False otherwise
     """
-    return utils.validate_aws_region(region_name)
+    return utils.is_aws_region(region_name)
 
 def get_security_group_info(rds_client, sg_ids):
     """
@@ -150,30 +151,45 @@ def get_subnet_ids(subnet_group):
     except Exception:
         return "N/A"
 
-def load_rds_pricing_data():
+def load_rds_pricing_data(region='us-east-1'):
     """
-    Load RDS pricing data from the reference CSV file
+    Load RDS pricing data from the reference JSON file.
+    Selects the correct pricing block based on the region's partition.
+
+    Args:
+        region (str): AWS region being scanned, used to detect partition and
+                      select the appropriate pricing block (us-east-1 for
+                      commercial, us-gov-west-1 for GovCloud).
 
     Returns:
-        dict: Dictionary mapping instance types to pricing data for different engines
+        dict: {instance_type: {engine_key: float|None, ...}}
     """
     pricing_data = {}
     try:
         script_dir = Path(__file__).parent.absolute()
-        pricing_file = script_dir.parent / 'reference' / 'rds-pricing.csv'
+        pricing_file = script_dir.parent / 'reference' / 'rds-pricing.json'
 
         if not pricing_file.exists():
             utils.log_warning(f"RDS pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                instance_type = row.get('API Name', '').strip()
-                if instance_type:
-                    pricing_data[instance_type] = row
+        with open(pricing_file, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
 
-        utils.log_info(f"Loaded RDS pricing data for {len(pricing_data)} instance types")
+        partition = utils.detect_partition(region)
+        pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+
+        for instance_type, data in json_data.get('records', {}).items():
+            regional = (
+                data.get('pricing', {}).get(pricing_region)
+                or data.get('pricing', {}).get('us-east-1', {})
+            )
+            pricing_data[instance_type] = regional
+
+        utils.log_info(
+            f"Loaded RDS pricing data for {len(pricing_data)} instance types "
+            f"({pricing_region} pricing)"
+        )
         return pricing_data
 
     except Exception as e:
@@ -237,7 +253,7 @@ def parse_price(price_str):
 
 def calculate_rds_monthly_cost(instance_type, engine, pricing_data):
     """
-    Calculate monthly cost for an RDS instance based on instance type and engine
+    Calculate monthly cost for an RDS instance based on instance type and engine.
 
     Args:
         instance_type (str): RDS instance type (e.g., 'db.m5.large')
@@ -251,35 +267,29 @@ def calculate_rds_monthly_cost(instance_type, engine, pricing_data):
         return 'N/A'
 
     instance_pricing = pricing_data[instance_type]
-
-    # Map engine to pricing column
     engine_lower = engine.lower()
-    pricing_column = None
+    price_key = None
 
-    if 'postgres' in engine_lower and 'aurora' not in engine_lower:
-        pricing_column = 'PostgreSQL (Monthly)'
-    elif 'mysql' in engine_lower and 'aurora' not in engine_lower:
-        pricing_column = 'MySQL On Demand Cost (Monthly)'
+    if 'aurora-postgresql' in engine_lower or 'aurora-mysql' in engine_lower:
+        price_key = 'aurora_on_demand_monthly_usd'
+    elif 'postgres' in engine_lower:
+        price_key = 'postgresql_on_demand_monthly_usd'
     elif 'mariadb' in engine_lower:
-        pricing_column = 'MariaDB On Demand Cost (Monthly)'
-    elif 'aurora-postgresql' in engine_lower or 'aurora-mysql' in engine_lower:
-        pricing_column = 'Aurora Postgres & MySQL On Demand Cost (Monthly)'
+        price_key = 'mariadb_on_demand_monthly_usd'
+    elif 'mysql' in engine_lower:
+        price_key = 'mysql_on_demand_monthly_usd'
     elif 'sqlserver-ex' in engine_lower:
-        pricing_column = 'SQL Server Expresss On Demand Cost (Monthly)'
-    elif 'sqlserver-web' in engine_lower:
-        pricing_column = 'SQL Server Web On Demand Cost (Monthly)'
-    elif 'sqlserver-se' in engine_lower:
-        pricing_column = 'SQL Server Standard On Demand Cost (Monthly)'
-    elif 'sqlserver-ee' in engine_lower:
-        pricing_column = 'SQL Server Enterprise On Demand Cost (Monthly)'
+        price_key = 'sqlserver_ex_on_demand_monthly_usd'
+    elif 'sqlserver' in engine_lower:
+        # Web, Standard, and Enterprise all map to sqlserver_std — best available
+        # approximation from MCP data; SQL Server EE pricing is not separately available
+        price_key = 'sqlserver_std_on_demand_monthly_usd'
     elif 'oracle' in engine_lower:
-        pricing_column = 'Oracle Enterprise On Demand Cost (Monthly)'
+        price_key = 'oracle_on_demand_monthly_usd'
     else:
         return 'N/A'
 
-    price_str = instance_pricing.get(pricing_column, '').strip()
-    price = parse_price(price_str)
-
+    price = instance_pricing.get(price_key)
     return price if price is not None else 'N/A'
 
 def calculate_rds_storage_cost(storage_size, storage_type, storage_pricing):
@@ -323,15 +333,22 @@ def get_rds_instances(region):
         list: List of dictionaries containing RDS instance information
     """
     # Validate region is AWS
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 
     rds_instances = []
 
     # Load pricing data
-    pricing_data = load_rds_pricing_data()
+    pricing_data = load_rds_pricing_data(region)
     storage_pricing = load_storage_pricing_data()
+
+    _partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing)"
+        if _partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing)"
+    )
 
     # Create RDS client for the specified AWS region
     rds_client = utils.get_boto3_client('rds', region_name=region)
@@ -460,6 +477,7 @@ def get_rds_instances(region):
             'Monthly Cost (On-Demand)': monthly_cost,
             'Monthly Storage Cost': storage_cost,
             'Total Monthly Cost': total_monthly_cost,
+            'Cost Note': cost_note,
             'Storage Type': instance['StorageType'],
             'Storage (GB)': instance['AllocatedStorage'],
             'Provisioned IOPS': instance.get('Iops', 'N/A'),
@@ -550,6 +568,7 @@ def main():
     This function orchestrates the entire workflow from user input to final export.
     """
     # Print script title and get account information
+    utils.setup_logging("rds-export")
     account_id, account_name = utils.print_script_banner("AWS RDS INSTANCE EXPORT")
 
     # Check and install dependencies using utils function
@@ -564,10 +583,11 @@ def main():
     
     # Detect partition and set partition-aware example regions
     regions = utils.prompt_region_selection()
+    region_filter = regions[0] if len(regions) == 1 else 'all'
     # Initialize data collection list
     all_rds_instances = []
 
-    utils.log_info(f"Collecting RDS instance data across {len(regions_to_scan)} AWS region(s)...")
+    utils.log_info(f"Collecting RDS instance data across {len(regions)} AWS region(s)...")
 
     # Define region scan function for concurrent execution (Phase 4B)
     def scan_region_rds(region):
@@ -578,7 +598,7 @@ def main():
 
     # Use concurrent region scanning (with automatic fallback to sequential on errors)
     region_results = utils.scan_regions_concurrent(
-        regions=regions_to_scan,
+        regions=regions,
         scan_function=scan_region_rds,
         show_progress=True
     )
@@ -586,14 +606,14 @@ def main():
     # Flatten results
     for instances in region_results:
         all_rds_instances.extend(instances)
-    
+
     # Export results to Excel file
     utils.log_success(f"Found {len(all_rds_instances)} RDS instances in total across all AWS regions.")
-    
+
     if all_rds_instances:
-        output_file = export_to_excel(all_rds_instances, account_name, region_filter)
+        output_file = export_to_excel(all_rds_instances, account_name)
         if output_file:
-            utils.log_info(f"Export contains data from {len(regions_to_scan)} AWS region(s)")
+            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total RDS instances exported: {len(all_rds_instances)}")
             print("\nScript execution completed.")
         else:

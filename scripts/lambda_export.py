@@ -63,7 +63,7 @@ def collect_lambda_functions_for_region(region: str) -> List[Dict[str, Any]]:
     """
     functions = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
@@ -214,7 +214,7 @@ def collect_event_source_mappings_for_region(region: str) -> List[Dict[str, Any]
     """
     mappings = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     print(f"\nProcessing region: {region}")
@@ -308,7 +308,7 @@ def collect_concurrency_configs_for_region(region: str) -> List[Dict[str, Any]]:
     """
     configs = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return []
 
     print(f"\nProcessing region: {region}")

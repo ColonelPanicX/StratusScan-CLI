@@ -46,7 +46,7 @@ def _scan_cloudwatch_alarms_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for CloudWatch alarms."""
     alarms_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return alarms_data
 
     try:
@@ -147,7 +147,7 @@ def _scan_log_groups_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for CloudWatch log groups."""
     log_groups_data = []
 
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return log_groups_data
 
     try:

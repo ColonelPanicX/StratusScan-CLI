@@ -46,7 +46,7 @@ except ImportError:
 def _scan_sqs_queues_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SQS queues."""
     queues_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return queues_data
 
     try:
@@ -113,7 +113,7 @@ def collect_sqs_queues(regions: List[str]) -> List[Dict[str, Any]]:
 def _scan_sns_topics_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SNS topics."""
     topics_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return topics_data
 
     try:
@@ -168,7 +168,7 @@ def collect_sns_topics(regions: List[str]) -> List[Dict[str, Any]]:
 def _scan_sns_subscriptions_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for SNS subscriptions."""
     subs_data = []
-    if not utils.validate_aws_region(region):
+    if not utils.is_aws_region(region):
         return subs_data
 
     try:

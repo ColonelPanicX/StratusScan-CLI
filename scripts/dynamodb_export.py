@@ -193,11 +193,12 @@ def collect_dynamodb_tables(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_tables = utils.scan_regions_concurrent(
+    all_tables = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_dynamodb_tables_in_region,
-        resource_type="DynamoDB tables"
-    )
+    ):
+        all_tables.extend(region_data)
 
     utils.log_success(f"Total DynamoDB tables collected: {len(all_tables)}")
     return all_tables
@@ -311,11 +312,12 @@ def collect_global_secondary_indexes(regions: List[str]) -> List[Dict[str, Any]]
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_gsis = utils.scan_regions_concurrent(
+    all_gsis = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_global_secondary_indexes_in_region,
-        resource_type="Global Secondary Indexes"
-    )
+    ):
+        all_gsis.extend(region_data)
 
     utils.log_success(f"Total Global Secondary Indexes collected: {len(all_gsis)}")
     return all_gsis
@@ -400,11 +402,12 @@ def collect_dynamodb_backups(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_info("Using concurrent region scanning for improved performance")
 
     # Use concurrent scanning
-    all_backups = utils.scan_regions_concurrent(
+    all_backups = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_dynamodb_backups_in_region,
-        resource_type="DynamoDB backups"
-    )
+    ):
+        all_backups.extend(region_data)
 
     utils.log_success(f"Total DynamoDB backups collected: {len(all_backups)}")
     return all_backups

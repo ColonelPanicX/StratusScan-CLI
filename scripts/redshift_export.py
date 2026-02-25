@@ -198,11 +198,12 @@ def collect_redshift_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect Redshift cluster information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_clusters = utils.scan_regions_concurrent(
+    all_clusters = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_clusters_in_region,
-        resource_type="Redshift clusters"
-    )
+    ):
+        all_clusters.extend(region_data)
 
     return all_clusters
 
@@ -299,11 +300,12 @@ def collect_redshift_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect Redshift snapshot information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_snapshots = utils.scan_regions_concurrent(
+    all_snapshots = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_snapshots_in_region,
-        resource_type="Redshift snapshots"
-    )
+    ):
+        all_snapshots.extend(region_data)
 
     return all_snapshots
 
@@ -348,11 +350,12 @@ def collect_redshift_parameter_groups(regions: List[str]) -> List[Dict[str, Any]
     """Collect Redshift parameter group information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_parameter_groups = utils.scan_regions_concurrent(
+    all_parameter_groups = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_parameter_groups_in_region,
-        resource_type="Redshift parameter groups"
-    )
+    ):
+        all_parameter_groups.extend(region_data)
 
     return all_parameter_groups
 
@@ -416,11 +419,12 @@ def collect_redshift_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect Redshift subnet group information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_subnet_groups = utils.scan_regions_concurrent(
+    all_subnet_groups = []
+    for region_data in utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_redshift_subnet_groups_in_region,
-        resource_type="Redshift subnet groups"
-    )
+    ):
+        all_subnet_groups.extend(region_data)
 
     return all_subnet_groups
 
