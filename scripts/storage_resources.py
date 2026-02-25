@@ -206,12 +206,11 @@ def run_script(
     start = time.time()
 
     try:
-        result = subprocess.run(
+        result = utils.run_subprocess_with_progress(
             [sys.executable, str(script_path)],
-            capture_output=False,
-            text=True,
             env=env,
             timeout=1800,
+            start_time=start,
         )
         duration = time.time() - start
         success = result.returncode == 0

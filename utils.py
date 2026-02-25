@@ -41,7 +41,10 @@ from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
 
-from openpyxl.utils import get_column_letter
+# openpyxl is imported lazily inside _adjust_column_widths to avoid a hard
+# import failure when the package is not installed (e.g. fresh clone before
+# running pip install).  stratusscan.py only needs utils for the menu; Excel
+# output is only needed when exporters actually write files.
 
 # Global logger instance
 logger = None
@@ -827,6 +830,7 @@ def create_export_filename(
 
 def _adjust_column_widths(worksheet, df) -> None:
     """Set Excel column widths to fit content (max 50 chars)."""
+    from openpyxl.utils import get_column_letter
     for i, column in enumerate(df.columns):
         column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
         column_width = min(column_width, 50)
@@ -1185,6 +1189,87 @@ def handle_aws_operation(
 # =============================================================================
 # SHARED UTILITY FUNCTIONS FOR SCRIPTS
 # =============================================================================
+
+
+def run_subprocess_with_progress(
+    cmd: list,
+    env: dict,
+    timeout: int,
+    start_time: float,
+) -> "subprocess.Popen":
+    """
+    Run a child script, relaying its stdout+stderr to the terminal and showing
+    a spinner when no output has been received for more than one second.
+
+    Replaces bare subprocess.run(capture_output=False) in the all-in-one
+    orchestrators (compute / storage / network / database) so the user sees
+    activity feedback during long AWS API calls instead of silence.
+
+    Args:
+        cmd:        Command list passed to Popen (e.g. [sys.executable, path]).
+        env:        Environment dict for the child process.
+        timeout:    Seconds before the child is force-killed.
+        start_time: time.time() value from when the script slot started,
+                    used for the elapsed-time display.
+
+    Returns:
+        The completed Popen object; caller checks .returncode.
+
+    Raises:
+        subprocess.TimeoutExpired: re-raised after killing the child.
+    """
+    SPINNER = "|/-\\"
+    SPINNER_INTERVAL = 0.25   # seconds between spinner frames
+    IDLE_THRESHOLD   = 1.0    # seconds of silence before spinner appears
+    CLEAR            = "\r" + " " * 30 + "\r"
+
+    spin_idx        = [0]
+    last_output_at  = [start_time]
+    spinner_showing = [False]
+    stop_event      = threading.Event()
+
+    def _spin() -> None:
+        while not stop_event.is_set():
+            idle = time.time() - last_output_at[0]
+            if idle >= IDLE_THRESHOLD:
+                elapsed = time.time() - start_time
+                c = SPINNER[spin_idx[0] % 4]
+                print(f"\r  {c} {elapsed:.0f}s", end="", flush=True)
+                spin_idx[0] += 1
+                spinner_showing[0] = True
+            stop_event.wait(SPINNER_INTERVAL)
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+        bufsize=1,
+    )
+
+    spinner_thread = threading.Thread(target=_spin, daemon=True)
+    spinner_thread.start()
+
+    try:
+        for line in proc.stdout:
+            if spinner_showing[0]:
+                print(CLEAR, end="", flush=True)
+                spinner_showing[0] = False
+            print(line, end="", flush=True)
+            last_output_at[0] = time.time()
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        stop_event.set()
+        spinner_thread.join(timeout=1)
+        if spinner_showing[0]:
+            print(CLEAR, end="", flush=True)
+
+    return proc
 
 
 def ensure_dependencies(*packages: str) -> bool:
