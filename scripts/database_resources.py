@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """
-Network Resources All-in-One Export Script
+Database Resources All-in-One Export Script
 
-Orchestrates all network resource exporters as subprocesses and archives
+Orchestrates all database resource exporters as subprocesses and archives
 every output file into a single zip.  Runs non-interactively against each
 child script via STRATUSSCAN_AUTO_RUN / STRATUSSCAN_REGIONS env vars so
 the individual exporters receive region selection without prompting.
 
 Covered services (multi-select at runtime):
-  VPC/Subnet, ELB, Network ACLs, Security Groups, Route Tables, CloudFront,
-  Route 53, VPN, Direct Connect, Global Accelerator, Transit Gateway,
-  Network Firewall, Network Manager
-
-Note: CloudFront, Route 53, and Global Accelerator are not available in
-GovCloud.  Their exporters exit cleanly with code 0 when the partition is
-aws-us-gov, so they may be selected safely — they will simply produce no
-output file and be reported as skipped in the summary.
+  RDS, DynamoDB, ElastiCache, DocumentDB, Neptune
 """
 
 import os
@@ -33,25 +26,17 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
 
-utils.setup_logging('network-resources')
+utils.setup_logging('database-resources')
 
 # ---------------------------------------------------------------------------
 # Script registry — (display_name, filename) ordered to match the menu
 # ---------------------------------------------------------------------------
-NETWORK_SCRIPTS: List[Tuple[str, str]] = [
-    ("VPC/Subnet",          "vpc_data_export.py"),
-    ("ELB",                 "elb_export.py"),
-    ("Network ACLs",        "nacl_export.py"),
-    ("Security Groups",     "security_groups_export.py"),
-    ("Route Tables",        "route_tables_export.py"),
-    ("CloudFront",          "cloudfront_export.py"),
-    ("Route 53",            "route53_export.py"),
-    ("VPN",                 "vpn_export.py"),
-    ("Direct Connect",      "directconnect_export.py"),
-    ("Global Accelerator",  "globalaccelerator_export.py"),
-    ("Transit Gateway",     "transit_gateway_export.py"),
-    ("Network Firewall",    "network_firewall_export.py"),
-    ("Network Manager",     "network_manager_export.py"),
+DATABASE_SCRIPTS: List[Tuple[str, str]] = [
+    ("RDS",         "rds_export.py"),
+    ("DynamoDB",    "dynamodb_export.py"),
+    ("ElastiCache", "elasticache_export.py"),
+    ("DocumentDB",  "documentdb_export.py"),
+    ("Neptune",     "neptune_export.py"),
 ]
 
 
@@ -114,9 +99,9 @@ def prompt_script_selection(
         return list(scripts)
 
     while True:
-        print("\nSELECT NETWORK RESOURCES TO EXPORT")
+        print("\nSELECT DATABASE RESOURCES TO EXPORT")
         print("=" * 64)
-        print("   0. All  (export all network resources)")
+        print("   0. All  (export all database resources)")
         for i, (name, _) in enumerate(scripts, 1):
             print(f"  {i:2d}. {name}")
         print("=" * 64)
@@ -282,14 +267,14 @@ def create_zip_archive(
         return None
 
     date = utils.get_export_date()
-    zip_name = f"{account_name}-network-resources-all-export-{date}.zip"
+    zip_name = f"{account_name}-database-resources-all-export-{date}.zip"
     zip_path = output_dir / zip_name
 
     if zip_path.exists():
         v = 2
         while True:
             candidate = output_dir / (
-                f"{account_name}-network-resources-all-export-{date}-v{v}.zip"
+                f"{account_name}-database-resources-all-export-{date}-v{v}.zip"
             )
             if not candidate.exists():
                 zip_path = candidate
@@ -325,7 +310,7 @@ def print_summary(
 ) -> None:
     """Print a formatted completion summary table."""
     print(f"\n{'=' * 70}")
-    print("NETWORK RESOURCES EXPORT — SUMMARY")
+    print("DATABASE RESOURCES EXPORT — SUMMARY")
     print(f"{'=' * 70}")
 
     for r in results:
@@ -352,7 +337,7 @@ def print_summary(
 
 def main() -> None:
     account_id, account_name = utils.print_script_banner(
-        "NETWORK RESOURCES ALL-IN-ONE EXPORT"
+        "DATABASE RESOURCES ALL-IN-ONE EXPORT"
     )
 
     scripts_dir = utils.get_scripts_dir()
@@ -365,7 +350,7 @@ def main() -> None:
     while True:
         # ── Step 1: Region selection ──────────────────────────────────────
         if step == 1:
-            result = utils.prompt_region_selection("Network Resources")
+            result = utils.prompt_region_selection("Database Resources")
             if result == 'back':
                 sys.exit(10)
             if result == 'exit':
@@ -375,7 +360,7 @@ def main() -> None:
 
         # ── Step 2: Script selection ──────────────────────────────────────
         elif step == 2:
-            result = prompt_script_selection(NETWORK_SCRIPTS)
+            result = prompt_script_selection(DATABASE_SCRIPTS)
             if result == 'back':
                 step = 1
                 continue
@@ -392,10 +377,10 @@ def main() -> None:
             region_str = ', '.join(selected_regions)
             msg = (
                 f"Ready to export {len(selected_scripts)} "
-                f"network resource(s):\n"
+                f"database resource(s):\n"
                 f"{script_lines}\n\n"
                 f"  Regions : {region_str}\n"
-                f"  Output  : {output_dir / (account_name + '-network-resources-all-export-<date>.zip')}"
+                f"  Output  : {output_dir / (account_name + '-database-resources-all-export-<date>.zip')}"
             )
             result = utils.prompt_confirmation(msg)
             if result == 'back':

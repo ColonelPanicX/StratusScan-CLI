@@ -611,7 +611,7 @@ def main():
     utils.log_success(f"Found {len(all_rds_instances)} RDS instances in total across all AWS regions.")
 
     if all_rds_instances:
-        output_file = export_to_excel(all_rds_instances, account_name, region_filter)
+        output_file = export_to_excel(all_rds_instances, account_name)
         if output_file:
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total RDS instances exported: {len(all_rds_instances)}")

@@ -19,6 +19,7 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import os
 import sys
 import datetime
 import argparse
@@ -252,7 +253,7 @@ def get_latest_storage_lens_data(account_id):
             return region_data
 
         # Use concurrent region scanning for CloudWatch metrics (Phase 4B)
-        aws_regions = utils.utils.get_aws_regions()
+        aws_regions = utils.get_aws_regions()
         region_results = utils.scan_regions_concurrent(
             regions=aws_regions,
             scan_function=collect_cloudwatch_metrics_for_region,
@@ -554,11 +555,13 @@ def main():
         example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
 
     # Set target_region based on command line argument if provided
-    if args.region:
+    if os.environ.get('STRATUSSCAN_AUTO_RUN') == '1':
+        # Orchestrator/CI mode — S3 is global, always scan all regions
+        target_region = None
+    elif args.region:
         target_region = args.region if args.region.lower() != 'all' else None
     elif args.non_interactive:
         # Use environment variables for configuration in non-interactive mode
-        import os
         region_input = os.environ.get('AWS_REGION', 'all')
         target_region = None if region_input.lower() == 'all' else region_input
     else:
