@@ -743,26 +743,28 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
 
     # Display menu for user selection
-    print("\n" + "=" * 60)
-    print("What would you like to export?")
-    print("1. VPC and Subnet")
-    print("2. NAT Gateways")
-    print("3. VPC Peering Connections")
-    print("4. Elastic IP")
-    print("5. All of the Above")
-    print("=" * 60)
+    if utils.is_auto_run():
+        choice = 5  # All of the Above
+    else:
+        print("\n" + "=" * 60)
+        print("What would you like to export?")
+        print("1. VPC and Subnet")
+        print("2. NAT Gateways")
+        print("3. VPC Peering Connections")
+        print("4. Elastic IP")
+        print("5. All of the Above")
+        print("=" * 60)
 
-    # Get user selection
-    while True:
-        try:
-            choice = input("Enter your choice (1-5): ")
-            choice = int(choice)
-            if 1 <= choice <= 5:
-                break
-            else:
-                print("Please enter a number between 1 and 5.")
-        except ValueError:
-            print("Please enter a valid number.")
+        while True:
+            try:
+                choice = input("Enter your choice (1-5): ")
+                choice = int(choice)
+                if 1 <= choice <= 5:
+                    break
+                else:
+                    print("Please enter a number between 1 and 5.")
+            except ValueError:
+                print("Please enter a valid number.")
 
     # Determine what to export based on user choice
     export_vpc_subnet = choice in [1, 5]
@@ -795,7 +797,7 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         current_date
     )
     
-    print(f"\nStarting AWS export process for {region_text}...")
+    print(f"\nStarting AWS export process for {', '.join(regions)}...")
     print("This may take some time depending on the number of regions and resources...")
     
     utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")
