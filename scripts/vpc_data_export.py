@@ -735,59 +735,17 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         account_id: The AWS account ID
         account_name: The AWS account name
     """
-    # Detect partition and set partition-appropriate region examples
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
-
-    # Display menu for user selection
-    if utils.is_auto_run():
-        choice = 5  # All of the Above
-    else:
-        print("\n" + "=" * 60)
-        print("What would you like to export?")
-        print("1. VPC and Subnet")
-        print("2. NAT Gateways")
-        print("3. VPC Peering Connections")
-        print("4. Elastic IP")
-        print("5. All of the Above")
-        print("=" * 60)
-
-        while True:
-            try:
-                choice = input("Enter your choice (1-5): ")
-                choice = int(choice)
-                if 1 <= choice <= 5:
-                    break
-                else:
-                    print("Please enter a number between 1 and 5.")
-            except ValueError:
-                print("Please enter a valid number.")
-
-    # Determine what to export based on user choice
-    export_vpc_subnet = choice in [1, 5]
-    export_nat_gateways = choice in [2, 5]
-    export_vpc_peering = choice in [3, 5]
-    export_elastic_ip = choice in [4, 5]
+    # Always export all VPC resource types
+    export_vpc_subnet = True
+    export_nat_gateways = True
+    export_vpc_peering = True
+    export_elastic_ip = True
+    resource_type = "vpc-all"
 
     regions = utils.prompt_region_selection()
     region_suffix = 'all'
     # Get current date for file naming
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-
-    # Determine resource type based on choice
-    if choice == 1:
-        resource_type = "vpc-subnet"
-    elif choice == 2:
-        resource_type = "ngw"
-    elif choice == 3:
-        resource_type = "vpc-peering"
-    elif choice == 4:
-        resource_type = "elastic-ip"
-    else:  # choice == 5
-        resource_type = "vpc-all"
     
     # Create filename using utils with AWS identifier
     final_excel_file = utils.create_export_filename(
