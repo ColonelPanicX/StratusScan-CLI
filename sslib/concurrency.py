@@ -12,8 +12,6 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-import pandas as pd
-
 from sslib.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -234,7 +232,7 @@ def paginate_with_progress(
 def build_dataframe_in_batches(
     data: List[Dict],
     batch_size: int = 1000,
-) -> pd.DataFrame:
+):
     """
     Build DataFrame from large data lists in batches for memory efficiency (Phase 4B).
 
@@ -257,6 +255,7 @@ def build_dataframe_in_batches(
         - Large datasets are split into batches, converted separately, then concatenated
         - Reduces peak memory usage by 20-30% for large exports
     """
+    import pandas as pd
     if len(data) <= batch_size:
         return pd.DataFrame(data)
 
