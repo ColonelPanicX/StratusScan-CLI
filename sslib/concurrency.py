@@ -94,6 +94,9 @@ def scan_regions_concurrent(
         total = len(regions)
         error_count = 0
 
+        if show_progress:
+            print(f"  Scanning {total} region(s) concurrently...", flush=True)
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_region = {
                 executor.submit(scan_function, region): region for region in regions
@@ -107,10 +110,7 @@ def scan_regions_concurrent(
                     completed += 1
 
                     if show_progress:
-                        progress = (completed / total) * 100
-                        logger.info(
-                            "[%.1f%%] Completed region %d/%d: %s", progress, completed, total, region
-                        )
+                        print(f"  [{completed}/{total}] {region} done", flush=True)
 
                 except Exception as e:
                     error_count += 1
@@ -171,8 +171,7 @@ def _scan_regions_sequential(
     for i, region in enumerate(regions, 1):
         try:
             if show_progress:
-                progress = (i / total) * 100
-                logger.info("[%.1f%%] Scanning region %d/%d: %s", progress, i, total, region)
+                print(f"  [{i}/{total}] Scanning {region}...", flush=True)
 
             result = scan_function(region)
             results.append(result)
