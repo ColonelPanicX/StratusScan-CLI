@@ -23,6 +23,7 @@ Phase 4B Update:
 """
 
 import sys
+import time
 import datetime
 import csv
 import json
@@ -358,6 +359,7 @@ def get_rds_instances(region):
     all_instances = []
     for page in paginator.paginate():
         all_instances.extend(page['DBInstances'])
+        time.sleep(0.1)
 
     total_instances = len(all_instances)
     if total_instances > 0:
@@ -371,6 +373,8 @@ def get_rds_instances(region):
         progress = (processed / total_instances) * 100 if total_instances > 0 else 0
 
         utils.log_info(f"[{progress:.1f}%] Processing RDS instance {processed}/{total_instances}: {instance_id}")
+        if processed % 10 == 0:
+            print(f"  [{region}] {processed}/{total_instances} RDS instances processed...", flush=True)
         # Extract security group IDs from VPC security groups
         sg_ids = [sg['VpcSecurityGroupId'] for sg in instance.get('VpcSecurityGroups', [])]
         sg_info = get_security_group_info(rds_client, sg_ids)
