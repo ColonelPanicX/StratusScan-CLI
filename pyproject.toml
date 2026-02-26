@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stratusscan-cli"
-version = "0.1.0"
+version = "0.2.0-beta"
 description = "AWS defensive security scanning and auditing tool for resource exports"
 readme = "README.md"
 requires-python = ">=3.9"
