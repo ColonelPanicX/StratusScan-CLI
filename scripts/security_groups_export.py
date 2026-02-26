@@ -20,6 +20,7 @@ Phase 4B Update:
 """
 
 import sys
+import time
 import datetime
 from pathlib import Path
 
@@ -282,12 +283,14 @@ def get_security_group_rules(region):
     security_groups_all = []
     for page in sg_paginator.paginate():
         security_groups_all.extend(page.get('SecurityGroups', []))
+        time.sleep(0.1)
 
     # Get all security group rules using paginator
     rules_paginator = ec2_client.get_paginator('describe_security_group_rules')
     all_rules = []
     for page in rules_paginator.paginate():
         all_rules.extend(page.get('SecurityGroupRules', []))
+        time.sleep(0.1)
 
     # Create a map of security group rules for faster lookup
     rules_map = {}
@@ -660,6 +663,7 @@ def main():
         region_results = utils.scan_regions_concurrent(
             regions=regions,
             scan_function=scan_region_security_groups,
+            max_workers=2,
             show_progress=True
         )
 

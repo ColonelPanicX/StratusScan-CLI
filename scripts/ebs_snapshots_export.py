@@ -19,6 +19,7 @@ Phase 4B Update:
 """
 
 import sys
+import time
 import datetime
 from pathlib import Path
 
@@ -178,6 +179,12 @@ def get_snapshots(region):
                 'Region': region,
                 'Tags': snapshot_tags
             })
+        # Inter-page delay to avoid throttling on large accounts
+        time.sleep(0.1)
+        # Heartbeat every 500 records so terminal stays alive
+        collected = len(snapshots_data)
+        if collected > 0 and collected % 500 == 0:
+            print(f"  [{collected:,} snapshots collected — still running...]")
 
     return snapshots_data
 
@@ -218,6 +225,7 @@ def main():
         region_results = utils.scan_regions_concurrent(
             regions=regions,
             scan_function=scan_region_snapshots,
+            max_workers=2,
             show_progress=True
         )
 

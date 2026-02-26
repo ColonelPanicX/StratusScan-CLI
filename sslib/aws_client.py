@@ -206,7 +206,7 @@ def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) 
     """
     sdk_config = config_value("aws_sdk_config", default={})
 
-    retry_config = sdk_config.get("retries", {"max_attempts": 5, "mode": "adaptive"})
+    retry_config = sdk_config.get("retries", {"max_attempts": 10, "mode": "adaptive"})
     connect_timeout = sdk_config.get("connect_timeout", 10)
     read_timeout = sdk_config.get("read_timeout", 60)
 
