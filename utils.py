@@ -436,6 +436,7 @@ def log_success(success_message: str) -> None:
     """
     current_logger = get_logger()
     current_logger.info(f"SUCCESS: {success_message}")
+    print(f"[✓] {success_message}", flush=True)
 
 def log_aws_info(message: str) -> None:
     """
