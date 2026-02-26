@@ -53,9 +53,9 @@ class TestEnsureDependencies(unittest.TestCase):
                                                 mock_input, mock_import):
         """Test when dependencies are missing and user declines installation."""
         # pandas missing, others installed
-        def import_side_effect(pkg):
-            if pkg == 'pandas':
-                raise ImportError(f"No module named '{pkg}'")
+        def import_side_effect(name, *args, **kwargs):
+            if name == 'pandas':
+                raise ImportError(f"No module named '{name}'")
             return None
 
         mock_import.side_effect = import_side_effect
@@ -69,18 +69,20 @@ class TestEnsureDependencies(unittest.TestCase):
     @patch('builtins.__import__')
     @patch('builtins.input', return_value='y')
     @patch('utils.subprocess.check_call')
+    @patch('utils.importlib.invalidate_caches')
     @patch('utils.log_success')
     @patch('utils.log_info')
     def test_missing_dependencies_successful_install(self, mock_log_info, mock_log_success,
-                                                     mock_subprocess, mock_input, mock_import):
+                                                     mock_invalidate, mock_subprocess,
+                                                     mock_input, mock_import):
         """Test successful installation of missing dependencies."""
         # First call: pandas missing, second call (after install): all present
         call_count = {'count': 0}
 
-        def import_side_effect(pkg):
-            if pkg == 'pandas' and call_count['count'] == 0:
+        def import_side_effect(name, *args, **kwargs):
+            if name == 'pandas' and call_count['count'] == 0:
                 call_count['count'] += 1
-                raise ImportError(f"No module named '{pkg}'")
+                raise ImportError(f"No module named '{name}'")
             return None
 
         mock_import.side_effect = import_side_effect
@@ -100,9 +102,9 @@ class TestEnsureDependencies(unittest.TestCase):
     def test_installation_fails(self, mock_log_error, mock_subprocess, mock_input, mock_import):
         """Test when package installation fails."""
         # pandas missing
-        def import_side_effect(pkg):
-            if pkg == 'pandas':
-                raise ImportError(f"No module named '{pkg}'")
+        def import_side_effect(name, *args, **kwargs):
+            if name == 'pandas':
+                raise ImportError(f"No module named '{name}'")
             return None
 
         mock_import.side_effect = import_side_effect

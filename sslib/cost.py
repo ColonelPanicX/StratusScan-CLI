@@ -11,9 +11,10 @@ Zero dependency on utils.py — uses only stdlib + third-party packages.
 import csv
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-import pandas as pd  # noqa: F401 – used for type hint in _estimate_excel_size
+if TYPE_CHECKING:
+    import pandas as pd  # used for type annotations only — not imported at runtime
 
 logger = logging.getLogger(__name__)
 
