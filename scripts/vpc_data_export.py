@@ -63,7 +63,7 @@ def collect_vpc_data_for_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
-    print(f"\nCollecting VPC details in AWS region: {region}")
+    utils.log_info(f"Collecting VPC details in AWS region: {region}")
 
     # Create EC2 client for this region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -74,7 +74,7 @@ def collect_vpc_data_for_region(region):
     for page in paginator.paginate():
         vpcs.extend(page.get('Vpcs', []))
 
-    print(f"Found {len(vpcs)} VPCs in AWS region {region}")
+    utils.log_info(f"Found {len(vpcs)} VPCs in AWS region {region}")
 
     # Process each VPC
     for vpc in vpcs:
@@ -197,7 +197,7 @@ def collect_vpc_data(regions):
     Returns:
         list: List of dictionaries with VPC information
     """
-    print("\n=== COLLECTING VPC INFORMATION ===")
+    utils.log_info("=== COLLECTING VPC INFORMATION ===")
 
     # Use concurrent region scanning
     region_results = utils.scan_regions_concurrent(
@@ -287,7 +287,7 @@ def collect_vpc_subnet_data_for_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
-    print(f"\nProcessing AWS region: {region}")
+    utils.log_info(f"Processing AWS region: {region}")
 
     # Create EC2 client for this region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -298,13 +298,13 @@ def collect_vpc_subnet_data_for_region(region):
     for page in paginator.paginate():
         vpcs.extend(page.get('Vpcs', []))
 
-    print(f"Found {len(vpcs)} VPCs in AWS region {region}")
+    utils.log_info(f"Found {len(vpcs)} VPCs in AWS region {region}")
 
     # Process each VPC
     for vpc_index, vpc in enumerate(vpcs, 1):
         vpc_id = vpc['VpcId']
         vpc_progress = (vpc_index / len(vpcs)) * 100 if len(vpcs) > 0 else 0
-        print(f"  [{vpc_progress:.1f}%] Processing VPC {vpc_index}/{len(vpcs)}: {vpc_id}")
+        utils.log_info(f"  [{vpc_progress:.1f}%] Processing VPC {vpc_index}/{len(vpcs)}: {vpc_id}")
 
         # Extract VPC name from tags
         vpc_name = None
@@ -328,14 +328,14 @@ def collect_vpc_subnet_data_for_region(region):
         )
         subnets = subnet_response.get('Subnets', [])
 
-        print(f"    Found {len(subnets)} subnets")
+        utils.log_info(f"    Found {len(subnets)} subnets")
 
         # Process each subnet
         for subnet_index, subnet in enumerate(subnets, 1):
             subnet_id = subnet['SubnetId']
             subnet_progress = (subnet_index / len(subnets)) * 100 if len(subnets) > 0 else 0
-            if len(subnets) > 1:  # Only show subnet progress if there are multiple subnets
-                print(f"      [{subnet_progress:.1f}%] Processing subnet {subnet_index}/{len(subnets)}: {subnet_id}")
+            if len(subnets) > 1:  # Only log subnet progress if there are multiple subnets
+                utils.log_info(f"      [{subnet_progress:.1f}%] Processing subnet {subnet_index}/{len(subnets)}: {subnet_id}")
 
             # Extract subnet name and all tags
             subnet_name = None
@@ -393,7 +393,7 @@ def collect_vpc_subnet_data(regions):
     Returns:
         list: List of dictionaries with subnet information
     """
-    print("\n=== COLLECTING VPC AND SUBNET INFORMATION ===")
+    utils.log_info("=== COLLECTING VPC AND SUBNET INFORMATION ===")
 
     # Use concurrent region scanning
     region_results = utils.scan_regions_concurrent(
@@ -428,7 +428,7 @@ def collect_nat_gateway_data_for_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
-    print(f"\nSearching for NAT Gateways in AWS region: {region}")
+    utils.log_info(f"Searching for NAT Gateways in AWS region: {region}")
 
     # Create EC2 client for this region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -436,12 +436,12 @@ def collect_nat_gateway_data_for_region(region):
     # Get NAT Gateways in the region
     nat_gw_response = ec2_client.describe_nat_gateways()
     nat_gws = nat_gw_response.get('NatGateways', [])
-    print(f"  Found {len(nat_gws)} NAT Gateways")
+    utils.log_info(f"  Found {len(nat_gws)} NAT Gateways")
 
     # Process each NAT Gateway
     for nat_gw in nat_gws:
         nat_gw_id = nat_gw.get('NatGatewayId', '')
-        print(f"    Processing NAT Gateway: {nat_gw_id}")
+        utils.log_info(f"    Processing NAT Gateway: {nat_gw_id}")
 
         state = nat_gw.get('State', '')
         connectivity = nat_gw.get('ConnectivityType', '')
@@ -503,7 +503,7 @@ def collect_nat_gateway_data(regions):
     Returns:
         list: List of dictionaries with NAT Gateway information
     """
-    print("\n=== COLLECTING NAT GATEWAY INFORMATION ===")
+    utils.log_info("=== COLLECTING NAT GATEWAY INFORMATION ===")
 
     # Use concurrent region scanning
     region_results = utils.scan_regions_concurrent(
@@ -538,7 +538,7 @@ def collect_vpc_peering_data_for_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
-    print(f"\nSearching for VPC Peering Connections in AWS region: {region}")
+    utils.log_info(f"Searching for VPC Peering Connections in AWS region: {region}")
 
     # Create EC2 client for this region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -546,12 +546,12 @@ def collect_vpc_peering_data_for_region(region):
     # Get VPC Peering Connections in the region
     peering_response = ec2_client.describe_vpc_peering_connections()
     peerings = peering_response.get('VpcPeeringConnections', [])
-    print(f"  Found {len(peerings)} VPC Peering Connections")
+    utils.log_info(f"  Found {len(peerings)} VPC Peering Connections")
 
     # Process each VPC Peering Connection
     for peering in peerings:
         peering_id = peering.get('VpcPeeringConnectionId', '')
-        print(f"    Processing VPC Peering Connection: {peering_id}")
+        utils.log_info(f"    Processing VPC Peering Connection: {peering_id}")
 
         # Get peering status
         status = peering.get('Status', {}).get('Code', '')
@@ -609,7 +609,7 @@ def collect_vpc_peering_data(regions):
     Returns:
         list: List of dictionaries with VPC Peering information
     """
-    print("\n=== COLLECTING VPC PEERING CONNECTION INFORMATION ===")
+    utils.log_info("=== COLLECTING VPC PEERING CONNECTION INFORMATION ===")
 
     # Use concurrent region scanning
     region_results = utils.scan_regions_concurrent(
@@ -644,7 +644,7 @@ def collect_elastic_ip_data_for_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
-    print(f"\nSearching for Elastic IPs in AWS region: {region}")
+    utils.log_info(f"Searching for Elastic IPs in AWS region: {region}")
 
     # Create EC2 client for this region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -652,12 +652,12 @@ def collect_elastic_ip_data_for_region(region):
     # Get Elastic IPs in the region
     eip_response = ec2_client.describe_addresses()
     eips = eip_response.get('Addresses', [])
-    print(f"  Found {len(eips)} Elastic IPs")
+    utils.log_info(f"  Found {len(eips)} Elastic IPs")
 
     # Process each Elastic IP
     for eip in eips:
         allocated_ip = eip.get('PublicIp', '')
-        print(f"    Processing Elastic IP: {allocated_ip}")
+        utils.log_info(f"    Processing Elastic IP: {allocated_ip}")
 
         # Get EIP attributes
         allocation_id = eip.get('AllocationId', '')
@@ -709,7 +709,7 @@ def collect_elastic_ip_data(regions):
     Returns:
         list: List of dictionaries with Elastic IP information
     """
-    print("\n=== COLLECTING ELASTIC IP INFORMATION ===")
+    utils.log_info("=== COLLECTING ELASTIC IP INFORMATION ===")
 
     # Use concurrent region scanning
     region_results = utils.scan_regions_concurrent(
@@ -735,59 +735,17 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         account_id: The AWS account ID
         account_name: The AWS account name
     """
-    # Detect partition and set partition-appropriate region examples
-    partition = utils.detect_partition()
-    if partition == 'aws-us-gov':
-        example_regions = "us-gov-west-1, us-gov-east-1"
-    else:
-        example_regions = "us-east-1, us-west-1, us-west-2, eu-west-1"
-
-    # Display menu for user selection
-    if utils.is_auto_run():
-        choice = 5  # All of the Above
-    else:
-        print("\n" + "=" * 60)
-        print("What would you like to export?")
-        print("1. VPC and Subnet")
-        print("2. NAT Gateways")
-        print("3. VPC Peering Connections")
-        print("4. Elastic IP")
-        print("5. All of the Above")
-        print("=" * 60)
-
-        while True:
-            try:
-                choice = input("Enter your choice (1-5): ")
-                choice = int(choice)
-                if 1 <= choice <= 5:
-                    break
-                else:
-                    print("Please enter a number between 1 and 5.")
-            except ValueError:
-                print("Please enter a valid number.")
-
-    # Determine what to export based on user choice
-    export_vpc_subnet = choice in [1, 5]
-    export_nat_gateways = choice in [2, 5]
-    export_vpc_peering = choice in [3, 5]
-    export_elastic_ip = choice in [4, 5]
+    # Always export all VPC resource types
+    export_vpc_subnet = True
+    export_nat_gateways = True
+    export_vpc_peering = True
+    export_elastic_ip = True
+    resource_type = "vpc-all"
 
     regions = utils.prompt_region_selection()
     region_suffix = 'all'
     # Get current date for file naming
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-
-    # Determine resource type based on choice
-    if choice == 1:
-        resource_type = "vpc-subnet"
-    elif choice == 2:
-        resource_type = "ngw"
-    elif choice == 3:
-        resource_type = "vpc-peering"
-    elif choice == 4:
-        resource_type = "elastic-ip"
-    else:  # choice == 5
-        resource_type = "vpc-all"
     
     # Create filename using utils with AWS identifier
     final_excel_file = utils.create_export_filename(
@@ -796,9 +754,6 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         region_suffix, 
         current_date
     )
-    
-    print(f"\nStarting AWS export process for {', '.join(regions)}...")
-    print("This may take some time depending on the number of regions and resources...")
     
     utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")
     
