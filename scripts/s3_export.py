@@ -21,6 +21,7 @@ Phase 4B Update:
 
 import os
 import sys
+import time
 import datetime
 import argparse
 from pathlib import Path
@@ -113,6 +114,7 @@ def get_bucket_object_count(bucket_name, region):
     for page in paginator.paginate(Bucket=bucket_name):
         if 'Contents' in page:
             total_objects += len(page['Contents'])
+        time.sleep(0.1)
 
     return total_objects
 
@@ -257,6 +259,7 @@ def get_latest_storage_lens_data(account_id):
         region_results = utils.scan_regions_concurrent(
             regions=aws_regions,
             scan_function=collect_cloudwatch_metrics_for_region,
+            max_workers=2,
             show_progress=False  # Don't show progress for S3 metrics collection
         )
 
