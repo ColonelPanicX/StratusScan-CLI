@@ -1608,7 +1608,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4520.16,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1627,7 +1627,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6026.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1646,7 +1646,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9040.32,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1665,7 +1665,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 753.36,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1684,7 +1684,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 12053.76,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1703,7 +1703,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1506.72,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1722,7 +1722,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3013.44,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1741,7 +1741,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 188.34,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1760,7 +1760,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 376.68,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1912,7 +1912,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3118.56,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1931,7 +1931,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4158.08,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1950,7 +1950,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6237.12,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1969,7 +1969,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 519.76,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -1988,7 +1988,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 12474.24,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2007,7 +2007,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1039.52,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2026,7 +2026,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2079.04,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2045,7 +2045,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 129.94,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2064,7 +2064,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 259.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2425,7 +2425,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1427.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2438,7 +2438,7 @@
           "aurora_io_on_demand_monthly_usd": 1018.35,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1597.24,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2457,7 +2457,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2855.76,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2470,7 +2470,7 @@
           "aurora_io_on_demand_monthly_usd": 2036.7,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3194.48,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2521,7 +2521,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 356.97,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2534,7 +2534,7 @@
           "aurora_io_on_demand_monthly_usd": 258.42,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 399.31,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2553,7 +2553,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 713.94,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2566,7 +2566,7 @@
           "aurora_io_on_demand_monthly_usd": 511.73,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 798.62,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2585,7 +2585,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5606.4,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2617,7 +2617,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1428.46,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2630,7 +2630,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1597.82,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2649,7 +2649,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2856.93,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2662,7 +2662,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3195.65,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2681,7 +2681,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2803.2,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2713,7 +2713,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 357.12,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2726,7 +2726,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 399.46,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2745,7 +2745,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 714.23,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2758,7 +2758,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 798.91,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2777,7 +2777,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4899.03,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2790,7 +2790,7 @@
           "aurora_io_on_demand_monthly_usd": 8016.86,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4914.36,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2809,7 +2809,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6532.04,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2822,7 +2822,7 @@
           "aurora_io_on_demand_monthly_usd": 10689.39,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6552.48,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2841,7 +2841,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9798.06,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2854,7 +2854,7 @@
           "aurora_io_on_demand_monthly_usd": 16034.45,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9828.72,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2873,7 +2873,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1407.44,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2886,7 +2886,7 @@
           "aurora_io_on_demand_monthly_usd": 1335.9,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1570.96,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2905,7 +2905,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2814.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2918,7 +2918,7 @@
           "aurora_io_on_demand_monthly_usd": 2672.53,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3141.92,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2937,7 +2937,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3266.02,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2950,7 +2950,7 @@
           "aurora_io_on_demand_monthly_usd": 5345.06,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3276.24,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2969,7 +2969,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 351.86,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -2982,7 +2982,7 @@
           "aurora_io_on_demand_monthly_usd": 333.61,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 392.74,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3001,7 +3001,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 703.72,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3014,7 +3014,7 @@
           "aurora_io_on_demand_monthly_usd": 667.95,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 785.48,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3033,7 +3033,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4835.52,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3052,7 +3052,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6447.36,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3071,7 +3071,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9671.04,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3090,7 +3090,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 805.92,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3109,7 +3109,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1611.84,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3128,7 +3128,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3223.68,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3147,7 +3147,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 201.48,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3166,7 +3166,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 402.96,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3185,7 +3185,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4660.32,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3198,7 +3198,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5606.4,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3217,7 +3217,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6213.76,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3230,7 +3230,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 7475.2,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3249,7 +3249,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9320.64,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3262,7 +3262,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 11212.8,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3281,7 +3281,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 776.72,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3294,7 +3294,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 934.4,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3313,7 +3313,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1553.44,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3326,7 +3326,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1868.8,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3345,7 +3345,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3106.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3358,7 +3358,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3737.6,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3377,7 +3377,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 194.18,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3390,7 +3390,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 233.6,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3409,7 +3409,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 388.36,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3422,7 +3422,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 467.2,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3889,7 +3889,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4082.16,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3902,7 +3902,7 @@
           "aurora_io_on_demand_monthly_usd": 7857.72,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4905.6,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3921,7 +3921,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5442.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3934,7 +3934,7 @@
           "aurora_io_on_demand_monthly_usd": 10476.96,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6540.8,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3953,7 +3953,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 8164.32,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3966,7 +3966,7 @@
           "aurora_io_on_demand_monthly_usd": 15715.44,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 9811.2,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3985,7 +3985,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1407.44,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -3998,7 +3998,7 @@
           "aurora_io_on_demand_monthly_usd": 1309.62,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 817.6,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4017,7 +4017,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 10885.76,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4030,7 +4030,7 @@
           "aurora_io_on_demand_monthly_usd": 20953.92,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 13081.6,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4049,7 +4049,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2814.88,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4062,7 +4062,7 @@
           "aurora_io_on_demand_monthly_usd": 2619.24,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1635.2,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4081,7 +4081,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2721.44,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4094,7 +4094,7 @@
           "aurora_io_on_demand_monthly_usd": 5238.48,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3270.4,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4113,7 +4113,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 351.86,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4126,7 +4126,7 @@
           "aurora_io_on_demand_monthly_usd": 327.04,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 204.4,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4145,7 +4145,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 703.72,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4158,7 +4158,7 @@
           "aurora_io_on_demand_monthly_usd": 654.81,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 408.8,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4177,7 +4177,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5220.96,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4196,7 +4196,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6961.28,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4215,7 +4215,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 10441.92,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4234,7 +4234,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 870.16,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4253,7 +4253,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 13922.56,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4272,7 +4272,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1740.32,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4291,7 +4291,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3480.64,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4310,7 +4310,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 217.54,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4329,7 +4329,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 435.08,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4519,7 +4519,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 6061.92,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4538,7 +4538,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 8082.56,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4557,7 +4557,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 12123.84,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4576,7 +4576,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1010.32,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4595,7 +4595,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 16165.12,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4614,7 +4614,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2020.64,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4633,7 +4633,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4041.28,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4652,7 +4652,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 252.58,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4671,7 +4671,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 505.16,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4914,7 +4914,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 4380.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4927,7 +4927,7 @@
           "aurora_io_on_demand_monthly_usd": 7857.72,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 5256.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5256.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4946,7 +4946,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 5840.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4959,7 +4959,7 @@
           "aurora_io_on_demand_monthly_usd": 10476.96,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 7008.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 7008.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4978,7 +4978,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 8760.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -4991,7 +4991,7 @@
           "aurora_io_on_demand_monthly_usd": 15715.44,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 10512.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 10512.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5010,7 +5010,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 730.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5023,7 +5023,7 @@
           "aurora_io_on_demand_monthly_usd": 1309.62,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 876.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 876.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5042,7 +5042,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 17520.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5055,7 +5055,7 @@
           "aurora_io_on_demand_monthly_usd": 31395.84,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 21024.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 21024.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5074,7 +5074,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1460.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5087,7 +5087,7 @@
           "aurora_io_on_demand_monthly_usd": 2619.24,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 1752.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 1752.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5106,7 +5106,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 2920.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5119,7 +5119,7 @@
           "aurora_io_on_demand_monthly_usd": 5238.48,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 3504.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 3504.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5138,7 +5138,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 182.5,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5151,7 +5151,7 @@
           "aurora_io_on_demand_monthly_usd": 327.04,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 219.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 219.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5170,7 +5170,7 @@
           "aurora_io_on_demand_monthly_usd": null,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": null,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 365.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5183,7 +5183,7 @@
           "aurora_io_on_demand_monthly_usd": 654.81,
           "sqlserver_ex_on_demand_monthly_usd": null,
           "sqlserver_std_on_demand_monthly_usd": 438.0,
-          "oracle_on_demand_monthly_usd": null,
+          "oracle_on_demand_monthly_usd": 438.0,
           "oracle_se2_on_demand_monthly_usd": null,
           "oracle_se2_byol_on_demand_monthly_usd": null,
           "oracle_ee_byol_on_demand_monthly_usd": null
@@ -5496,5 +5496,7 @@
         }
       }
     }
-  }
+  },
+  "generated_at": "2026-02-26",
+  "source": "AWS Pricing MCP (instances.for.business) \u2014 manual quarterly refresh"
 }
