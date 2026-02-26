@@ -23,6 +23,7 @@ Features:
 """
 
 import sys
+import time
 import datetime
 import csv
 import json
@@ -471,6 +472,7 @@ def get_instance_data(region, instance_filter=None):
         all_reservations = []
         for page in pages:
             all_reservations.extend(page['Reservations'])
+            time.sleep(0.1)
 
         # Count total instances first for progress tracking
         total_instances = 0
@@ -540,6 +542,8 @@ def get_instance_data(region, instance_filter=None):
                 progress = (processed / total_instances) * 100 if total_instances > 0 else 0
 
                 utils.log_info(f"[{progress:.1f}%] Processing instance {processed}/{total_instances}: {instance_id}")
+                if processed % 25 == 0:
+                    print(f"  [{region}] {processed}/{total_instances} EC2 instances processed...", flush=True)
                 # Get the root volume information
                 root_device = next((device for device in instance.get('BlockDeviceMappings', [])
                                   if device['DeviceName'] == instance.get('RootDeviceName')), None)
