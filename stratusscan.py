@@ -127,19 +127,6 @@ def clear_screen():
 # Visual helpers — mirrors the pattern established in configure.py
 # ---------------------------------------------------------------------------
 
-def _visual_len(s: str) -> int:
-    """Return terminal column width of s, counting emoji/wide chars as 2 columns."""
-    count = 0
-    for ch in s:
-        cp = ord(ch)
-        if 0xFE00 <= cp <= 0xFE0F or cp == 0x200D:
-            continue
-        if cp >= 0x2600 and not (0x2500 <= cp <= 0x257F):
-            count += 2
-        else:
-            count += 1
-    return count
-
 def print_box(title: str, width: int = 70):
     """Print a centred title inside a box."""
     print("╔" + "═" * (width - 2) + "╗")
@@ -154,13 +141,12 @@ def print_section(title: str, width: int = 70):
     print("═" * width)
 
 def print_status_line(label: str, status: str, width: int = 70):
-    """Print a right-aligned status line inside box walls."""
-    label_part = f"║ {label}: "
-    status_part = f"{status} ║"
-    padding = width - len(label_part) - _visual_len(status_part)
-    if padding < 0:
-        padding = 0
-    print(label_part + " " * padding + status_part)
+    """Print a status line with the right ║ anchored at exact column via ANSI CHA."""
+    content = f"║ {label}: {status}"
+    # \033[{n}G (Cursor Horizontal Absolute) jumps to column n (1-indexed).
+    # This anchors ║ at exactly column `width` regardless of how the terminal
+    # renders wide or emoji characters — no glyph-width guesswork needed.
+    print(f"{content}\033[{width}G║")
 
 # Cache AWS identity so the STS call is only made once per session
 _identity_cache: tuple = ()
