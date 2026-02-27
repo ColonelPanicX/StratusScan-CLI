@@ -684,8 +684,9 @@ def configure_default_regions(config: Dict):
     print("\nSelect primary default region:")
 
     if is_govcloud:
-        print("1. us-gov-west-1 (AWS GovCloud US-West)")
-        print("2. us-gov-east-1 (AWS GovCloud US-East)")
+        print("  1. us-gov-west-1 (AWS GovCloud US-West)")
+        print("  2. us-gov-east-1 (AWS GovCloud US-East)")
+        print("  C. Enter a custom region")
 
         region_map = {
             "1": "us-gov-west-1",
@@ -693,14 +694,15 @@ def configure_default_regions(config: Dict):
         }
         max_choice = 2
     else:
-        print("1. us-east-1 (US East - N. Virginia)")
-        print("2. us-east-2 (US East - Ohio)")
-        print("3. us-west-1 (US West - N. California)")
-        print("4. us-west-2 (US West - Oregon)")
-        print("5. eu-west-1 (Europe - Ireland)")
-        print("6. eu-central-1 (Europe - Frankfurt)")
-        print("7. ap-southeast-1 (Asia Pacific - Singapore)")
-        print("8. ap-northeast-1 (Asia Pacific - Tokyo)")
+        print("  1. us-east-1      (US East - N. Virginia)")
+        print("  2. us-east-2      (US East - Ohio)")
+        print("  3. us-west-1      (US West - N. California)")
+        print("  4. us-west-2      (US West - Oregon)")
+        print("  5. eu-west-1      (Europe - Ireland)")
+        print("  6. eu-central-1   (Europe - Frankfurt)")
+        print("  7. ap-southeast-1 (Asia Pacific - Singapore)")
+        print("  8. ap-northeast-1 (Asia Pacific - Tokyo)")
+        print("  C. Enter a custom region")
 
         region_map = {
             "1": "us-east-1",
@@ -714,16 +716,42 @@ def configure_default_regions(config: Dict):
         }
         max_choice = 8
 
+    # Regex for valid AWS region format (e.g. us-east-1, ap-south-2, us-gov-west-1)
+    region_pattern = re.compile(r'^[a-z]{2,3}(-[a-z]+)+-\d+$')
+
     while True:
-        choice = input(f"\nEnter choice (1-{max_choice}, or 0 to cancel): ").strip()
+        choice = input(f"\nEnter choice (1-{max_choice}, C for custom, 0 to cancel): ").strip().upper()
 
         if choice == '0':
             return
 
-        if choice in region_map:
+        if choice == 'C':
+            primary = input("  Primary region (e.g. ap-south-2): ").strip().lower()
+            if not primary:
+                continue
+            if not region_pattern.match(primary):
+                print("  ❌ Invalid format. Expected pattern like us-east-1 or ap-south-2.")
+                input("  Press Enter to try again...")
+                continue
+
+            secondary = input("  Secondary/fallback region (Enter to skip): ").strip().lower()
+            if secondary and not region_pattern.match(secondary):
+                print("  ⚠️  Secondary region format invalid — skipping secondary.")
+                secondary = ""
+
+            regions = [primary]
+            if secondary and secondary != primary:
+                regions.append(secondary)
+
+            config['default_regions'] = regions
+            _config_modified = True
+            print(f"\n✅ Default regions updated: {', '.join(regions)}")
+            break
+
+        elif choice in region_map:
             default_region = region_map[choice]
 
-            # Set secondary region based on partition
+            # Auto-select secondary region based on partition
             if default_region.startswith('us-gov-'):
                 secondary_region = "us-gov-east-1" if default_region == "us-gov-west-1" else "us-gov-west-1"
             else:
@@ -733,8 +761,9 @@ def configure_default_regions(config: Dict):
             _config_modified = True
             print(f"\n✅ Default regions updated: {default_region}, {secondary_region}")
             break
+
         else:
-            print(f"❌ Invalid choice. Please enter 1-{max_choice}.")
+            print(f"  ❌ Invalid choice. Enter 1-{max_choice}, C, or 0.")
 
     input("\nPress Enter to return to menu...")
 
