@@ -519,7 +519,7 @@ def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
             result["found"].append(script)
         else:
             result["missing"].append(script)
-            logger.warning(
+            logger.debug(
                 "SERVICE_SCRIPT_MAP references script that does not exist on disk: %s "
                 "(expected at %s)",
                 script,

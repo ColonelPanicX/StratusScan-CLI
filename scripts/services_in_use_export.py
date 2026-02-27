@@ -484,20 +484,52 @@ SERVICE_CHECKS = {
 }
 
 
+# Error message fragments that indicate a service is simply not in use or not
+# available in this region — expected states, not genuine unexpected errors.
+_NOT_IN_USE_FRAGMENTS = (
+    "could not connect to the endpoint url",      # endpoint absent in this region
+    "unknownoperationexception",                  # service/op not in this region
+    "unknown operation",                          # Bedrock, others: region gap
+    "unsupported_operation",                      # Comprehend: region gap
+    "this operation is not supported in this region",
+    "not subscribed to",                          # Security Hub: not enabled
+    "not enabled",                                # Macie, others: not enabled
+    "must create a landing zone",                 # Control Tower: not deployed
+    "endpoint discovery failed",                  # Timestream: endpoint issue
+)
+
+
+def _is_not_in_use_error(exc: Exception) -> bool:
+    """
+    Return True when an exception indicates a service is not in use or not
+    available in this region — not a genuine unexpected error.
+    """
+    msg = str(exc).lower()
+    if any(frag in msg for frag in _NOT_IN_USE_FRAGMENTS):
+        return True
+    # Timestream: "Only existing ... customers can access the service"
+    if "only existing" in msg and "customers" in msg:
+        return True
+    return False
+
+
 def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
 
     Returns:
         Tuple of (service_name, count, region, error_msg)
-        count is None on failure; error_msg is None on success.
+        count is None on a genuine unexpected failure; error_msg is None on
+        success or on a recognized "not in use / not available" condition.
     """
     try:
         client = utils.get_boto3_client(config['client'], region_name=region)
         count = config['check'](client, region)
         return (service_name, count, region, None)
     except Exception as e:
-        # Service not available in region or no access — return None to distinguish from 0 resources
+        if _is_not_in_use_error(e):
+            utils.log_debug(f"Service not available/not in use: {service_name} in {region}")
+            return (service_name, 0, region, None)
         utils.log_warning(f"Service check failed for {service_name} in {region}: {e}")
         return (service_name, None, region, str(e))
 
@@ -976,8 +1008,9 @@ Examples:
                         print(f"Executing {len(selected_scripts)} selected scripts...")
                         print()
 
-                        # Execute the selected scripts
-                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True)
+                        # Execute the selected scripts, passing regions so
+                        # subprocesses use the same scope as discovery
+                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True, regions=regions)
 
                         # Show final summary
                         print()
