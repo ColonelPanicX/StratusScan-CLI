@@ -124,11 +124,28 @@ def print_section(title: str, width: int = 70):
     print(title)
     print("─" * width)
 
+def _visual_len(s: str) -> int:
+    """Return terminal column width of s, counting emoji/wide chars as 2 columns."""
+    count = 0
+    for ch in s:
+        cp = ord(ch)
+        # Skip zero-width variation selectors and zero-width joiners
+        if 0xFE00 <= cp <= 0xFE0F or cp == 0x200D:
+            continue
+        # Wide emoji/symbols: anything >= U+2600 that is not box-drawing (U+2500–U+257F)
+        if cp >= 0x2600 and not (0x2500 <= cp <= 0x257F):
+            count += 2
+        else:
+            count += 1
+    return count
+
 def print_status_line(label: str, status: str, width: int = 70):
     """Print a status line with alignment."""
     label_part = f"║ {label}: "
     status_part = f"{status} ║"
-    padding = width - len(label_part) - len(status_part)
+    padding = width - len(label_part) - _visual_len(status_part)
+    if padding < 0:
+        padding = 0
     print(label_part + " " * padding + status_part)
 
 def get_status_icon(status: str) -> str:
@@ -387,7 +404,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Header
     print("\n")
-    print_box("STRATUSSCAN CONFIGURATION TOOL v0.2.0", 70)
+    print_box("STRATUSSCAN CONFIGURATION TOOL", 70)
 
     # Status box
     print("╔" + "═" * 68 + "╗")
@@ -539,11 +556,12 @@ def display_summary(config: Dict):
     default_regions = config.get('default_regions', [])
     print(f"\nDefault Regions: {', '.join(default_regions) if default_regions else 'Not set'}")
 
-    # Account mappings
+    # Account mappings — filter to valid 12-digit IDs only (excludes __comment keys)
     mappings = config.get('account_mappings', {})
-    print(f"\nAccount Mappings ({len(mappings)} configured):")
-    if mappings:
-        for account_id, name in sorted(mappings.items()):
+    real_mappings = {k: v for k, v in mappings.items() if validate_account_id(k)}
+    print(f"\nAccount Mappings ({len(real_mappings)} configured):")
+    if real_mappings:
+        for account_id, name in sorted(real_mappings.items()):
             print(f"  {account_id} → {name}")
     else:
         print("  None configured")
@@ -556,10 +574,12 @@ def manage_account_mappings(config: Dict):
         print_section("MANAGE ACCOUNT MAPPINGS")
 
         mappings = config.get('account_mappings', {})
+        # Filter to valid 12-digit account IDs only (excludes __comment keys)
+        real_mappings = {k: v for k, v in sorted(mappings.items()) if validate_account_id(k)}
 
-        print(f"\nCurrent Account Mappings ({len(mappings)}):")
-        if mappings:
-            for idx, (account_id, name) in enumerate(sorted(mappings.items()), 1):
+        print(f"\nCurrent Account Mappings ({len(real_mappings)}):")
+        if real_mappings:
+            for idx, (account_id, name) in enumerate(real_mappings.items(), 1):
                 print(f"  {idx}. {account_id} → {name}")
         else:
             print("  None configured")
@@ -698,8 +718,6 @@ def configure_default_regions(config: Dict):
         choice = input(f"\nEnter choice (1-{max_choice}, or 0 to cancel): ").strip()
 
         if choice == '0':
-            print("\n✅ Region configuration cancelled")
-            input("Press Enter to return to menu...")
             return
 
         if choice in region_map:
@@ -752,9 +770,9 @@ def dependency_management_menu():
         print("  [1] Install missing dependencies automatically")
         print("  [2] Show installation commands for manual installation")
         print("  [3] Re-check dependencies")
-        print("  [4] Back to main menu")
+        print("  [B] Back to main menu")
 
-        choice = input("\nSelect option (1-4): ").strip()
+        choice = input("\nSelect option (1-3, B): ").strip().upper()
 
         if choice == '1':
             install_dependencies(_dependency_status['missing_packages'])
@@ -772,10 +790,10 @@ def dependency_management_menu():
         elif choice == '3':
             print("\n🔄 Re-checking dependencies...")
             continue
-        elif choice == '4':
+        elif choice == 'B':
             return
         else:
-            print("\n❌ Invalid choice. Please select 1-4.")
+            print("\n❌ Invalid choice. Please select 1-3 or B.")
             input("Press Enter to continue...")
 
 def install_dependencies(missing_packages: List[Dict]) -> bool:
@@ -864,9 +882,9 @@ def permissions_management_menu():
             print("Please configure your AWS credentials before running StratusScan.")
             print("\nOptions:")
             print("  [1] Show credential configuration help")
-            print("  [2] Back to main menu")
+            print("  [B] Back to main menu")
 
-            choice = input("\nSelect option (1-2): ").strip()
+            choice = input("\nSelect option (1, B): ").strip().upper()
             if choice == '1':
                 print("\n" + "═" * 70)
                 print("AWS CREDENTIALS SETUP")
@@ -880,7 +898,7 @@ def permissions_management_menu():
                 print("\n3. IAM Role (for EC2 instances)")
                 print("   Attach an IAM role to your EC2 instance")
                 input("\nPress Enter to continue...")
-            else:
+            elif choice == 'B':
                 return
             continue
 
@@ -905,9 +923,9 @@ def permissions_management_menu():
         print("  [1] Show policy recommendations")
         print("  [2] View policy file locations")
         print("  [3] Re-test permissions")
-        print("  [4] Back to main menu")
+        print("  [B] Back to main menu")
 
-        choice = input("\nSelect option (1-4): ").strip()
+        choice = input("\nSelect option (1-3, B): ").strip().upper()
 
         if choice == '1':
             show_policy_recommendations_brief()
@@ -916,10 +934,10 @@ def permissions_management_menu():
         elif choice == '3':
             print("\n🔄 Re-testing permissions...")
             continue
-        elif choice == '4':
+        elif choice == 'B':
             return
         else:
-            print("\n❌ Invalid choice. Please select 1-4.")
+            print("\n❌ Invalid choice. Please select 1-3 or B.")
             input("Press Enter to continue...")
 
 def show_policy_recommendations_brief():
