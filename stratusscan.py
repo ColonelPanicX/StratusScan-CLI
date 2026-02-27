@@ -123,53 +123,81 @@ def clear_screen():
     """
     print('\033[2J\033[H', end='', flush=True)
 
+# ---------------------------------------------------------------------------
+# Visual helpers — mirrors the pattern established in configure.py
+# ---------------------------------------------------------------------------
+
+def _visual_len(s: str) -> int:
+    """Return terminal column width of s, counting emoji/wide chars as 2 columns."""
+    count = 0
+    for ch in s:
+        cp = ord(ch)
+        if 0xFE00 <= cp <= 0xFE0F or cp == 0x200D:
+            continue
+        if cp >= 0x2600 and not (0x2500 <= cp <= 0x257F):
+            count += 2
+        else:
+            count += 1
+    return count
+
+def print_box(title: str, width: int = 70):
+    """Print a centred title inside a box."""
+    print("╔" + "═" * (width - 2) + "╗")
+    padding = (width - len(title) - 2) // 2
+    print("║" + " " * padding + title + " " * (width - len(title) - padding - 2) + "║")
+    print("╚" + "═" * (width - 2) + "╝")
+
+def print_section(title: str, width: int = 70):
+    """Print a section divider with an ALL-CAPS label."""
+    print("\n" + "═" * width)
+    print(title)
+    print("═" * width)
+
+def print_status_line(label: str, status: str, width: int = 70):
+    """Print a right-aligned status line inside box walls."""
+    label_part = f"║ {label}: "
+    status_part = f"{status} ║"
+    padding = width - len(label_part) - _visual_len(status_part)
+    if padding < 0:
+        padding = 0
+    print(label_part + " " * padding + status_part)
+
+# Cache AWS identity so the STS call is only made once per session
+_identity_cache: tuple = ()
+
 def print_header():
     """
-    Print the main menu header with version information.
-    
+    Print the styled status panel. AWS identity is fetched once and cached.
+
     Returns:
-        tuple: (account_id, account_name) - The AWS account information
+        tuple: (account_id, account_name)
     """
-    clear_screen()
-    print("====================================================================")
-    print("                   AWS RESOURCE SCANNER                            ")
-    print("====================================================================")
-    print("                         STRATUSSCAN                                ")
-    print("                   AWS RESOURCE EXPORTER MENU                      ")
-    print("====================================================================")
-    print(f"Version: {utils.get_version()}                                Date: FEB-17-2026")
-    print("Multi-Partition: Commercial & GovCloud Support")
-    print("====================================================================")
+    global _identity_cache
 
-    # Get the current AWS account ID and map to account name
-    try:
-        # Create a boto3 STS client
-        sts = utils.get_boto3_client('sts')
-        account_id = sts.get_caller_identity()["Account"]
-        account_name = utils.get_account_name(account_id, default=account_id)
-
-        # Detect partition and display environment
+    if not _identity_cache:
         try:
-            caller_arn = sts.get_caller_identity()["Arn"]
+            sts = utils.get_boto3_client('sts')
+            identity = sts.get_caller_identity()
+            account_id = identity["Account"]
+            account_name = utils.get_account_name(account_id, default=account_id)
             partition = utils.detect_partition()
-            if partition == 'aws-us-gov':
-                environment = "AWS GovCloud (US)"
-            elif partition == 'aws':
-                environment = "AWS Commercial"
-            else:
-                environment = f"AWS ({partition})"
-            print(f"Environment: {environment}")
+            environment = "AWS GovCloud (US)" if partition == 'aws-us-gov' else "AWS Commercial"
+            _identity_cache = (account_id, account_name, environment)
         except Exception:
-            print("Environment: AWS Commercial (default)")
+            _identity_cache = ("UNKNOWN", "UNKNOWN-ACCOUNT", "Unknown")
 
-        print(f"Account ID: {account_id}")
-        print(f"Account Name: {account_name}")
-    except Exception as e:
-        print(f"Error getting account information: {e}")
-        account_id = "UNKNOWN"
-        account_name = "UNKNOWN-ACCOUNT"
+    account_id, account_name, environment = _identity_cache
 
-    print("====================================================================")
+    print_box("STRATUSSCAN", 70)
+    print("╔" + "═" * 68 + "╗")
+    print_status_line("Environment", environment, 70)
+    print_status_line("Account", f"{account_id}  ({account_name})", 70)
+
+    config_path = Path(__file__).parent / "config.json"
+    config_status = "✅ Loaded" if config_path.exists() else "⚠️  Not configured — run [0] Configure StratusScan"
+    print_status_line("Configuration", config_status, 70)
+    print("╚" + "═" * 68 + "╝")
+
     return account_id, account_name
 
 def check_dependency(dependency):
@@ -217,21 +245,17 @@ def install_dependency(dependency):
 
 def check_dependencies():
     """
-    Check and install common required dependencies.
-    
+    Check required dependencies. Silent when all satisfied; prompts to install if missing.
+
     Returns:
         bool: True if all dependencies are satisfied, False otherwise
     """
-    print("Checking required dependencies...")
     required_packages = ['boto3', 'pandas', 'openpyxl']
-    
     for package in required_packages:
-        if check_dependency(package):
-            print(f"[OK] {package} is already installed")
-        else:
+        if not check_dependency(package):
+            print(f"  ❌ Missing: {package}")
             if not install_dependency(package):
                 return False
-    
     return True
 
 def ensure_directory_structure():
@@ -289,8 +313,8 @@ def execute_script(script_path):
         # Clear the screen before executing the script
         clear_screen()
 
-        print(f"Executing: {script_path}")
-        print("=" * 60)
+        print(f"Executing: {script_path.name}")
+        print("─" * 70)
 
         # Execute the script as a subprocess
         result = subprocess.run([sys.executable, str(script_path)],
@@ -339,10 +363,8 @@ def create_output_archive(account_name):
         # Clear the screen
         clear_screen()
         
-        print("====================================================================")
-        print("CREATING OUTPUT ARCHIVE")
-        print("====================================================================")
-        
+        print_section("CREATING OUTPUT ARCHIVE")
+
         # Get the output directory path
         output_dir = Path(__file__).parent / "output"
         
@@ -614,22 +636,24 @@ def get_menu_structure():
 
 def display_main_menu():
     """
-    Display the main menu with categories.
+    Clear screen, print status panel, and display the main menu.
 
     Returns:
-        dict: The menu structure.
+        tuple: (menu_structure, account_name)
     """
+    clear_screen()
+    _, account_name = print_header()
     menu_structure = get_menu_structure()
 
-    print("\nMAIN MENU:")
-    print("====================================================================")
-
+    print_section("MAIN MENU")
     for option, info in menu_structure.items():
-        print(f"{option}. {info['name']}")
+        print(f"  [{option:>2}] {info['name']}")
 
-    print("\n  q = quit")
+    print("\n" + "─" * 70)
+    print("  q = quit")
+    print("─" * 70)
 
-    return menu_structure
+    return menu_structure, account_name
 
 def display_submenu(submenu, category_name):
     """
@@ -642,21 +666,15 @@ def display_submenu(submenu, category_name):
     Returns:
         dict: The submenu structure
     """
-    # Clear the screen
     clear_screen()
-
-    print(f"====================================================================")
-    print(f"                  {category_name.upper()}")
-    print(f"====================================================================")
+    print_section(category_name.upper())
 
     for option, info in submenu.items():
-        # Handle items with or without descriptions
-        if 'description' in info:
-            print(f"{option}. {info['name']} - {info['description']}")
-        else:
-            print(f"{option}. {info['name']}")
+        print(f"  [{option:>2}] {info['name']}")
 
-    print("\n  b = back  |  x = main menu  |  q = quit")
+    print("\n" + "─" * 70)
+    print("  b = back  |  x = main menu  |  q = quit")
+    print("─" * 70)
 
     return submenu
 
@@ -745,8 +763,6 @@ def navigate_menus():
     Display the main menu and handle user navigation through nested menus.
     """
     try:
-        account_id, account_name = print_header()
-
         if not check_dependencies():
             print("Required dependencies are missing. Please install them to continue.")
             sys.exit(1)
@@ -754,7 +770,7 @@ def navigate_menus():
         ensure_directory_structure()
 
         while True:
-            menu_structure = display_main_menu()
+            menu_structure, account_name = display_main_menu()
 
             if not menu_structure:
                 print("\nNo scripts found in the mapping. Please ensure script files exist in the scripts directory.")
