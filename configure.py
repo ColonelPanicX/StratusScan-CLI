@@ -6,28 +6,18 @@
 ===========================
 
 Title: StratusScan Configuration Tool
-Version: v0.1.0
+Version: v0.2.0
 Date: DEC-24-2024
 
 Description:
 Interactive configuration tool for setting up the StratusScan AWS environment.
-This script provides a menu-driven dashboard for managing AWS-specific settings,
-account mappings, dependencies, and permissions.
-
-Features:
-- Menu-driven dashboard (non-linear navigation)
-- Background dependency and permissions checks
-- Quick edit mode via CLI arguments
-- Visual status indicators
-- Configuration validation and backup
-- Partition-aware (Commercial vs GovCloud)
-- Smart defaults and auto-detection
+This script provides a menu-driven interface for verifying dependencies,
+AWS connectivity, account name mappings, and default scan regions.
 
 Usage:
 - python configure.py                              (interactive dashboard)
 - python configure.py --deps                       (dependency check only)
 - python configure.py --perms                      (permissions check only)
-- python configure.py --org "Company Name"         (quick org name update)
 - python configure.py --account ID NAME            (quick account mapping)
 - python configure.py --region REGION              (quick region update)
 - python configure.py --validate                   (full validation check)
@@ -300,51 +290,7 @@ def load_existing_config(config_path: Path) -> Dict:
     return {
         "__comment": "StratusScan Configuration - Customize this file for your environment",
         "account_mappings": {},
-        "organization_name": "YOUR-ORGANIZATION",
         "default_regions": ["us-east-1", "us-west-2"],
-        "resource_preferences": {
-            "ec2": {
-                "default_filter": "all",
-                "include_stopped": True,
-                "default_region": "us-east-1"
-            },
-            "vpc": {
-                "default_export_type": "all",
-                "default_region": "us-east-1"
-            },
-            "s3": {
-                "default_region": "us-east-1"
-            },
-            "ebs": {
-                "default_region": "us-east-1"
-            },
-            "rds": {
-                "default_region": "us-east-1"
-            },
-            "ecs": {
-                "default_region": "us-east-1"
-            },
-            "elb": {
-                "default_region": "us-east-1"
-            },
-            "compute_optimizer": {
-                "enabled": True,
-                "default_region": "us-east-1"
-            }
-        },
-        "aws_commercial": {
-            "partition": "aws",
-            "valid_regions": [
-                "us-east-1", "us-east-2", "us-west-1", "us-west-2",
-                "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1",
-                "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
-                "ap-northeast-2", "ap-south-1", "sa-east-1", "ca-central-1"
-            ],
-            "notes": [
-                "This configuration is optimized for AWS Commercial",
-                "All standard AWS services are available"
-            ]
-        }
     }
 
 def save_configuration(config: Dict, config_path: Path) -> bool:
@@ -396,10 +342,6 @@ def get_config_status(config: Dict, config_path: Path) -> str:
     if _config_modified:
         return "⚠️  Modified (unsaved)"
 
-    # Check if essential fields are set
-    if config.get('organization_name') == 'YOUR-ORGANIZATION':
-        return "⚠️  Needs setup"
-
     if not config.get('account_mappings'):
         return "⚠️  No accounts"
 
@@ -445,7 +387,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Header
     print("\n")
-    print_box("STRATUSSCAN CONFIGURATION TOOL v0.1.0", 70)
+    print_box("STRATUSSCAN CONFIGURATION TOOL v0.2.0", 70)
 
     # Status box
     print("╔" + "═" * 68 + "╗")
@@ -469,10 +411,8 @@ def print_dashboard(config: Dict, config_path: Path):
     # Configuration options
     print("\nConfiguration:")
     print("  [1] View Current Configuration")
-    print("  [2] Edit Organization Settings")
-    print("  [3] Manage Account Mappings")
-    print("  [4] Configure Default Regions")
-    print("  [5] Advanced Settings (Resource Preferences)")
+    print("  [2] Manage Account Mappings")
+    print("  [3] Configure Default Regions")
 
     # System checks
     print("\nSystem Checks:")
@@ -486,7 +426,7 @@ def print_dashboard(config: Dict, config_path: Path):
             dep_status = f"❌ {missing_count} missing"
     else:
         dep_status = "❓ Not checked"
-    print(f"  [6] Check Dependencies                     {dep_status}")
+    print(f"  [4] Check Dependencies                     {dep_status}")
 
     # Permissions status
     if _permission_status:
@@ -503,13 +443,12 @@ def print_dashboard(config: Dict, config_path: Path):
             perm_status = f"❌ {required_failed} required missing"
     else:
         perm_status = "❓ Not checked"
-    print(f"  [7] Check AWS Permissions                  {perm_status}")
+    print(f"  [5] Check AWS Permissions                  {perm_status}")
 
     # Actions
     print("\nActions:")
-    print("  [8] Save & Exit")
-    print("  [9] Exit Without Saving" + (" (Unsaved changes!)" if _config_modified else ""))
-    print("  [0] Refresh Status")
+    print("  [6] Save & Exit")
+    print("  [7] Exit Without Saving" + (" (Unsaved changes!)" if _config_modified else ""))
 
     print("\n" + "═" * 70)
 
@@ -524,23 +463,19 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (0-9): ").strip()
+        choice = input("\nSelect option (1-7): ").strip()
 
         if choice == '1':
             view_configuration(config)
         elif choice == '2':
-            edit_organization_settings(config)
-        elif choice == '3':
             manage_account_mappings(config)
-        elif choice == '4':
+        elif choice == '3':
             configure_default_regions(config)
-        elif choice == '5':
-            advanced_settings(config)
-        elif choice == '6':
+        elif choice == '4':
             dependency_management_menu()
-        elif choice == '7':
+        elif choice == '5':
             permissions_management_menu()
-        elif choice == '8':
+        elif choice == '6':
             # Save & Exit
             if _config_modified:
                 print("\n" + "═" * 70)
@@ -564,7 +499,7 @@ def main_menu_loop(config: Dict, config_path: Path):
             else:
                 print("\n✅ No unsaved changes. Exiting...")
                 return
-        elif choice == '9':
+        elif choice == '7':
             # Exit without saving
             if _config_modified:
                 print("\n⚠️  WARNING: You have unsaved changes!")
@@ -577,13 +512,8 @@ def main_menu_loop(config: Dict, config_path: Path):
             else:
                 print("\n✅ Exiting...")
                 return
-        elif choice == '0':
-            # Refresh status
-            print("\n🔄 Refreshing status...")
-            run_background_checks()
-            continue
         else:
-            print("\n❌ Invalid choice. Please select 0-9.")
+            print("\n❌ Invalid choice. Please select 1-7.")
             input("Press Enter to continue...")
 
 # ============================================================================
@@ -605,12 +535,9 @@ def display_summary(config: Dict):
     Args:
         config (dict): Configuration dictionary
     """
-    # Organization/company name
-    print(f"\nOrganization/Company Name: {config.get('organization_name', 'Not set')}")
-
     # Default regions
     default_regions = config.get('default_regions', [])
-    print(f"Default Regions: {', '.join(default_regions)}")
+    print(f"\nDefault Regions: {', '.join(default_regions) if default_regions else 'Not set'}")
 
     # Account mappings
     mappings = config.get('account_mappings', {})
@@ -620,30 +547,6 @@ def display_summary(config: Dict):
             print(f"  {account_id} → {name}")
     else:
         print("  None configured")
-
-    # Resource preferences (show EC2 default region as example)
-    ec2_region = config.get('resource_preferences', {}).get('ec2', {}).get('default_region', 'Not set')
-    print(f"\nDefault Resource Region: {ec2_region}")
-
-def edit_organization_settings(config: Dict):
-    """Edit organization settings."""
-    global _config_modified
-
-    print_section("EDIT ORGANIZATION SETTINGS")
-
-    current_org = config.get('organization_name', 'YOUR-ORGANIZATION')
-    print(f"\nCurrent organization/company name: {current_org}")
-
-    new_org = input("Enter new organization/company name (or press Enter to keep current): ").strip()
-
-    if new_org and new_org != current_org:
-        config['organization_name'] = new_org
-        _config_modified = True
-        print(f"\n✅ Organization name updated to: {new_org}")
-    else:
-        print("\n✅ Organization name unchanged")
-
-    input("\nPress Enter to return to menu...")
 
 def manage_account_mappings(config: Dict):
     """Manage account mappings."""
@@ -702,6 +605,10 @@ def manage_account_mappings(config: Dict):
                 continue
 
             account_id = input("\nEnter Account ID to edit: ").strip()
+            if not validate_account_id(account_id):
+                print("❌ Invalid account ID. Must be exactly 12 digits (e.g., 123456789012)")
+                input("Press Enter to continue...")
+                continue
             if account_id in mappings:
                 print(f"Current name: {mappings[account_id]}")
                 new_name = input("Enter new friendly name: ").strip()
@@ -804,46 +711,13 @@ def configure_default_regions(config: Dict):
             else:
                 secondary_region = "us-west-2" if default_region == "us-east-1" else "us-east-1"
 
-            # Count how many per-service regions will be rewritten
-            services_to_update = [
-                svc for svc, prefs in config.get("resource_preferences", {}).items()
-                if isinstance(prefs, dict) and "default_region" in prefs
-            ]
-
-            # Summarise the impact and require confirmation before bulk rewrite
-            print(f"\nThis will update default_regions to [{default_region}, {secondary_region}]")
-            if services_to_update:
-                print(f"and rewrite default_region for {len(services_to_update)} service(s) in resource_preferences:")
-                for svc in services_to_update:
-                    print(f"  - {svc}")
-            confirm = input("\nApply these changes? (y/n): ").strip().lower()
-            if confirm != 'y':
-                print("Cancelled — no changes made.")
-                break
-
             config['default_regions'] = [default_region, secondary_region]
-
-            # Update resource preferences
-            if "resource_preferences" in config:
-                for service, prefs in config["resource_preferences"].items():
-                    if isinstance(prefs, dict) and "default_region" in prefs:
-                        prefs["default_region"] = default_region
-
             _config_modified = True
             print(f"\n✅ Default regions updated: {default_region}, {secondary_region}")
             break
         else:
             print(f"❌ Invalid choice. Please enter 1-{max_choice}.")
 
-    input("\nPress Enter to return to menu...")
-
-def advanced_settings(config: Dict):
-    """Advanced settings editor."""
-    print_section("ADVANCED SETTINGS")
-    print("\n⚠️  Advanced settings are configured in resource_preferences.")
-    print("These are typically set automatically based on your default region.")
-    print("\nTo manually edit advanced settings, directly edit config.json")
-    print("and refer to the StratusScan documentation.")
     input("\nPress Enter to return to menu...")
 
 # ============================================================================
@@ -1030,25 +904,22 @@ def permissions_management_menu():
         print("\nOptions:")
         print("  [1] Show policy recommendations")
         print("  [2] View policy file locations")
-        print("  [3] Run full permission test (detailed)")
-        print("  [4] Re-test permissions")
-        print("  [5] Back to main menu")
+        print("  [3] Re-test permissions")
+        print("  [4] Back to main menu")
 
-        choice = input("\nSelect option (1-5): ").strip()
+        choice = input("\nSelect option (1-4): ").strip()
 
         if choice == '1':
             show_policy_recommendations_brief()
         elif choice == '2':
             show_policy_file_locations()
         elif choice == '3':
-            run_full_permission_test()
-        elif choice == '4':
             print("\n🔄 Re-testing permissions...")
             continue
-        elif choice == '5':
+        elif choice == '4':
             return
         else:
-            print("\n❌ Invalid choice. Please select 1-5.")
+            print("\n❌ Invalid choice. Please select 1-4.")
             input("Press Enter to continue...")
 
 def show_policy_recommendations_brief():
@@ -1107,41 +978,9 @@ def show_policy_file_locations():
 
     input("\nPress Enter to continue...")
 
-def run_full_permission_test():
-    """Run full permission test with detailed results."""
-    print("\n" + "═" * 70)
-    print("FULL PERMISSION TEST")
-    print("═" * 70)
-    print("\n⚠️  This will test multiple AWS API calls and may take a moment...")
-    print("This is the same detailed test from the old version.")
-    print("\nFor now, use the quick test in the main dashboard.")
-    print("Full detailed testing will be added in a future update.")
-    input("\nPress Enter to continue...")
-
 # ============================================================================
 # QUICK EDIT CLI FUNCTIONS
 # ============================================================================
-
-def quick_edit_org(org_name: str) -> bool:
-    """
-    Quick edit organization name via CLI.
-
-    Args:
-        org_name (str): New organization name
-
-    Returns:
-        bool: True if successful
-    """
-    config_path = get_config_path()
-    config = load_existing_config(config_path)
-    config['organization_name'] = org_name
-
-    if save_configuration(config, config_path):
-        print(f"\n✅ Organization name updated to: {org_name}")
-        return True
-    else:
-        print(f"\n❌ Failed to update organization name")
-        return False
 
 def quick_edit_account(account_id: str, account_name: str) -> bool:
     """
@@ -1194,12 +1033,6 @@ def quick_edit_region(region: str) -> bool:
         secondary_region = "us-west-2" if region == "us-east-1" else "us-east-1"
 
     config['default_regions'] = [region, secondary_region]
-
-    # Update resource preferences
-    if "resource_preferences" in config:
-        for service, prefs in config["resource_preferences"].items():
-            if isinstance(prefs, dict) and "default_region" in prefs:
-                prefs["default_region"] = region
 
     if save_configuration(config, config_path):
         print(f"\n✅ Default regions updated: {region}, {secondary_region}")
@@ -1256,7 +1089,6 @@ def validate_only() -> bool:
     if config_path.exists():
         config = load_existing_config(config_path)
         print(f"\n✅ Configuration file exists: {config_path}")
-        print(f"Organization: {config.get('organization_name', 'Not set')}")
         print(f"Account mappings: {len(config.get('account_mappings', {}))} configured")
         print(f"Default regions: {', '.join(config.get('default_regions', []))}")
     else:
@@ -1316,10 +1148,20 @@ if __name__ == "__main__":
         arg = sys.argv[1]
 
         if arg in ['--deps', '--dependencies']:
-            # Run dependency check only
+            # Quiet dependency check — print status and exit
             print_box("STRATUSSCAN DEPENDENCY CHECK", 70)
-            dependency_management_menu()
-            sys.exit(0)
+            dep_status = check_dependencies_silent()
+            for package in dep_status['installed_packages']:
+                print(f"  ✅ {package['name']} - {package['description']}")
+            for package in dep_status['missing_packages']:
+                print(f"  ❌ {package['name']} - {package['description']}")
+            print(f"\nSummary: {dep_status['installed_count']}/{dep_status['total_count']} dependencies satisfied")
+            if dep_status['all_satisfied']:
+                print("\n✅ All dependencies are installed.")
+            else:
+                missing_names = " ".join(p['name'] for p in dep_status['missing_packages'])
+                print(f"\nInstall missing: pip install {missing_names}")
+            sys.exit(0 if dep_status['all_satisfied'] else 1)
 
         elif arg in ['--perms', '--permissions']:
             # Run permissions check only
@@ -1327,11 +1169,6 @@ if __name__ == "__main__":
             run_background_checks()
             permissions_management_menu()
             sys.exit(0)
-
-        elif arg == '--org' and len(sys.argv) == 3:
-            # Quick edit organization name
-            success = quick_edit_org(sys.argv[2])
-            sys.exit(0 if success else 1)
 
         elif arg == '--account' and len(sys.argv) == 4:
             # Quick add account mapping
@@ -1349,18 +1186,16 @@ if __name__ == "__main__":
             sys.exit(0 if success else 1)
 
         elif arg in ['--help', '-h']:
-            print("StratusScan Configuration Tool v0.1.0")
+            print("StratusScan Configuration Tool v0.2.0")
             print("\nUsage:")
             print("  python configure.py                              # Interactive dashboard")
-            print("  python configure.py --deps                       # Dependency check only")
+            print("  python configure.py --deps                       # Dependency check (quiet)")
             print("  python configure.py --perms                      # Permissions check only")
-            print("  python configure.py --org \"Company Name\"         # Quick org name update")
             print("  python configure.py --account ID NAME            # Quick account mapping")
             print("  python configure.py --region REGION              # Quick region update")
             print("  python configure.py --validate                   # Full validation check")
             print("  python configure.py --help                       # Show this help")
             print("\nExamples:")
-            print("  python configure.py --org \"ACME Corporation\"")
             print("  python configure.py --account 123456789012 Production")
             print("  python configure.py --region us-east-1")
             sys.exit(0)
