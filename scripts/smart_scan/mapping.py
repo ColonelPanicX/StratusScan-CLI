@@ -19,7 +19,6 @@ ALWAYS_RUN_SCRIPTS = [
     "guardduty_export.py",
     "security_groups_export.py",
     "nacl_export.py",
-    "services_in_use_export.py",
     "trusted_advisor_cost_optimization_export.py",
     "budgets_export.py",
 ]
