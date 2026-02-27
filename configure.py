@@ -307,7 +307,7 @@ def load_existing_config(config_path: Path) -> Dict:
     return {
         "__comment": "StratusScan Configuration - Customize this file for your environment",
         "account_mappings": {},
-        "default_regions": ["us-east-1", "us-west-2"],
+        "default_regions": ["us-east-1", "us-east-2", "us-west-1", "us-west-2"],
     }
 
 def save_configuration(config: Dict, config_path: Path) -> bool:
@@ -673,97 +673,63 @@ def configure_default_regions(config: Dict):
 
     identity = get_aws_identity()
     if identity:
-        partition = identity['partition']
-        is_govcloud = partition == 'aws-us-gov'
+        is_govcloud = identity['partition'] == 'aws-us-gov'
     else:
         is_govcloud = False
 
     current_regions = config.get('default_regions', [])
-    print(f"\nCurrent default regions: {', '.join(current_regions)}")
-
-    print("\nSelect primary default region:")
+    print(f"\nCurrent default regions: {', '.join(current_regions) if current_regions else 'None'}")
 
     if is_govcloud:
-        print("  1. us-gov-west-1 (AWS GovCloud US-West)")
-        print("  2. us-gov-east-1 (AWS GovCloud US-East)")
-        print("  C. Enter a custom region")
-
-        region_map = {
-            "1": "us-gov-west-1",
-            "2": "us-gov-east-1"
-        }
-        max_choice = 2
+        print("\n  1. GovCloud — both regions (us-gov-west-1, us-gov-east-1)")
+        print("  C. Custom — enter regions manually")
+        presets = {"1": ["us-gov-west-1", "us-gov-east-1"]}
     else:
-        print("  1. us-east-1      (US East - N. Virginia)")
-        print("  2. us-east-2      (US East - Ohio)")
-        print("  3. us-west-1      (US West - N. California)")
-        print("  4. us-west-2      (US West - Oregon)")
-        print("  5. eu-west-1      (Europe - Ireland)")
-        print("  6. eu-central-1   (Europe - Frankfurt)")
-        print("  7. ap-southeast-1 (Asia Pacific - Singapore)")
-        print("  8. ap-northeast-1 (Asia Pacific - Tokyo)")
-        print("  C. Enter a custom region")
+        print("\n  1. US Standard — us-east-1, us-east-2, us-west-1, us-west-2")
+        print("  C. Custom — enter regions manually")
+        presets = {"1": ["us-east-1", "us-east-2", "us-west-1", "us-west-2"]}
 
-        region_map = {
-            "1": "us-east-1",
-            "2": "us-east-2",
-            "3": "us-west-1",
-            "4": "us-west-2",
-            "5": "eu-west-1",
-            "6": "eu-central-1",
-            "7": "ap-southeast-1",
-            "8": "ap-northeast-1"
-        }
-        max_choice = 8
-
-    # Regex for valid AWS region format (e.g. us-east-1, ap-south-2, us-gov-west-1)
+    # Validates standard AWS region format: us-east-1, eu-west-2, us-gov-west-1, etc.
     region_pattern = re.compile(r'^[a-z]{2,3}(-[a-z]+)+-\d+$')
 
     while True:
-        choice = input(f"\nEnter choice (1-{max_choice}, C for custom, 0 to cancel): ").strip().upper()
+        choice = input("\nSelect option (1, C for custom, 0 to cancel): ").strip().upper()
 
         if choice == '0':
             return
 
-        if choice == 'C':
-            primary = input("  Primary region (e.g. ap-south-2): ").strip().lower()
-            if not primary:
+        if choice in presets:
+            regions = presets[choice]
+            config['default_regions'] = regions
+            _config_modified = True
+            print(f"\n✅ Default regions set: {', '.join(regions)}")
+            break
+
+        elif choice == 'C':
+            raw = input("  Regions, comma-separated (e.g. eu-west-1,ap-northeast-1): ").strip().lower()
+            if not raw:
                 continue
-            if not region_pattern.match(primary):
-                print("  ❌ Invalid format. Expected pattern like us-east-1 or ap-south-2.")
+
+            candidates = [r.strip() for r in raw.split(',') if r.strip()]
+            invalid = [r for r in candidates if not region_pattern.match(r)]
+
+            if invalid:
+                print(f"  ❌ Invalid region(s): {', '.join(invalid)}")
+                print("  Expected format: us-east-1, eu-west-2, ap-south-2, etc.")
                 input("  Press Enter to try again...")
                 continue
 
-            secondary = input("  Secondary/fallback region (Enter to skip): ").strip().lower()
-            if secondary and not region_pattern.match(secondary):
-                print("  ⚠️  Secondary region format invalid — skipping secondary.")
-                secondary = ""
-
-            regions = [primary]
-            if secondary and secondary != primary:
-                regions.append(secondary)
+            # Deduplicate while preserving order
+            seen: set = set()
+            regions = [r for r in candidates if not (r in seen or seen.add(r))]  # type: ignore[func-returns-value]
 
             config['default_regions'] = regions
             _config_modified = True
-            print(f"\n✅ Default regions updated: {', '.join(regions)}")
-            break
-
-        elif choice in region_map:
-            default_region = region_map[choice]
-
-            # Auto-select secondary region based on partition
-            if default_region.startswith('us-gov-'):
-                secondary_region = "us-gov-east-1" if default_region == "us-gov-west-1" else "us-gov-west-1"
-            else:
-                secondary_region = "us-west-2" if default_region == "us-east-1" else "us-east-1"
-
-            config['default_regions'] = [default_region, secondary_region]
-            _config_modified = True
-            print(f"\n✅ Default regions updated: {default_region}, {secondary_region}")
+            print(f"\n✅ Default regions set: {', '.join(regions)}")
             break
 
         else:
-            print(f"  ❌ Invalid choice. Enter 1-{max_choice}, C, or 0.")
+            print("  ❌ Invalid choice. Enter 1, C, or 0.")
 
     input("\nPress Enter to return to menu...")
 
