@@ -464,8 +464,8 @@ def print_dashboard(config: Dict, config_path: Path):
 
     # Actions
     print("\nActions:")
-    print("  [6] Save & Exit")
-    print("  [7] Exit Without Saving" + (" (Unsaved changes!)" if _config_modified else ""))
+    print("  [S] Save & Exit")
+    print("  [U] Exit Without Saving" + (" (Unsaved changes!)" if _config_modified else ""))
 
     print("\n" + "═" * 70)
 
@@ -480,7 +480,7 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (1-7): ").strip()
+        choice = input("\nSelect option (1-5, S to save, U to exit): ").strip().upper()
 
         if choice == '1':
             view_configuration(config)
@@ -492,7 +492,7 @@ def main_menu_loop(config: Dict, config_path: Path):
             dependency_management_menu()
         elif choice == '5':
             permissions_management_menu()
-        elif choice == '6':
+        elif choice == 'S':
             # Save & Exit
             if _config_modified:
                 print("\n" + "═" * 70)
@@ -516,7 +516,7 @@ def main_menu_loop(config: Dict, config_path: Path):
             else:
                 print("\n✅ No unsaved changes. Exiting...")
                 return
-        elif choice == '7':
+        elif choice == 'U':
             # Exit without saving
             if _config_modified:
                 print("\n⚠️  WARNING: You have unsaved changes!")
@@ -530,7 +530,7 @@ def main_menu_loop(config: Dict, config_path: Path):
                 print("\n✅ Exiting...")
                 return
         else:
-            print("\n❌ Invalid choice. Please select 1-7.")
+            print("\n❌ Invalid choice. Please select 1-5, S, or U.")
             input("Press Enter to continue...")
 
 # ============================================================================
@@ -1143,7 +1143,14 @@ def main():
 
         # Load configuration
         config_path = get_config_path()
+        is_fresh = not config_path.exists()
         config = load_existing_config(config_path)
+
+        # On a brand-new config in GovCloud, override the commercial region defaults
+        if is_fresh:
+            identity = get_aws_identity()
+            if identity and identity['partition'] == 'aws-us-gov':
+                config['default_regions'] = ['us-gov-west-1', 'us-gov-east-1']
 
         # Start main menu loop
         main_menu_loop(config, config_path)
