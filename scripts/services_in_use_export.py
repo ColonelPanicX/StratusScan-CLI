@@ -583,7 +583,12 @@ def discover_services(regions: List[str], errors_out=None) -> Tuple[Dict[str, Di
                     }
 
                     for future in as_completed(futures):
-                        svc_name, count, region, err_msg = future.result()
+                        try:
+                            svc_name, count, region, err_msg = future.result(timeout=30)
+                        except Exception:
+                            region = futures[future]
+                            errors.setdefault(service_name, []).append(f"{region}: check timed out")
+                            continue
                         if count is not None and count > 0:
                             regional_counts[region] = count
                             total_count += count
