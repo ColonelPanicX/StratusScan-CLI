@@ -53,3 +53,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Generated Smart Scan reports (Markdown — keep .gitkeep but not report content)
+reports/*.md

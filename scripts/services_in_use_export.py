@@ -55,18 +55,80 @@ SERVICE_CHECKS = {
                 )
                 for inst in [res['Instances'] for res in page['Reservations']]
             ),
+            'detail': lambda c, r: {
+                state: sum(
+                    1 for page in c.get_paginator('describe_instances').paginate(
+                        Filters=[{'Name': 'instance-state-name', 'Values': [state]}]
+                    )
+                    for res in page['Reservations']
+                    for _ in res['Instances']
+                )
+                for state in ['running', 'stopped']
+            },
             'unit': 'instances',
             'regional': True
         },
         'Amazon RDS': {
             'client': 'rds',
-            'check': lambda c, r: len(c.describe_db_instances()['DBInstances']),
+            'check': lambda c, r: sum(
+                len(page['DBInstances'])
+                for page in c.get_paginator('describe_db_instances').paginate()
+            ),
+            'detail': lambda c, r: {
+                status: count
+                for status, count in {
+                    s: sum(
+                        1 for page in c.get_paginator('describe_db_instances').paginate()
+                        for db in page['DBInstances']
+                        if db['DBInstanceStatus'] == s
+                    )
+                    for s in ['available', 'stopped']
+                }.items()
+                if count > 0
+            },
             'unit': 'databases',
             'regional': True
         },
         'AWS Lambda': {
             'client': 'lambda',
-            'check': lambda c, r: len(c.list_functions()['Functions']),
+            'check': lambda c, r: sum(
+                len(page['Functions'])
+                for page in c.get_paginator('list_functions').paginate()
+            ),
+            'detail': lambda c, r: {
+                rt: count
+                for rt, count in {
+                    'Python': sum(
+                        1 for page in c.get_paginator('list_functions').paginate()
+                        for fn in page['Functions']
+                        if fn.get('Runtime', '').startswith('python')
+                    ),
+                    'Node.js': sum(
+                        1 for page in c.get_paginator('list_functions').paginate()
+                        for fn in page['Functions']
+                        if fn.get('Runtime', '').startswith('nodejs')
+                    ),
+                    'Java': sum(
+                        1 for page in c.get_paginator('list_functions').paginate()
+                        for fn in page['Functions']
+                        if fn.get('Runtime', '').startswith('java')
+                    ),
+                    'Go': sum(
+                        1 for page in c.get_paginator('list_functions').paginate()
+                        for fn in page['Functions']
+                        if fn.get('Runtime', '').startswith('go')
+                    ),
+                    'Other': sum(
+                        1 for page in c.get_paginator('list_functions').paginate()
+                        for fn in page['Functions']
+                        if not any(
+                            fn.get('Runtime', '').startswith(p)
+                            for p in ('python', 'nodejs', 'java', 'go')
+                        )
+                    ),
+                }.items()
+                if count > 0
+            },
             'unit': 'functions',
             'regional': True
         },
@@ -105,6 +167,20 @@ SERVICE_CHECKS = {
         'Amazon EBS': {
             'client': 'ec2',
             'check': lambda c, r: len(c.describe_volumes()['Volumes']),
+            'detail': lambda c, r: {
+                'in-use': sum(
+                    1 for page in c.get_paginator('describe_volumes').paginate(
+                        Filters=[{'Name': 'status', 'Values': ['in-use']}]
+                    )
+                    for _ in page['Volumes']
+                ),
+                'available': sum(
+                    1 for page in c.get_paginator('describe_volumes').paginate(
+                        Filters=[{'Name': 'status', 'Values': ['available']}]
+                    )
+                    for _ in page['Volumes']
+                ),
+            },
             'unit': 'volumes',
             'regional': True
         },
@@ -149,6 +225,18 @@ SERVICE_CHECKS = {
         'Elastic Load Balancing': {
             'client': 'elbv2',
             'check': lambda c, r: len(c.describe_load_balancers()['LoadBalancers']),
+            'detail': lambda c, r: {
+                lb_type: count
+                for lb_type, count in {
+                    t: sum(
+                        1 for page in c.get_paginator('describe_load_balancers').paginate()
+                        for lb in page['LoadBalancers']
+                        if lb['Type'] == t
+                    )
+                    for t in ['application', 'network', 'gateway']
+                }.items()
+                if count > 0
+            },
             'unit': 'load balancers',
             'regional': True
         },
@@ -228,7 +316,11 @@ SERVICE_CHECKS = {
         },
         'Amazon Timestream': {
             'client': 'timestream-write',
-            'check': lambda c, r: len(c.list_databases()['Databases']),
+            # list_databases avoids the hanging DescribeEndpoints call.
+            # Endpoint-discovery errors are caught by _is_not_in_use_error.
+            'check': lambda c, r: len(
+                c.list_databases(MaxResults=10).get('Databases', [])
+            ),
             'unit': 'databases',
             'regional': True
         },
@@ -237,6 +329,10 @@ SERVICE_CHECKS = {
         'AWS IAM': {
             'client': 'iam',
             'check': lambda c, r: len(c.list_users()['Users']),
+            'detail': lambda c, r: {
+                'roles': sum(len(page['Roles']) for page in c.get_paginator('list_roles').paginate()),
+                'groups': sum(len(page['Groups']) for page in c.get_paginator('list_groups').paginate()),
+            },
             'unit': 'users',
             'regional': False
         },
@@ -418,8 +514,13 @@ SERVICE_CHECKS = {
     'Monitoring & Logging': {
         'Amazon CloudWatch': {
             'client': 'cloudwatch',
-            'check': lambda c, r: len(c.list_metrics()['Metrics']),
-            'unit': 'metrics',
+            # list_metrics returns thousands of entries and is very slow.
+            # Count alarms instead — fast, meaningful, and paginator-safe.
+            'check': lambda c, r: sum(
+                len(page['MetricAlarms'])
+                for page in c.get_paginator('describe_alarms').paginate()
+            ),
+            'unit': 'alarms',
             'regional': True
         },
         'AWS X-Ray': {
@@ -484,6 +585,14 @@ SERVICE_CHECKS = {
 }
 
 
+# Flat map from service name → config dict for O(1) lookup in _enrich_with_detail.
+_SERVICE_CONFIG_FLAT: Dict[str, dict] = {
+    service_name: config
+    for category_services in SERVICE_CHECKS.values()
+    for service_name, config in category_services.items()
+}
+
+
 # Error message fragments that indicate a service is simply not in use or not
 # available in this region — expected states, not genuine unexpected errors.
 _NOT_IN_USE_FRAGMENTS = (
@@ -534,12 +643,50 @@ def check_service_in_region(service_name: str, config: dict, region: str) -> Tup
         return (service_name, None, region, str(e))
 
 
-def discover_services(regions: List[str], errors_out=None) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
+def _enrich_with_detail(
+    services: Dict[str, Dict[str, Any]],
+    regions: List[str],
+    errors: Dict[str, List[str]],
+) -> None:
+    """
+    Second pass (Deep Scan only): add asset breakdown to detected services.
+
+    Runs only for services that were found in the count pass and have a
+    'detail' lambda defined. Failures are logged at DEBUG and skipped —
+    they never break the scan.
+    """
+    for service_name, data in services.items():
+        config = _SERVICE_CONFIG_FLAT.get(service_name)
+        if config is None or 'detail' not in config:
+            continue
+
+        aggregated: Dict[str, int] = {}
+        check_regions = list(data['regions'].keys()) if data['regional'] else regions[:1]
+
+        for region in check_regions:
+            try:
+                client = utils.get_boto3_client(config['client'], region_name=region)
+                result = config['detail'](client, region)
+                for k, v in result.items():
+                    aggregated[k] = aggregated.get(k, 0) + v
+            except Exception as e:
+                utils.log_debug(f"Detail check skipped for {service_name} in {region}: {e}")
+
+        if aggregated:
+            data['detail'] = aggregated
+
+
+def discover_services(
+    regions: List[str],
+    mode: str = 'quick',
+    errors_out=None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
     """
     Discover all services in use across regions using concurrent scanning.
 
     Args:
         regions: List of AWS region names to scan.
+        mode: Scan mode — 'quick' (counts only) or 'deep' (counts + detail breakdown).
         errors_out: Optional dict to update with errors (for backward-compat callers).
                     If provided, it is updated in-place with the same data as the
                     returned errors dict.
@@ -623,6 +770,10 @@ def discover_services(regions: List[str], errors_out=None) -> Tuple[Dict[str, Di
 
             # Brief pause between services to avoid blasting all regions simultaneously
             time.sleep(0.1)
+
+    if mode == 'deep':
+        utils.log_info("Deep Scan: collecting asset detail...")
+        _enrich_with_detail(all_services, regions, errors)
 
     if errors_out is not None:
         errors_out.update(errors)
@@ -851,9 +1002,20 @@ Examples:
 
     # Detect partition for region examples
     regions = utils.prompt_region_selection()
+
+    # Prompt for scan mode (skipped in auto-run — defaults to quick)
+    if utils.is_auto_run():
+        scan_mode = 'quick'
+    else:
+        print("\n  Scan Mode:")
+        print("  [1] Quick Scan  — service presence and resource counts")
+        print("  [2] Deep Scan   — counts + asset breakdown (slower)")
+        mode_choice = input("  Enter choice [1]: ").strip() or "1"
+        scan_mode = 'deep' if mode_choice == '2' else 'quick'
+
     # Discover services
-    print(f"\nScanning {len(regions)} region(s) for services in use...")
-    services, errors = discover_services(regions)
+    print(f"\nScanning {len(regions)} region(s) for services in use ({scan_mode} mode)...")
+    services, errors = discover_services(regions, mode=scan_mode)
 
     if not services:
         utils.log_warning("No services with resources found")
@@ -904,9 +1066,6 @@ Examples:
     utils.log_info(f"Exporting to {filename}...")
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-    # Get the actual file path where it was saved (utils saves to output/ directory)
-    actual_filepath = utils.get_output_filepath(filename)
-
     # Log summary
     utils.log_export_summary(
         'Services In Use',
@@ -941,109 +1100,6 @@ Examples:
             print(f"  • {service_based} Service-Based scripts (for discovered services)")
 
     utils.log_success("Services discovery completed successfully")
-
-    # Smart Scan integration - prompt user to run recommended scripts
-    # Skip if --no-smart-scan flag provided
-    if args.no_smart_scan:
-        utils.log_info("Smart Scan skipped (--no-smart-scan flag)")
-        return
-
-    try:
-        from smart_scan import (
-            analyze_services,
-            interactive_select,
-            execute_scripts,
-            QUESTIONARY_AVAILABLE,
-        )
-
-        print("\n" + "="*60)
-        print("SMART SCAN - Intelligent Script Recommendations")
-        print("="*60)
-        print()
-        print("Smart Scan can analyze your discovered services and recommend")
-        print("relevant export scripts to run for comprehensive AWS auditing.")
-        print()
-
-        # Determine if we should launch Smart Scan
-        if args.smart_scan:
-            # Auto-launch via CLI flag
-            launch_smart_scan = 'y'
-            utils.log_info("Auto-launching Smart Scan (--smart-scan flag)")
-        elif utils.is_auto_run():
-            # In automation mode, skip Smart Scan to avoid blocking on prompts
-            launch_smart_scan = 'n'
-            utils.log_info("Auto-run mode: skipping Smart Scan interactive prompt")
-        else:
-            # Interactive prompt
-            launch_smart_scan = input("Launch Smart Scan analyzer? (y/n): ").strip().lower()
-
-        if launch_smart_scan == 'y':
-            utils.log_info("Launching Smart Scan analyzer...")
-
-            # Analyze the services export we just created
-            # Use the actual filepath we saved above
-            recommendations = analyze_services(str(actual_filepath), include_always_run=True)
-
-            if not recommendations or not recommendations.get("all_scripts"):
-                utils.log_warning("No script recommendations generated")
-            else:
-                # Show quick stats
-                stats = recommendations.get("coverage_stats", {})
-                print()
-                print(f"✓ Found {stats.get('services_with_scripts', 0)} services with export scripts")
-                print(f"✓ {stats.get('total_scripts_recommended', 0)} scripts recommended")
-                print()
-
-                # Determine selection method
-                if args.quick_scan:
-                    # Quick Scan mode - run all recommended scripts
-                    utils.log_info("Quick Scan mode - running all recommended scripts")
-                    selected_scripts = recommendations.get("all_scripts", set())
-                elif QUESTIONARY_AVAILABLE:
-                    # Interactive selection if questionary available
-                    utils.log_info("Starting interactive script selection...")
-                    selected_scripts = interactive_select(recommendations)
-                else:
-                    # Fallback - no questionary, run all scripts
-                    utils.log_warning("Questionary not installed - defaulting to Quick Scan")
-                    selected_scripts = recommendations.get("all_scripts", set())
-
-                if selected_scripts:
-                        print()
-                        print(f"Executing {len(selected_scripts)} selected scripts...")
-                        print()
-
-                        # Execute the selected scripts, passing regions so
-                        # subprocesses use the same scope as discovery
-                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True, regions=regions)
-
-                        # Show final summary
-                        print()
-                        print("="*60)
-                        print("SMART SCAN COMPLETE")
-                        print("="*60)
-                        print(f"Total Scripts: {summary['total']}")
-                        print(f"Successful: {summary['successful']}")
-                        print(f"Failed: {summary['failed']}")
-                        print(f"Success Rate: {summary['success_rate']:.1f}%")
-                        print("="*60)
-                        print()
-
-                        utils.log_success("Smart Scan batch execution completed")
-                else:
-                    utils.log_info("Smart Scan cancelled by user")
-
-        else:
-            utils.log_info("Smart Scan skipped")
-
-    except ImportError:
-        utils.log_warning(
-            "Smart Scan modules not available. To enable Smart Scan, install dev "
-            "dependencies with: pip install -e '.[dev]'"
-        )
-    except Exception as e:
-        # Don't fail the entire script if Smart Scan has issues
-        utils.log_warning(f"Smart Scan encountered an error (continuing): {e}")
 
 
 if __name__ == "__main__":
