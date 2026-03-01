@@ -8,7 +8,7 @@ to relevant export scripts. Core intelligence engine for Smart Scan.
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     import pandas as pd
@@ -409,3 +409,86 @@ def analyze_services(
     """
     analyzer = ServiceAnalyzer()
     return analyzer.analyze(services_file, include_always_run)
+
+
+def analyze_services_from_dict(
+    services: Dict[str, Any],
+    include_always_run: bool = True,
+    scripts_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Generate script recommendations from an in-memory service dict.
+
+    Accepts the dict returned by discover_services() directly — no Excel
+    file roundtrip required.
+
+    Args:
+        services: Dict mapping service name to service data
+                  (as returned by discover_services())
+        include_always_run: Include security baseline scripts
+        scripts_dir: Directory to check scripts exist on disk.
+                     Uses utils.get_scripts_dir() if None.
+
+    Returns:
+        Complete recommendations dictionary (same structure as analyze_services())
+    """
+    if scripts_dir is None:
+        scripts_dir = utils.get_scripts_dir()
+
+    analyzer = ServiceAnalyzer()
+    analyzer.discovered_services = set(services.keys())
+    analyzer.map_services_to_scripts()
+    recommendations = analyzer.generate_recommendations(include_always_run)
+
+    # Filter all_scripts to only those that exist on disk
+    existing = {s for s in recommendations['all_scripts'] if (scripts_dir / s).exists()}
+    removed = recommendations['all_scripts'] - existing
+    if removed:
+        utils.log_debug(
+            f"Filtered {len(removed)} missing script(s) from recommendations: {sorted(removed)}"
+        )
+
+    recommendations['all_scripts'] = existing
+
+    # Filter always_run and service_based to existing scripts only
+    recommendations['always_run'] = [s for s in recommendations['always_run'] if s in existing]
+    recommendations['service_based'] = {
+        svc: [s for s in scripts if s in existing]
+        for svc, scripts in recommendations['service_based'].items()
+    }
+    # Remove services that now have no scripts after filtering
+    recommendations['service_based'] = {
+        svc: scripts
+        for svc, scripts in recommendations['service_based'].items()
+        if scripts
+    }
+
+    # Recompute by_category with filtered scripts
+    category_map: Dict[str, List[str]] = {}
+    for script in existing:
+        category = get_category_for_script(script)
+        category_map.setdefault(category, []).append(script)
+    for cat in category_map:
+        category_map[cat].sort()
+    recommendations['by_category'] = category_map
+
+    # Recompute coverage stats against filtered set
+    total_available = len(get_all_scripts())
+    total_recommended = len(existing)
+    service_based_count = len(
+        {s for scripts in recommendations['service_based'].values() for s in scripts}
+    )
+    recommendations['coverage_stats'].update({
+        'total_services_found': len(analyzer.discovered_services),
+        'services_with_scripts': len(recommendations['service_based']),
+        'total_scripts_recommended': total_recommended,
+        'always_run_count': len(recommendations['always_run']),
+        'service_based_count': service_based_count,
+        'coverage_percentage': (
+            round((total_recommended / total_available) * 100, 1)
+            if total_available > 0
+            else 0
+        ),
+    })
+
+    return recommendations
