@@ -5,6 +5,7 @@ Executes multiple export scripts sequentially with progress tracking,
 error handling, and result aggregation.
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -57,6 +58,7 @@ class ScriptExecutor:
         scripts: Set[str],
         scripts_dir: Optional[str] = None,
         python_executable: str = "python3",
+        regions: Optional[List[str]] = None,
     ):
         """
         Initialize the executor.
@@ -65,6 +67,8 @@ class ScriptExecutor:
             scripts: Set of script filenames to execute
             scripts_dir: Directory containing the scripts (uses utils.get_scripts_dir() if None)
             python_executable: Python interpreter to use
+            regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS.
+                     If None, subprocesses use their own configured defaults.
         """
         self.scripts = sorted(set(scripts))  # Deduplicate and sort for consistent ordering
 
@@ -75,6 +79,7 @@ class ScriptExecutor:
             self.scripts_dir = Path(scripts_dir)
 
         self.python_executable = python_executable
+        self.regions = regions
         self.results: List[ExecutionResult] = []
         self.total_scripts = len(self.scripts)
         self.current_index = 0
@@ -120,12 +125,23 @@ class ScriptExecutor:
         pre_run_files = self._snapshot_output_files()
 
         try:
-            # Execute the script
+            # Build subprocess environment: force non-interactive mode so scripts
+            # never block on prompts. STRATUSSCAN_AUTO_RUN bypasses all input()
+            # calls; STRATUSSCAN_REGIONS passes the caller's region selection.
+            env = os.environ.copy()
+            env["STRATUSSCAN_AUTO_RUN"] = "1"
+            if self.regions:
+                env["STRATUSSCAN_REGIONS"] = ",".join(self.regions)
+
+            # Execute the script. stdin=DEVNULL prevents any accidental reads
+            # from the terminal; all output is captured for the execution log.
             result = subprocess.run(
                 [self.python_executable, str(script_path)],
                 capture_output=True,
                 text=True,
                 timeout=1800,  # 30 minute timeout per script
+                stdin=subprocess.DEVNULL,
+                env=env,
             )
 
             end_time = datetime.now()
@@ -486,7 +502,10 @@ class ScriptExecutor:
 
 
 def execute_scripts(
-    scripts: Set[str], show_progress: bool = True, save_log: bool = False
+    scripts: Set[str],
+    show_progress: bool = True,
+    save_log: bool = False,
+    regions: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Execute multiple scripts in batch.
@@ -495,11 +514,12 @@ def execute_scripts(
         scripts: Set of script filenames to execute
         show_progress: Whether to show progress display
         save_log: Whether to save execution log to file
+        regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS
 
     Returns:
         Execution summary dictionary
     """
-    executor = ScriptExecutor(scripts)
+    executor = ScriptExecutor(scripts, regions=regions)
     summary = executor.execute_all(show_progress=show_progress)
 
     if save_log:

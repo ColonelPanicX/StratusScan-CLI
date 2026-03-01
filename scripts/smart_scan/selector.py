@@ -91,22 +91,22 @@ class SmartScanSelector:
         """
         choices = [
             {
-                "name": "🚀 Quick Scan - Run all recommended scripts (recommended)",
+                "name": "Quick Scan - Run all recommended scripts (recommended)",
                 "value": "quick",
             },
             {
-                "name": "🎯 Custom Selection - Choose specific scripts to run",
+                "name": "Custom Selection - Choose specific scripts to run",
                 "value": "custom",
             },
             {
-                "name": "📋 View Checklist - See all recommendations without running",
+                "name": "View Checklist - See all recommendations without running",
                 "value": "view",
             },
             {
-                "name": "💾 Save Checklist - Export recommendations to file",
+                "name": "Save Checklist - Export recommendations to file",
                 "value": "save",
             },
-            {"name": "❌ Exit - Return without running scripts", "value": "exit"},
+            {"name": "Exit - Return without running scripts", "value": "exit"},
         ]
 
         answer = questionary.select(

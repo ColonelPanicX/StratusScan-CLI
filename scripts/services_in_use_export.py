@@ -19,6 +19,7 @@ Output: Multi-worksheet Excel file with services categorized by type
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from datetime import datetime
@@ -483,33 +484,74 @@ SERVICE_CHECKS = {
 }
 
 
-def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, int, str]:
+# Error message fragments that indicate a service is simply not in use or not
+# available in this region — expected states, not genuine unexpected errors.
+_NOT_IN_USE_FRAGMENTS = (
+    "could not connect to the endpoint url",      # endpoint absent in this region
+    "unknownoperationexception",                  # service/op not in this region
+    "unknown operation",                          # Bedrock, others: region gap
+    "unsupported_operation",                      # Comprehend: region gap
+    "this operation is not supported in this region",
+    "not subscribed to",                          # Security Hub: not enabled
+    "not enabled",                                # Macie, others: not enabled
+    "must create a landing zone",                 # Control Tower: not deployed
+    "endpoint discovery failed",                  # Timestream: endpoint issue
+)
+
+
+def _is_not_in_use_error(exc: Exception) -> bool:
+    """
+    Return True when an exception indicates a service is not in use or not
+    available in this region — not a genuine unexpected error.
+    """
+    msg = str(exc).lower()
+    if any(frag in msg for frag in _NOT_IN_USE_FRAGMENTS):
+        return True
+    # Timestream: "Only existing ... customers can access the service"
+    if "only existing" in msg and "customers" in msg:
+        return True
+    return False
+
+
+def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
 
     Returns:
-        Tuple of (service_name, count, region)
+        Tuple of (service_name, count, region, error_msg)
+        count is None on a genuine unexpected failure; error_msg is None on
+        success or on a recognized "not in use / not available" condition.
     """
     try:
         client = utils.get_boto3_client(config['client'], region_name=region)
         count = config['check'](client, region)
-        return (service_name, count, region)
+        return (service_name, count, region, None)
     except Exception as e:
-        # Service not available in region or no access — return None to distinguish from 0 resources
+        if _is_not_in_use_error(e):
+            utils.log_debug(f"Service not available/not in use: {service_name} in {region}")
+            return (service_name, 0, region, None)
         utils.log_warning(f"Service check failed for {service_name} in {region}: {e}")
-        return (service_name, None, region)
+        return (service_name, None, region, str(e))
 
 
-def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
+def discover_services(regions: List[str], errors_out=None) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
     """
     Discover all services in use across regions using concurrent scanning.
 
+    Args:
+        regions: List of AWS region names to scan.
+        errors_out: Optional dict to update with errors (for backward-compat callers).
+                    If provided, it is updated in-place with the same data as the
+                    returned errors dict.
+
     Returns:
-        Dictionary of services with their details
+        Tuple of (services, errors) where services maps service names to their
+        details and errors maps service names to lists of regional error strings.
     """
     utils.log_info("Starting concurrent service discovery across all categories...")
 
     all_services = {}
+    errors: Dict[str, List[str]] = {}
     total_services = sum(len(services) for services in SERVICE_CHECKS.values())
     completed = 0
 
@@ -533,7 +575,7 @@ def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
                 total_count = 0
 
                 concurrent_config = utils.config_value('advanced_settings.concurrent_scanning', default={})
-                max_workers = concurrent_config.get('max_workers', 4)
+                max_workers = concurrent_config.get('max_workers', 3)
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = {
                         executor.submit(check_service_in_region, service_name, config, region): region
@@ -541,10 +583,17 @@ def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
                     }
 
                     for future in as_completed(futures):
-                        svc_name, count, region = future.result()
+                        try:
+                            svc_name, count, region, err_msg = future.result(timeout=30)
+                        except Exception:
+                            region = futures[future]
+                            errors.setdefault(service_name, []).append(f"{region}: check timed out")
+                            continue
                         if count is not None and count > 0:
                             regional_counts[region] = count
                             total_count += count
+                        elif count is None:
+                            errors.setdefault(service_name, []).append(f"{region}: {err_msg}")
 
                 if total_count > 0:
                     all_services[service_name] = {
@@ -558,7 +607,7 @@ def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
             else:
                 # Global service - single check
                 utils.log_info(f"[{progress:5.1f}%] Checking {service_name} (global service)...")
-                _, count, _ = check_service_in_region(service_name, config, check_regions[0])
+                _, count, _, err_msg = check_service_in_region(service_name, config, check_regions[0])
 
                 if count is not None and count > 0:
                     all_services[service_name] = {
@@ -569,8 +618,16 @@ def discover_services(regions: List[str]) -> Dict[str, Dict[str, Any]]:
                         'regional': False
                     }
                     utils.log_success(f"  ✓ {service_name}: {count} {config['unit']}")
+                elif count is None:
+                    errors.setdefault(service_name, []).append(f"{check_regions[0]}: {err_msg}")
 
-    return all_services
+            # Brief pause between services to avoid blasting all regions simultaneously
+            time.sleep(0.1)
+
+    if errors_out is not None:
+        errors_out.update(errors)
+
+    return all_services, errors
 
 
 def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -796,13 +853,18 @@ Examples:
     regions = utils.prompt_region_selection()
     # Discover services
     print(f"\nScanning {len(regions)} region(s) for services in use...")
-    services = discover_services(regions)
+    services, errors = discover_services(regions)
 
     if not services:
         utils.log_warning("No services with resources found")
         return
 
     utils.log_success(f"\nDiscovered {len(services)} services in use!")
+
+    if errors:
+        print(f"\n  Note: {len(errors)} service(s) had check failures (see log):")
+        for svc in sorted(errors):
+            utils.log_warning(f"  {svc}: {'; '.join(errors[svc])}")
 
     # Generate summary and export
     utils.log_info("Generating reports...")
@@ -951,8 +1013,9 @@ Examples:
                         print(f"Executing {len(selected_scripts)} selected scripts...")
                         print()
 
-                        # Execute the selected scripts
-                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True)
+                        # Execute the selected scripts, passing regions so
+                        # subprocesses use the same scope as discovery
+                        summary = execute_scripts(selected_scripts, show_progress=True, save_log=True, regions=regions)
 
                         # Show final summary
                         print()
