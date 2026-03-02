@@ -619,6 +619,9 @@ def _is_not_in_use_error(exc: Exception) -> bool:
     # Timestream: "Only existing ... customers can access the service"
     if "only existing" in msg and "customers" in msg:
         return True
+    # Organizations: AccessDeniedException on ListAccounts = not an org master account
+    if "accessdeniedexception" in msg and "listaccounts" in msg:
+        return True
     return False
 
 

@@ -411,7 +411,7 @@ def get_menu_structure():
         },
         "1": {
             "name": "Service Discovery + Smart Scan",
-            "file": scripts_dir / "services_in_use_export.py",
+            "file": Path(__file__).parent / "smart_scan.py",
             "description": "Discover all AWS services in use; optionally launch Smart Scan to auto-run recommended exporters"
         },
         "2": {
