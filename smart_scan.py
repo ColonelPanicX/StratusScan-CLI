@@ -129,7 +129,7 @@ def _write_markdown_report(
     reports_dir = _root / 'reports'
     reports_dir.mkdir(exist_ok=True)
 
-    timestamp = utils.get_current_timestamp()
+    timestamp = utils.get_export_date()
     filename = f"{account_name}-discovery-{timestamp}.md"
     filepath = reports_dir / filename
 
@@ -321,7 +321,7 @@ def main() -> None:
     print("  [N] Exit — report saved, run scripts later")
     print("  [C] Customize — choose specific scripts to run")
     print("  ─────────────────────────────────────────────────────────────")
-    choice = input("  Enter choice [N]: ").strip().upper() or "N"
+    choice = input("  Enter choice [Y/N/C] (default N): ").strip().upper() or "N"
 
     if choice == 'N':
         utils.log_info("Exiting. Reports saved.")

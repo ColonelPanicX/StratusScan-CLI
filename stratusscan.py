@@ -410,7 +410,7 @@ def get_menu_structure():
             "description": "Interactive configuration tool for account mappings and AWS settings"
         },
         "1": {
-            "name": "Service Discovery + Smart Scan",
+            "name": "Service Discovery",
             "file": Path(__file__).parent / "smart_scan.py",
             "description": "Discover all AWS services in use; optionally launch Smart Scan to auto-run recommended exporters"
         },
