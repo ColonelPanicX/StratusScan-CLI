@@ -513,6 +513,51 @@ def generate_summary(clusters: List[Dict[str, Any]],
     return summary
 
 
+@utils.aws_error_handler("Collecting Neptune Analytics graphs", default_return=[])
+def collect_neptune_graphs(regions: List[str]) -> List[Dict[str, Any]]:
+    """Collect Neptune Analytics (neptune-graph) graph information from AWS regions."""
+    all_graphs = []
+
+    for region in regions:
+        utils.log_info(f"Scanning Neptune Analytics graphs in {region}...")
+
+        try:
+            neptune_graph_client = utils.get_boto3_client('neptune-graph', region_name=region)
+
+            paginator = neptune_graph_client.get_paginator('list_graphs')
+            for page in paginator.paginate():
+                for graph in page.get('graphs', []):
+                    create_time = graph.get('createTime')
+                    create_time_str = create_time.strftime('%Y-%m-%d %H:%M:%S') if create_time else 'N/A'
+
+                    vector_search = graph.get('vectorSearchConfiguration', {})
+                    vector_dimension = vector_search.get('dimension', 'N/A')
+
+                    all_graphs.append({
+                        'Region': region,
+                        'Graph ID': graph.get('id', 'N/A'),
+                        'Graph Name': graph.get('name', 'N/A'),
+                        'Status': graph.get('status', 'N/A'),
+                        'Endpoint': graph.get('endpoint', 'N/A'),
+                        'Provisioned Memory (GB)': graph.get('provisionedMemory', 'N/A'),
+                        'Public Connectivity': graph.get('publicConnectivity', False),
+                        'Replica Count': graph.get('replicaCount', 0),
+                        'KMS Key ID': graph.get('kmsKeyIdentifier', 'N/A'),
+                        'Deletion Protection': graph.get('deletionProtection', False),
+                        'Vector Search Dimension': vector_dimension,
+                        'Created': create_time_str,
+                        'Graph ARN': graph.get('arn', 'N/A'),
+                    })
+
+        except Exception as e:
+            # neptune-graph is not available in all regions
+            utils.log_warning(f"Could not collect Neptune Analytics graphs in {region}: {e}")
+            continue
+
+    utils.log_success(f"Total Neptune Analytics graphs collected: {len(all_graphs)}")
+    return all_graphs
+
+
 def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     """Collect Neptune data and write the Excel export."""
     print("\n=== Collecting Neptune Data ===")
@@ -520,6 +565,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     instances = collect_neptune_instances(regions)
     snapshots = collect_neptune_snapshots(regions)
     endpoints = collect_neptune_endpoints(regions)
+    graphs = collect_neptune_graphs(regions)
 
     # Generate summary
     summary = generate_summary(clusters, instances, snapshots, endpoints)
@@ -529,6 +575,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     instances_df = pd.DataFrame(instances) if instances else pd.DataFrame()
     snapshots_df = pd.DataFrame(snapshots) if snapshots else pd.DataFrame()
     endpoints_df = pd.DataFrame(endpoints) if endpoints else pd.DataFrame()
+    graphs_df = pd.DataFrame(graphs) if graphs else pd.DataFrame()
     summary_df = pd.DataFrame(summary)
 
     # Prepare DataFrames for export
@@ -540,6 +587,8 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         snapshots_df = utils.prepare_dataframe_for_export(snapshots_df)
     if not endpoints_df.empty:
         endpoints_df = utils.prepare_dataframe_for_export(endpoints_df)
+    if not graphs_df.empty:
+        graphs_df = utils.prepare_dataframe_for_export(graphs_df)
     if not summary_df.empty:
         summary_df = utils.prepare_dataframe_for_export(summary_df)
 
@@ -554,10 +603,11 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Neptune Instances': instances_df,
         'Cluster Snapshots': snapshots_df,
         'Cluster Endpoints': endpoints_df,
+        'Neptune Analytics': graphs_df,
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

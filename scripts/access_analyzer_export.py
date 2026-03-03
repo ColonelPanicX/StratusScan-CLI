@@ -165,10 +165,17 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
         for analyzer in analyzers:
             analyzer_arn = analyzer.get('arn', '')
             analyzer_name = analyzer.get('name', '')
+            analyzer_type = analyzer.get('type', '')
 
             try:
-                # Get findings for this analyzer (active only)
-                finding_paginator = aa_client.get_paginator('list_findings')
+                # UNUSED_ACCESS analyzers require list_findings_v2 (list_findings only
+                # supports external access analyzers). Use v2 for UNUSED_ACCESS, v1 for others.
+                use_v2 = 'UNUSED_ACCESS' in analyzer_type
+
+                if use_v2:
+                    finding_paginator = aa_client.get_paginator('list_findings_v2')
+                else:
+                    finding_paginator = aa_client.get_paginator('list_findings')
 
                 for finding_page in finding_paginator.paginate(
                     analyzerArn=analyzer_arn,
@@ -181,7 +188,7 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
                         resource_type = finding.get('resourceType', '')
                         resource = finding.get('resource', '')
 
-                        # Condition
+                        # Condition (v1 only — not in v2 summary)
                         condition = finding.get('condition', {})
                         condition_str = str(condition) if condition else 'N/A'
 
@@ -209,7 +216,7 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
                         # Error
                         error = finding.get('error', 'N/A')
 
-                        # Action
+                        # Action and Principal (v1 only — v2 summary omits these)
                         action = finding.get('action', [])
                         action_str = ', '.join(action) if action else 'N/A'
 
@@ -225,7 +232,9 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
                         findings_data.append({
                             'Region': region,
                             'Analyzer Name': analyzer_name,
+                            'Analyzer Type': analyzer_type,
                             'Finding ID': finding_id,
+                            'Finding Type': finding.get('findingType', 'N/A'),
                             'Status': status,
                             'Resource Type': resource_type,
                             'Resource': resource,

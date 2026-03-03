@@ -249,6 +249,88 @@ def get_application_network_load_balancers(region):
 
     return elb_data
 
+@utils.aws_error_handler("Collecting ELB target groups", default_return=[])
+def get_target_groups(region):
+    """
+    Get ALB/NLB target group information in the specified region.
+
+    Args:
+        region (str): AWS region
+
+    Returns:
+        list: List of dictionaries containing target group information
+    """
+    if not utils.is_aws_region(region):
+        return []
+
+    tg_data = []
+    elbv2 = utils.get_boto3_client('elbv2', region_name=region)
+
+    paginator = elbv2.get_paginator('describe_target_groups')
+    for page in paginator.paginate():
+        for tg in page.get('TargetGroups', []):
+            lb_arns = tg.get('LoadBalancerArns', [])
+            tg_data.append({
+                'Region': region,
+                'Target Group Name': tg.get('TargetGroupName', ''),
+                'Protocol': tg.get('Protocol', 'N/A'),
+                'Port': tg.get('Port', 'N/A'),
+                'VPC ID': tg.get('VpcId', 'N/A'),
+                'Target Type': tg.get('TargetType', 'N/A'),
+                'Health Check Protocol': tg.get('HealthCheckProtocol', 'N/A'),
+                'Health Check Path': tg.get('HealthCheckPath', 'N/A'),
+                'Load Balancer ARNs': ', '.join(lb_arns) if lb_arns else 'None',
+                'Target Group ARN': tg.get('TargetGroupArn', ''),
+            })
+
+    return tg_data
+
+
+@utils.aws_error_handler("Collecting ELB listeners", default_return=[])
+def get_listeners(region):
+    """
+    Get ALB/NLB listener information in the specified region.
+
+    Args:
+        region (str): AWS region
+
+    Returns:
+        list: List of dictionaries containing listener information
+    """
+    if not utils.is_aws_region(region):
+        return []
+
+    listeners_data = []
+    elbv2 = utils.get_boto3_client('elbv2', region_name=region)
+
+    lb_paginator = elbv2.get_paginator('describe_load_balancers')
+    lb_arns = []
+    for page in lb_paginator.paginate():
+        for lb in page.get('LoadBalancers', []):
+            lb_arns.append((lb.get('LoadBalancerArn', ''), lb.get('LoadBalancerName', '')))
+
+    for lb_arn, lb_name in lb_arns:
+        try:
+            listener_paginator = elbv2.get_paginator('describe_listeners')
+            for page in listener_paginator.paginate(LoadBalancerArn=lb_arn):
+                for listener in page.get('Listeners', []):
+                    default_actions = listener.get('DefaultActions', [])
+                    default_action_type = default_actions[0].get('Type', 'N/A') if default_actions else 'N/A'
+                    listeners_data.append({
+                        'Region': region,
+                        'Load Balancer Name': lb_name,
+                        'Protocol': listener.get('Protocol', 'N/A'),
+                        'Port': listener.get('Port', 'N/A'),
+                        'SSL Policy': listener.get('SslPolicy', 'N/A'),
+                        'Default Action': default_action_type,
+                        'Listener ARN': listener.get('ListenerArn', ''),
+                    })
+        except Exception as e:
+            utils.log_warning(f"Could not get listeners for LB {lb_name}: {e}")
+
+    return listeners_data
+
+
 def main():
     """
     Main function to run the script
@@ -312,27 +394,52 @@ def main():
     if not all_elb_data:
         utils.log_warning("No Elastic Load Balancers found in any AWS region.")
         return
-    
+
     # Convert to DataFrame
     df = pd.DataFrame(all_elb_data)
-    
-    # Sort by Region, Type, and Name
     df = df.sort_values(by=['Region', 'Type', 'Name'])
-    
+
+    # Collect target groups and listeners (Phase F: API coverage fix)
+    utils.log_info("Collecting target groups...")
+    tg_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=get_target_groups,
+        show_progress=True
+    )
+    all_tg_data = [tg for result in tg_results for tg in result]
+    utils.log_success(f"Total target groups collected: {len(all_tg_data)}")
+
+    utils.log_info("Collecting listeners...")
+    listener_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=get_listeners,
+        show_progress=True
+    )
+    all_listener_data = [listener for result in listener_results for listener in result]
+    utils.log_success(f"Total listeners collected: {len(all_listener_data)}")
+
     # Generate filename with current date
     current_date = datetime.datetime.now().strftime('%m.%d.%Y')
-    
-    # Use utils to create filename
     filename = utils.create_export_filename(
         account_name,
         "elb",
         region_suffix,
         current_date
     )
-    
-    # Export to Excel using utils
-    output_path = utils.save_dataframe_to_excel(df, filename)
-    
+
+    # Build multi-sheet workbook
+    data_frames = {'Load Balancers': df}
+    if all_tg_data:
+        tg_df = pd.DataFrame(all_tg_data)
+        tg_df = tg_df.sort_values(by=['Region', 'Target Group Name'])
+        data_frames['Target Groups'] = tg_df
+    if all_listener_data:
+        listener_df = pd.DataFrame(all_listener_data)
+        listener_df = listener_df.sort_values(by=['Region', 'Load Balancer Name', 'Port'])
+        data_frames['Listeners'] = listener_df
+
+    output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
+
     if output_path:
         utils.log_success("AWS ELB data exported successfully!")
         utils.log_info(f"File location: {output_path}")
