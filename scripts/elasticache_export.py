@@ -105,16 +105,7 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
                 cache_param_group_name = rg.get('CacheParameterGroup', {}).get('CacheParameterGroupName', 'N/A')
 
                 # Subnet group
-                cache_subnet_group = 'N/A'
-                node_groups = rg.get('NodeGroups', [])
-                if node_groups:
-                    for node_group in node_groups:
-                        primary_endpoint = node_group.get('PrimaryEndpoint', {})
-                        reader_endpoint = node_group.get('ReaderEndpoint', {})
-
-                        # Get subnet group from first node group
-                        if not cache_subnet_group or cache_subnet_group == 'N/A':
-                            cache_subnet_group = 'default'  # Will be populated from member clusters if available
+                cache_subnet_group = rg.get('CacheSubnetGroupName', 'N/A')
 
                 # ARN
                 arn = rg.get('ARN', 'N/A')
@@ -136,6 +127,7 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
                     'Encryption at Rest': 'Yes' if at_rest_encryption else 'No',
                     'Encryption in Transit': 'Yes' if transit_encryption else 'No',
                     'Auth Token Enabled': 'Yes' if auth_token_enabled else 'No',
+                    'Subnet Group': cache_subnet_group,
                     'Parameter Group': cache_param_group_name,
                     'ARN': arn
                 })

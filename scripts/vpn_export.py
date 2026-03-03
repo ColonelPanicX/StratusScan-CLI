@@ -84,10 +84,6 @@ def scan_vpn_connections_in_region(region: str) -> List[Dict[str, Any]]:
             static_routes_only = vpn.get('Options', {}).get('StaticRoutesOnly', False)
             routing_type = 'Static' if static_routes_only else 'Dynamic (BGP)'
 
-            # BGP ASN
-            customer_gateway_config = vpn.get('CustomerGatewayConfiguration', '')
-            bgp_asn = vpn.get('Options', {}).get('RemoteIpv4NetworkCidr', 'N/A')
-
             # Static routes
             static_routes = vpn.get('Routes', [])
             route_list = [f"{r.get('DestinationCidrBlock', '')} ({r.get('State', '')})" for r in static_routes]

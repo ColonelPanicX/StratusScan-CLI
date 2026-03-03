@@ -76,8 +76,7 @@ def collect_standard_access_points(region: str, account_id: str) -> List[Dict[st
                 # Get block public access settings
                 try:
                     public_access_block = s3control.get_public_access_block(
-                        AccountId=account_id,
-                        PublicAccessBlockConfiguration={}
+                        AccountId=account_id
                     )
                     block_settings = public_access_block.get('PublicAccessBlockConfiguration', {})
                 except Exception:
