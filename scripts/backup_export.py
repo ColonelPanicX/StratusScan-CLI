@@ -277,6 +277,68 @@ def collect_backup_selections(regions: List[str]) -> List[Dict[str, Any]]:
     return all_selections
 
 
+def _scan_backup_jobs_region(region: str) -> List[Dict[str, Any]]:
+    """Scan a single region for backup jobs."""
+    jobs_data = []
+
+    if not utils.is_aws_region(region):
+        return jobs_data
+
+    try:
+        backup_client = utils.get_boto3_client('backup', region_name=region)
+        paginator = backup_client.get_paginator('list_backup_jobs')
+
+        for page in paginator.paginate():
+            for job in page.get('BackupJobs', []):
+                creation_date = job.get('CreationDate', '')
+                if creation_date:
+                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_date, datetime.datetime) else str(creation_date)
+
+                completion_date = job.get('CompletionDate', '')
+                if completion_date:
+                    completion_date = completion_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(completion_date, datetime.datetime) else str(completion_date)
+
+                backup_size_bytes = job.get('BackupSizeInBytes', 0) or 0
+                backup_size_gb = round(backup_size_bytes / (1024 ** 3), 3) if backup_size_bytes else 0
+
+                jobs_data.append({
+                    'Region': region,
+                    'Job ID': job.get('BackupJobId', ''),
+                    'Resource Type': job.get('ResourceType', 'N/A'),
+                    'Resource ARN': job.get('ResourceArn', 'N/A'),
+                    'Vault Name': job.get('BackupVaultName', 'N/A'),
+                    'State': job.get('State', 'N/A'),
+                    'Backup Size (GB)': backup_size_gb,
+                    'Percent Done': job.get('PercentDone', 'N/A'),
+                    'Created': creation_date,
+                    'Completed': completion_date if completion_date else 'N/A',
+                })
+    except Exception as e:
+        utils.log_error(f"Error scanning backup jobs in {region}", e)
+
+    return jobs_data
+
+
+@utils.aws_error_handler("Collecting backup jobs", default_return=[])
+def collect_backup_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect AWS Backup job information from AWS regions.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with backup job information
+    """
+    print("\n=== COLLECTING BACKUP JOBS ===")
+
+    results = utils.scan_regions_concurrent(regions, _scan_backup_jobs_region)
+    all_jobs = [job for result in results for job in result]
+
+    utils.log_success(f"Total backup jobs collected: {len(all_jobs)}")
+    return all_jobs
+
+
 def export_backup_data(account_id: str, account_name: str):
     """
     Export AWS Backup information to an Excel file.
@@ -308,6 +370,11 @@ def export_backup_data(account_id: str, account_name: str):
     selections = collect_backup_selections(regions)
     if selections:
         data_frames['Backup Selections'] = pd.DataFrame(selections)
+
+    # STEP 4: Collect backup jobs (Phase F: API coverage fix)
+    jobs = collect_backup_jobs(regions)
+    if jobs:
+        data_frames['Backup Jobs'] = pd.DataFrame(jobs)
 
     # Check if we have any data
     if not data_frames:

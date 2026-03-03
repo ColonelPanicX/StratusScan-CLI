@@ -311,6 +311,65 @@ def collect_scaling_policies(regions: List[str]) -> List[Dict[str, Any]]:
     return all_policies
 
 
+def _scan_lifecycle_hooks_region(region: str) -> List[Dict[str, Any]]:
+    """Scan a single region for ASG lifecycle hooks."""
+    hooks_data = []
+
+    if not utils.is_aws_region(region):
+        return hooks_data
+
+    try:
+        asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+        asg_paginator = asg_client.get_paginator('describe_auto_scaling_groups')
+
+        for asg_page in asg_paginator.paginate():
+            for asg in asg_page.get('AutoScalingGroups', []):
+                asg_name = asg.get('AutoScalingGroupName', '')
+
+                try:
+                    hooks_response = asg_client.describe_lifecycle_hooks(
+                        AutoScalingGroupName=asg_name
+                    )
+                    for hook in hooks_response.get('LifecycleHooks', []):
+                        hooks_data.append({
+                            'Region': region,
+                            'ASG Name': asg_name,
+                            'Hook Name': hook.get('LifecycleHookName', ''),
+                            'Transition': hook.get('LifecycleTransition', 'N/A'),
+                            'Heartbeat Timeout (s)': hook.get('HeartbeatTimeout', 'N/A'),
+                            'Default Result': hook.get('DefaultResult', 'N/A'),
+                            'Notification Target ARN': hook.get('NotificationTargetARN', 'N/A'),
+                            'Role ARN': hook.get('RoleARN', 'N/A'),
+                        })
+                except Exception as e:
+                    utils.log_warning(f"Could not get lifecycle hooks for ASG {asg_name}: {e}")
+
+    except Exception as e:
+        utils.log_error(f"Error scanning lifecycle hooks in {region}", e)
+
+    return hooks_data
+
+
+@utils.aws_error_handler("Collecting lifecycle hooks", default_return=[])
+def collect_lifecycle_hooks(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect ASG lifecycle hook information from AWS regions.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with lifecycle hook information
+    """
+    print("\n=== COLLECTING LIFECYCLE HOOKS ===")
+
+    results = utils.scan_regions_concurrent(regions, _scan_lifecycle_hooks_region)
+    all_hooks = [hook for result in results for hook in result]
+
+    utils.log_success(f"Total lifecycle hooks collected: {len(all_hooks)}")
+    return all_hooks
+
+
 def export_autoscaling_data(account_id: str, account_name: str):
     """
     Export Auto Scaling Group information to an Excel file.
@@ -369,6 +428,11 @@ def export_autoscaling_data(account_id: str, account_name: str):
     utils.log_success(f"Total scaling policies collected: {len(policies)}")
     if policies:
         data_frames['Scaling Policies'] = pd.DataFrame(policies)
+
+    # STEP 4: Collect lifecycle hooks (Phase F: API coverage fix)
+    hooks = collect_lifecycle_hooks(regions)
+    if hooks:
+        data_frames['Lifecycle Hooks'] = pd.DataFrame(hooks)
 
     # Check if we have any data
     if not data_frames:
