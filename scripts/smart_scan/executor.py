@@ -8,6 +8,7 @@ error handling, and result aggregation.
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,6 +60,7 @@ class ScriptExecutor:
         scripts_dir: Optional[str] = None,
         python_executable: str = "python3",
         regions: Optional[List[str]] = None,
+        show_output: bool = True,
     ):
         """
         Initialize the executor.
@@ -69,6 +71,9 @@ class ScriptExecutor:
             python_executable: Python interpreter to use
             regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS.
                      If None, subprocesses use their own configured defaults.
+            show_output: When True, stream script stdout to console (prefixed with
+                         two spaces). When False, capture silently — for future TUI
+                         use where the TUI will consume the stream directly.
         """
         self.scripts = sorted(set(scripts))  # Deduplicate and sort for consistent ordering
 
@@ -80,6 +85,7 @@ class ScriptExecutor:
 
         self.python_executable = python_executable
         self.regions = regions
+        self.show_output = show_output
         self.results: List[ExecutionResult] = []
         self.total_scripts = len(self.scripts)
         self.current_index = 0
@@ -108,7 +114,13 @@ class ScriptExecutor:
 
     def _execute_script(self, script_path: Path) -> ExecutionResult:
         """
-        Execute a single script and capture results.
+        Execute a single script using Popen with streaming output.
+
+        stdout and stderr are drained concurrently by two threads to prevent
+        deadlock on scripts that produce significant output. When show_output
+        is True, each stdout line is printed to the console prefixed with two
+        spaces so the user can follow progress in real time. stderr lines are
+        printed only on failure (after the fact).
 
         Args:
             script_path: Path to the script to execute
@@ -124,92 +136,131 @@ class ScriptExecutor:
         # Snapshot existing output files before execution to detect new ones afterward
         pre_run_files = self._snapshot_output_files()
 
-        try:
-            # Build subprocess environment: force non-interactive mode so scripts
-            # never block on prompts. STRATUSSCAN_AUTO_RUN bypasses all input()
-            # calls; STRATUSSCAN_REGIONS passes the caller's region selection.
-            env = os.environ.copy()
-            env["STRATUSSCAN_AUTO_RUN"] = "1"
-            if self.regions:
-                env["STRATUSSCAN_REGIONS"] = ",".join(self.regions)
+        # Build subprocess environment: force non-interactive mode so scripts
+        # never block on prompts. STRATUSSCAN_AUTO_RUN bypasses all input()
+        # calls; STRATUSSCAN_REGIONS passes the caller's region selection.
+        env = os.environ.copy()
+        env["STRATUSSCAN_AUTO_RUN"] = "1"
+        if self.regions:
+            env["STRATUSSCAN_REGIONS"] = ",".join(self.regions)
 
-            # Execute the script. stdin=DEVNULL prevents any accidental reads
-            # from the terminal; all output is captured for the execution log.
-            result = subprocess.run(
+        stdout_lines: List[str] = []
+        stderr_lines: List[str] = []
+
+        def _drain(stream, lines: List[str], show: bool = False) -> None:
+            """Drain a stream into lines, optionally printing each line."""
+            for line in stream:
+                line = line.rstrip("\n")
+                lines.append(line)
+                if show and line.strip():
+                    print(f"  {line}")
+
+        try:
+            proc = subprocess.Popen(
                 [self.python_executable, str(script_path)],
-                capture_output=True,
-                text=True,
-                timeout=1800,  # 30 minute timeout per script
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
+                text=True,
                 env=env,
             )
 
+            t_out = threading.Thread(
+                target=_drain,
+                args=(proc.stdout, stdout_lines, self.show_output),
+            )
+            t_err = threading.Thread(
+                target=_drain,
+                args=(proc.stderr, stderr_lines, False),
+            )
+            t_out.start()
+            t_err.start()
+
+            # Join with a 30-minute total timeout
+            t_out.join(timeout=1800)
+            t_err.join(timeout=1800)
+
+            timed_out = t_out.is_alive() or t_err.is_alive()
+            if timed_out:
+                proc.kill()
+
+            try:
+                return_code = proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                return_code = -1
+                timed_out = True
+
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
+            success = return_code == 0 and not timed_out
 
-            # Check if execution was successful
-            success = result.returncode == 0
-
-            # Try to find output file by detecting newly created Excel files
-            output_file = self._find_output_file(script_name, pre_run_files)
-
-            # Get error message if failed
-            error_message = None
-            full_error_message = None
-            if not success:
-                full_error_message = result.stderr.strip() if result.stderr else "Unknown error"
-                # Truncate for console display; full text persisted in full_error_message
-                error_message = (
-                    full_error_message[:100] + "..."
-                    if len(full_error_message) > 100
-                    else full_error_message
+            if timed_out:
+                utils.log_error(f"✗ {script_name} timed out after 30 minutes", None)
+                return ExecutionResult(
+                    script=script_name,
+                    success=False,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_seconds=duration,
+                    return_code=-1,
+                    error_message="Execution timed out (30 minutes)",
                 )
 
-            execution_result = ExecutionResult(
+            output_file = self._find_output_file(script_name, pre_run_files)
+
+            # Build error context: prefer stderr, fall back to last 20 stdout lines
+            full_error = (
+                "\n".join(stderr_lines).strip()
+                or "\n".join(stdout_lines[-20:]).strip()
+                or "Unknown error"
+            )
+            error_message: Optional[str] = None
+            full_error_message: Optional[str] = None
+            if not success:
+                full_error_message = full_error
+                error_message = (
+                    (full_error[:200] + "...") if len(full_error) > 200 else full_error
+                )
+                # Print stderr to console now that we know the script failed
+                if self.show_output and stderr_lines:
+                    for line in stderr_lines:
+                        if line.strip():
+                            print(f"  [stderr] {line}")
+
+            # Format duration inline — avoids constructing a temp ExecutionResult object
+            _secs = int(duration)
+            _h, _m, _s = _secs // 3600, (_secs % 3600) // 60, _secs % 60
+            if _h > 0:
+                _dur_str = f"{_h}h {_m}m {_s}s"
+            elif _m > 0:
+                _dur_str = f"{_m}m {_s}s"
+            else:
+                _dur_str = f"{_s}s"
+
+            if success:
+                utils.log_info(f"✓ {script_name} completed in {_dur_str}")
+            else:
+                utils.log_error(
+                    f"✗ {script_name} failed (code {return_code}): {error_message}", None
+                )
+
+            return ExecutionResult(
                 script=script_name,
                 success=success,
                 start_time=start_time,
                 end_time=end_time,
                 duration_seconds=duration,
-                return_code=result.returncode,
+                return_code=return_code,
                 output_file=output_file,
                 error_message=error_message,
                 full_error_message=full_error_message,
             )
 
-            if success:
-                utils.log_info(
-                    f"✓ {script_name} completed successfully in {execution_result.duration_formatted}"
-                )
-            else:
-                utils.log_error(
-                    f"✗ {script_name} failed with code {result.returncode}: {error_message or 'Script execution failed'}",
-                )
-
-            return execution_result
-
-        except subprocess.TimeoutExpired:
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-
-            utils.log_error(f"✗ {script_name} timed out after 30 minutes", None)
-
-            return ExecutionResult(
-                script=script_name,
-                success=False,
-                start_time=start_time,
-                end_time=end_time,
-                duration_seconds=duration,
-                return_code=-1,
-                error_message="Execution timed out (30 minutes)",
-            )
-
         except Exception as e:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-
             utils.log_error(f"✗ {script_name} failed with exception", e)
-
             return ExecutionResult(
                 script=script_name,
                 success=False,
@@ -506,6 +557,7 @@ def execute_scripts(
     show_progress: bool = True,
     save_log: bool = False,
     regions: Optional[List[str]] = None,
+    show_output: bool = True,
 ) -> Dict[str, Any]:
     """
     Execute multiple scripts in batch.
@@ -515,11 +567,13 @@ def execute_scripts(
         show_progress: Whether to show progress display
         save_log: Whether to save execution log to file
         regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS
+        show_output: When True, stream script stdout to console in real time.
+                     When False, capture silently (for future TUI use).
 
     Returns:
         Execution summary dictionary
     """
-    executor = ScriptExecutor(scripts, regions=regions)
+    executor = ScriptExecutor(scripts, regions=regions, show_output=show_output)
     summary = executor.execute_all(show_progress=show_progress)
 
     if save_log:

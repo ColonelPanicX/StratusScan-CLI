@@ -24,6 +24,7 @@ from .analyzer import (
     map_services_to_scripts,
     generate_recommendations,
     analyze_services,
+    analyze_services_from_dict,
     ServiceAnalyzer,
 )
 from .mapping import (
@@ -44,6 +45,7 @@ __all__ = [
     "map_services_to_scripts",
     "generate_recommendations",
     "analyze_services",
+    "analyze_services_from_dict",
     "ServiceAnalyzer",
     # Mapping data
     "SERVICE_SCRIPT_MAP",
