@@ -1,651 +1,439 @@
 # StratusScan-CLI
 
-[![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
-[![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#-project-status)
+[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
+[![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![AWS Commercial](https://img.shields.io/badge/AWS-Commercial-orange.svg)](https://aws.amazon.com/)
 [![AWS GovCloud](https://img.shields.io/badge/AWS-GovCloud%20(US)-blue.svg)](https://aws.amazon.com/govcloud-us/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-> A professional AWS resource export tool for multi-account, multi-region environments. Export detailed AWS infrastructure data to Excel with built-in cost estimation and intelligent optimization recommendations.
+A Python CLI tool for exporting AWS resource inventories to Excel workbooks. Supports 100+ AWS services across Commercial and GovCloud partitions, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Installation](#-installation) • [Documentation](#-documentation) • [Contributing](#-contributing)
+[Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Permissions](#aws-permissions)
 
 ---
 
-## 🚀 Quick Start
-
-Get up and running in 5 minutes:
+## Quick Start
 
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/ColonelPanicX/StratusScan-CLI.git
 cd StratusScan-CLI
 
-# 2. Install dependencies
+# Install dependencies
 pip install boto3 pandas openpyxl
 
-# 3. Configure AWS credentials (choose one)
-aws configure  # Interactive setup
-# OR set environment variables
-export AWS_ACCESS_KEY_ID="your-key"
-export AWS_SECRET_ACCESS_KEY="your-secret"
+# Configure AWS credentials
+aws configure
 
-# 4. Run configuration (recommended but optional)
+# Run the configuration wizard (recommended)
 python configure.py
 
-# 5. Launch StratusScan
+# Launch StratusScan
 python stratusscan.py
 ```
 
-That's it! Select a resource to export from the menu and follow the prompts. Exports are saved to the `output/` directory.
+Select a resource category from the menu and follow the prompts. Exports are saved to the `output/` directory as `.xlsx` files.
 
 ---
 
-## ✨ Features
+## Features
 
 ### Core Capabilities
-- **🎯 Centralized Menu Interface**: Easy-to-use hierarchical menu for all export tools
-- **🌍 Multi-Region Support**: Scan resources across specific regions or all AWS regions
-- **🏢 Account Mapping**: Translate AWS account IDs to friendly organization names
-- **📊 Standardized Exports**: Consistent Excel output with timestamp-based filenames
-- **🔐 Read-Only Operations**: Safe, non-destructive AWS resource scanning
 
-### Advanced Features
-- **🧠 Smart Scan**: Intelligent script recommendations based on discovered AWS services with batch execution
-- **💰 Cost Estimation**: Built-in cost calculators for RDS, S3, NAT Gateway, and EC2 with pricing data
-- **🎯 Optimization Engine**: Intelligent recommendations for cost savings and resource optimization
-- **🔄 Progress Checkpointing**: Resume interrupted long-running operations automatically
-- **✅ Dry-Run Mode**: Validate exports before execution with built-in validation
-- **🔒 Data Sanitization**: Automatic detection and masking of sensitive data in exports
-- **📋 Comprehensive Reports**: All-in-one reports for Compute, Storage, and Network resources
+- **Hierarchical menu interface**: Organized by resource category with consistent navigation
+- **Multi-region scanning**: Scan specific regions or all regions; concurrent execution for performance
+- **Dual-partition support**: Full AWS Commercial and AWS GovCloud (US) support with automatic FIPS endpoint injection
+- **Account mapping**: Translate AWS account IDs to friendly names via `config.json`
+- **Standardized Excel output**: Consistent multi-sheet workbooks with timestamp-based filenames
+- **Read-only operations**: No write permissions required; safe for production environments
 
-### Quality & Reliability
-- **✅ 250+ Automated Tests**: Comprehensive test coverage with pytest
-- **🔧 Error Handling**: Standardized error handling with automatic retry and exponential backoff
-- **📝 Detailed Logging**: Complete audit trails with console and file output
-- **🔍 Type Safety**: Full type hints for improved IDE support and static analysis
-- **🛡️ Security Scanning**: Pre-commit hooks with Bandit and credential detection
+### Smart Scan
+
+**Smart Scan** automates the discovery-to-export workflow. Launch it from the StratusScan main menu:
+
+1. **Service Discovery**: Scans your AWS account to identify which services are actively in use
+2. **Script Recommendations**: Maps discovered services to relevant export scripts
+3. **Scope Selection**: Choose Quick Scan (all recommended scripts) or Deep Scan (full catalog)
+4. **Batch Execution**: Runs selected scripts sequentially with real-time progress output and a Markdown summary report
+
+### Cost Estimation
+
+Built-in cost reference data for EC2 and RDS, sourced from AWS pricing and stored as static CSVs in `reference/`. No live pricing API calls at runtime.
+
+### GovCloud Support
+
+- Automatic partition detection from caller ARN or region
+- FIPS endpoints injected automatically for `us-gov-west-1` and `us-gov-east-1`
+- Service availability checks guard against calling services unavailable in GovCloud (Cost Explorer, Global Accelerator, Rekognition, Cognito, Comprehend, Connect, Bedrock, and others)
+- Four IAM policy files covering Commercial/GovCloud × required/optional permission sets
 
 ---
 
-## 📋 Installation
+## Installation
 
 ### Requirements
 
-- **Python**: 3.9 or higher
-- **AWS Access**: Configured credentials (CLI, environment variables, or IAM role)
-- **Permissions**: Read-only access to AWS resources ([see details](#-aws-permissions))
+- Python 3.9 or higher
+- AWS credentials configured (CLI, environment variables, or IAM instance profile)
+- Read-only AWS permissions ([see details](#aws-permissions))
 
-### Install Dependencies
-
-The scripts will prompt to install missing packages automatically, or you can install them manually:
+### Runtime Dependencies
 
 ```bash
 pip install boto3 pandas openpyxl
 ```
 
-### Developer Installation
+Missing packages are detected at script startup with an install prompt, but pre-installing is recommended.
 
-For contributors (includes testing and development tools):
+### Developer Installation
 
 ```bash
 pip install -e ".[dev]"
-pre-commit install  # Optional: Enable automated quality checks
 ```
+
+Includes pytest, moto, ruff, black, and mypy.
 
 ### AWS Authentication
 
-Configure your AWS credentials using one of these methods:
-
-**Option 1: AWS CLI (Recommended)**
+**AWS CLI (recommended)**
 ```bash
 aws configure
-AWS Access Key ID: [Your AWS Access Key]
-AWS Secret Access Key: [Your AWS Secret Key]
-Default region name: us-east-1
-Default output format: json
 ```
 
-**Option 2: Environment Variables**
+**Environment variables**
 ```bash
-export AWS_ACCESS_KEY_ID="your-aws-access-key"
-export AWS_SECRET_ACCESS_KEY="your-aws-secret-key"
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
 export AWS_DEFAULT_REGION="us-east-1"
 ```
 
-**Option 3: IAM Instance Profile**
-If running on EC2, credentials are automatically provided via the instance profile.
+**IAM instance profile**: Credentials are picked up automatically when running on EC2.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-StratusScan uses a `config.json` file for account mappings and preferences.
+StratusScan reads `config.json` for account mappings and default regions. The file is created automatically from `config-template.json` on first run.
 
-### Interactive Setup (Recommended)
-
-Run the configuration wizard:
+### Configuration Wizard
 
 ```bash
-python configure.py
+python configure.py            # Interactive setup
+python configure.py --validate  # Full validation (non-interactive)
+python configure.py --perms     # Permissions check only
 ```
 
-This interactive tool will guide you through:
-- Setting up account ID to name mappings
-- Configuring default AWS regions
-- Validating AWS permissions
-- Checking dependencies
+The wizard covers account ID-to-name mappings, default region selection (with presets for common setups), and AWS permission validation.
 
 ### Manual Configuration
-
-Alternatively, create `config.json` manually:
 
 ```json
 {
   "account_mappings": {
     "123456789012": "PROD-ACCOUNT",
-    "234567890123": "DEV-ACCOUNT",
-    "345678901234": "TEST-ACCOUNT"
+    "234567890123": "DEV-ACCOUNT"
   },
   "organization_name": "YOUR-ORGANIZATION",
   "default_regions": ["us-east-1", "us-west-2"],
-  "resource_preferences": {
-    "ec2": {
-      "default_region": "us-east-1"
-    }
-  },
   "enabled_services": {
     "trusted_advisor": {
       "enabled": true,
-      "note": "Available in AWS Commercial"
+      "note": "Requires Business or Enterprise support plan"
     }
   }
 }
 ```
 
+### CI / Unattended Execution
+
+```bash
+STRATUSSCAN_AUTO_RUN=1 STRATUSSCAN_REGIONS=us-east-1,us-west-2 python scripts/ec2_export.py
+```
+
 ---
 
-## 📖 Usage
+## Usage
 
-### Main Menu Interface (Recommended)
+### Main Menu
 
 ```bash
 python stratusscan.py
 ```
 
-Navigate through the hierarchical menu to select resources:
-
-1. Choose a category (Compute, Storage, Network, IAM, Security, Cost)
-2. Select specific resource type or comprehensive report
-3. Choose region(s) to scan
-4. Wait for export to complete
-5. Find your Excel file in `output/` directory
+Navigate the hierarchical menu by category (Compute, Storage, Network, IAM, Security, Cost, Smart Scan). Each exporter prompts for region selection and saves its output to `output/`.
 
 ### Direct Script Execution
 
-Run individual export scripts directly:
+Individual exporters can be run standalone:
 
 ```bash
 python scripts/ec2_export.py
-python scripts/route53_export.py
-python scripts/iam_comprehensive_export.py
+python scripts/iam_export.py
+python scripts/s3_export.py
 ```
 
-Each script will prompt for required information and save output to `output/`.
+Each script self-contains its region prompting and output logic.
 
-### Smart Scan - Intelligent Export Automation
+### Smart Scan
 
-**Smart Scan** analyzes your AWS environment and recommends the most relevant export scripts to run based on discovered services. This feature saves time by automating the workflow of discovering services and exporting their data.
+Access Smart Scan from the main menu. The workflow:
 
-#### How It Works
-
-1. **Service Discovery**: Run `services_in_use_export.py` to scan your AWS account
-2. **Automatic Analysis**: Smart Scan analyzes the export to identify which services you're using
-3. **Script Recommendations**: Get a curated list of export scripts matching your active services
-4. **Interactive Selection**: Choose which exports to run (or run all with Quick Scan)
-5. **Batch Execution**: Selected scripts run sequentially with real-time progress tracking
-
-#### Usage Examples
-
-**Interactive Mode (Recommended)**:
-```bash
-python scripts/services_in_use_export.py
-# After service discovery completes, you'll be prompted:
-# "Launch Smart Scan analyzer? (y/n):"
-```
-
-**Automatic Smart Scan**:
-```bash
-python scripts/services_in_use_export.py --smart-scan
-# Automatically launches Smart Scan after service discovery
-```
-
-**Quick Scan (Full Automation)**:
-```bash
-python scripts/services_in_use_export.py --smart-scan --quick-scan
-# Discovers services AND runs all recommended scripts automatically
-```
-
-**Skip Smart Scan**:
-```bash
-python scripts/services_in_use_export.py --no-smart-scan
-# Only run service discovery, skip Smart Scan prompt
-```
-
-#### Interactive Smart Scan Menu
-
-When Smart Scan launches, you'll see a menu with these options:
-
-1. **Quick Scan** - Run all recommended scripts immediately (fastest)
-2. **Custom Selection** - Choose specific scripts by category or service
-3. **View Checklist** - See complete list of recommendations
-4. **Save & Exit** - Save checklist to file for later review
-5. **Exit** - Skip batch execution
-
-#### Features
-
-- **Intelligent Mapping**: 160+ AWS services mapped to 166 export scripts
-- **Service Aliases**: Recognizes service name variations (e.g., "EC2", "Amazon EC2")
-- **Always-Run Scripts**: Core security/compliance scripts (GuardDuty, CloudTrail, IAM, etc.)
-- **Category Grouping**: Scripts organized by function (Compute, Storage, Network, etc.)
-- **Progress Tracking**: Real-time execution status with `[X/Total] (percent%)` display
-- **Execution Summary**: Success/failure stats with duration for each script
-- **Execution Logs**: Detailed logs saved automatically for audit trails
-
-#### Example Workflow
-
-```bash
-# 1. Discover active services
-$ python scripts/services_in_use_export.py --smart-scan
-
-# Smart Scan analyzes your environment...
-# Found 23 active services
-
-# 2. Choose what to run
-Smart Scan Menu:
-  1. Quick Scan (run all 31 recommended scripts)
-  2. Custom Selection
-  3. View Checklist
-  4. Save & Exit
-  5. Exit
-
-# 3. Watch batch execution
-Executing Scripts
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1/31] (3%) ec2_export.py ✓ Success (2m 15s)
-[2/31] (6%) s3_export.py ✓ Success (1m 45s)
-[3/31] (10%) rds_export.py ✓ Success (3m 30s)
-...
-
-# 4. Review summary
-Execution Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Total Scripts: 31
-Successful: 29
-Failed: 2
-Total Time: 42m 15s
-```
-
-#### Execution Logs
-
-All batch executions are automatically logged to:
-```
-smart-scan-execution-YYYY-MM-DD-HHMMSS.log
-```
-
-The log includes script names, success/failure status, duration, output files, and error messages.
+1. **Discovery phase**: StratusScan scans the account and identifies active AWS services
+2. **Analysis**: Discovered services are mapped to relevant export scripts
+3. **Selection**: Choose Quick Scan (all recommended) or Deep Scan (full catalog), with optional manual deselection
+4. **Execution**: Scripts run sequentially; a Markdown summary report is written on completion
 
 ### Region Selection
 
-When prompted, choose:
-- **`all`**: Scan all AWS commercial regions
-- **Specific region**: e.g., `us-east-1`, `eu-west-1`, `ap-southeast-1`
+When prompted for regions:
+- Enter a specific region code: `us-east-1`, `eu-west-1`, `ap-southeast-2`
+- Enter `all` to scan all opted-in regions for the current partition
+- GovCloud sessions default to `us-gov-west-1` and `us-gov-east-1`
 
-The tool validates regions and provides helpful error messages for invalid selections.
+### Output Archives
 
-### Creating Export Archives
-
-After running multiple exports, create a zip archive:
-
-1. Select **Output Management** from the main menu
-2. Choose **Create Output Archive**
-3. Find the zip file in the root directory with format: `ACCOUNT-NAME-export-MM.DD.YYYY.zip`
+From the main menu, **Output Management > Create Output Archive** zips all files in `output/` to `ACCOUNT-NAME-export-MM.DD.YYYY.zip`.
 
 ---
 
-## 🔐 AWS Permissions
+## AWS Permissions
 
-StratusScan requires **read-only** access to AWS resources. We provide purpose-built IAM policies for both **AWS Commercial** and **AWS GovCloud (US)** environments.
+StratusScan requires read-only access. Four purpose-built IAM policies are provided in `policies/`:
 
-### Recommended Approach: Custom StratusScan Policies
+### AWS Commercial
 
-Choose the policy combination that matches your environment and requirements:
+| Policy file | Purpose |
+|---|---|
+| `commercial-required-permissions.json` | Core StratusScan functionality (~230 actions) |
+| `commercial-optional-permissions.json` | ML/AI, CloudFront, Global Accelerator (~38 additional actions) |
 
-#### AWS Commercial
+### AWS GovCloud (US)
 
-**Minimum Required:**
-- [`policies/commercial-required-permissions.json`](policies/commercial-required-permissions.json) - Core StratusScan functionality (230 actions)
+| Policy file | Purpose |
+|---|---|
+| `govcloud-required-permissions.json` | Core functionality, FedRAMP-compatible |
+| `govcloud-optional-permissions.json` | Available ML/AI services in GovCloud |
 
-**Full Featured (Recommended):**
-- [`policies/commercial-required-permissions.json`](policies/commercial-required-permissions.json) - Core functionality
-- [`policies/commercial-optional-permissions.json`](policies/commercial-optional-permissions.json) - ML/AI, CloudFront, Global Accelerator (38 actions)
+**GovCloud service availability notes:**
+- Global Accelerator, Cost Explorer, Trusted Advisor, Rekognition, Cognito, Comprehend, Connect, and Bedrock are not available in GovCloud — StratusScan skips these automatically
+- CloudFront operates outside the ITAR boundary and is excluded from GovCloud policy files
 
-#### AWS GovCloud (US)
+All policies are compatible with both IAM (attach to users/roles) and IAM Identity Center (use as Permission Set inline policies).
 
-**Minimum Required:**
-- [`policies/govcloud-required-permissions.json`](policies/govcloud-required-permissions.json) - Core functionality (FedRAMP High compliant)
-
-**Full Featured (Recommended):**
-- [`policies/govcloud-required-permissions.json`](policies/govcloud-required-permissions.json) - Core functionality
-- [`policies/govcloud-optional-permissions.json`](policies/govcloud-optional-permissions.json) - ML/AI including Bedrock (34 actions)
-
-**Key Differences for GovCloud:**
-- ❌ Global Accelerator not available (use Route53 latency-based routing)
-- ⚠️ CloudFront operates outside ITAR boundary (not included for compliance)
-- ✅ All core services fully supported including Bedrock (as of November 2024)
-- 🔐 FedRAMP High, DoD SRG IL-2/4/5, FIPS 140-3 compliant
-
-### IAM vs IAM Identity Center
-
-All policies work in **both IAM and IAM Identity Center** with no modifications needed. They have been validated for compatibility with both systems.
-
-**For IAM:** Attach policies to IAM users, roles, or groups
-**For IAM Identity Center:** Use as inline policies in Permission Sets
-
-### Alternative: AWS Managed Policies
-
-For quick setup, you can use AWS managed policies (less granular control):
-
-- `ReadOnlyAccess` - General resource access
-- `IAMReadOnlyAccess` - IAM resources
-- `AWSSupportAccess` - Trusted Advisor (requires Business/Enterprise support)
-- `ComputeOptimizerReadOnlyAccess` - Compute Optimizer recommendations
-- `CostOptimizationHubReadOnlyAccess` - Cost recommendations
-
-### Documentation
-
-For detailed policy information, implementation guides, and service limitations:
-- **[Policies README](policies/README.md)** - Complete policy documentation
-- **[Quick Start Guide](policies/QUICK-START.md)** - Fast implementation instructions
+See [`policies/README.md`](policies/README.md) for full details.
 
 ---
 
-## 📦 Supported AWS Resources
+## Supported AWS Resources
 
-StratusScan supports **100+ AWS resource exporters** across multiple categories:
+StratusScan ships with **100+ export scripts** across these categories:
 
 <details>
-<summary><b>Compute Resources (5 exporters)</b></summary>
+<summary><b>Compute</b></summary>
 
-- **EC2 Instances**: Detailed instance info including OS, size, cost calculations, network config
-- **ECS Clusters**: ECS cluster information, services, tasks, container instances
-- **EKS Clusters**: Kubernetes cluster information, node groups, configurations
-- **RDS Databases**: Database engine, size, storage, connection information
-- **Compute Resources (All-in-One)**: Combined report of all compute resources
+- EC2 Instances — instance details, OS, network config, cost estimates
+- ECS — clusters, services, tasks, container instances
+- EKS — clusters, node groups, configurations
+- RDS — engines, storage, connection details
+- Lambda — functions, runtimes, configurations
+- Auto Scaling Groups — ASGs, instances, scaling policies, lifecycle hooks
+- Elastic Beanstalk, App Runner, Batch, Lightsail
 
 </details>
 
 <details>
-<summary><b>Storage Resources (4 exporters)</b></summary>
+<summary><b>Storage</b></summary>
 
-- **EBS Volumes**: Volume IDs, size, state, attachment info, pricing
-- **EBS Snapshots**: Snapshot IDs, size, encryption status, creation dates
-- **S3 Buckets**: Bucket information including size, object count, region, configuration
-- **Storage Resources (All-in-One)**: Combined report of all storage resources
-
-</details>
-
-<details>
-<summary><b>Network Resources (7 exporters)</b></summary>
-
-- **VPC Resources**: VPCs, subnets, NAT gateways, peering connections, Elastic IPs
-- **Route 53**: Hosted zones, DNS records, resolver endpoints/rules, query logging
-- **Elastic Load Balancers**: Classic, Application, and Network load balancers
-- **Security Groups**: Group details, inbound/outbound rules, resource associations
-- **Network ACLs**: NACL rules, subnet associations, configurations
-- **Route Tables**: Route table information, routes, subnet associations
-- **Network Resources (All-in-One)**: Combined report of all network resources
+- S3 — buckets, encryption, versioning, object counts via CloudWatch metrics
+- EBS — volumes, snapshots, encryption status
+- EFS — file systems, mount targets, access points
+- FSx, Glacier/Archive, Storage Gateway
 
 </details>
 
 <details>
-<summary><b>IAM & Identity Resources (9 exporters)</b></summary>
+<summary><b>Network</b></summary>
 
-- **IAM Comprehensive**: Complete IAM analysis (users, roles, policies, permissions)
-- **IAM Users**: Basic user information and access keys
-- **IAM Roles**: Role details, trust policies, attached permissions
-- **IAM Policies**: Detailed policy analysis with risk assessment
-- **IAM Identity Center Users**: AWS SSO/Identity Center users and assignments
-- **IAM Identity Center Groups**: Group memberships and assignments
-- **IAM Identity Center Permission Sets**: Permission set configurations
-- **IAM Identity Center Comprehensive**: Complete Identity Center analysis
-- **AWS Organizations**: Organizations structure, accounts, organizational units
+- VPC — VPCs, subnets, NAT gateways, peering, Elastic IPs
+- Elastic Load Balancers — Classic, ALB, NLB, target groups, listeners
+- Route 53 — hosted zones, records, resolver endpoints
+- Security Groups, Network ACLs, Route Tables
+- VPN, Direct Connect, Global Accelerator (Commercial only), Transit Gateway
 
 </details>
 
 <details>
-<summary><b>Security Resources (2 exporters)</b></summary>
+<summary><b>IAM and Identity</b></summary>
 
-- **Security Hub**: Security findings, compliance status, remediation guidance
-- **Services in Use**: Analysis of AWS services currently in use
+- IAM — users, roles, policies, MFA devices, access keys, group memberships
+- IAM Identity Center — users, groups, permission sets, assignments
+- AWS Organizations — structure, accounts, OUs, SCPs
+- AWS Access Analyzer — findings (external access + unused access analyzers)
 
 </details>
 
 <details>
-<summary><b>Cost Optimization Resources (4 exporters)</b></summary>
+<summary><b>Security</b></summary>
 
-- **Billing Export**: AWS billing and cost data
-- **Cost Optimization Hub**: Recommendations and savings opportunities
-- **Compute Optimizer**: Recommendations for EC2, Auto Scaling, EBS, Lambda
-- **Trusted Advisor**: Cost optimization checks and recommendations (requires Business+ support)
+- Security Hub — findings, standards, compliance status
+- GuardDuty — detectors, findings
+- CloudTrail — trails, event selectors
+- Config — rules, compliance status
+- KMS — keys, key policies
+- WAF — Web ACLs, rules, IP sets, rule groups
+- Certificate Manager, Secrets Manager, Macie
+
+</details>
+
+<details>
+<summary><b>Data and Analytics</b></summary>
+
+- DynamoDB, Redshift, ElastiCache, MemoryDB
+- Kinesis, MSK (Kafka), OpenSearch
+- Glue, Athena
+- Neptune — clusters, instances, snapshots, Neptune Analytics graphs
+
+</details>
+
+<details>
+<summary><b>Cost and Governance</b></summary>
+
+- AWS Backup — vaults, plans, selections, jobs
+- Cost Optimization Hub (Commercial only)
+- Compute Optimizer (Commercial only)
+- Trusted Advisor (Commercial only; requires Business+ support)
+- Reserved Instances, Savings Plans
 
 </details>
 
 ---
 
-## 📂 Output Files
+## Output Files
 
-### File Naming Convention
-
-All exports follow a consistent naming pattern:
+All exports use a consistent naming convention:
 
 ```
-{ACCOUNT-NAME}-{RESOURCE-TYPE}-{SUFFIX}-export-{MM.DD.YYYY}.xlsx
+{ACCOUNT-NAME}-{resource-type}-{suffix}-export-{MM.DD.YYYY}.xlsx
 ```
 
-**Examples:**
-- `PROD-ACCOUNT-ec2-running-export-10.27.2025.xlsx`
-- `DEV-ACCOUNT-route53-all-export-10.27.2025.xlsx`
-- `PROD-ACCOUNT-iam-comprehensive-export-10.27.2025.xlsx`
+Examples:
+```
+PROD-ACCOUNT-ec2-all-export-03.03.2026.xlsx
+DEV-ACCOUNT-iam-all-export-03.03.2026.xlsx
+PROD-ACCOUNT-waf-all-export-03.03.2026.xlsx
+```
 
-**Archive:**
-- `ACCOUNT-NAME-export-MM.DD.YYYY.zip`
-
----
-
-## 📚 Documentation
-
-- **[API Reference](API_REFERENCE.md)** - Complete API documentation with examples
-- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute with script templates
-- **[Testing Guide](TESTING.md)** - Running tests and writing new tests
-- **[Wiki](https://github.com/ColonelPanicX/StratusScan-CLI/wiki)** - Detailed guides and tutorials
+Most exports produce multi-sheet workbooks — one sheet per resource type (e.g., the ELB export has Load Balancers, Target Groups, and Listeners sheets).
 
 ---
 
-## ⚠️ Known Issues
+## Troubleshooting
 
-The following bugs are confirmed in v0.1.0 and are tracked for resolution in **v0.2.0**. Workarounds are noted where available.
-
-### Silent Export Failures — 12 Scripts
-
-The scripts listed below execute without crashing but **return no data**. This is caused by a keyword argument mismatch introduced during the `sslib` refactor in Sprint 4. Each affected script passes an unsupported `resource_type=` argument to `scan_regions_concurrent()`, which the function does not accept. The error is caught internally and the script exits with code 0, making the failure invisible in the summary output.
-
-**Affected exporters:** `acm_export`, `api_gateway_export`, `cognito_export`, `dynamodb_export`, `ecr_export`, `elasticache_export`, `kms_export`, `opensearch_export`, `redshift_export`, `secrets_manager_export`, `transit_gateway_export`, `vpn_export`
-
-**Workaround:** None in v0.1.0. All 12 will be fixed in the v0.2.0 backend stabilization pass.
-
-### ECS Export Crash
-
-`ecs_export.py` crashes on execution with `NameError: name 'all_ecs_resources' is not defined`. ECS data cannot be exported in this release.
-
-**Workaround:** None. Fixed in v0.2.0.
-
-### Multi-Region Archive Duplicate Filenames
-
-When running aggregate exports (`compute_resources`, `storage_resources`, `network_resources`, `database_resources`) across multiple regions, the output ZIP archive contains duplicate filenames for EC2, Lambda, and AMI exports. The second region's data silently overwrites the first in the archive.
-
-**Workaround:** Use single-region scans, or extract individual `.xlsx` files before they are zipped. Fixed in v0.2.0.
-
-### Test Suite Failures (13 tests)
-
-13 pre-existing test failures exist in `tests/smart_scan/` (test_mapping, test_executor, test_analyzer) and `tests/test_utils.py`. These do not affect runtime behavior but will cause CI to report failures on those test files.
-
-**Workaround:** `pytest -m "not slow"` passes cleanly. Fixed in v0.2.0.
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Missing Dependencies**
+**Missing dependencies**
 ```bash
-# Install required packages
 pip install boto3 pandas openpyxl
 ```
 
-**AWS Credentials Not Found**
+**AWS credentials not found**
 ```bash
-# Configure AWS CLI
 aws configure
-
-# Or set environment variables
-export AWS_ACCESS_KEY_ID="your-key"
-export AWS_SECRET_ACCESS_KEY="your-secret"
+# or
+export AWS_ACCESS_KEY_ID="..." AWS_SECRET_ACCESS_KEY="..."
 ```
 
-**Permission Denied Errors**
-- Ensure your IAM user/role has read-only access to AWS resources
-- Verify you have the necessary policies attached ([see permissions](#-aws-permissions))
-- For Trusted Advisor: Requires AWS Business or Enterprise Support plan
+**Permission denied errors**
+- Verify read-only policies are attached ([see permissions](#aws-permissions))
+- Trusted Advisor requires AWS Business or Enterprise Support
+- Cost Explorer requires opt-in and appropriate permissions
 
-**Invalid Region Errors**
-- Use valid AWS commercial region codes (e.g., `us-east-1`, not `us-east-1a`)
-- Type `all` to scan all regions
-- The tool validates regions and provides helpful error messages
+**GovCloud connection issues**
+- StratusScan auto-injects FIPS endpoints; no manual configuration needed
+- Verify credentials are for a GovCloud partition (`aws-us-gov`) profile
 
-### Getting Help
-
-1. Check the log files in `logs/` directory for detailed error messages
-2. Verify your AWS credentials: `aws sts get-caller-identity`
-3. Run `python configure.py --perms` to validate AWS permissions
-4. Review our [Wiki](https://github.com/ColonelPanicX/StratusScan-CLI/wiki) for detailed guides
-5. Open an issue on GitHub with logs and error details
+**Getting help**
+1. Check `logs/` for detailed error messages
+2. Validate credentials: `aws sts get-caller-identity`
+3. Validate permissions: `python configure.py --perms`
+4. Open an issue on GitHub with the relevant log excerpt
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! We've made it easy to get started:
-
-- **⚡ 30-Minute Onboarding**: Complete [contributor guide](CONTRIBUTING.md) with script templates
-- **🧪 Automated Testing**: 250+ tests with pytest and CI/CD pipeline
-- **✨ Code Quality**: Pre-commit hooks with Black, Ruff, and Bandit
-- **📚 API Documentation**: Full [API reference](API_REFERENCE.md) with examples
-- **🔒 Security First**: Automated credential detection and security scanning
-
-### Quick Start for Contributors
+## Contributing
 
 ```bash
-# 1. Fork and clone
+# Fork, clone, and install dev deps
 git clone https://github.com/yourusername/StratusScan-CLI.git
 cd StratusScan-CLI
-
-# 2. Install development dependencies
 pip install -e ".[dev]"
 
-# 3. Set up pre-commit hooks (optional)
-pre-commit install
-
-# 4. Run tests
+# Run tests
 pytest
+pytest -m "not slow"   # Skip slow integration tests
 
-# 5. Make your changes and submit a PR
+# Code quality
+ruff check .
+black .
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines and script templates.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the exporter script template and contribution guidelines.
 
 ---
 
-## 📄 License
+## Project Status
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+**Current version: 0.3.0-beta**
 
----
+StratusScan-CLI is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
 
-## 🙏 Acknowledgments
+### What's in v0.3.0
 
-- Built with assistance from [Claude Code](https://claude.ai/code)
-- Powered by [AWS SDK for Python (Boto3)](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
-- Excel export using [pandas](https://pandas.pydata.org/) and [openpyxl](https://openpyxl.readthedocs.io/)
-- Testing with [pytest](https://pytest.org/) and [moto](https://github.com/getmoto/moto)
+- **Smart Scan redesign**: Fully integrated orchestrator in the main menu. Replaces the old `services_in_use_export.py` flow. Supports Quick Scan and Deep Scan modes with Markdown execution reports.
+- **API correctness audit**: 6-PR remediation pass across all 107 exporter scripts covering runtime crashes, pagination gaps, GovCloud guard improvements, inaccurate field mappings, and missing API coverage (lifecycle hooks, target groups, listeners, rule groups, backup jobs, Neptune Analytics, and more).
+- **Configure.py refactor**: Preset-based region selection, streamlined 4-step flow, improved GovCloud detection.
+- **Main menu styling**: Box-drawing UI consistent with configure.py design standard applied throughout.
 
----
+### Roadmap
 
-## 📊 Project Status
-
-**Current Version**: 0.1.0 — **Beta**
-
-> ⚠️ StratusScan-CLI is currently in **Beta**. The API and output format may change
-> before the 1.0.0 stable release. Breaking changes will be documented in the changelog.
-> All development happens on the `dev` branch.
-
-- ✅ **250+ Automated Tests** - Comprehensive test coverage
-- ✅ **Cost Estimation** - Built-in AWS cost calculators
-- ✅ **Type Safety** - Full type hints throughout codebase
-- ✅ **Security Scanning** - Pre-commit hooks with Bandit
-- ✅ **40+ Exporters** - Comprehensive AWS resource coverage
+| Version | Target | Notes |
+|---|---|---|
+| `0.3.x` | Patch releases | S3 large-account performance, coverage gaps |
+| `1.0.0` | Planned | Full Textual-based TUI; subprocess output streamed live |
 
 ---
 
-## 🔖 Versioning Strategy
+## Versioning
 
-StratusScan-CLI uses [Semantic Versioning (SemVer)](https://semver.org/).
+StratusScan-CLI uses [Semantic Versioning](https://semver.org/).
 
-- **Current series**: `0.x.x` — pre-release, active development
-- **Stable release**: `1.0.0` — planned once core API and export format stabilize
-- **Breaking changes**: may occur in any `0.x` release; documented in the changelog
-- **Previous versions**: the `3.x.x` series is deprecated and superseded by `0.1.0`
-
-| Version Range | Status | Notes |
+| Series | Status | Notes |
 |---|---|---|
 | `3.x.x` | Deprecated | Superseded by governance reset at `0.1.0` |
-| `0.1.x` | Active (Beta) | Current development line |
-| `1.0.0` | Planned | Stable release target |
+| `0.1.x` | Superseded | Initial relaunch |
+| `0.2.x` | Superseded | Backend stabilization, pricing data v2 |
+| `0.3.x` | Current (Beta) | Smart Scan orchestrator, full API correctness audit |
+| `1.0.0` | Planned | Textual TUI, stable API |
 
 ---
 
-## 🌿 Branch Workflow
+## Branch Workflow
 
-| Branch | Purpose | Target |
-|---|---|---|
-| `dev` | Primary development — all feature work merges here first | `main` (release only) |
-| `main` | Stable release snapshots only — no direct commits | — |
-| `feature/*` | Short-lived feature branches | `dev` via PR |
+| Branch | Purpose |
+|---|---|
+| `dev` | Primary development — all PRs target `dev` first |
+| `main` | Release snapshots only — no direct commits |
+| `feat/*`, `fix/*` | Short-lived topic branches targeting `dev` |
 
-**All work must originate from a GitHub Issue.** PRs must reference issues using GitHub
-closing keywords (`Closes #N`, `Fixes #N`, `Resolves #N`).
-
-```
-feature/* → dev → main (release merge only)
-```
+All work originates from a GitHub Issue. PRs must reference issues using closing keywords (`Closes #N`, `Fixes #N`).
 
 ---
 
-## 📞 Support
+## License
 
-For questions, issues, or feature requests, please open an issue on GitHub.
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
 
-**Note**: StratusScan supports both **AWS Commercial** and **AWS GovCloud (US)** environments with 96.8% service compatibility. Always verify compliance with your organization's security policies and applicable regulations (FedRAMP, ITAR, etc.) before use.
+---
+
+## Acknowledgments
+
+Built with assistance from [Claude Code](https://claude.ai/code). Powered by [AWS SDK for Python (Boto3)](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html). Excel export via [pandas](https://pandas.pydata.org/) and [openpyxl](https://openpyxl.readthedocs.io/). AWS mocking in tests via [moto](https://github.com/getmoto/moto).
