@@ -430,11 +430,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Pipelines': len(pipelines),
-            'Recent Executions': len(executions),
-            'Webhooks': len(webhooks)
-        })
     else:
         utils.log_warning("No AWS CodePipeline data found to export")
 

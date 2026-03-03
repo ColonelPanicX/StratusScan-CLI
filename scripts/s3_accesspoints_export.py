@@ -523,11 +523,6 @@ def main():
     output_file = export_to_excel(all_standard_aps, mraps, all_ol_aps, account_name)
 
     if output_file:
-        utils.log_export_summary(
-            "S3 Access Points",
-            len(all_standard_aps) + len(mraps) + len(all_ol_aps),
-            output_file
-        )
         print("\nScript execution completed successfully.")
     else:
         utils.log_error("Failed to export data. Please check the logs.")

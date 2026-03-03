@@ -443,12 +443,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Projects': len(projects),
-            'Project Versions': len(versions),
-            'Face Collections': len(collections),
-            'Stream Processors': len(stream_processors)
-        })
     else:
         utils.log_warning("No Amazon Rekognition data found to export")
 

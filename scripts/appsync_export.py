@@ -508,17 +508,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     if utils.save_multiple_dataframes_to_excel(dataframes, filename):
-        utils.log_export_summary(
-            filename=filename,
-            total_items=len(apis) + len(data_sources) + len(resolvers) + len(api_keys),
-            details={
-                'GraphQL APIs': len(apis),
-                'Data Sources': len(data_sources),
-                'Resolvers': len(resolvers),
-                'API Keys': len(api_keys)
-            }
-        )
-
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

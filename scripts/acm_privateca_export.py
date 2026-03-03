@@ -636,12 +636,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Private CAs': len(cas),
-            'Certificates': len(certificates),
-            'Certificate Templates': len(templates),
-            'CA Permissions': len(permissions)
-        })
     else:
         utils.log_warning("No ACM Private CA data found to export")
 

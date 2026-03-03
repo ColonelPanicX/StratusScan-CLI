@@ -429,11 +429,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
                       len(all_ses_templates) + len(all_pinpoint_apps) +
                       len(all_pinpoint_campaigns) + len(all_pinpoint_segments))
 
-    utils.log_export_summary(
-        total_items=total_resources,
-        item_type='SES/Pinpoint Resources',
-        filename=filename
-    )
     utils.log_success("SES/Pinpoint export completed successfully!")
 
 

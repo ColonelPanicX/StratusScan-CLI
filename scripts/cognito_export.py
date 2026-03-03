@@ -814,13 +814,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'User Pools': len(user_pools),
-            'Identity Pools': len(identity_pools),
-            'User Pool Clients': len(clients),
-            'Identity Providers': len(providers),
-            'User Pool Groups': len(groups)
-        })
     else:
         utils.log_warning("No Cognito data found to export")
 
