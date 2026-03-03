@@ -242,9 +242,11 @@ def scan_api_stages_in_region(region: str) -> List[Dict[str, Any]]:
     try:
         apigw_client = utils.get_boto3_client('apigateway', region_name=region)
 
-        # Get REST APIs first
-        apis_response = apigw_client.get_rest_apis()
-        apis = apis_response.get('items', [])
+        # Get REST APIs (paginated)
+        apis = []
+        paginator = apigw_client.get_paginator('get_rest_apis')
+        for page in paginator.paginate():
+            apis.extend(page.get('items', []))
 
         for api in apis:
             api_id = api.get('id', '')

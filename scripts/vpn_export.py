@@ -475,9 +475,11 @@ def collect_client_vpn_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
         try:
             ec2 = utils.get_boto3_client('ec2', region_name=region)
 
-            # Describe Client VPN endpoints
-            response = ec2.describe_client_vpn_endpoints()
-            endpoint_list = response.get('ClientVpnEndpoints', [])
+            # Describe Client VPN endpoints (paginated)
+            endpoint_list = []
+            paginator = ec2.get_paginator('describe_client_vpn_endpoints')
+            for page in paginator.paginate():
+                endpoint_list.extend(page.get('ClientVpnEndpoints', []))
 
             for endpoint in endpoint_list:
                 endpoint_id = endpoint.get('ClientVpnEndpointId', '')
@@ -572,9 +574,11 @@ def scan_client_vpn_authorization_rules_in_region(region: str) -> List[Dict[str,
     try:
         ec2 = utils.get_boto3_client('ec2', region_name=region)
 
-        # First get all Client VPN endpoints
-        endpoints_response = ec2.describe_client_vpn_endpoints()
-        endpoint_list = endpoints_response.get('ClientVpnEndpoints', [])
+        # First get all Client VPN endpoints (paginated)
+        endpoint_list = []
+        endpoints_paginator = ec2.get_paginator('describe_client_vpn_endpoints')
+        for page in endpoints_paginator.paginate():
+            endpoint_list.extend(page.get('ClientVpnEndpoints', []))
 
         for endpoint in endpoint_list:
             endpoint_id = endpoint.get('ClientVpnEndpointId', '')

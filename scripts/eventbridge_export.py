@@ -85,9 +85,12 @@ def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
 
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
-        buses_response = events_client.list_event_buses()
+        buses = []
+        buses_paginator = events_client.get_paginator('list_event_buses')
+        for page in buses_paginator.paginate():
+            buses.extend(page.get('EventBuses', []))
 
-        for bus in buses_response.get('EventBuses', []):
+        for bus in buses:
             bus_name = bus.get('Name', 'default')
             try:
                 paginator = events_client.get_paginator('list_rules')
@@ -136,52 +139,56 @@ def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
 
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
-        buses_response = events_client.list_event_buses()
+        buses = []
+        buses_paginator = events_client.get_paginator('list_event_buses')
+        for page in buses_paginator.paginate():
+            buses.extend(page.get('EventBuses', []))
 
-        for bus in buses_response.get('EventBuses', []):
+        for bus in buses:
             bus_name = bus.get('Name', 'default')
             try:
-                rules_response = events_client.list_rules(EventBusName=bus_name)
-                for rule in rules_response.get('Rules', []):
-                    rule_name = rule.get('Name', '')
-                    try:
-                        targets_response = events_client.list_targets_by_rule(Rule=rule_name, EventBusName=bus_name)
-                        for target in targets_response.get('Targets', []):
-                            target_arn = target.get('Arn', 'N/A')
+                rules_paginator = events_client.get_paginator('list_rules')
+                for rules_page in rules_paginator.paginate(EventBusName=bus_name):
+                    for rule in rules_page.get('Rules', []):
+                        rule_name = rule.get('Name', '')
+                        try:
+                            targets_response = events_client.list_targets_by_rule(Rule=rule_name, EventBusName=bus_name)
+                            for target in targets_response.get('Targets', []):
+                                target_arn = target.get('Arn', 'N/A')
 
-                            # Determine target type from ARN
-                            target_type = 'Unknown'
-                            if ':lambda:' in target_arn:
-                                target_type = 'Lambda'
-                            elif ':sqs:' in target_arn:
-                                target_type = 'SQS'
-                            elif ':sns:' in target_arn:
-                                target_type = 'SNS'
-                            elif ':kinesis:' in target_arn:
-                                target_type = 'Kinesis'
-                            elif ':states:' in target_arn:
-                                target_type = 'Step Functions'
-                            elif ':events:' in target_arn:
-                                target_type = 'Event Bus'
-                            elif ':logs:' in target_arn:
-                                target_type = 'CloudWatch Logs'
+                                # Determine target type from ARN
+                                target_type = 'Unknown'
+                                if ':lambda:' in target_arn:
+                                    target_type = 'Lambda'
+                                elif ':sqs:' in target_arn:
+                                    target_type = 'SQS'
+                                elif ':sns:' in target_arn:
+                                    target_type = 'SNS'
+                                elif ':kinesis:' in target_arn:
+                                    target_type = 'Kinesis'
+                                elif ':states:' in target_arn:
+                                    target_type = 'Step Functions'
+                                elif ':events:' in target_arn:
+                                    target_type = 'Event Bus'
+                                elif ':logs:' in target_arn:
+                                    target_type = 'CloudWatch Logs'
 
-                            retry_policy = target.get('RetryPolicy', {})
-                            targets_data.append({
-                                'Region': region,
-                                'Event Bus': bus_name,
-                                'Rule Name': rule_name,
-                                'Target ID': target.get('Id', 'N/A'),
-                                'Target Type': target_type,
-                                'Target ARN': target_arn,
-                                'Role ARN': target.get('RoleArn', 'N/A'),
-                                'Has Input Transformer': 'Yes' if target.get('InputTransformer') else 'No',
-                                'Has Dead Letter Queue': 'Yes' if target.get('DeadLetterConfig') else 'No',
-                                'Max Retry Attempts': retry_policy.get('MaximumRetryAttempts', 'Default'),
-                                'Max Event Age (seconds)': retry_policy.get('MaximumEventAgeInSeconds', 'Default')
-                            })
-                    except Exception as e:
-                        utils.log_warning(f"Could not get targets for rule {rule_name}: {e}")
+                                retry_policy = target.get('RetryPolicy', {})
+                                targets_data.append({
+                                    'Region': region,
+                                    'Event Bus': bus_name,
+                                    'Rule Name': rule_name,
+                                    'Target ID': target.get('Id', 'N/A'),
+                                    'Target Type': target_type,
+                                    'Target ARN': target_arn,
+                                    'Role ARN': target.get('RoleArn', 'N/A'),
+                                    'Has Input Transformer': 'Yes' if target.get('InputTransformer') else 'No',
+                                    'Has Dead Letter Queue': 'Yes' if target.get('DeadLetterConfig') else 'No',
+                                    'Max Retry Attempts': retry_policy.get('MaximumRetryAttempts', 'Default'),
+                                    'Max Event Age (seconds)': retry_policy.get('MaximumEventAgeInSeconds', 'Default')
+                                })
+                        except Exception as e:
+                            utils.log_warning(f"Could not get targets for rule {rule_name}: {e}")
             except Exception as e:
                 utils.log_warning(f"Could not process bus {bus_name}: {e}")
     except Exception as e:
