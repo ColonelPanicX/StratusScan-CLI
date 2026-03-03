@@ -75,7 +75,7 @@ def get_available_regions():
         list: List of available regions
     """
     # Get regions from config or use defaults
-    config = utils.get_config()
+    _, config = utils.get_config()
     default_regions = config.get('default_regions', ['us-east-1', 'us-west-2'])
 
     # Check for resource preferences for Security Hub

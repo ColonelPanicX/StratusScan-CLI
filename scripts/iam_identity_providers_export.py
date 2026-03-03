@@ -476,11 +476,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'SAML Providers': len(saml_providers),
-            'OIDC Providers': len(oidc_providers),
-            'Roles Using Providers': len(roles_with_providers)
-        })
     else:
         utils.log_warning("No IAM identity provider data found to export")
 

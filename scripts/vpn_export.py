@@ -84,10 +84,6 @@ def scan_vpn_connections_in_region(region: str) -> List[Dict[str, Any]]:
             static_routes_only = vpn.get('Options', {}).get('StaticRoutesOnly', False)
             routing_type = 'Static' if static_routes_only else 'Dynamic (BGP)'
 
-            # BGP ASN
-            customer_gateway_config = vpn.get('CustomerGatewayConfiguration', '')
-            bgp_asn = vpn.get('Options', {}).get('RemoteIpv4NetworkCidr', 'N/A')
-
             # Static routes
             static_routes = vpn.get('Routes', [])
             route_list = [f"{r.get('DestinationCidrBlock', '')} ({r.get('State', '')})" for r in static_routes]
@@ -475,9 +471,11 @@ def collect_client_vpn_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
         try:
             ec2 = utils.get_boto3_client('ec2', region_name=region)
 
-            # Describe Client VPN endpoints
-            response = ec2.describe_client_vpn_endpoints()
-            endpoint_list = response.get('ClientVpnEndpoints', [])
+            # Describe Client VPN endpoints (paginated)
+            endpoint_list = []
+            paginator = ec2.get_paginator('describe_client_vpn_endpoints')
+            for page in paginator.paginate():
+                endpoint_list.extend(page.get('ClientVpnEndpoints', []))
 
             for endpoint in endpoint_list:
                 endpoint_id = endpoint.get('ClientVpnEndpointId', '')
@@ -572,9 +570,11 @@ def scan_client_vpn_authorization_rules_in_region(region: str) -> List[Dict[str,
     try:
         ec2 = utils.get_boto3_client('ec2', region_name=region)
 
-        # First get all Client VPN endpoints
-        endpoints_response = ec2.describe_client_vpn_endpoints()
-        endpoint_list = endpoints_response.get('ClientVpnEndpoints', [])
+        # First get all Client VPN endpoints (paginated)
+        endpoint_list = []
+        endpoints_paginator = ec2.get_paginator('describe_client_vpn_endpoints')
+        for page in endpoints_paginator.paginate():
+            endpoint_list.extend(page.get('ClientVpnEndpoints', []))
 
         for endpoint in endpoint_list:
             endpoint_id = endpoint.get('ClientVpnEndpointId', '')

@@ -500,6 +500,11 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
+    partition = utils.detect_partition()
+    if not utils.is_service_available_in_partition("bedrock", partition):
+        utils.log_warning("Amazon Bedrock is not available in AWS GovCloud. Skipping.")
+        sys.exit(0)
+
     account_id, account_name = utils.print_script_banner("AWS AMAZON BEDROCK EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
@@ -570,14 +575,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Foundation Models': len(foundation_models),
-            'Custom Models': len(custom_models),
-            'Logging Configurations': len(logging_configs),
-            'Guardrails': len(guardrails),
-            'Knowledge Bases': len(knowledge_bases),
-            'Agents': len(agents)
-        })
     else:
         utils.log_warning("No Amazon Bedrock data found to export")
 

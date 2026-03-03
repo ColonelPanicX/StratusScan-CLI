@@ -440,6 +440,106 @@ def collect_ip_sets(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[st
     return all_ip_sets
 
 
+@utils.aws_error_handler("Collecting rule groups from region", default_return=[])
+def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+    """
+    Collect WAF rule group information from a single AWS region.
+
+    Args:
+        region: AWS region to scan
+        scope: REGIONAL or CLOUDFRONT
+
+    Returns:
+        list: List of dictionaries with rule group information
+    """
+    if not utils.is_aws_region(region):
+        return []
+
+    rule_groups_data = []
+    wafv2_client = utils.get_boto3_client('wafv2', region_name=region)
+
+    paginator = wafv2_client.get_paginator('list_rule_groups')
+
+    for page in paginator.paginate(Scope=scope):
+        rule_groups = page.get('RuleGroups', [])
+
+        for rg_summary in rule_groups:
+            rg_name = rg_summary.get('Name', '')
+            rg_id = rg_summary.get('Id', '')
+            rg_arn = rg_summary.get('ARN', '')
+
+            try:
+                rg_response = wafv2_client.get_rule_group(
+                    Name=rg_name,
+                    Scope=scope,
+                    Id=rg_id
+                )
+                rg = rg_response.get('RuleGroup', {})
+
+                description = rg.get('Description', 'N/A')
+                capacity = rg.get('Capacity', 0)
+                rules = rg.get('Rules', [])
+                rule_count = len(rules)
+
+                visibility_config = rg.get('VisibilityConfig', {})
+                metric_name = visibility_config.get('MetricName', 'N/A')
+                cloudwatch_metrics_enabled = visibility_config.get('CloudWatchMetricsEnabled', False)
+
+                rule_groups_data.append({
+                    'Region': region,
+                    'Scope': scope,
+                    'Name': rg_name,
+                    'ID': rg_id,
+                    'Rule Count': rule_count,
+                    'Capacity': capacity,
+                    'Description': description,
+                    'CloudWatch Metrics': cloudwatch_metrics_enabled,
+                    'Metric Name': metric_name,
+                    'ARN': rg_arn
+                })
+
+            except Exception as e:
+                utils.log_warning(f"Could not get rule group {rg_name}: {e}")
+
+    utils.log_info(f"Found {len(rule_groups_data)} rule groups ({scope}) in {region}")
+    return rule_groups_data
+
+
+def collect_rule_groups(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+    """
+    Collect WAF rule group information using concurrent scanning.
+
+    Args:
+        regions: List of AWS regions to scan
+        scope: REGIONAL or CLOUDFRONT
+
+    Returns:
+        list: List of dictionaries with rule group information
+    """
+    print(f"\n=== COLLECTING WAF RULE GROUPS ({scope}) ===")
+
+    if scope == 'CLOUDFRONT':
+        regions = ['us-east-1']
+
+    utils.log_info(f"Scanning {len(regions)} regions...")
+
+    def scan_region_with_scope(region: str) -> List[Dict[str, Any]]:
+        return collect_rule_groups_from_region(region, scope)
+
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=scan_region_with_scope,
+        show_progress=True
+    )
+
+    all_rule_groups = []
+    for rule_groups_in_region in region_results:
+        all_rule_groups.extend(rule_groups_in_region)
+
+    utils.log_success(f"Total WAF rule groups ({scope}) collected: {len(all_rule_groups)}")
+    return all_rule_groups
+
+
 def export_waf_data(account_id: str, account_name: str):
     """
     Export WAF information to an Excel file.
@@ -477,6 +577,13 @@ def export_waf_data(account_id: str, account_name: str):
     all_ip_sets = regional_ip_sets + cloudfront_ip_sets
     if all_ip_sets:
         data_frames['IP Sets'] = pd.DataFrame(all_ip_sets)
+
+    # STEP 4: Collect rule groups
+    regional_rule_groups = collect_rule_groups(regions, scope='REGIONAL')
+    cloudfront_rule_groups = collect_rule_groups(regions, scope='CLOUDFRONT')
+    all_rule_groups = regional_rule_groups + cloudfront_rule_groups
+    if all_rule_groups:
+        data_frames['Rule Groups'] = pd.DataFrame(all_rule_groups)
 
     # Check if we have any data
     if not data_frames:

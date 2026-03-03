@@ -97,15 +97,11 @@ def get_all_recommendations(client):
     except ClientError as e:
         # Business logic: Special handling for opt-in errors
         if 'OptInRequiredException' in str(e) or 'not subscribed' in str(e):
-            utils.log_error("Cost Optimization Hub is not enabled for this account.")
-            print("Please enable Cost Optimization Hub in the AWS Console:")
-            print("  1. Go to AWS Billing and Cost Management Console")
-            print("  2. Select 'Cost Optimization Hub' from the left menu")
-            print("  3. Click 'Enable'")
-            print("  4. Wait 24 hours for initial data population")
+            utils.log_warning("Cost Optimization Hub is not enabled for this account. Skipping.")
+            sys.exit(0)
         else:
             utils.log_error(f"Error fetching recommendations: {e}")
-        sys.exit(1)
+            sys.exit(1)
 
 
 def process_recommendations(recommendations):

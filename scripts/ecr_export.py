@@ -94,13 +94,12 @@ def scan_ecr_repositories_in_region(region: str) -> List[Dict[str, Any]]:
                 encryption_type = encryption_config.get('encryptionType', 'AES256')
                 kms_key = encryption_config.get('kmsKey', 'N/A')
 
-                # Get image count
+                # Get image count (paginated — maxResults=1000 was silently capping)
                 try:
-                    images_response = ecr_client.describe_images(
-                        repositoryName=repository_name,
-                        maxResults=1000
-                    )
-                    image_count = len(images_response.get('imageDetails', []))
+                    image_count = 0
+                    image_paginator = ecr_client.get_paginator('describe_images')
+                    for img_page in image_paginator.paginate(repositoryName=repository_name):
+                        image_count += len(img_page.get('imageDetails', []))
                 except Exception:
                     image_count = 'Unknown'
 

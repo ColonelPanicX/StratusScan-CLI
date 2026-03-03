@@ -212,8 +212,8 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
             utils.log_info(f"  Found {len(stacks)} stack(s)")
             all_stacks.extend(stacks)
 
-            # Collect resources for each stack (sample first 10 to avoid too much data)
-            for stack in stacks[:10]:
+            # Collect resources for each stack
+            for stack in stacks:
                 stack_name = stack['StackName']
                 resources = collect_stack_resources(region, stack_name)
                 all_resources.extend(resources)
@@ -281,12 +281,6 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(all_stacks) + len(all_stacksets),
-        item_type='CloudFormation Resources',
-        filename=filename
-    )
-
     utils.log_info(f"  Stacks: {len(all_stacks)}")
     utils.log_info(f"  StackSets: {len(all_stacksets)}")
     utils.log_info(f"  StackSet Instances: {len(all_stackset_instances)}")

@@ -357,12 +357,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(monitors) + len(subscriptions) + len(all_anomalies),
-        item_type='Cost Anomaly Detection Items',
-        filename=filename
-    )
-
     utils.log_info(f"  Monitors: {len(monitors)}")
     utils.log_info(f"  Subscriptions: {len(subscriptions)}")
     utils.log_info(f"  Anomalies (90 days): {len(all_anomalies)}")

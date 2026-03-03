@@ -477,15 +477,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     if utils.save_multiple_dataframes_to_excel(dataframes, filename):
-        utils.log_export_summary(
-            filename=filename,
-            total_items=len(domains) + len(tags),
-            details={
-                'Domains': len(domains),
-                'Tags': len(tags)
-            }
-        )
-
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

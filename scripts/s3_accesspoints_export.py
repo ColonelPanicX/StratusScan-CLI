@@ -76,8 +76,7 @@ def collect_standard_access_points(region: str, account_id: str) -> List[Dict[st
                 # Get block public access settings
                 try:
                     public_access_block = s3control.get_public_access_block(
-                        AccountId=account_id,
-                        PublicAccessBlockConfiguration={}
+                        AccountId=account_id
                     )
                     block_settings = public_access_block.get('PublicAccessBlockConfiguration', {})
                 except Exception:
@@ -157,10 +156,14 @@ def collect_multi_region_access_points(account_id: str) -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries containing MRAP information
     """
-    # Multi-Region Access Points are always accessed via us-west-2
-    # S3Control is a global service - use partition-aware home region
-    home_region = utils.get_partition_default_region()
-    s3control = utils.get_boto3_client('s3control', region_name=home_region)
+    # Multi-Region Access Points are only available in commercial us-west-2.
+    # The API rejects calls from any other region with PermanentRedirect.
+    partition = utils.detect_partition()
+    if partition == "aws-us-gov":
+        utils.log_info("Multi-Region Access Points are not available in GovCloud — skipping.")
+        return []
+
+    s3control = utils.get_boto3_client('s3control', region_name='us-west-2')
 
     mraps = []
     next_token = None
@@ -519,11 +522,6 @@ def main():
     output_file = export_to_excel(all_standard_aps, mraps, all_ol_aps, account_name)
 
     if output_file:
-        utils.log_export_summary(
-            "S3 Access Points",
-            len(all_standard_aps) + len(mraps) + len(all_ol_aps),
-            output_file
-        )
         print("\nScript execution completed successfully.")
     else:
         utils.log_error("Failed to export data. Please check the logs.")

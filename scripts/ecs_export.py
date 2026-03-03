@@ -422,6 +422,108 @@ def get_ecs_resources(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_success(f"Total ECS resources collected: {len(all_resources)}")
     return all_resources
 
+def get_standalone_tasks_from_region(region: str) -> List[Dict[str, Any]]:
+    """
+    Collect ECS tasks not managed by a service (one-off / scheduled tasks) from a single region.
+
+    Args:
+        region: AWS region to scan
+
+    Returns:
+        list: List of dictionaries with standalone task information
+    """
+    standalone_tasks = []
+
+    if not utils.is_aws_region(region):
+        return standalone_tasks
+
+    try:
+        ecs_client = utils.get_boto3_client('ecs', region_name=region)
+
+        # List all clusters
+        cluster_arns = []
+        paginator = ecs_client.get_paginator('list_clusters')
+        for page in paginator.paginate():
+            cluster_arns.extend(page.get('clusterArns', []))
+
+        for cluster_arn in cluster_arns:
+            cluster_name = cluster_arn.split('/')[-1]
+
+            # Get all task ARNs in this cluster (all statuses)
+            all_task_arns = []
+            for status in ('RUNNING', 'STOPPED'):
+                try:
+                    task_paginator = ecs_client.get_paginator('list_tasks')
+                    for page in task_paginator.paginate(cluster=cluster_arn, desiredStatus=status):
+                        all_task_arns.extend(page.get('taskArns', []))
+                except Exception:
+                    pass
+
+            # Describe in batches of 100
+            for i in range(0, len(all_task_arns), 100):
+                batch = all_task_arns[i:i + 100]
+                try:
+                    response = ecs_client.describe_tasks(cluster=cluster_arn, tasks=batch)
+                    for task in response.get('tasks', []):
+                        group = task.get('group', '')
+                        # Service-managed tasks have group = "service:<name>"
+                        if group.startswith('service:'):
+                            continue
+
+                        standalone_tasks.append({
+                            'Region': region,
+                            'Cluster Name': cluster_name,
+                            'Task ARN': task.get('taskArn', ''),
+                            'Task Definition': task.get('taskDefinitionArn', '').split('/')[-1],
+                            'Group': group,
+                            'Status': task.get('lastStatus', ''),
+                            'Desired Status': task.get('desiredStatus', ''),
+                            'Launch Type': task.get('launchType', ''),
+                            'Started By': task.get('startedBy', ''),
+                            'Created At': str(task.get('createdAt', '')),
+                            'Started At': str(task.get('startedAt', '')),
+                            'Stopped At': str(task.get('stoppedAt', '')),
+                            'Stop Code': task.get('stopCode', ''),
+                            'Stopped Reason': task.get('stoppedReason', ''),
+                            'CPU': task.get('cpu', ''),
+                            'Memory': task.get('memory', ''),
+                        })
+                except Exception as e:
+                    utils.log_error(f"Error describing tasks in {cluster_name}/{region}", e)
+
+    except EndpointConnectionError:
+        pass
+    except Exception as e:
+        utils.log_error(f"Error collecting standalone ECS tasks in {region}", e)
+
+    return standalone_tasks
+
+
+def get_standalone_tasks(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect standalone ECS tasks from multiple regions concurrently.
+
+    Args:
+        regions: List of AWS region names to scan
+
+    Returns:
+        list: Combined list of standalone tasks from all regions
+    """
+    print("\n=== COLLECTING ECS STANDALONE TASKS ===")
+    utils.log_info(f"Scanning {len(regions)} regions for standalone tasks...")
+
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=get_standalone_tasks_from_region,
+        show_progress=True
+    )
+
+    all_tasks = [task for tasks_in_region in region_results for task in tasks_in_region]
+
+    utils.log_success(f"Total standalone ECS tasks collected: {len(all_tasks)}")
+    return all_tasks
+
+
 def main():
     """
     Main function to coordinate the ECS export process.
@@ -441,20 +543,28 @@ def main():
         regions = utils.prompt_region_selection()
 
         all_ecs_resources = get_ecs_resources(regions)
+        standalone_tasks = get_standalone_tasks(regions)
 
-        # Create DataFrame
-        df = pd.DataFrame(all_ecs_resources)
+        # Build multi-sheet export
+        data_frames = {}
+        if all_ecs_resources:
+            data_frames['Service Tasks'] = pd.DataFrame(all_ecs_resources)
+        if standalone_tasks:
+            data_frames['Standalone Tasks'] = pd.DataFrame(standalone_tasks)
 
         # Create export filename using utils
         filename = utils.create_export_filename(account_name, "ecs-resources", "all")
 
-        # Export to Excel
-        output_path = utils.save_dataframe_to_excel(df, filename)
+        if data_frames:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
+        else:
+            output_path = utils.save_dataframe_to_excel(pd.DataFrame(), filename)
 
         if output_path:
             print(f"\nExport completed successfully!")
             print(f"File saved as: {output_path}")
-            print(f"Total ECS resources collected: {len(all_ecs_resources)}")
+            print(f"Total service-linked ECS resources: {len(all_ecs_resources)}")
+            print(f"Total standalone ECS tasks: {len(standalone_tasks)}")
         else:
             print("\nError exporting data to Excel.")
 

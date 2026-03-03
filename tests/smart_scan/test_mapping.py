@@ -233,7 +233,7 @@ class TestMappingStatistics:
 
     def test_always_run_count(self):
         """Verify we have expected number of always-run scripts."""
-        assert len(ALWAYS_RUN_SCRIPTS) == 9
+        assert len(ALWAYS_RUN_SCRIPTS) == 8
 
     def test_no_duplicate_scripts_in_service_map(self):
         """Verify no service lists the same script twice."""

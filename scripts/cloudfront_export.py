@@ -492,10 +492,8 @@ def main():
         # Check if running in GovCloud partition
         partition = utils.detect_partition()
         if partition == 'aws-us-gov':
-            print(f"\nERROR: CloudFront is not available in AWS GovCloud")
-            print("This service operates outside the GovCloud boundary")
-            utils.log_error(f"CloudFront is not supported in GovCloud partition")
-            sys.exit(1)
+            utils.log_warning("CloudFront is not available in AWS GovCloud. Skipping.")
+            sys.exit(0)
 
         account_id, account_name = utils.print_script_banner("AWS CLOUDFRONT DISTRIBUTION EXPORT")
 

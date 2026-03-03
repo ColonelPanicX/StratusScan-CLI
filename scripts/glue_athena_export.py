@@ -97,8 +97,10 @@ def _scan_glue_tables_region(region: str) -> List[Dict[str, Any]]:
     try:
         glue_client = utils.get_boto3_client('glue', region_name=region)
         try:
-            databases_response = glue_client.get_databases()
-            databases = databases_response.get('DatabaseList', [])
+            databases = []
+            db_paginator = glue_client.get_paginator('get_databases')
+            for page in db_paginator.paginate():
+                databases.extend(page.get('DatabaseList', []))
         except Exception as e:
             utils.log_warning(f"Could not list databases in {region}: {str(e)}")
             return regional_tables
@@ -423,19 +425,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
-        utils.log_export_summary(
-            filename=filename,
-            total_items=len(databases) + len(tables) + len(crawlers) + len(jobs) + len(workgroups) + len(catalogs),
-            details={
-                'Glue Databases': len(databases),
-                'Glue Tables': len(tables),
-                'Glue Crawlers': len(crawlers),
-                'Glue Jobs': len(jobs),
-                'Athena Workgroups': len(workgroups),
-                'Athena Data Catalogs': len(catalogs)
-            }
-        )
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 
 def main():

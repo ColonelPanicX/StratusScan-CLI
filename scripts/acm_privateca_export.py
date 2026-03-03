@@ -271,121 +271,6 @@ def collect_issued_certificates(regions: List[str]) -> List[Dict[str, Any]]:
     return all_certificates
 
 
-def _scan_certificate_templates_region(region: str) -> List[Dict[str, Any]]:
-    """Scan certificate templates in a single region."""
-    regional_templates = []
-    acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
-
-    try:
-        paginator = acmpca_client.get_paginator('list_certificate_templates')
-        for page in paginator.paginate():
-            templates = page.get('CertificateTemplates', [])
-
-            for template_summary in templates:
-                template_arn = template_summary.get('Arn', 'N/A')
-
-                # Get detailed template information
-                try:
-                    template_response = acmpca_client.describe_certificate_template(
-                        CertificateTemplateArn=template_arn
-                    )
-                    template = template_response.get('CertificateTemplate', {})
-
-                    template_name = template.get('TemplateName', 'N/A')
-                    object_identifier = template.get('ObjectIdentifier', 'N/A')
-
-                    # Creation and update dates
-                    created_at = template.get('CreatedAt', 'N/A')
-                    if created_at != 'N/A':
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
-
-                    updated_at = template.get('UpdatedAt', 'N/A')
-                    if updated_at != 'N/A':
-                        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # Validity
-                    validity = template.get('Validity', {})
-                    validity_value = validity.get('Value', 'N/A')
-                    validity_type = validity.get('Type', 'N/A')
-                    validity_str = f"{validity_value} {validity_type}" if validity_value != 'N/A' else 'N/A'
-
-                    # Renewal
-                    renewal = template.get('Renewal', {})
-                    renewal_enabled = renewal.get('Enabled', False)
-
-                    # Key usage and extensions
-                    extensions = template.get('Extensions', {})
-                    key_usage = extensions.get('KeyUsage', {})
-                    extended_key_usage = extensions.get('ExtendedKeyUsage', [])
-
-                    # Key usage flags
-                    digital_signature = key_usage.get('DigitalSignature', False)
-                    non_repudiation = key_usage.get('NonRepudiation', False)
-                    key_encipherment = key_usage.get('KeyEncipherment', False)
-                    data_encipherment = key_usage.get('DataEncipherment', False)
-                    key_agreement = key_usage.get('KeyAgreement', False)
-                    key_cert_sign = key_usage.get('KeyCertSign', False)
-                    crl_sign = key_usage.get('CRLSign', False)
-
-                    key_usage_flags = []
-                    if digital_signature:
-                        key_usage_flags.append('DigitalSignature')
-                    if non_repudiation:
-                        key_usage_flags.append('NonRepudiation')
-                    if key_encipherment:
-                        key_usage_flags.append('KeyEncipherment')
-                    if data_encipherment:
-                        key_usage_flags.append('DataEncipherment')
-                    if key_agreement:
-                        key_usage_flags.append('KeyAgreement')
-                    if key_cert_sign:
-                        key_usage_flags.append('KeyCertSign')
-                    if crl_sign:
-                        key_usage_flags.append('CRLSign')
-
-                    key_usage_str = ', '.join(key_usage_flags) if key_usage_flags else 'None'
-
-                    # Extended key usage
-                    extended_key_usage_oids = [eku.get('ObjectIdentifier', 'N/A') for eku in extended_key_usage]
-                    extended_key_usage_str = ', '.join(extended_key_usage_oids) if extended_key_usage_oids else 'None'
-
-                    # Subject alternative names
-                    subject_alt_names = extensions.get('SubjectAlternativeNames', [])
-                    san_count = len(subject_alt_names)
-
-                    regional_templates.append({
-                        'Region': region,
-                        'Template Name': template_name,
-                        'Template ARN': template_arn,
-                        'Object Identifier': object_identifier,
-                        'Created At': created_at,
-                        'Updated At': updated_at,
-                        'Validity': validity_str,
-                        'Renewal Enabled': renewal_enabled,
-                        'Key Usage': key_usage_str,
-                        'Extended Key Usage': extended_key_usage_str,
-                        'Subject Alternative Names Count': san_count
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for template {template_arn}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error listing certificate templates in {region}: {str(e)}")
-
-    return regional_templates
-
-
-@utils.aws_error_handler("Collecting certificate templates", default_return=[])
-def collect_certificate_templates(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect certificate template information from AWS regions."""
-    print("\n=== COLLECTING CERTIFICATE TEMPLATES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_certificate_templates_region)
-    all_templates = [template for result in results for template in result]
-    utils.log_success(f"Total certificate templates collected: {len(all_templates)}")
-    return all_templates
-
 
 def _scan_ca_permissions_region(region: str) -> List[Dict[str, Any]]:
     """Scan CA permissions in a single region."""
@@ -478,7 +363,6 @@ def collect_ca_permissions(regions: List[str]) -> List[Dict[str, Any]]:
 
 def generate_summary(cas: List[Dict[str, Any]],
                      certificates: List[Dict[str, Any]],
-                     templates: List[Dict[str, Any]],
                      permissions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Generate summary statistics for ACM Private CA resources."""
     utils.log_info("Generating summary statistics...")
@@ -528,16 +412,6 @@ def generate_summary(cas: List[Dict[str, Any]],
         'Metric': 'Total Certificates (Sample)',
         'Count': total_certificates,
         'Details': f'Issued: {issued_certs}, Revoked: {revoked_certs} (Limited to 50 per CA)'
-    })
-
-    # Templates summary
-    total_templates = len(templates)
-    renewal_enabled_templates = sum(1 for t in templates if t.get('Renewal Enabled', False))
-
-    summary.append({
-        'Metric': 'Total Certificate Templates',
-        'Count': total_templates,
-        'Details': f'Renewal enabled: {renewal_enabled_templates}'
     })
 
     # Permissions summary
@@ -593,9 +467,8 @@ def main():
 
     cas = collect_private_cas(regions)
     certificates = collect_issued_certificates(regions)
-    templates = collect_certificate_templates(regions)
     permissions = collect_ca_permissions(regions)
-    summary = generate_summary(cas, certificates, templates, permissions)
+    summary = generate_summary(cas, certificates, permissions)
 
     # Create DataFrames
     utils.log_info("Creating DataFrames...")
@@ -611,11 +484,6 @@ def main():
         df_certificates = pd.DataFrame(certificates)
         df_certificates = utils.prepare_dataframe_for_export(df_certificates)
         dataframes['Certificates'] = df_certificates
-
-    if templates:
-        df_templates = pd.DataFrame(templates)
-        df_templates = utils.prepare_dataframe_for_export(df_templates)
-        dataframes['Certificate Templates'] = df_templates
 
     if permissions:
         df_permissions = pd.DataFrame(permissions)
@@ -636,12 +504,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Private CAs': len(cas),
-            'Certificates': len(certificates),
-            'Certificate Templates': len(templates),
-            'CA Permissions': len(permissions)
-        })
     else:
         utils.log_warning("No ACM Private CA data found to export")
 

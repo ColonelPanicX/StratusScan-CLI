@@ -51,8 +51,10 @@ def _scan_sqs_queues_region(region: str) -> List[Dict[str, Any]]:
 
     try:
         sqs_client = utils.get_boto3_client('sqs', region_name=region)
-        queues_response = sqs_client.list_queues()
-        queue_urls = queues_response.get('QueueUrls', [])
+        queue_urls = []
+        paginator = sqs_client.get_paginator('list_queues')
+        for page in paginator.paginate():
+            queue_urls.extend(page.get('QueueUrls', []))
 
         for queue_url in queue_urls:
             queue_name = queue_url.split('/')[-1]

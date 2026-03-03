@@ -89,29 +89,16 @@ def validate_date_input(date_input):
 
 def check_cost_explorer_data_retention():
     """
-    Check if extended data retention is enabled for Cost Explorer.
-    
+    Return Cost Explorer data retention limits.
+
+    The CE preferences API does not exist in boto3 — always assume standard
+    14-month retention. Extended retention is enabled in the AWS console under
+    Cost Explorer > Settings and does not need to be queried at runtime.
+
     Returns:
         tuple: (has_extended_retention, max_months)
     """
-    try:
-        # Create a Cost Explorer client
-        ce_client = utils.get_boto3_client('ce')
-
-        # Get Cost Explorer preferences
-        response = ce_client.get_preference('COST_EXPLORER')
-        
-        # Check if extended data retention is enabled
-        if 'retentionPeriod' in response:
-            retention_period = response['retentionPeriod']
-            if retention_period.get('retention') == 'LIFETIME':
-                return True, 28  # 14 (standard) + 14 (extended)
-            
-        # Default retention if not explicitly set
-        return False, 14
-    except Exception:
-        # If we can't determine, assume standard retention
-        return False, 14
+    return False, 14
 
 def validate_date_range(start_date, end_date):
     """
@@ -394,21 +381,22 @@ def main():
             sys.exit(1)
         
         # Get user input for date range
-        while True:
-            date_input = input("\nWould you like the last 12 months (type \"last 12\") or a specific month (ex. \"01-2025\")? ")
-            
-            is_valid, is_year_only, start_date, end_date = validate_date_input(date_input)
-            
-            if is_valid:
-                # Validate date range against AWS limitations
-                date_valid, message, _ = validate_date_range(start_date, end_date)
-                if date_valid:
-                    break
+        if utils.is_auto_run():
+            date_input = "last 12"
+            _, _, start_date, end_date = validate_date_input(date_input)
+        else:
+            while True:
+                date_input = input("\nWould you like the last 12 months (type \"last 12\") or a specific month (ex. \"01-2025\")? ")
+                is_valid, is_year_only, start_date, end_date = validate_date_input(date_input)
+                if is_valid:
+                    date_valid, message, _ = validate_date_range(start_date, end_date)
+                    if date_valid:
+                        break
+                    else:
+                        print(f"Error: {message}")
+                        print("Please try again with a more recent date range.")
                 else:
-                    print(f"Error: {message}")
-                    print("Please try again with a more recent date range.")
-            else:
-                print("Invalid input format. Please enter either \"last 12\" or a month in format \"MM-YYYY\" (e.g., \"01-2025\").")
+                    print("Invalid input format. Please enter either \"last 12\" or a month in format \"MM-YYYY\" (e.g., \"01-2025\").")
         
         # Get billing data
         billing_data = get_billing_data(start_date, end_date)

@@ -668,13 +668,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Notebook Instances': len(notebooks),
-            'Training Jobs': len(training_jobs),
-            'Models': len(models),
-            'Endpoints': len(endpoints),
-            'Processing Jobs': len(processing_jobs)
-        })
     else:
         utils.log_warning("No SageMaker data found to export")
 

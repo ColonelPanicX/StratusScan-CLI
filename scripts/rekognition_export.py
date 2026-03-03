@@ -386,6 +386,11 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
+    partition = utils.detect_partition()
+    if not utils.is_service_available_in_partition("rekognition", partition):
+        utils.log_warning("Amazon Rekognition is not available in AWS GovCloud. Skipping.")
+        sys.exit(0)
+
     account_id, account_name = utils.print_script_banner("AWS AMAZON REKOGNITION EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
@@ -443,12 +448,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Projects': len(projects),
-            'Project Versions': len(versions),
-            'Face Collections': len(collections),
-            'Stream Processors': len(stream_processors)
-        })
     else:
         utils.log_warning("No Amazon Rekognition data found to export")
 

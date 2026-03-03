@@ -501,6 +501,11 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
+    partition = utils.detect_partition()
+    if not utils.is_service_available_in_partition("comprehend", partition):
+        utils.log_warning("Amazon Comprehend is not available in AWS GovCloud. Skipping.")
+        sys.exit(0)
+
     account_id, account_name = utils.print_script_banner("AWS AMAZON COMPREHEND EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
@@ -565,13 +570,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Entity Recognizers': len(recognizers),
-            'Document Classifiers': len(classifiers),
-            'Endpoints': len(endpoints),
-            'Classification Jobs': len(classification_jobs),
-            'Entities Detection Jobs': len(entities_jobs)
-        })
     else:
         utils.log_warning("No Amazon Comprehend data found to export")
 

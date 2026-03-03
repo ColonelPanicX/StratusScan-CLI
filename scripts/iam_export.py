@@ -85,9 +85,11 @@ def get_user_mfa_devices(iam_client, username):
     Returns:
         str: MFA status (Enabled/Disabled/Unknown)
     """
-    virtual_mfa = iam_client.list_mfa_devices(UserName=username)
-    mfa_devices = virtual_mfa.get('MFADevices', [])
-    return "Enabled" if mfa_devices else "Disabled"
+    paginator = iam_client.get_paginator('list_mfa_devices')
+    for page in paginator.paginate(UserName=username):
+        if page.get('MFADevices'):
+            return "Enabled"
+    return "Disabled"
 
 
 @utils.aws_error_handler("Getting user groups", default_return="Unknown")
@@ -102,8 +104,10 @@ def get_user_groups(iam_client, username):
     Returns:
         str: Comma-separated list of group names or descriptive string
     """
-    response = iam_client.get_groups_for_user(UserName=username)
-    groups = [group['GroupName'] for group in response['Groups']]
+    groups = []
+    paginator = iam_client.get_paginator('get_groups_for_user')
+    for page in paginator.paginate(UserName=username):
+        groups.extend([group['GroupName'] for group in page.get('Groups', [])])
     return ", ".join(groups) if groups else "None"
 
 

@@ -108,6 +108,13 @@ def collect_detectors_from_region(region: str) -> List[Dict[str, Any]]:
             if updated_at:
                 updated_at = updated_at if isinstance(updated_at, str) else updated_at.strftime('%Y-%m-%d %H:%M:%S')
 
+            # Protection features (newer GuardDuty categories: EKS Runtime, RDS, Lambda, Malware)
+            features = detector.get('Features', [])
+            features_str = ', '.join(
+                f"{f.get('Name', '')}: {f.get('Status', '')}"
+                for f in features
+            ) if features else 'N/A'
+
             # Tags
             tags = detector.get('Tags', {})
             tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'N/A'
@@ -122,6 +129,7 @@ def collect_detectors_from_region(region: str) -> List[Dict[str, Any]]:
                 'VPC Flow Logs': flow_logs,
                 'S3 Logs': s3_logs,
                 'Kubernetes Audit Logs': k8s_audit_logs,
+                'Protection Features': features_str,
                 'Service Role': service_role,
                 'Created At': created_at,
                 'Updated At': updated_at,

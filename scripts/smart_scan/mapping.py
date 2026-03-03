@@ -19,7 +19,6 @@ ALWAYS_RUN_SCRIPTS = [
     "guardduty_export.py",
     "security_groups_export.py",
     "nacl_export.py",
-    "services_in_use_export.py",
     "trusted_advisor_cost_optimization_export.py",
     "budgets_export.py",
 ]
@@ -520,7 +519,7 @@ def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
             result["found"].append(script)
         else:
             result["missing"].append(script)
-            logger.warning(
+            logger.debug(
                 "SERVICE_SCRIPT_MAP references script that does not exist on disk: %s "
                 "(expected at %s)",
                 script,

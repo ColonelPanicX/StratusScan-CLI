@@ -164,7 +164,10 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.log_info("  3. Last 90 days")
     utils.log_info("  4. All events (warning: may be large)")
 
-    choice = input("\nEnter choice (1-4) [default: 1]: ").strip() or "1"
+    if utils.is_auto_run():
+        choice = "1"
+    else:
+        choice = input("\nEnter choice (1-4) [default: 1]: ").strip() or "1"
 
     # Calculate time filter
     now = datetime.utcnow()
@@ -296,12 +299,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(account_events) + len(org_events),
-        item_type='AWS Health Events',
-        filename=filename
-    )
-
     utils.log_info(f"  Account Events: {len(account_events)}")
     utils.log_info(f"  Organizational Events: {len(org_events)}")
     utils.log_info(f"  Affected Entities: {len(affected_entities)}")

@@ -408,11 +408,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Repositories': len(repositories),
-            'Branches': len(branches),
-            'Open Pull Requests': len(pull_requests)
-        })
     else:
         utils.log_warning("No AWS CodeCommit data found to export")
 
