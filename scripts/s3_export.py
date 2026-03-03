@@ -81,42 +81,49 @@ def get_bucket_region(bucket_name):
 
     # In AWS, handle the location constraint differently
     if location is None:
-        # For AWS, None typically means us-west-2 (default AWS region)
-        return 'us-west-2'
+        # AWS returns None for buckets in us-east-1 (the S3 classic region)
+        return 'us-east-1'
     return location
 
 @utils.aws_error_handler("Getting bucket object count", default_return=0)
 def get_bucket_object_count(bucket_name, region):
     """
-    Get the total number of objects in a bucket
+    Get the approximate number of objects in a bucket using CloudWatch S3 metrics.
+
+    Uses the CloudWatch NumberOfObjects metric (updated daily by AWS) which is far
+    cheaper and faster than full enumeration via list_objects_v2.
 
     Args:
         bucket_name (str): Name of the S3 bucket
         region (str): AWS region where the bucket is located
 
     Returns:
-        int: Total number of objects in the bucket
+        int: Total number of objects (approximate, from last daily metric point)
     """
-    # Validate region is AWS
-    if not utils.is_aws_region(region):
-        utils.log_error(f"Invalid AWS region: {region}")
-        return 0
+    cw_client = utils.get_boto3_client('cloudwatch', region_name='us-east-1')
 
-    # Create S3 client using utils
-    s3_client = utils.get_boto3_client('s3', region_name=region)
+    end_time = datetime.datetime.utcnow()
+    start_time = end_time - datetime.timedelta(days=3)
 
-    total_objects = 0
+    response = cw_client.get_metric_statistics(
+        Namespace='AWS/S3',
+        MetricName='NumberOfObjects',
+        Dimensions=[
+            {'Name': 'BucketName', 'Value': bucket_name},
+            {'Name': 'StorageType', 'Value': 'AllStorageTypes'},
+        ],
+        StartTime=start_time,
+        EndTime=end_time,
+        Period=86400,
+        Statistics=['Average']
+    )
 
-    # Use a paginator to handle buckets with many objects
-    paginator = s3_client.get_paginator('list_objects_v2')
+    datapoints = response.get('Datapoints', [])
+    if datapoints:
+        latest = sorted(datapoints, key=lambda x: x['Timestamp'])[-1]
+        return int(latest['Average'])
 
-    # Paginate through all objects in the bucket
-    for page in paginator.paginate(Bucket=bucket_name):
-        if 'Contents' in page:
-            total_objects += len(page['Contents'])
-        time.sleep(0.1)
-
-    return total_objects
+    return 0
 
 def check_storage_lens_availability():
     """
