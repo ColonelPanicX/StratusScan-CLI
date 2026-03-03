@@ -279,11 +279,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Instances': len(instances),
-            'Queues': len(all_queues),
-            'Phone Numbers': len(all_phone_numbers)
-        })
     else:
         utils.log_warning("No Connect data found to export")
 

@@ -81,10 +81,11 @@ def get_trusted_advisor_checks():
         return cost_checks
     except ClientError as e:
         if 'SubscriptionRequiredException' in str(e):
-            utils.log_error("AWS Business or Enterprise Support plan is required to access Trusted Advisor API.")
+            utils.log_warning("AWS Business or Enterprise Support plan is required to access Trusted Advisor API. Skipping.")
+            sys.exit(0)
         else:
             utils.log_error(f"Error accessing Trusted Advisor checks: {e}")
-        sys.exit(1)
+            sys.exit(1)
 
 
 @utils.aws_error_handler("Getting Trusted Advisor check result", default_return=None)
@@ -308,8 +309,8 @@ def _run_export(account_id: str, account_name: str) -> None:
     results = get_all_check_results()
 
     if not results:
-        utils.log_warning("No cost optimization results found or error occurred.")
-        sys.exit(1)
+        utils.log_info("No cost optimization opportunities found.")
+        sys.exit(0)
 
     utils.log_info("Processing check results...")
     summary_df, detail_dfs = process_check_results(results)

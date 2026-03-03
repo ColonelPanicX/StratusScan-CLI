@@ -269,12 +269,6 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(all_portfolios) + len(all_products) + len(all_provisioned),
-        item_type='Service Catalog Resources',
-        filename=filename
-    )
-
     utils.log_info(f"  Portfolios: {len(all_portfolios)}")
     utils.log_info(f"  Products: {len(all_products)}")
     utils.log_info(f"  Provisioned Products: {len(all_provisioned)}")

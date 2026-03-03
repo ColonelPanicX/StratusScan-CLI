@@ -565,13 +565,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Entity Recognizers': len(recognizers),
-            'Document Classifiers': len(classifiers),
-            'Endpoints': len(endpoints),
-            'Classification Jobs': len(classification_jobs),
-            'Entities Detection Jobs': len(entities_jobs)
-        })
     else:
         utils.log_warning("No Amazon Comprehend data found to export")
 

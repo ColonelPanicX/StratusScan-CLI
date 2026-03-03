@@ -314,12 +314,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     total_resources = (len(all_stores) + len(all_policies) +
                       len(all_templates) + len(all_identity_sources))
 
-    utils.log_export_summary(
-        total_items=total_resources,
-        item_type='Verified Permissions Resources',
-        filename=filename
-    )
-
     utils.log_info(f"  Policy Stores: {len(all_stores)}")
     utils.log_info(f"  Policies: {len(all_policies)}")
     utils.log_info(f"  Policy Templates: {len(all_templates)}")

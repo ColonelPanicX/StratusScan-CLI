@@ -260,12 +260,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(cost_category_refs),
-        item_type='Cost Categories',
-        filename=filename
-    )
-
     if not df_categories.empty:
         utils.log_info(f"  Total Rules: {len(df_rules)}")
         if not df_inherited.empty:

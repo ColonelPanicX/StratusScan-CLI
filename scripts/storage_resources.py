@@ -427,6 +427,10 @@ def main() -> None:
     # ── Summary ───────────────────────────────────────────────────────────
     print_summary(results, zip_path)
 
+    # Exit non-zero if every sub-script failed so the orchestrator surfaces it
+    if not any(r.success for r in results):
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -357,11 +357,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Namespaces': len(namespaces),
-            'Services': len(services),
-            'Service Instances': len(instances)
-        })
     else:
         utils.log_warning("No Cloud Map data found to export")
 

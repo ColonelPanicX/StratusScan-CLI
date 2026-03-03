@@ -558,12 +558,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     if utils.save_multiple_dataframes_to_excel(dataframes, filename):
-        utils.log_export_summary(
-            resource_type='Neptune',
-            count=len(clusters) + len(instances) + len(snapshots) + len(endpoints),
-            output_file=filename
-        )
-
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

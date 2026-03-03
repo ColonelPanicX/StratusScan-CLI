@@ -447,12 +447,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Email Identities': len(identities),
-            'Configuration Sets': len(config_sets),
-            'Email Templates': len(templates),
-            'Sending Quotas': len(quotas)
-        })
     else:
         utils.log_warning("No SES data found to export")
 

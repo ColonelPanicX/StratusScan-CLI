@@ -1070,12 +1070,6 @@ Examples:
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
     # Log summary
-    utils.log_export_summary(
-        'Services In Use',
-        len(services),
-        filename
-    )
-
     # Print summary to console
     print("\n" + "="*60)
     print("SERVICES IN USE SUMMARY")

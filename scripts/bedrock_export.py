@@ -570,14 +570,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Foundation Models': len(foundation_models),
-            'Custom Models': len(custom_models),
-            'Logging Configurations': len(logging_configs),
-            'Guardrails': len(guardrails),
-            'Knowledge Bases': len(knowledge_bases),
-            'Agents': len(agents)
-        })
     else:
         utils.log_warning("No Amazon Bedrock data found to export")
 

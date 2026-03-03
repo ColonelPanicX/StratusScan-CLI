@@ -291,10 +291,6 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-        utils.log_export_summary(filename, {
-            'Agreements': len(agreements),
-            'Agreement Terms': len(terms)
-        })
     else:
         utils.log_warning("No Marketplace data found to export")
 

@@ -347,12 +347,6 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(all_configs) + len(all_licenses) + len(all_grants),
-        item_type='License Manager Resources',
-        filename=filename
-    )
-
     utils.log_info(f"  License Configurations: {len(all_configs)}")
     utils.log_info(f"  Licenses: {len(all_licenses)}")
     utils.log_info(f"  Grants: {len(all_grants)}")

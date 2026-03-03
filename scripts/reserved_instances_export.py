@@ -377,12 +377,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    utils.log_export_summary(
-        total_items=len(all_ris),
-        item_type='Reserved Instances',
-        filename=filename
-    )
-
     if not df_expiring.empty:
         utils.log_warning(f"  {len(df_expiring)} Reserved Instance(s) expiring within 90 days")
 
