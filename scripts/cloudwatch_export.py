@@ -213,6 +213,106 @@ def collect_log_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_log_groups
 
 
+def _scan_dashboards_region(region: str) -> List[Dict[str, Any]]:
+    """Scan a single region for CloudWatch dashboards."""
+    dashboards_data = []
+
+    if not utils.is_aws_region(region):
+        return dashboards_data
+
+    try:
+        cw_client = utils.get_boto3_client('cloudwatch', region_name=region)
+        paginator = cw_client.get_paginator('list_dashboards')
+
+        for page in paginator.paginate():
+            for dashboard in page.get('DashboardEntries', []):
+                dashboards_data.append({
+                    'Region': region,
+                    'Dashboard Name': dashboard.get('DashboardName', ''),
+                    'ARN': dashboard.get('DashboardArn', ''),
+                    'Last Modified': str(dashboard.get('LastModified', '')),
+                    'Size (bytes)': dashboard.get('Size', ''),
+                })
+    except Exception as e:
+        utils.log_error(f"Error scanning CloudWatch dashboards in {region}", e)
+
+    return dashboards_data
+
+
+@utils.aws_error_handler("Collecting CloudWatch dashboards", default_return=[])
+def collect_dashboards(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect CloudWatch dashboard information from AWS regions.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with dashboard information
+    """
+    print("\n=== COLLECTING CLOUDWATCH DASHBOARDS ===")
+
+    results = utils.scan_regions_concurrent(regions, _scan_dashboards_region)
+    all_dashboards = [d for result in results for d in result]
+
+    utils.log_success(f"Total CloudWatch dashboards collected: {len(all_dashboards)}")
+    return all_dashboards
+
+
+def _scan_metric_filters_region(region: str) -> List[Dict[str, Any]]:
+    """Scan a single region for CloudWatch Logs metric filters."""
+    filters_data = []
+
+    if not utils.is_aws_region(region):
+        return filters_data
+
+    try:
+        logs_client = utils.get_boto3_client('logs', region_name=region)
+        paginator = logs_client.get_paginator('describe_metric_filters')
+
+        for page in paginator.paginate():
+            for f in page.get('metricFilters', []):
+                transformations = f.get('metricTransformations', [{}])
+                metric_name = transformations[0].get('metricName', '') if transformations else ''
+                metric_namespace = transformations[0].get('metricNamespace', '') if transformations else ''
+                metric_value = transformations[0].get('metricValue', '') if transformations else ''
+
+                filters_data.append({
+                    'Region': region,
+                    'Filter Name': f.get('filterName', ''),
+                    'Log Group': f.get('logGroupName', ''),
+                    'Filter Pattern': f.get('filterPattern', ''),
+                    'Metric Name': metric_name,
+                    'Metric Namespace': metric_namespace,
+                    'Metric Value': metric_value,
+                    'Creation Time': str(f.get('creationTime', '')),
+                })
+    except Exception as e:
+        utils.log_error(f"Error scanning metric filters in {region}", e)
+
+    return filters_data
+
+
+@utils.aws_error_handler("Collecting CloudWatch metric filters", default_return=[])
+def collect_metric_filters(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect CloudWatch Logs metric filter information from AWS regions.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with metric filter information
+    """
+    print("\n=== COLLECTING CLOUDWATCH METRIC FILTERS ===")
+
+    results = utils.scan_regions_concurrent(regions, _scan_metric_filters_region)
+    all_filters = [f for result in results for f in result]
+
+    utils.log_success(f"Total metric filters collected: {len(all_filters)}")
+    return all_filters
+
+
 def export_cloudwatch_data(account_id: str, account_name: str):
     """
     Export CloudWatch information to an Excel file.
@@ -240,8 +340,18 @@ def export_cloudwatch_data(account_id: str, account_name: str):
     if log_groups:
         data_frames['Log Groups'] = pd.DataFrame(log_groups)
 
-    # STEP 3: Create summary
-    if alarms or log_groups:
+    # STEP 3: Collect dashboards
+    dashboards = collect_dashboards(regions)
+    if dashboards:
+        data_frames['Dashboards'] = pd.DataFrame(dashboards)
+
+    # STEP 4: Collect metric filters
+    metric_filters = collect_metric_filters(regions)
+    if metric_filters:
+        data_frames['Metric Filters'] = pd.DataFrame(metric_filters)
+
+    # STEP 5: Create summary
+    if alarms or log_groups or dashboards or metric_filters:
         summary_data = []
 
         total_alarms = len(alarms)
@@ -267,6 +377,8 @@ def export_cloudwatch_data(account_id: str, account_name: str):
             summary_data.append({'Metric': f'Alarms in {state} State', 'Value': count})
         summary_data.append({'Metric': 'Total Log Groups', 'Value': total_log_groups})
         summary_data.append({'Metric': 'Total Log Storage (MB)', 'Value': round(total_log_storage_mb, 2)})
+        summary_data.append({'Metric': 'Total Dashboards', 'Value': len(dashboards)})
+        summary_data.append({'Metric': 'Total Metric Filters', 'Value': len(metric_filters)})
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 

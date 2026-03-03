@@ -212,8 +212,8 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
             utils.log_info(f"  Found {len(stacks)} stack(s)")
             all_stacks.extend(stacks)
 
-            # Collect resources for each stack (sample first 10 to avoid too much data)
-            for stack in stacks[:10]:
+            # Collect resources for each stack
+            for stack in stacks:
                 stack_name = stack['StackName']
                 resources = collect_stack_resources(region, stack_name)
                 all_resources.extend(resources)

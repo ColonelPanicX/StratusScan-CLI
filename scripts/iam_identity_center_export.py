@@ -163,36 +163,36 @@ def get_user_account_assignments(sso_admin_client, instance_arn, user_id):
     except Exception:
         pass
 
-    paginator = sso_admin_client.get_paginator('list_account_assignments')
+    # Use list_account_assignments_for_principal to fetch all assignments for this
+    # user in a single paginated call (O(assignments) instead of O(permission_sets * pages)).
     assignments = []
+    ps_name_cache = {}
 
-    ps_paginator = sso_admin_client.get_paginator('list_permission_sets')
-    permission_sets = []
-    for page in ps_paginator.paginate(InstanceArn=instance_arn):
-        permission_sets.extend(page.get('PermissionSets', []))
+    try:
+        paginator = sso_admin_client.get_paginator('list_account_assignments_for_principal')
+        for page in paginator.paginate(
+            InstanceArn=instance_arn,
+            PrincipalId=user_id,
+            PrincipalType='USER'
+        ):
+            for assignment in page.get('AccountAssignments', []):
+                account_id = assignment.get('AccountId', '')
+                permission_set_arn = assignment.get('PermissionSetArn', '')
+                account_name = accounts.get(account_id, account_id)
 
-    for permission_set_arn in permission_sets:
-        try:
-            for page in paginator.paginate(
-                InstanceArn=instance_arn,
-                PermissionSetArn=permission_set_arn
-            ):
-                for assignment in page.get('AccountAssignments', []):
-                    if (assignment.get('PrincipalType') == 'USER' and
-                            assignment.get('PrincipalId') == user_id):
-                        account_id = assignment.get('TargetId')
-                        account_name = accounts.get(account_id, account_id)
-                        try:
-                            ps_response = sso_admin_client.describe_permission_set(
-                                InstanceArn=instance_arn,
-                                PermissionSetArn=permission_set_arn
-                            )
-                            ps_name = ps_response['PermissionSet'].get('Name', 'Unknown')
-                        except Exception:
-                            ps_name = permission_set_arn.split('/')[-1]
-                        assignments.append(f"{account_name}:{ps_name}")
-        except Exception:
-            continue
+                if permission_set_arn not in ps_name_cache:
+                    try:
+                        ps_response = sso_admin_client.describe_permission_set(
+                            InstanceArn=instance_arn,
+                            PermissionSetArn=permission_set_arn
+                        )
+                        ps_name_cache[permission_set_arn] = ps_response['PermissionSet'].get('Name', 'Unknown')
+                    except Exception:
+                        ps_name_cache[permission_set_arn] = permission_set_arn.split('/')[-1]
+
+                assignments.append(f"{account_name}:{ps_name_cache[permission_set_arn]}")
+    except Exception:
+        pass
 
     return ', '.join(assignments) if assignments else 'None'
 

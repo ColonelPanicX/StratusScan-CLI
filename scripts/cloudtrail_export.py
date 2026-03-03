@@ -386,6 +386,69 @@ def collect_insight_selectors(regions: List[str]) -> List[Dict[str, Any]]:
     return all_insights
 
 
+@utils.aws_error_handler("Collecting CloudTrail Lake event data stores from region", default_return=[])
+def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
+    """
+    Collect CloudTrail Lake event data store information from a single region.
+
+    Args:
+        region: AWS region to scan
+
+    Returns:
+        list: List of dictionaries with event data store information
+    """
+    if not utils.is_aws_region(region):
+        return []
+
+    stores_data = []
+
+    ct_client = utils.get_boto3_client('cloudtrail', region_name=region)
+
+    paginator = ct_client.get_paginator('list_event_data_stores')
+    for page in paginator.paginate():
+        for store in page.get('EventDataStores', []):
+            stores_data.append({
+                'Region': region,
+                'Name': store.get('Name', ''),
+                'ARN': store.get('EventDataStoreArn', ''),
+                'Status': store.get('Status', ''),
+                'Multi-Region': store.get('MultiRegionEnabled', False),
+                'Organization': store.get('OrganizationEnabled', False),
+                'Retention (Days)': store.get('RetentionPeriod', ''),
+                'Termination Protected': store.get('TerminationProtectionEnabled', False),
+                'Created': str(store.get('CreatedTimestamp', '')),
+                'Updated': str(store.get('UpdatedTimestamp', '')),
+            })
+
+    utils.log_info(f"Found {len(stores_data)} event data store(s) in {region}")
+    return stores_data
+
+
+def collect_event_data_stores(regions: List[str]) -> List[Dict[str, Any]]:
+    """
+    Collect CloudTrail Lake event data store information using concurrent scanning.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        list: List of dictionaries with event data store information
+    """
+    print("\n=== COLLECTING CLOUDTRAIL LAKE EVENT DATA STORES ===")
+    utils.log_info(f"Scanning {len(regions)} regions for event data stores...")
+
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=collect_event_data_stores_from_region,
+        show_progress=True
+    )
+
+    all_stores = [store for stores_in_region in region_results for store in stores_in_region]
+
+    utils.log_success(f"Total event data stores collected: {len(all_stores)}")
+    return all_stores
+
+
 def export_cloudtrail_data(account_id: str, account_name: str):
     """
     Export CloudTrail information to an Excel file.
@@ -417,6 +480,11 @@ def export_cloudtrail_data(account_id: str, account_name: str):
     insights = collect_insight_selectors(regions)
     if insights:
         data_frames['Insight Selectors'] = pd.DataFrame(insights)
+
+    # STEP 4: Collect CloudTrail Lake event data stores
+    event_data_stores = collect_event_data_stores(regions)
+    if event_data_stores:
+        data_frames['Event Data Stores'] = pd.DataFrame(event_data_stores)
 
     # Check if we have any data
     if not data_frames:
