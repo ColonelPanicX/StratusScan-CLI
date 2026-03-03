@@ -39,9 +39,16 @@ def _scan_sampling_rules_region(region: str) -> List[Dict[str, Any]]:
     xray_client = utils.get_boto3_client('xray', region_name=region)
 
     try:
-        # Get sampling rules
-        response = xray_client.get_sampling_rules()
-        sampling_rules = response.get('SamplingRuleRecords', [])
+        # Get sampling rules (manual NextToken loop — no boto3 paginator for get_sampling_rules)
+        sampling_rules = []
+        kwargs = {}
+        while True:
+            response = xray_client.get_sampling_rules(**kwargs)
+            sampling_rules.extend(response.get('SamplingRuleRecords', []))
+            next_token = response.get('NextToken')
+            if not next_token:
+                break
+            kwargs = {'NextToken': next_token}
 
         for rule_record in sampling_rules:
             rule = rule_record.get('SamplingRule', {})

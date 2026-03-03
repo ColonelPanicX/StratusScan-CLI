@@ -69,9 +69,11 @@ def collect_image_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
         try:
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
-            # Get image pipelines
-            response = imagebuilder.list_image_pipelines()
-            pipeline_arns = [p['arn'] for p in response.get('imagePipelineList', [])]
+            # Get image pipelines (paginated)
+            pipeline_arns = []
+            paginator = imagebuilder.get_paginator('list_image_pipelines')
+            for page in paginator.paginate():
+                pipeline_arns.extend([p['arn'] for p in page.get('imagePipelineList', [])])
 
             print(f"  Found {len(pipeline_arns)} pipelines")
 
