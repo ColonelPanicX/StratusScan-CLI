@@ -292,6 +292,12 @@ def is_service_available_in_partition(service: str, partition: str = "aws") -> b
         "sumerian",
         "gamelift",
         "robomaker",
+        "cognito-idp",
+        "cognito-identity",
+        "comprehend",
+        "connect",
+        "rekognition",
+        "bedrock",
     }
 
     govcloud_limited = {
