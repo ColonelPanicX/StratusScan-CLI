@@ -500,6 +500,11 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
+    partition = utils.detect_partition()
+    if not utils.is_service_available_in_partition("bedrock", partition):
+        utils.log_warning("Amazon Bedrock is not available in AWS GovCloud. Skipping.")
+        sys.exit(0)
+
     account_id, account_name = utils.print_script_banner("AWS AMAZON BEDROCK EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
