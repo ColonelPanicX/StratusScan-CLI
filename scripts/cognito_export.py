@@ -751,6 +751,11 @@ def main():
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)
 
+    partition = utils.detect_partition()
+    if not utils.is_service_available_in_partition("cognito-idp", partition):
+        utils.log_warning("Amazon Cognito is not available in AWS GovCloud. Skipping.")
+        sys.exit(0)
+
     account_id, account_name = utils.print_script_banner("AWS COGNITO EXPORT")
     if not account_id:
         utils.log_error("Unable to determine AWS account ID. Please check your credentials.")
