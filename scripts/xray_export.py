@@ -308,12 +308,6 @@ def main():
         utils.log_info(f"Exporting to {filename}...")
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-        # Log summary
-        utils.log_export_summary(filename, {
-            'Sampling Rules': len(sampling_rules),
-            'Groups': len(groups),
-            'Encryption Configs': len(encryption_configs)
-        })
     else:
         utils.log_warning("No X-Ray data found to export")
 

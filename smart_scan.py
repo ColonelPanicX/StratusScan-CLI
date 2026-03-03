@@ -64,13 +64,17 @@ except ImportError as exc:
 
 
 def _prompt_scan_mode() -> str:
-    """Prompt user for Quick or Deep scan mode."""
+    """Prompt user for Quick or Deep scan mode. Exits on b/x."""
     print()
     print("  ─── SCAN MODE ───────────────────────────────────────────────")
     print("  [1] Quick Scan  — service presence and resource counts")
     print("  [2] Deep Scan   — counts + asset breakdown per service (slower)")
     print("  ─────────────────────────────────────────────────────────────")
-    choice = input("  Enter choice [1]: ").strip() or "1"
+    print("  [B] Back    [X] Exit")
+    print("  ─────────────────────────────────────────────────────────────")
+    choice = input("  Enter choice [1]: ").strip().lower() or "1"
+    if choice in ('b', 'x'):
+        sys.exit(0)
     return 'deep' if choice == '2' else 'quick'
 
 
@@ -129,8 +133,9 @@ def _write_markdown_report(
     reports_dir = _root / 'reports'
     reports_dir.mkdir(exist_ok=True)
 
+    mode_label = 'deep' if mode == 'deep' else 'quick'
     timestamp = utils.get_export_date()
-    filename = f"{account_name}-discovery-{timestamp}.md"
+    filename = f"{account_name}-discovery-{mode_label}-{timestamp}.md"
     filepath = reports_dir / filename
 
     now = datetime.now().strftime('%Y-%m-%d %H:%M UTC')
@@ -361,6 +366,8 @@ def main() -> None:
     print(f"  Failed:       {summary['failed']}")
     print(f"  Success Rate: {summary['success_rate']:.1f}%")
     print("=" * 70)
+    if not utils.is_auto_run():
+        input("\n  Press Enter to return to menu...")
 
 
 if __name__ == "__main__":
