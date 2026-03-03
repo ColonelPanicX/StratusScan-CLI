@@ -89,29 +89,16 @@ def validate_date_input(date_input):
 
 def check_cost_explorer_data_retention():
     """
-    Check if extended data retention is enabled for Cost Explorer.
-    
+    Return Cost Explorer data retention limits.
+
+    The CE preferences API does not exist in boto3 — always assume standard
+    14-month retention. Extended retention is enabled in the AWS console under
+    Cost Explorer > Settings and does not need to be queried at runtime.
+
     Returns:
         tuple: (has_extended_retention, max_months)
     """
-    try:
-        # Create a Cost Explorer client
-        ce_client = utils.get_boto3_client('ce')
-
-        # Get Cost Explorer preferences
-        response = ce_client.get_preference('COST_EXPLORER')
-        
-        # Check if extended data retention is enabled
-        if 'retentionPeriod' in response:
-            retention_period = response['retentionPeriod']
-            if retention_period.get('retention') == 'LIFETIME':
-                return True, 28  # 14 (standard) + 14 (extended)
-            
-        # Default retention if not explicitly set
-        return False, 14
-    except Exception:
-        # If we can't determine, assume standard retention
-        return False, 14
+    return False, 14
 
 def validate_date_range(start_date, end_date):
     """
