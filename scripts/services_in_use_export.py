@@ -19,6 +19,7 @@ Output: Multi-worksheet Excel file with services categorized by type
 
 import argparse
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
@@ -625,6 +626,33 @@ def _is_not_in_use_error(exc: Exception) -> bool:
     return False
 
 
+def _start_heartbeat(service_name: str):
+    """
+    Start a background thread that prints a 'still scanning' line every 5 seconds.
+
+    Only fires if the check actually takes longer than the interval, so fast
+    services never see any output. Returns (stop_event, thread) — caller must
+    call stop_event.set() and thread.join() when done.
+    """
+    stop_event = threading.Event()
+    start = time.monotonic()
+
+    def _beat():
+        while not stop_event.wait(timeout=5):
+            elapsed = int(time.monotonic() - start)
+            print(f"    ... {service_name}: still scanning ({elapsed}s elapsed)", flush=True)
+
+    t = threading.Thread(target=_beat, daemon=True)
+    t.start()
+    return stop_event, t
+
+
+def _stop_heartbeat(stop_event, thread) -> None:
+    """Signal the heartbeat thread to stop and wait for it to exit."""
+    stop_event.set()
+    thread.join()
+
+
 def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
@@ -726,24 +754,28 @@ def discover_services(
 
                 concurrent_config = utils.config_value('advanced_settings.concurrent_scanning', default={})
                 max_workers = concurrent_config.get('max_workers', 3)
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {
-                        executor.submit(check_service_in_region, service_name, config, region): region
-                        for region in check_regions
-                    }
+                stop_hb, hb_thread = _start_heartbeat(service_name)
+                try:
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {
+                            executor.submit(check_service_in_region, service_name, config, region): region
+                            for region in check_regions
+                        }
 
-                    for future in as_completed(futures):
-                        try:
-                            svc_name, count, region, err_msg = future.result(timeout=30)
-                        except Exception:
-                            region = futures[future]
-                            errors.setdefault(service_name, []).append(f"{region}: check timed out")
-                            continue
-                        if count is not None and count > 0:
-                            regional_counts[region] = count
-                            total_count += count
-                        elif count is None:
-                            errors.setdefault(service_name, []).append(f"{region}: {err_msg}")
+                        for future in as_completed(futures):
+                            try:
+                                svc_name, count, region, err_msg = future.result(timeout=30)
+                            except Exception:
+                                region = futures[future]
+                                errors.setdefault(service_name, []).append(f"{region}: check timed out")
+                                continue
+                            if count is not None and count > 0:
+                                regional_counts[region] = count
+                                total_count += count
+                            elif count is None:
+                                errors.setdefault(service_name, []).append(f"{region}: {err_msg}")
+                finally:
+                    _stop_heartbeat(stop_hb, hb_thread)
 
                 if total_count > 0:
                     all_services[service_name] = {
@@ -757,7 +789,9 @@ def discover_services(
             else:
                 # Global service - single check
                 utils.log_info(f"[{progress:5.1f}%] Checking {service_name} (global service)...")
+                stop_hb, hb_thread = _start_heartbeat(service_name)
                 _, count, _, err_msg = check_service_in_region(service_name, config, check_regions[0])
+                _stop_heartbeat(stop_hb, hb_thread)
 
                 if count is not None and count > 0:
                     all_services[service_name] = {
