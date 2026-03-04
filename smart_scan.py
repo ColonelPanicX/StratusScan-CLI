@@ -407,7 +407,7 @@ def main() -> None:
         show_progress=True,
         save_log=True,
         regions=regions,
-        show_output=True,
+        show_output=False,
     )
 
     print()
