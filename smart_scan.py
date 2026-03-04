@@ -84,7 +84,10 @@ def _format_detail(detail: Dict[str, int]) -> str:
     return "  |  ".join(f"{k}: {v}" for k, v in detail.items() if v > 0)
 
 
-def _print_discovery_summary(services: Dict[str, Any]) -> None:
+def _print_discovery_summary(
+    services: Dict[str, Any],
+    recommendations: Optional[Dict[str, Any]] = None,
+) -> None:
     """Print formatted discovery results to console (Deep Scan only)."""
     print()
     print("=" * 70)
@@ -97,11 +100,15 @@ def _print_discovery_summary(services: Dict[str, Any]) -> None:
         cat = data['category']
         by_category.setdefault(cat, []).append((name, data))
 
+    service_scripts = (recommendations or {}).get('service_based', {})
+
     for category, items in sorted(by_category.items()):
         print(f"\n  {category}")
         print(f"  {'─' * 60}")
         for name, data in items:
-            print(f"  {name:<35} {data['count']:>5} {data['unit']}")
+            capped = data.get('capped', False)
+            count_str = f"{'500+':>5}" if capped else f"{data['count']:>5}"
+            print(f"  {name:<35} {count_str} {data['unit']}")
             if data.get('detail'):
                 print(f"    └─ {_format_detail(data['detail'])}")
             if data['regional'] and data['regions']:
@@ -111,6 +118,10 @@ def _print_discovery_summary(services: Dict[str, Any]) -> None:
                 print(f"    └─ {region_breakdown}")
             else:
                 print("    └─ global")
+            if capped:
+                scripts = service_scripts.get(name, [])
+                script_hint = f" — run {scripts[0]} for the complete inventory" if scripts else ""
+                print(f"    └─ 500+ found{script_hint}")
 
     total_resources = sum(s['count'] for s in services.values())
     print()
@@ -199,6 +210,8 @@ def _write_markdown_report(
     for name, data in sorted(services.items()):
         by_category.setdefault(data['category'], []).append((name, data))
 
+    service_scripts = recommendations.get('service_based', {})
+
     for category, items in sorted(by_category.items()):
         lines.append(f"### {category}")
         lines.append("")
@@ -210,8 +223,13 @@ def _write_markdown_report(
                     ', '.join(sorted(data['regions'])) if data['regional'] else 'global'
                 )
                 detail_str = _format_detail(data.get('detail', {})) or '—'
+                count_str = '500+' if data.get('capped') else str(data['count'])
+                if data.get('capped'):
+                    scripts = service_scripts.get(name, [])
+                    if scripts:
+                        detail_str = f"500+ found — run `{scripts[0]}` for complete data"
                 lines.append(
-                    f"| {name} | {data['count']} | {data['unit']} | {region_str} | {detail_str} |"
+                    f"| {name} | {count_str} | {data['unit']} | {region_str} | {detail_str} |"
                 )
         else:
             lines.append("| Service | Count | Unit | Regions |")
@@ -220,8 +238,9 @@ def _write_markdown_report(
                 region_str = (
                     ', '.join(sorted(data['regions'])) if data['regional'] else 'global'
                 )
+                count_str = '500+' if data.get('capped') else str(data['count'])
                 lines.append(
-                    f"| {name} | {data['count']} | {data['unit']} | {region_str} |"
+                    f"| {name} | {count_str} | {data['unit']} | {region_str} |"
                 )
         lines.append("")
 
@@ -366,7 +385,7 @@ def main() -> None:
         return
 
     # Deep Scan: show full discovery table
-    _print_discovery_summary(services)
+    _print_discovery_summary(services, recommendations=recommendations)
 
     # Write Markdown report
     md_path = _write_markdown_report(

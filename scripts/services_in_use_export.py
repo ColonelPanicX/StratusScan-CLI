@@ -597,6 +597,11 @@ _SERVICE_CONFIG_FLAT: Dict[str, dict] = {
 }
 
 
+# Per-service resource count cap for discovery display.
+# Counts above this value are shown as "500+" in the console and reports.
+# The actual count is still stored internally and used for totals.
+DISCOVERY_CAP = 500
+
 # Error message fragments that indicate a service is simply not in use or not
 # available in this region — expected states, not genuine unexpected errors.
 _NOT_IN_USE_FRAGMENTS = (
@@ -804,14 +809,17 @@ def discover_services(
                     _stop_heartbeat(stop_hb, hb_thread)
 
                 if total_count > 0:
+                    capped = total_count > DISCOVERY_CAP
                     all_services[service_name] = {
                         'category': category,
                         'count': total_count,
+                        'capped': capped,
                         'unit': config['unit'],
                         'regions': regional_counts,
                         'regional': True
                     }
-                    utils.log_success(f"  ✓ {service_name}: {total_count} {config['unit']} across {len(regional_counts)} region(s)")
+                    count_str = f"500+" if capped else str(total_count)
+                    utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']} across {len(regional_counts)} region(s)")
             else:
                 # Global service - single check
                 utils.log_info(f"[{progress:5.1f}%] Checking {service_name} (global service)...")
@@ -820,14 +828,17 @@ def discover_services(
                 _stop_heartbeat(stop_hb, hb_thread)
 
                 if count is not None and count > 0:
+                    capped = count > DISCOVERY_CAP
                     all_services[service_name] = {
                         'category': category,
                         'count': count,
+                        'capped': capped,
                         'unit': config['unit'],
                         'regions': {},
                         'regional': False
                     }
-                    utils.log_success(f"  ✓ {service_name}: {count} {config['unit']}")
+                    count_str = f"500+" if capped else str(count)
+                    utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']}")
                 elif count is None:
                     errors.setdefault(service_name, []).append(f"{check_regions[0]}: {err_msg}")
 
