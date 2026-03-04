@@ -160,7 +160,6 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
         "ebs_snapshots_export.py",
         "ec2_capacity_reservations_export.py",
         "ec2_dedicated_hosts_export.py",
-        "compute_resources.py",
     ],
     "AWS Lambda": ["lambda_export.py"],
     "Amazon Elastic Kubernetes Service": ["eks_export.py"],
@@ -175,7 +174,6 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
     "Amazon Simple Storage Service": [
         "s3_export.py",
         "s3_accesspoints_export.py",
-        "storage_resources.py",
     ],
     "Amazon Elastic Block Store": [
         "ebs_volumes_export.py",
@@ -204,7 +202,6 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
         "security_groups_export.py",
         "nacl_export.py",
         "route_tables_export.py",
-        "network_resources.py",
     ],
     "Amazon CloudFront": ["cloudfront_export.py"],
     "Amazon Route 53": ["route53_export.py"],
@@ -215,7 +212,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
     "AWS Global Accelerator": ["globalaccelerator_export.py"],
     "Amazon API Gateway": ["api_gateway_export.py"],
     "AWS Cloud Map": ["cloudmap_export.py"],
-    "AWS PrivateLink": ["network_resources.py"],
+    "AWS PrivateLink": ["vpc_data_export.py"],
     "AWS Client VPN": ["vpn_export.py"],
     "AWS Verified Access": ["verifiedaccess_export.py"],
     "AWS Network Manager": ["network_manager_export.py"],
