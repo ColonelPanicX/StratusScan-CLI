@@ -83,8 +83,8 @@ def _format_detail(detail: Dict[str, int]) -> str:
     return "  |  ".join(f"{k}: {v}" for k, v in detail.items() if v > 0)
 
 
-def _print_discovery_summary(services: Dict[str, Any], mode: str) -> None:
-    """Print formatted discovery results to console."""
+def _print_discovery_summary(services: Dict[str, Any]) -> None:
+    """Print formatted discovery results to console (Deep Scan only)."""
     print()
     print("=" * 70)
     print("  SERVICES DISCOVERED")
@@ -100,15 +100,16 @@ def _print_discovery_summary(services: Dict[str, Any], mode: str) -> None:
         print(f"\n  {category}")
         print(f"  {'─' * 60}")
         for name, data in items:
-            region_str = (
-                ', '.join(sorted(data['regions']))
-                if data['regional'] and data['regions']
-                else 'global'
-            )
             print(f"  {name:<35} {data['count']:>5} {data['unit']}")
-            if mode == 'deep' and data.get('detail'):
+            if data.get('detail'):
                 print(f"    └─ {_format_detail(data['detail'])}")
-            print(f"    └─ {region_str}")
+            if data['regional'] and data['regions']:
+                region_breakdown = "  |  ".join(
+                    f"{r}: {c}" for r, c in sorted(data['regions'].items())
+                )
+                print(f"    └─ {region_breakdown}")
+            else:
+                print("    └─ global")
 
     total_resources = sum(s['count'] for s in services.values())
     print()
@@ -262,9 +263,6 @@ def main() -> None:
     if errors:
         utils.log_warning(f"  {len(errors)} service(s) had unexpected check failures (see log)")
 
-    # Console summary
-    _print_discovery_summary(services, scan_mode)
-
     # Recommendations — in-memory, no Excel roundtrip
     utils.log_info("Generating recommendations...")
     recommendations = analyze_services_from_dict(services)
@@ -276,6 +274,19 @@ def main() -> None:
         f"\n  Recommended scripts: {n_scripts}"
         f"  ({n_baseline} security baseline + {n_service} service-specific)"
     )
+
+    # Quick Scan ends here — discovery count and recommendations are the deliverable
+    if scan_mode == 'quick':
+        print()
+        print("  Quick Scan complete.")
+        print(f"  {n_scripts} export scripts are recommended for this account.")
+        print("  Run a Deep Scan or individual scripts to collect full resource data.")
+        if not utils.is_auto_run():
+            input("\n  Press Enter to return to menu...")
+        return
+
+    # Deep Scan: show full discovery table
+    _print_discovery_summary(services)
 
     # Write Markdown report
     md_path = _write_markdown_report(
@@ -313,16 +324,6 @@ def main() -> None:
         utils.log_success(f"  Excel saved: {utils.get_output_filepath(filename)}")
     except Exception as e:
         utils.log_warning(f"Excel export failed (continuing): {e}")
-
-    # Quick Scan ends here — the report is the deliverable
-    if scan_mode == 'quick':
-        print()
-        print("  Quick Scan complete.")
-        print(f"  {n_scripts} export scripts are recommended for this account.")
-        print("  Run a Deep Scan or individual scripts to collect full resource data.")
-        if not utils.is_auto_run():
-            input("\n  Press Enter to return to menu...")
-        return
 
     # Deep Scan: prompt to execute recommended scripts
     # Skip execution prompt in CI/headless mode
