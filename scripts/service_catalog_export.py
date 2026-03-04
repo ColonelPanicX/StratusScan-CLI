@@ -38,10 +38,6 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-
 @utils.aws_error_handler("Listing portfolios", default_return=[])
 def list_portfolios(region: str) -> List[Dict[str, Any]]:
     """List all portfolios."""
