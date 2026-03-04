@@ -26,6 +26,9 @@ from typing import List, Dict, Any, Tuple
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import boto3
+from botocore.config import Config as BotocoreConfig
+
 try:
     import utils
 except ImportError:
@@ -606,7 +609,30 @@ _NOT_IN_USE_FRAGMENTS = (
     "not enabled",                                # Macie, others: not enabled
     "must create a landing zone",                 # Control Tower: not deployed
     "endpoint discovery failed",                  # Timestream: endpoint issue
+    "read timeout",                               # service took too long — treat as not detected
+    "connect timeout",                            # connection too slow — treat as not detected
+    "readtimeouterror",                           # botocore ReadTimeoutError class name
+    "connecttimeouterror",                        # botocore ConnectTimeoutError class name
 )
+
+# Boto3 client config for service discovery checks: fast failure over resilience.
+# Discovery checks need to know quickly whether a service has resources — if a
+# service doesn't respond within 15s it's almost certainly not in use or the
+# endpoint is unavailable. Export scripts still use the default 60s timeout.
+_DISCOVERY_CLIENT_CONFIG = BotocoreConfig(
+    connect_timeout=5,
+    read_timeout=15,
+    retries={'max_attempts': 2, 'mode': 'standard'},
+)
+
+
+def _get_discovery_client(service: str, region: str):
+    """Create a boto3 client configured for fast service discovery checks."""
+    session = boto3.Session(region_name=region)
+    kwargs = {}
+    if region and region.startswith("us-gov-"):
+        kwargs["use_fips_endpoint"] = True
+    return session.client(service, config=_DISCOVERY_CLIENT_CONFIG, **kwargs)
 
 
 def _is_not_in_use_error(exc: Exception) -> bool:
@@ -663,7 +689,7 @@ def check_service_in_region(service_name: str, config: dict, region: str) -> Tup
         success or on a recognized "not in use / not available" condition.
     """
     try:
-        client = utils.get_boto3_client(config['client'], region_name=region)
+        client = _get_discovery_client(config['client'], region)
         count = config['check'](client, region)
         return (service_name, count, region, None)
     except Exception as e:
