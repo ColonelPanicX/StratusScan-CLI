@@ -349,8 +349,11 @@ class ScriptExecutor:
                 if new_files:
                     new_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                     return str(new_files[0])
+                # pre_run_set was provided but no new file found — don't attribute
+                # a pre-existing file to this script
+                return None
 
-            # Fall back to newest file overall
+            # Fall back to newest file overall (no pre-run snapshot available)
             xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return str(xlsx_files[0])
 
