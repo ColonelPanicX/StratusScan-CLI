@@ -13,6 +13,7 @@ Usage:
 """
 
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -262,6 +263,36 @@ def _write_markdown_report(
         return None
 
 
+def _zip_export_files(results: list, account_name: str) -> Optional[Path]:
+    """
+    Zip all output files produced by the batch execution into a single archive.
+
+    Args:
+        results: List of ExecutionResult objects from execute_all()
+        account_name: AWS account name (used in the zip filename)
+
+    Returns:
+        Path to the zip file, or None if no files to zip or on failure.
+    """
+    output_files = [Path(r.output_file) for r in results if r.output_file]
+    if not output_files:
+        return None
+
+    timestamp = utils.get_export_date()
+    zip_name = f"{account_name}-service-discovery-export-{timestamp}.zip"
+    zip_path = utils.get_output_dir() / zip_name
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file_path in output_files:
+                if file_path.exists():
+                    zf.write(file_path, file_path.name)
+        return zip_path
+    except Exception as e:
+        utils.log_warning(f"Failed to create zip archive: {e}")
+        return None
+
+
 def main() -> None:
     """Main Smart Scan workflow."""
     utils.log_script_start('smart-scan')
@@ -409,6 +440,11 @@ def main() -> None:
         regions=regions,
         show_output=False,
     )
+
+    # Zip all output files produced by this run
+    zip_path = _zip_export_files(summary.get('results', []), account_name)
+    if zip_path:
+        utils.log_success(f"  Exports zipped: {zip_path}")
 
     print()
     print("=" * 70)
