@@ -67,8 +67,8 @@ def _prompt_scan_mode() -> str:
     """Prompt user for Quick or Deep scan mode. Exits on b/x."""
     print()
     print("  ─── SCAN MODE ───────────────────────────────────────────────")
-    print("  [1] Quick Scan  — service presence and resource counts")
-    print("  [2] Deep Scan   — counts + asset breakdown per service (slower)")
+    print("  [1] Quick Scan  — discover services, save a report, done")
+    print("  [2] Deep Scan   — discover services, then run export scripts")
     print("  ─────────────────────────────────────────────────────────────")
     print("  [B] Back    [X] Exit")
     print("  ─────────────────────────────────────────────────────────────")
@@ -314,7 +314,18 @@ def main() -> None:
     except Exception as e:
         utils.log_warning(f"Excel export failed (continuing): {e}")
 
-    # Execution prompt — skip in CI/headless mode
+    # Quick Scan ends here — the report is the deliverable
+    if scan_mode == 'quick':
+        print()
+        print("  Quick Scan complete.")
+        print(f"  {n_scripts} export scripts are recommended for this account.")
+        print("  Run a Deep Scan or individual scripts to collect full resource data.")
+        if not utils.is_auto_run():
+            input("\n  Press Enter to return to menu...")
+        return
+
+    # Deep Scan: prompt to execute recommended scripts
+    # Skip execution prompt in CI/headless mode
     if utils.is_auto_run():
         utils.log_info("Auto-run mode: skipping execution prompt")
         return
