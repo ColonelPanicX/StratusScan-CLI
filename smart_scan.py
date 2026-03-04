@@ -118,6 +118,39 @@ def _print_discovery_summary(services: Dict[str, Any]) -> None:
     print("=" * 70)
 
 
+def _write_quick_scan_excel(
+    recommendations: Dict[str, Any],
+    account_name: str,
+    regions: List[str],
+) -> None:
+    """
+    Write a minimal two-column Excel for Quick Scan results.
+
+    Columns: Service In Use | Recommended Script
+    One row per service × script pair. Security baseline scripts are
+    grouped under a 'Security Baseline' service label.
+    """
+    rows = []
+
+    for script in sorted(recommendations.get('always_run', [])):
+        rows.append({'Service In Use': 'Security Baseline', 'Recommended Script': script})
+
+    for service_name, scripts in sorted(recommendations.get('service_based', {}).items()):
+        for script in sorted(scripts):
+            rows.append({'Service In Use': service_name, 'Recommended Script': script})
+
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows)
+    df = utils.prepare_dataframe_for_export(df)
+
+    region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+    filename = utils.create_export_filename(account_name, 'quick-scan', region_suffix)
+    utils.save_dataframe_to_excel(df, filename)
+    utils.log_success(f"  Excel saved: {utils.get_output_filepath(filename)}")
+
+
 def _write_markdown_report(
     services: Dict[str, Any],
     recommendations: Dict[str, Any],
@@ -275,8 +308,16 @@ def main() -> None:
         f"  ({n_baseline} security baseline + {n_service} service-specific)"
     )
 
-    # Quick Scan ends here — discovery count and recommendations are the deliverable
+    # Quick Scan: write lightweight reports and exit
     if scan_mode == 'quick':
+        md_path = _write_markdown_report(
+            services, recommendations, account_name, account_id, regions, scan_mode
+        )
+        if md_path:
+            utils.log_success(f"  Report saved: {md_path}")
+
+        _write_quick_scan_excel(recommendations, account_name, regions)
+
         print()
         print("  Quick Scan complete.")
         print(f"  {n_scripts} export scripts are recommended for this account.")
