@@ -287,6 +287,14 @@ def _zip_export_files(results: list, account_name: str) -> Optional[Path]:
             for file_path in output_files:
                 if file_path.exists():
                     zf.write(file_path, file_path.name)
+
+        # Remove individual files now that they are safely inside the zip
+        for file_path in output_files:
+            try:
+                file_path.unlink(missing_ok=True)
+            except Exception as e:
+                utils.log_warning(f"Could not remove {file_path.name} after zipping: {e}")
+
         return zip_path
     except Exception as e:
         utils.log_warning(f"Failed to create zip archive: {e}")
