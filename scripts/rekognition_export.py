@@ -13,9 +13,7 @@ Output: Multi-worksheet Excel file with Rekognition resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -118,10 +116,6 @@ def collect_project_versions(regions: List[str]) -> List[Dict[str, Any]]:
                                 # Training metrics
                                 evaluation_result = version.get('EvaluationResult', {})
                                 f1_score = evaluation_result.get('F1Score', 'N/A')
-                                summary = evaluation_result.get('Summary', {})
-                                s3_object = summary.get('S3Object', {})
-                                eval_manifest_s3 = s3_object.get('Name', 'N/A')
-
                                 # Training details
                                 training_end = version.get('TrainingEndTimestamp', 'N/A')
                                 if training_end != 'N/A':

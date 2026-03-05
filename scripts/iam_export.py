@@ -21,11 +21,11 @@ Menu:
   4. All IAM Resources (Users + Roles + Policies)
 """
 
-import sys
 import datetime
-import json
 import re
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError
 
 # Add path to import utils module

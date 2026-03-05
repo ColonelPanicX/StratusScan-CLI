@@ -27,10 +27,10 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -348,11 +348,10 @@ def collect_concurrency_configs_for_region(region: str) -> List[Dict[str, Any]]:
 
             try:
                 # Check for provisioned concurrency
-                provisioned_response = lambda_client.list_provisioned_concurrency_configs(
-                    FunctionName=function_name
-                )
-
-                provisioned_configs = provisioned_response.get('ProvisionedConcurrencyConfigs', [])
+                provisioned_paginator = lambda_client.get_paginator('list_provisioned_concurrency_configs')
+                provisioned_configs = []
+                for prov_page in provisioned_paginator.paginate(FunctionName=function_name):
+                    provisioned_configs.extend(prov_page.get('ProvisionedConcurrencyConfigs', []))
 
                 for config in provisioned_configs:
                     qualifier = config.get('FunctionArn', '').split(':')[-1]

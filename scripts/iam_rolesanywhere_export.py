@@ -20,11 +20,10 @@ Note: IAM Roles Anywhere is a global service but requires region specification. 
 us-west-2 as the primary endpoint for API operations.
 """
 
-import sys
 import datetime
-import json
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:

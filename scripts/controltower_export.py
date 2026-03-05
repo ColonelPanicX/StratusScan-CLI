@@ -18,11 +18,10 @@ Output: Multi-worksheet Excel file with:
   - Failed Controls: Controls that failed to enable
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -506,8 +505,6 @@ def main():
 
     ous = collect_organizational_units()
     controls = collect_enabled_controls(ous)
-    summary = generate_summary(landing_zone, ous, controls)
-
     # Create DataFrames
     utils.log_info("Creating DataFrames...")
 

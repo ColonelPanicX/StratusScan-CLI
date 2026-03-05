@@ -23,10 +23,10 @@ Features:
 - Phase 4B: Concurrent region scanning (4x-10x performance improvement)
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -340,7 +340,7 @@ def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
                     'Insight Type': insight_type
                 })
 
-        except Exception as e:
+        except Exception:
             # Many trails don't have insight selectors, which is normal
             pass
 

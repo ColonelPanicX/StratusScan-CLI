@@ -28,10 +28,10 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -75,8 +75,10 @@ def collect_amis_in_region(region: str, account_id: str) -> List[Dict[str, Any]]
         ec2_client = utils.get_boto3_client('ec2', region_name=region)
 
         # Get AMIs owned by this account
-        response = ec2_client.describe_images(Owners=['self'])
-        amis = response.get('Images', [])
+        paginator = ec2_client.get_paginator('describe_images')
+        amis = []
+        for page in paginator.paginate(Owners=['self']):
+            amis.extend(page.get('Images', []))
 
         print(f"  Found {len(amis)} account-owned AMIs")
 

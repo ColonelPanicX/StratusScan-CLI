@@ -18,8 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -390,8 +389,8 @@ def _scan_documentdb_subnet_groups_region(region: str) -> List[Dict[str, Any]]:
                 subnet_ids = [s.get('SubnetIdentifier', '') for s in subnets]
                 subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
 
-                azs = set([s.get('SubnetAvailabilityZone', {}).get('Name', '')
-                          for s in subnets if s.get('SubnetAvailabilityZone')])
+                azs = {s.get('SubnetAvailabilityZone', {}).get('Name', '')
+                          for s in subnets if s.get('SubnetAvailabilityZone')}
                 az_list = ', '.join(sorted(azs)) if azs else 'N/A'
 
                 # Subnet group status

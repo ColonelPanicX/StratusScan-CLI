@@ -25,13 +25,12 @@ CPU Allocation, Memory Allocation, Container Name, Image Used, Port Mappings,
 ELB Target Group, Network Mode, Subnet IDs, Security Groups, IAM Role, and Creation Date.
 """
 
-import os
-import sys
 import datetime
-import time
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from botocore.exceptions import ClientError, EndpointConnectionError
+from typing import Any, Dict, List
+
+from botocore.exceptions import EndpointConnectionError
 
 # Add path to import utils module
 try:
@@ -40,7 +39,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -48,7 +47,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -156,96 +155,95 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
     """
     print(f"\nCollecting ECS information in region: {region}")
     ecs_resources = []
-    
+
     try:
         # Create ECS, ELBv2, and EC2 clients for this region
         ecs_client = utils.get_boto3_client('ecs', region_name=region)
         elbv2_client = utils.get_boto3_client('elbv2', region_name=region)
-        ec2_client = utils.get_boto3_client('ec2', region_name=region)
-        
+
         # Get all ECS clusters
         cluster_arns = []
         paginator = ecs_client.get_paginator('list_clusters')
         for page in paginator.paginate():
             cluster_arns.extend(page['clusterArns'])
-        
+
         if not cluster_arns:
             print(f"  No ECS clusters found in {region}")
             return []
-        
+
         print(f"  Found {len(cluster_arns)} ECS clusters")
-        
+
         # Get details for each cluster
         for i, cluster_arn in enumerate(cluster_arns, 1):
             print(f"  Processing cluster {i}/{len(cluster_arns)}: {cluster_arn.split('/')[-1]}")
-            
+
             try:
                 # Get cluster details
                 cluster_response = ecs_client.describe_clusters(
                     clusters=[cluster_arn],
                     include=['SETTINGS', 'CONFIGURATIONS', 'TAGS']
                 )
-                
+
                 if not cluster_response['clusters']:
                     continue
-                    
+
                 cluster = cluster_response['clusters'][0]
                 cluster_name = cluster['clusterName']
-                
+
                 # Get all services in this cluster
                 service_arns = []
                 services_paginator = ecs_client.get_paginator('list_services')
                 for page in services_paginator.paginate(cluster=cluster_arn):
                     service_arns.extend(page['serviceArns'])
-                
+
                 if not service_arns:
                     print(f"    No services found in cluster {cluster_name}")
                     continue
-                
+
                 print(f"    Found {len(service_arns)} services in cluster {cluster_name}")
-                
+
                 # Process services in batches (describe_services has a limit of 10 services per call)
                 for j in range(0, len(service_arns), 10):
                     service_batch = service_arns[j:j+10]
-                    
+
                     # Get service details
                     service_response = ecs_client.describe_services(
                         cluster=cluster_arn,
                         services=service_batch,
                         include=['TAGS']
                     )
-                    
+
                     for service in service_response['services']:
                         service_name = service['serviceName']
                         print(f"      Processing service: {service_name}")
-                        
+
                         # Get task definition details
                         task_definition_arn = service['taskDefinition']
                         task_def = get_task_definition_details(ecs_client, task_definition_arn)
-                        
+
                         task_family = task_def.get('family', 'Unknown')
                         task_revision = task_def.get('revision', 'Unknown')
                         cpu_allocation = task_def.get('cpu', 'Unknown')
                         memory_allocation = task_def.get('memory', 'Unknown')
                         network_mode = task_def.get('networkMode', 'Unknown')
-                        
+
                         # Get the IAM role
                         execution_role_arn = task_def.get('executionRoleArn', 'None')
                         task_role_arn = task_def.get('taskRoleArn', 'None')
-                        
+
                         # Extract role name from ARN
                         execution_role_name = execution_role_arn.split('/')[-1] if execution_role_arn != 'None' else 'None'
                         task_role_name = task_role_arn.split('/')[-1] if task_role_arn != 'None' else 'None'
-                        
+
                         # Format roles
                         iam_roles = []
                         if execution_role_name != 'None':
                             iam_roles.append(f"Execution: {execution_role_name}")
                         if task_role_name != 'None':
                             iam_roles.append(f"Task: {task_role_name}")
-                        
+
                         iam_role = ", ".join(iam_roles) if iam_roles else "None"
-                        
+
                         # Get launch type
                         launch_type = ''
                         if 'launchType' in service:
@@ -258,16 +256,16 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
                                 launch_type = f"CapacityProvider: {provider}"
                         else:
                             launch_type = 'Unknown'
-                        
+
                         # Get desired and running count
                         desired_count = service.get('desiredCount', 0)
                         running_count = service.get('runningCount', 0)
-                        
+
                         # Get creation time
                         created_at = service.get('createdAt', datetime.datetime.now())
                         if isinstance(created_at, datetime.datetime):
                             created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                            
+
                         # Get load balancer info if available
                         elb_target_groups = []
                         if 'loadBalancers' in service and service['loadBalancers']:
@@ -275,30 +273,30 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
                                 if 'targetGroupArn' in lb:
                                     target_group_arn = lb['targetGroupArn']
                                     target_group = get_target_group_info(elbv2_client, target_group_arn)
-                                    
+
                                     if target_group and 'TargetGroupName' in target_group and 'LoadBalancerArns' in target_group and target_group['LoadBalancerArns']:
                                         lb_name = get_load_balancer_name(elbv2_client, target_group['LoadBalancerArns'][0])
                                         elb_target_groups.append(f"{lb_name}:{target_group['TargetGroupName']}")
                                     else:
                                         elb_target_groups.append(target_group_arn.split('/')[-1] if target_group_arn else 'Unknown')
-                        
+
                         elb_target_group = ', '.join(elb_target_groups) if elb_target_groups else 'None'
-                        
+
                         # Get network configuration if available
                         subnet_ids = []
                         security_groups = []
-                        
+
                         if 'networkConfiguration' in service and 'awsvpcConfiguration' in service['networkConfiguration']:
                             vpc_config = service['networkConfiguration']['awsvpcConfiguration']
                             subnet_ids = vpc_config.get('subnets', [])
                             security_groups = vpc_config.get('securityGroups', [])
-                        
+
                         # Get tasks for this service to get task status
                         task_arns = []
                         tasks_paginator = ecs_client.get_paginator('list_tasks')
                         for page in tasks_paginator.paginate(cluster=cluster_arn, serviceName=service_name):
                             task_arns.extend(page['taskArns'])
-                        
+
                         # If there are no tasks, we still want to show the service
                         if not task_arns:
                             # Create a base entry for the service with no running tasks
@@ -326,31 +324,31 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
                             }
                             ecs_resources.append(base_entry)
                             continue
-                        
+
                         # Get details for each task
                         for k in range(0, len(task_arns), 100):  # describe_tasks has a limit of 100 tasks per call
                             task_batch = task_arns[k:k+100]
-                            
+
                             task_response = ecs_client.describe_tasks(
                                 cluster=cluster_arn,
                                 tasks=task_batch
                             )
-                            
+
                             for task in task_response['tasks']:
                                 task_status = task.get('lastStatus', 'Unknown')
-                                
+
                                 # Process each container in the task
                                 for container in task.get('containers', []):
                                     container_name = container.get('name', 'Unknown')
                                     container_image = container.get('image', 'Unknown')
-                                    
+
                                     # Get container definition for port mappings
                                     container_def = None
                                     for c in task_def.get('containerDefinitions', []):
                                         if c.get('name') == container_name:
                                             container_def = c
                                             break
-                                    
+
                                     # Extract port mappings
                                     port_mappings = []
                                     if container_def and 'portMappings' in container_def and container_def['portMappings']:
@@ -358,9 +356,9 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
                                             host_port = pm.get('hostPort', 'Auto')
                                             container_port = pm.get('containerPort', 'Unknown')
                                             protocol = pm.get('protocol', 'tcp')
-                                            
+
                                             port_mappings.append(f"{container_port}:{host_port}/{protocol}")
-                                    
+
                                     # Create entry for this container
                                     ecs_resources.append({
                                         'Cluster Name': cluster_name,
@@ -384,11 +382,11 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
                                         'IAM Role': iam_role,
                                         'Created At': created_at
                                     })
-                
+
             except Exception as e:
                 print(f"    Error processing cluster {cluster_arn}: {e}")
                 continue
-                
+
     except EndpointConnectionError:
         print(f"  ECS service is not available in region {region}")
     except Exception as e:
@@ -561,7 +559,7 @@ def main():
             output_path = utils.save_dataframe_to_excel(pd.DataFrame(), filename)
 
         if output_path:
-            print(f"\nExport completed successfully!")
+            print("\nExport completed successfully!")
             print(f"File saved as: {output_path}")
             print(f"Total service-linked ECS resources: {len(all_ecs_resources)}")
             print(f"Total standalone ECS tasks: {len(standalone_tasks)}")

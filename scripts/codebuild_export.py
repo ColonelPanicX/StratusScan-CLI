@@ -13,9 +13,7 @@ Output: Multi-worksheet Excel file with CodeBuild resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils

@@ -24,7 +24,8 @@ Note: Requires license-manager:List* and license-manager:Get* permissions
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern

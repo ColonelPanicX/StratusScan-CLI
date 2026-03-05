@@ -23,10 +23,10 @@ Features:
 - Phase 4B: Concurrent region scanning (4x-10x performance improvement)
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -334,7 +334,6 @@ def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
                 # Source metadata
                 source_metadata = rg_resp.get('SourceMetadata', {})
                 source_arn = source_metadata.get('SourceArn', 'N/A')
-                source_update_token = source_metadata.get('SourceUpdateToken', 'N/A')
 
                 # Get tags
                 tags = rg_resp.get('Tags', [])

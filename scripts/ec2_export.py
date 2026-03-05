@@ -22,12 +22,12 @@ Features:
 - Phase 4B: Concurrent region scanning (4x-10x performance improvement)
 """
 
-import sys
-import time
 import datetime
 import json
-from pathlib import Path
 import re
+import sys
+import time
+from pathlib import Path
 
 # Add path to import utils module
 try:
@@ -61,34 +61,34 @@ def get_os_info_from_ssm(instance_id, region):
     """
     try:
         ssm = utils.get_boto3_client('ssm', region_name=region)
-        
+
         # Check if the instance is managed by SSM
         response = ssm.describe_instance_information(
             Filters=[{'Key': 'InstanceIds', 'Values': [instance_id]}]
         )
-        
+
         if not response['InstanceInformationList']:
             return "Unknown OS"
-        
+
         # Get platform information from SSM
         instance_info = response['InstanceInformationList'][0]
         platform_type = instance_info.get('PlatformType', '')
         platform_name = instance_info.get('PlatformName', '')
         platform_version = instance_info.get('PlatformVersion', '')
-        
+
         # If we have detailed platform info from SSM directly, use it
         if platform_name and platform_version:
             return f"{platform_name} {platform_version}"
         elif platform_name:
             return platform_name
-            
+
         # If it's Windows, return basic Windows info
         if platform_type == 'Windows':
             return "Windows (Use AMI Name for details)"
-        
+
         # For Linux, return basic Linux info
         return "Linux (Use AMI Name for details)"
-        
+
     except Exception as e:
         utils.log_warning(f"SSM error for instance {instance_id} in region {region}: {e}")
         return "Unknown OS"
@@ -121,23 +121,23 @@ def get_instance_stop_date(instance, state):
 def get_os_info_from_ami(ec2_client, image_id, platform_details, platform):
     """
     Get detailed OS information from AMI metadata without making blocking calls
-    
+
     Args:
         ec2_client: The boto3 EC2 client
         image_id (str): The AMI ID
         platform_details (str): The platform details from instance metadata
         platform (str): The platform from instance metadata
-    
+
     Returns:
         str: Detailed operating system information where available
     """
     try:
         # Try to get AMI information (non-blocking)
         response = ec2_client.describe_images(ImageIds=[image_id])
-        
+
         if response['Images']:
             image = response['Images'][0]
-            
+
             # Check for Windows AMIs
             if platform == 'windows':
                 description = image.get('Description', '')
@@ -148,31 +148,31 @@ def get_os_info_from_ami(ec2_client, image_id, platform_details, platform):
                 if name and 'Windows' in name:
                     return name
                 return platform_details
-            
+
             # For Linux AMIs
             name = image.get('Name', '')
             description = image.get('Description', '')
-            
+
             # Amazon Linux AMIs
             if 'amzn' in name.lower() or 'amazon linux' in name.lower():
                 return name if name else "Amazon Linux"
-            
+
             # RHEL, Ubuntu, SUSE, etc.
-            if any(distro in name.lower() or distro in description.lower() for distro in 
+            if any(distro in name.lower() or distro in description.lower() for distro in
                    ['rhel', 'red hat', 'ubuntu', 'debian', 'suse', 'centos']):
                 return name if name else description
-            
+
             # If we have a name but don't recognize the distribution
             if name:
                 return name
-                
+
             # Fall back to description
             if description:
                 return description
-        
+
         # If AMI lookup fails, use platform details
         return platform_details
-    
+
     except Exception as e:
         utils.log_warning(f"Could not get detailed OS info for AMI {image_id}: {e}")
         return platform_details
@@ -403,7 +403,7 @@ def calculate_storage_cost(root_size, root_type, attached_volume_info, storage_p
             total_cost += float(root_size) * root_price
 
         # Calculate attached volumes cost
-        for vol_id, vol_info in attached_volume_info.items():
+        for _vol_id, vol_info in attached_volume_info.items():
             vol_size = vol_info.get('size', 0)
             vol_type = vol_info.get('type', 'gp3')
             vol_price = storage_pricing.get(vol_type, storage_pricing.get('gp3', 0.08))
@@ -442,7 +442,7 @@ def get_instance_data(region, instance_filter=None):
     # Load pricing data
     pricing_data = load_pricing_data(region)
     storage_pricing = load_storage_pricing_data()
-    
+
     try:
         # Prepare filters if needed
         filters = []
@@ -451,7 +451,7 @@ def get_instance_data(region, instance_filter=None):
                 'Name': 'instance-state-name',
                 'Values': [instance_filter]
             })
-        
+
         # Get instances in the region with optional filter using paginator
         paginator = ec2.get_paginator('describe_instances')
         if filters:
@@ -537,10 +537,10 @@ def get_instance_data(region, instance_filter=None):
                 # Get the root volume information
                 root_device = next((device for device in instance.get('BlockDeviceMappings', [])
                                   if device['DeviceName'] == instance.get('RootDeviceName')), None)
-                
+
                 # Get detailed OS information
                 os_info = get_os_info_from_ssm(instance.get('InstanceId', ''), region)
-                
+
                 # Get AMI name information
                 ami_name = get_os_info_from_ami(
                     ec2,
@@ -548,11 +548,11 @@ def get_instance_data(region, instance_filter=None):
                     instance.get('PlatformDetails', 'N/A'),
                     instance.get('Platform', '')
                 )
-                
+
                 # Get RAM info from the prefetched instance types map
                 instance_type = instance.get('InstanceType', 'N/A')
                 ram_mib = instance_types_map.get(instance_type, 'N/A')
-                
+
                 # For root device size and type, we need to ensure we're fetching it correctly
                 root_device_size = 'N/A'
                 root_volume_id = 'N/A'
@@ -580,11 +580,11 @@ def get_instance_data(region, instance_filter=None):
                 # Get attached volumes (non-root), using prefetched volume cache
                 attached_vols, attached_vol_info = get_attached_volumes(ec2, instance, volumes_map)
                 attached_volumes_str = ', '.join(attached_vols) if attached_vols else 'N/A'
-                
+
                 # Get instance state and stopped date if applicable
                 instance_state = instance.get('State', {}).get('Name', 'N/A')
                 stop_date = get_instance_stop_date(instance, instance_state)
-                
+
                 # Format tags
                 instance_tags = format_tags(instance.get('Tags', []))
 
@@ -654,7 +654,7 @@ def get_instance_data(region, instance_filter=None):
 
     except Exception as e:
         utils.log_error(f"Error getting instances in region {region}", e)
-    
+
     return instances
 
 def _prompt_instance_filter():

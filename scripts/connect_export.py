@@ -15,8 +15,7 @@ Output: Multi-worksheet Excel file with Connect resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -238,7 +237,7 @@ def main():
     print("\nCollecting AWS Connect data...")
 
     instances = collect_instances(regions)
-    
+
     # Collect queues and phone numbers per region (not concurrent to avoid rate limiting)
     all_queues = []
     all_phone_numbers = []

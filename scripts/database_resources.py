@@ -12,8 +12,8 @@ Covered services (multi-select at runtime):
 """
 
 import os
-import sys
 import subprocess
+import sys
 import time
 import zipfile
 from dataclasses import dataclass

@@ -20,10 +20,10 @@ Features:
 - Compliance summary by instance
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -158,8 +158,10 @@ def _scan_patch_compliance_region(region: str) -> List[Dict[str, Any]]:
         ssm_client = utils.get_boto3_client('ssm', region_name=region)
 
         # Get instances first
-        instances_response = ssm_client.describe_instance_information()
-        instances = instances_response.get('InstanceInformationList', [])
+        instances_paginator = ssm_client.get_paginator('describe_instance_information')
+        instances = []
+        for inst_page in instances_paginator.paginate():
+            instances.extend(inst_page.get('InstanceInformationList', []))
 
         for instance in instances:
             instance_id = instance.get('InstanceId', '')
@@ -215,7 +217,7 @@ def _scan_patch_compliance_region(region: str) -> List[Dict[str, Any]]:
                             'Execution Time': execution_time if execution_time else 'N/A'
                         })
 
-            except Exception as e:
+            except Exception:
                 # Some instances may not have compliance data
                 pass
 

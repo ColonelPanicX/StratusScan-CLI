@@ -23,11 +23,10 @@ Features:
 - Error handling with AWS partition awareness
 """
 
-import sys
 import datetime
-import time
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -505,7 +504,6 @@ def collect_task_executions(region: str, task_arns: List[str]) -> List[Dict[str,
 
                             # Format bytes transferred
                             bytes_transferred = result.get('BytesTransferred', 0)
-                            bytes_failed = result.get('BytesCompressed', 0)  # Using compressed as proxy for failed
 
                             execution_data = {
                                 'Task Execution ARN': exec_arn,
@@ -658,7 +656,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         utils.log_warning("No DataSync resources found in any region. Exiting...")
         return
 
-    utils.log_success(f"Collection complete:")
+    utils.log_success("Collection complete:")
     utils.log_info(f"  Tasks: {len(all_tasks)}")
     utils.log_info(f"  Locations: {len(all_locations)}")
     utils.log_info(f"  Agents: {len(all_agents)}")

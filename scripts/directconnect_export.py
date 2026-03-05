@@ -28,10 +28,10 @@ Cost Awareness:
 - LAGs provide redundancy but each member connection is billed separately
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:

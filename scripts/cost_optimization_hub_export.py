@@ -16,10 +16,11 @@ recommendation type. Aggregates savings across all sources
 
 """
 
-import sys
 import datetime
-from botocore.exceptions import ClientError
+import sys
 from pathlib import Path
+
+from botocore.exceptions import ClientError
 
 # Add path to import utils module
 try:
@@ -72,7 +73,6 @@ def get_all_recommendations(client):
     Returns:
         list: List of all recommendations
     """
-    import pandas as pd
 
     utils.log_info("Fetching Cost Optimization Hub recommendations...")
     recommendations = []
@@ -235,7 +235,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
         return
 
-    import pandas as pd
 
     utils.log_info("IMPORTANT: AWS Cost Optimization Hub must be enabled in your account.")
     utils.log_info("Cost Optimization Hub API is only available in the us-east-1 region.")

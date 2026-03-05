@@ -13,9 +13,9 @@ Creates a dated zip archive of all files in the output/ directory.
 Follows the gold-standard 2-step flow: confirm → archive.
 """
 
+import datetime
 import sys
 import zipfile
-import datetime
 from pathlib import Path
 
 try:

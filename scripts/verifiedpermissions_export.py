@@ -24,7 +24,8 @@ Note: Verified Permissions is a regional service
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -311,9 +312,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    total_resources = (len(all_stores) + len(all_policies) +
-                      len(all_templates) + len(all_identity_sources))
-
     utils.log_info(f"  Policy Stores: {len(all_stores)}")
     utils.log_info(f"  Policies: {len(all_policies)}")
     utils.log_info(f"  Policy Templates: {len(all_templates)}")

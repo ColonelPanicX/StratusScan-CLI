@@ -26,10 +26,10 @@ Notes:
 - Route 53 Resolver is regional and requires multi-region scanning
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:

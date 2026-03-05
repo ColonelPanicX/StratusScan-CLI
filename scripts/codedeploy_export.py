@@ -13,9 +13,7 @@ Output: Multi-worksheet Excel file with CodeDeploy resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -126,7 +124,6 @@ def collect_deployment_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
                                     # EC2 tag filters
                                     ec2_tag_filters = dg.get('ec2TagFilters', [])
-                                    ec2_tag_set = dg.get('ec2TagSet', {})
                                     ec2_tags_count = len(ec2_tag_filters)
 
                                     # Auto Scaling groups

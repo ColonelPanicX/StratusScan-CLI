@@ -17,8 +17,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -182,7 +181,7 @@ def _scan_lakeformation_settings_region(region: str) -> List[Dict[str, Any]]:
     regional_settings = []
     try:
         lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        
+
         # Get data lake settings
         settings_response = lf_client.get_data_lake_settings()
         settings = settings_response.get('DataLakeSettings', {})
@@ -445,7 +444,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

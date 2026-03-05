@@ -21,11 +21,10 @@ Features:
 - Multi-region key configurations
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
-import json
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -310,10 +309,6 @@ def scan_kms_grants_in_region(region: str) -> List[Dict[str, Any]]:
                             operations_str = ', '.join(operations) if operations else 'N/A'
 
                             # Constraints
-                            constraints = grant.get('Constraints', {})
-                            encryption_context_subset = constraints.get('EncryptionContextSubset', {})
-                            encryption_context_equals = constraints.get('EncryptionContextEquals', {})
-
                             # Creation date
                             creation_date = grant.get('CreationDate', '')
                             if creation_date:
@@ -338,7 +333,7 @@ def scan_kms_grants_in_region(region: str) -> List[Dict[str, Any]]:
                                 'Creation Date': creation_date
                             })
 
-                except Exception as e:
+                except Exception:
                     # Some keys may not have grants, which is normal
                     pass
 

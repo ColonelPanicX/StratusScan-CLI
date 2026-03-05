@@ -15,8 +15,7 @@ Output: Multi-sheet Excel file with all Storage Gateway resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 # Import utils with fallback for running from scripts directory
 try:
@@ -31,8 +30,6 @@ except ImportError:
 
 # Third-party imports (will be checked by dependency_check)
 import pandas as pd
-from botocore.exceptions import ClientError
-
 
 # ============================================================================
 # DATA COLLECTION FUNCTIONS
@@ -728,9 +725,9 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     success = utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     if success:
-        utils.log_success(f"\nExport completed successfully!")
+        utils.log_success("\nExport completed successfully!")
         utils.log_success(f"File saved to: {utils.get_output_filepath(filename)}")
-        utils.log_info(f"\nExport Summary:")
+        utils.log_info("\nExport Summary:")
         utils.log_info(f"  - Total Gateways: {len(gateways)}")
         utils.log_info(f"  - Active Gateways: {len(active_gateways_df)}")
         utils.log_info(f"  - File Shares: {len(file_shares)}")

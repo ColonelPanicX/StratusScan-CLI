@@ -22,10 +22,11 @@ Menu:
   4. All IAM Identity Center Resources (Users + Groups + Permission Sets)
 """
 
-import sys
 import datetime
 import json
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError
 
 # Add path to import utils module

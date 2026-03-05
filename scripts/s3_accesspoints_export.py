@@ -19,9 +19,8 @@ including AWS identifiers for compliance and audit purposes.
 """
 
 import sys
-import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 # Add path to import utils module
 try:
@@ -362,7 +361,7 @@ def create_summary_sheet(
     mrap_other = len(mraps) - mrap_ready
 
     # Count regions for standard APs
-    regions = set(ap.get('Region', 'Unknown') for ap in standard_aps)
+    regions = {ap.get('Region', 'Unknown') for ap in standard_aps}
 
     summary = {
         'Metric': [

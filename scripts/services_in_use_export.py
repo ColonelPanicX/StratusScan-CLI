@@ -21,10 +21,9 @@ import argparse
 import sys
 import threading
 import time
-from pathlib import Path
-from typing import List, Dict, Any, Tuple
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 import boto3
 from botocore.config import Config as BotocoreConfig
@@ -366,7 +365,7 @@ SERVICE_CHECKS = {
         },
         'AWS KMS': {
             'client': 'kms',
-            'check': lambda c, r: len([k for k in c.list_keys()['Keys']]),
+            'check': lambda c, r: len(list(c.list_keys()['Keys'])),
             'unit': 'keys',
             'regional': True
         },
@@ -818,7 +817,7 @@ def discover_services(
                         'regions': regional_counts,
                         'regional': True
                     }
-                    count_str = f"500+" if capped else str(total_count)
+                    count_str = "500+" if capped else str(total_count)
                     utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']} across {len(regional_counts)} region(s)")
             else:
                 # Global service - single check
@@ -837,7 +836,7 @@ def discover_services(
                         'regions': {},
                         'regional': False
                     }
-                    count_str = f"500+" if capped else str(count)
+                    count_str = "500+" if capped else str(count)
                     utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']}")
                 elif count is None:
                     errors.setdefault(service_name, []).append(f"{check_regions[0]}: {err_msg}")
@@ -914,7 +913,7 @@ def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.
     """Create separate sheets for each category."""
     sheets = {}
 
-    for category in sorted(set(s['category'] for s in services.values())):
+    for category in sorted({s['category'] for s in services.values()}):
         category_services = {
             name: data for name, data in services.items()
             if data['category'] == category
@@ -950,8 +949,9 @@ def create_recommendations_sheet(services: Dict[str, Dict[str, Any]]) -> pd.Data
         DataFrame with recommended export scripts
     """
     try:
-        from smart_scan import analyze_services, map_services_to_scripts
         from smart_scan.mapping import ALWAYS_RUN_SCRIPTS, get_category_for_script
+
+        from smart_scan import map_services_to_scripts
 
         # Extract just service names
         service_names = set(services.keys())
@@ -1061,7 +1061,7 @@ Examples:
         help='Run Quick Scan (all recommended scripts) without interactive selection'
     )
 
-    args = parser.parse_args()
+    parser.parse_args()
 
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
@@ -1158,7 +1158,7 @@ Examples:
         print("SMART SCAN RECOMMENDATIONS")
         print("="*60)
         print(f"✓ {recommendation_count} export scripts recommended")
-        print(f"  └─ See 'Recommended Scripts' worksheet in Excel export")
+        print("  └─ See 'Recommended Scripts' worksheet in Excel export")
         print()
         always_run = len([r for r in df_recommendations.to_dict('records') if r.get('Priority') == 'Always Run'])
         service_based = recommendation_count - always_run

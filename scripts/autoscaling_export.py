@@ -26,10 +26,10 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:

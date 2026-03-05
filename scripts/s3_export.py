@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-""" 
+"""
 ===========================
 = AWS RESOURCE SCANNER =
 ===========================
@@ -19,12 +19,11 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import argparse
+import datetime
 import json
 import os
 import sys
-import time
-import datetime
-import argparse
 from pathlib import Path
 
 # Add path to import utils module
@@ -34,7 +33,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -42,7 +41,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -129,7 +128,7 @@ def get_bucket_object_count(bucket_name, region):
 def check_storage_lens_availability():
     """
     Check if S3 Storage Lens is configured and available in AWS
-    
+
     Returns:
         bool: True if Storage Lens is available, False otherwise
     """
@@ -138,15 +137,15 @@ def check_storage_lens_availability():
         # S3Control is a global service - use partition-aware home region
         home_region = utils.get_partition_default_region()
         s3control_client = utils.get_boto3_client('s3control', region_name=home_region)
-        
+
         # Get caller identity for Account ID
         account_id = utils.get_boto3_client('sts').get_caller_identity()["Account"]
-        
+
         # List Storage Lens configurations
         response = s3control_client.list_storage_lens_configurations(
             AccountId=account_id
         )
-        
+
         # Check if there are any Storage Lens configurations
         if 'StorageLensConfigurationList' in response and len(response['StorageLensConfigurationList']) > 0:
             utils.log_info("Found S3 Storage Lens configurations. Will attempt to use for bucket metrics.")
@@ -174,25 +173,22 @@ def get_latest_storage_lens_data(account_id):
         # S3Control is a global service - use partition-aware home region
         home_region = utils.get_partition_default_region()
         s3control_client = utils.get_boto3_client('s3control', region_name=home_region)
-        
+
         # List Storage Lens configurations
         configurations = s3control_client.list_storage_lens_configurations(
             AccountId=account_id
         )
-        
+
         if 'StorageLensConfigurationList' not in configurations or len(configurations['StorageLensConfigurationList']) == 0:
             return {}
-            
-        # Get the first configuration ID (default configuration if available)
-        config_id = configurations['StorageLensConfigurationList'][0]['Id']
-        
+
         # Try to get data from CloudWatch metrics in AWS
         latest_data = {}
-        
+
         # Try to get data for yesterday (Storage Lens data is available the next day)
         today = datetime.datetime.now()
         yesterday = today - datetime.timedelta(days=1)
-        
+
         # Get list of all buckets (global S3 call)
         s3_client = utils.get_boto3_client('s3')
         all_bucket_names = [bucket['Name'] for bucket in s3_client.list_buckets()['Buckets']]
@@ -276,7 +272,7 @@ def get_latest_storage_lens_data(account_id):
             latest_data.update(region_data)
 
         return latest_data
-            
+
     except Exception as e:
         utils.log_error("Error retrieving Storage Lens data", e)
         return {}
@@ -466,32 +462,32 @@ def export_to_excel(buckets_info, account_name, target_region=None):
         'Cost Note',
         'Owner'
     ]
-    
+
     # Reorder columns (only include columns that exist in the DataFrame)
     available_columns = [col for col in column_order if col in df.columns]
     df = df[available_columns]
-    
+
     # Format the creation date to be more readable
     if 'Creation Date' in df.columns:
         df['Creation Date'] = df['Creation Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    
+
     # Generate filename with current date and AWS identifier
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
+
     # Create region indicator if applicable
     region_suffix = target_region if target_region else None
-    
+
     # Use utils to create filename and save data with AWS identifier
     filename = utils.create_export_filename(
-        account_name, 
-        "s3-buckets", 
-        region_suffix, 
+        account_name,
+        "s3-buckets",
+        region_suffix,
         current_date
     )
-    
+
     # Use utils to save DataFrame to Excel
     output_path = utils.save_dataframe_to_excel(df, filename)
-    
+
     if output_path:
         utils.log_success("AWS S3 data exported successfully!")
         utils.log_info(f"File location: {output_path}")
@@ -536,28 +532,28 @@ def export_to_csv(buckets_info, account_name, target_region=None):
         'Cost Note',
         'Owner'
     ]
-    
+
     # Reorder columns (only include columns that exist in the DataFrame)
     available_columns = [col for col in column_order if col in df.columns]
     df = df[available_columns]
-    
+
     # Format the creation date to be more readable
     if 'Creation Date' in df.columns:
         df['Creation Date'] = df['Creation Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    
+
     # Generate filename with current date
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
+
     # Create region indicator if applicable
     region_suffix = f"-{target_region}" if target_region else ""
-    
+
     # Use utils to get output filepath
     csv_filename = f"{account_name}-aws-s3-buckets{region_suffix}-export-{current_date}.csv"
     csv_path = utils.get_output_filepath(csv_filename)
-    
+
     # Write data to CSV
     df.to_csv(csv_path, index=False)
-    
+
     utils.log_success(f"AWS S3 data successfully exported to: {csv_path}")
     return str(csv_path)
 
@@ -572,7 +568,7 @@ def main():
     # Check if required dependencies are installed
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         return
-    
+
     # Create argument parser
     parser = argparse.ArgumentParser(description='Export AWS S3 bucket information')
     parser.add_argument('--format', choices=['xlsx', 'csv'], default='xlsx',
@@ -583,10 +579,10 @@ def main():
                         help='Run in non-interactive mode using environment variables')
     parser.add_argument('--region', type=str, default=None,
                         help='Specific AWS region to scan (default: all AWS regions)')
-    
+
     # Parse arguments
     args = parser.parse_args()
-    
+
     # Detect partition and set partition-appropriate region examples
     partition = utils.detect_partition()
     if partition == 'aws-us-gov':
@@ -636,13 +632,12 @@ def main():
 
         # Get regions based on selection
         all_available_regions = utils.get_partition_regions(partition, all_regions=True)
-        default_regions = utils.get_partition_regions(partition, all_regions=False)
 
         # Process selection
         if selection_int == 1:
             # Default regions - for S3, scan all regions by default
             target_region = None
-            utils.log_info(f"Scanning all regions for S3 buckets")
+            utils.log_info("Scanning all regions for S3 buckets")
         elif selection_int == 2:
             # All regions
             target_region = None
@@ -682,31 +677,31 @@ def main():
 
     utils.log_info("Checking for S3 Storage Lens availability in AWS...")
     use_storage_lens = check_storage_lens_availability()
-    
-    utils.log_info(f"Collecting S3 bucket information" + 
-          (f" for AWS region: {target_region}" if target_region else " across all AWS regions") + 
+
+    utils.log_info("Collecting S3 bucket information" +
+          (f" for AWS region: {target_region}" if target_region else " across all AWS regions") +
           "...")
     utils.log_info("This may take some time depending on the number of buckets...")
-    
+
     # Get information about S3 buckets in AWS
     buckets_info = get_s3_buckets_info(use_storage_lens=use_storage_lens, target_region=target_region)
-    
+
     # Check if we found any buckets
     if not buckets_info:
         utils.log_warning("No S3 buckets found in AWS regions or unable to retrieve bucket information.")
         return
-    
-    utils.log_success(f"Found {len(buckets_info)} S3 buckets" + 
+
+    utils.log_success(f"Found {len(buckets_info)} S3 buckets" +
           (f" in AWS region {target_region}." if target_region else " across all AWS regions."))
-    
+
     # Export the data to the selected format
     if args.format == 'xlsx':
         output_file = export_to_excel(buckets_info, account_name, target_region)
     else:
         output_file = export_to_csv(buckets_info, account_name, target_region)
-    
+
     if output_file:
-        utils.log_info(f"Export contains data from AWS region(s)")
+        utils.log_info("Export contains data from AWS region(s)")
         utils.log_info(f"Total S3 buckets exported: {len(buckets_info)}")
         print("\nScript execution completed successfully.")
     else:

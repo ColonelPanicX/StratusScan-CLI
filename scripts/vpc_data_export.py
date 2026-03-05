@@ -18,9 +18,9 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import datetime
 import json
 import sys
-import datetime
 from pathlib import Path
 
 # Add path to import utils module
@@ -30,7 +30,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -38,7 +38,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -163,7 +163,7 @@ def collect_vpc_data_for_region(region):
                 internet_gateway_block_mode = bpa_option.get('InternetGatewayBlockMode', 'off')
                 # Capitalize first letter to match AWS console display
                 block_public_access = internet_gateway_block_mode.capitalize() if internet_gateway_block_mode else 'Off'
-        except Exception as e:
+        except Exception:
             # If API call fails entirely (feature not available in region), show 'Off'
             # This matches AWS console behavior where the feature just shows as disabled
             block_public_access = 'Off'
@@ -218,12 +218,12 @@ def collect_vpc_data(regions):
 def is_subnet_public(ec2_client, subnet_id, vpc_id):
     """
     Determine if a subnet is public by checking if it has a route to an Internet Gateway.
-    
+
     Args:
         ec2_client: The boto3 EC2 client
         subnet_id: The ID of the subnet to check
         vpc_id: The ID of the VPC the subnet belongs to
-        
+
     Returns:
         bool: True if the subnet is public, False otherwise
     """
@@ -237,10 +237,10 @@ def is_subnet_public(ec2_client, subnet_id, vpc_id):
                 }
             ]
         )
-        
+
         # If there are explicit route table associations for this subnet
         route_tables = response.get('RouteTables', [])
-        
+
         # If no explicit route table associated, get the main route table for the VPC
         if not route_tables:
             response = ec2_client.describe_route_tables(
@@ -256,14 +256,14 @@ def is_subnet_public(ec2_client, subnet_id, vpc_id):
                 ]
             )
             route_tables = response.get('RouteTables', [])
-        
+
         # Check if any route table has a route to an IGW
         for rt in route_tables:
             for route in rt.get('Routes', []):
                 # Check for a default route (0.0.0.0/0) pointing to an IGW
                 if route.get('DestinationCidrBlock') == '0.0.0.0/0' and 'GatewayId' in route and route['GatewayId'].startswith('igw-'):
                     return True
-        
+
         # If we get here, no route to IGW was found
         return False
     except Exception as e:
@@ -691,7 +691,6 @@ def collect_elastic_ip_data_for_region(region):
         instance_id = eip.get('InstanceId', '')
         private_ip = eip.get('PrivateIpAddress', '')
         association_id = eip.get('AssociationId', '')
-        network_interface_id = eip.get('NetworkInterfaceId', '')
         network_interface_owner_id = eip.get('NetworkInterfaceOwnerId', '')
         network_border_group = eip.get('NetworkBorderGroup', '')
 
@@ -770,20 +769,20 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
     region_suffix = 'all'
     # Get current date for file naming
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
+
     # Create filename using utils with AWS identifier
     final_excel_file = utils.create_export_filename(
-        account_name, 
-        resource_type, 
-        region_suffix, 
+        account_name,
+        resource_type,
+        region_suffix,
         current_date
     )
-    
+
     utils.log_info(f"Processing {len(regions)} AWS regions: {', '.join(regions)}")
-    
+
     # Import pandas for DataFrame handling (after dependency check)
     import pandas as pd
-    
+
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
@@ -798,7 +797,7 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
         all_subnet_data = collect_vpc_subnet_data(regions)
         if all_subnet_data:
             data_frames['VPCs and Subnets'] = pd.DataFrame(all_subnet_data)
-    
+
     # STEP 3: Collect NAT Gateway information (if selected)
     if export_nat_gateways:
         all_nat_gateway_data = collect_nat_gateway_data(regions)
@@ -831,20 +830,20 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
     # Save using utils module for consistent formatting
     try:
         output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-        
+
         if output_path:
             utils.log_success("AWS VPC data exported successfully!")
             utils.log_info(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-            
+
             # Summary of exported data
             for sheet_name, df in data_frames.items():
                 utils.log_info(f"  - {sheet_name}: {len(df)} records")
         else:
             utils.log_error("Error creating Excel file. Please check the logs.")
-        
+
     except Exception as e:
-        utils.log_error(f"Error creating Excel file", e)
+        utils.log_error("Error creating Excel file", e)
 
 def main():
     """Main function to execute the script."""
@@ -856,18 +855,18 @@ def main():
         # Check and install dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-        
+
         # Check if account name is unknown
         if account_name == "unknown":
             if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
                 sys.exit(0)
-        
+
         # Export VPC, subnet, NAT Gateway, VPC Peering, and Elastic IP information
         export_vpc_subnet_natgw_peering_info(account_id, account_name)
-        
+
         print("\nAWS VPC data export script execution completed.")
-        
+
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         sys.exit(1)
@@ -877,4 +876,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        

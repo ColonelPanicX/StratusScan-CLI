@@ -33,12 +33,11 @@ Prerequisites:
 - Global service - uses us-east-1 endpoint
 """
 
-import os
-import sys
 import datetime
-import time
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # Add path to import utils module
@@ -96,6 +95,7 @@ def collect_protections() -> List[Dict[str, Any]]:
         list: List of protection information dictionaries
     """
     protections_data = []
+    home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
@@ -170,6 +170,7 @@ def collect_attacks() -> List[Dict[str, Any]]:
         list: List of attack information dictionaries
     """
     attacks_data = []
+    home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
@@ -247,6 +248,7 @@ def collect_emergency_contacts() -> List[Dict[str, Any]]:
         list: List of emergency contact dictionaries
     """
     contacts_data = []
+    home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
@@ -283,6 +285,7 @@ def collect_protection_groups() -> List[Dict[str, Any]]:
         list: List of protection group dictionaries
     """
     groups_data = []
+    home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
@@ -324,6 +327,7 @@ def collect_drt_access() -> Dict[str, Any]:
     Returns:
         dict: DRT access information
     """
+    home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
     try:
@@ -663,7 +667,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Setup logging
         utils.setup_logging("shield-export")

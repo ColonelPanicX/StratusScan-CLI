@@ -9,18 +9,16 @@ Title: AWS Compute Optimizer Recommendations Export
 Date: MAR-05-2025
 
 Description:
-This script exports AWS Compute Optimizer recommendations for EC2 instances, 
+This script exports AWS Compute Optimizer recommendations for EC2 instances,
 Auto Scaling groups, EBS volumes, Lambda functions, and ECS services on Fargate.
 The data is exported to an Excel file with separate tabs for each recommendation type.
 """
 
-import os
-import sys
 import datetime
-import json
-import pandas as pd
-from botocore.exceptions import ClientError
+import sys
 from pathlib import Path
+
+import pandas as pd
 
 # Add path to import utils module
 try:
@@ -29,7 +27,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -37,7 +35,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -178,12 +176,10 @@ def get_asg_recommendations(region):
                 savings_opportunity = top_recommendation.get('savingsOpportunity', {})
                 savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
                 estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-                projected_utilization = top_recommendation.get('projectedUtilizationMetrics', [])
             else:
                 recommended_types = ['No recommendation']
                 savings_percentage = 0
                 estimated_monthly_savings = 0
-                projected_utilization = []
 
             # Get current configuration
             current_config = recommendation.get('currentConfiguration', {})
@@ -427,52 +423,52 @@ def get_ecs_recommendations(region):
 def export_recommendations_to_excel(all_recommendations, account_name):
     """
     Export recommendations to an Excel file with separate tabs for each resource type.
-    
+
     Args:
         all_recommendations (dict): Dictionary containing recommendations for each resource type
         account_name (str): AWS account name for file naming
-        
+
     Returns:
         str: Path to the created Excel file
     """
     # Create DataFrames for each resource type
     dfs = {}
-    
+
     # Check if there are any recommendations for each resource type
     if all_recommendations.get('EC2'):
         dfs['EC2 Instances'] = pd.DataFrame(all_recommendations['EC2'])
-    
+
     if all_recommendations.get('ASG'):
         dfs['Auto Scaling Groups'] = pd.DataFrame(all_recommendations['ASG'])
-    
+
     if all_recommendations.get('EBS'):
         dfs['EBS Volumes'] = pd.DataFrame(all_recommendations['EBS'])
-    
+
     if all_recommendations.get('Lambda'):
         dfs['Lambda Functions'] = pd.DataFrame(all_recommendations['Lambda'])
-    
+
     if all_recommendations.get('ECS'):
         dfs['ECS Services'] = pd.DataFrame(all_recommendations['ECS'])
-    
+
     # If no recommendations found for any resource type
     if not dfs:
         print("No recommendations found for any resource type.")
         return None
-    
+
     # Generate filename with current date
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    
+
     # Use utils module to generate filename
     filename = utils.create_export_filename(
-        account_name, 
-        "compute-optimizer", 
-        "", 
+        account_name,
+        "compute-optimizer",
+        "",
         current_date
     )
-    
+
     # Use utils module to save multiple DataFrames to Excel
     output_path = utils.save_multiple_dataframes_to_excel(dfs, filename)
-    
+
     if output_path:
         print(f"\nRecommendations exported successfully to: {output_path}")
         return output_path
@@ -483,7 +479,7 @@ def export_recommendations_to_excel(all_recommendations, account_name):
 def get_recommendations_for_all_regions():
     """
     Get Compute Optimizer recommendations for all supported regions.
-    
+
     Returns:
         dict: Dictionary containing recommendations for each resource type
     """
@@ -495,32 +491,32 @@ def get_recommendations_for_all_regions():
         'Lambda': [],
         'ECS': []
     }
-    
+
     # Get all available regions
     regions = get_all_regions()
     print(f"Found {len(regions)} AWS regions.")
-    
+
     # For each region, check if Compute Optimizer is available and get recommendations
     for region in regions:
         print(f"\nChecking Compute Optimizer availability in region: {region}")
-        
+
         if check_compute_optimizer_availability(region):
             # Get recommendations for each resource type
             ec2_recommendations = get_ec2_recommendations(region)
             all_recommendations['EC2'].extend(ec2_recommendations)
-            
+
             asg_recommendations = get_asg_recommendations(region)
             all_recommendations['ASG'].extend(asg_recommendations)
-            
+
             ebs_recommendations = get_ebs_recommendations(region)
             all_recommendations['EBS'].extend(ebs_recommendations)
-            
+
             lambda_recommendations = get_lambda_recommendations(region)
             all_recommendations['Lambda'].extend(lambda_recommendations)
-            
+
             ecs_recommendations = get_ecs_recommendations(region)
             all_recommendations['ECS'].extend(ecs_recommendations)
-    
+
     # Print summary
     print("\n=== RECOMMENDATIONS SUMMARY ===")
     print(f"EC2 Instance recommendations: {len(all_recommendations['EC2'])}")
@@ -528,7 +524,7 @@ def get_recommendations_for_all_regions():
     print(f"EBS Volume recommendations: {len(all_recommendations['EBS'])}")
     print(f"Lambda Function recommendations: {len(all_recommendations['Lambda'])}")
     print(f"ECS Service recommendations: {len(all_recommendations['ECS'])}")
-    
+
     return all_recommendations
 
 def main():
@@ -557,7 +553,7 @@ def main():
             sts.get_caller_identity()
             utils.log_success("AWS credentials validated")
 
-        except Exception as e:
+        except Exception:
             utils.log_error("AWS credentials not found or invalid. Please configure your credentials.")
             print("  - AWS CLI: aws configure")
             print("  - Environment variables: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")

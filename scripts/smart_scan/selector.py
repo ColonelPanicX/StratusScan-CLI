@@ -6,8 +6,8 @@ Uses questionary library for rich checkbox/menu navigation.
 """
 
 import sys
-from typing import Any, Dict, List, Optional, Set
 from pathlib import Path
+from typing import Any, Dict, Optional, Set
 
 try:
     import utils
@@ -43,7 +43,7 @@ except ImportError:
     CUSTOM_STYLE = None  # Will not be used when questionary unavailable
     # Silently handle - warning shown when attempting to use interactive features
 
-from .mapping import SCRIPT_CATEGORIES, ALWAYS_RUN_SCRIPTS
+from .mapping import ALWAYS_RUN_SCRIPTS
 
 
 class SmartScanSelector:

@@ -14,9 +14,9 @@ Output: Multi-worksheet Excel file with Glacier resources
 """
 
 import sys
-from pathlib import Path
-from typing import List, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -66,7 +66,6 @@ def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
                     pass
 
                 # Get vault notifications
-                notification_config = 'N/A'
                 sns_topic = 'N/A'
                 events_str = 'N/A'
                 try:
@@ -75,7 +74,6 @@ def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
                     sns_topic = notification_cfg.get('SNSTopic', 'N/A')
                     events = notification_cfg.get('Events', [])
                     events_str = ', '.join(events) if events else 'N/A'
-                    notification_config = f"Topic: {sns_topic}, Events: {events_str}" if events else 'None'
                 except Exception:
                     pass
 

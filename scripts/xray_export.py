@@ -12,11 +12,10 @@ Exports comprehensive AWS X-Ray tracing configuration including:
 Output: Multi-worksheet Excel file with X-Ray resources
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils

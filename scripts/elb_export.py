@@ -17,11 +17,11 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import pandas as pd
 import datetime
-import os
 import sys
 from pathlib import Path
+
+import pandas as pd
 
 # Add path to import utils module
 try:
@@ -30,7 +30,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -38,7 +38,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -338,11 +338,11 @@ def main():
     # Print the title screen and get the account name
     utils.setup_logging("elb-export")
     account_id, account_name = utils.print_script_banner("AWS ELB INVENTORY EXPORT")
-    
+
     # Check for required dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         sys.exit(1)
-    
+
     regions = utils.prompt_region_selection()
     region_suffix = 'all'
 
@@ -355,14 +355,14 @@ def main():
         region_elbs = []
 
         # Get Classic Load Balancers
-        utils.log_info(f"  Fetching Classic Load Balancers...")
+        utils.log_info("  Fetching Classic Load Balancers...")
         classic_elbs = get_classic_load_balancers(region)
         classic_count = len(classic_elbs)
         utils.log_info(f"  Found {classic_count} Classic Load Balancers.")
         region_elbs.extend(classic_elbs)
 
         # Get Application and Network Load Balancers
-        utils.log_info(f"  Fetching Application and Network Load Balancers...")
+        utils.log_info("  Fetching Application and Network Load Balancers...")
         elbv2s = get_application_network_load_balancers(region)
         elbv2_count = len(elbv2s)
         utils.log_info(f"  Found {elbv2_count} Application and Network Load Balancers.")
@@ -389,7 +389,7 @@ def main():
             else:
                 total_elbv2s += 1
         all_elb_data.extend(region_elbs)
-    
+
     # If no ELBs found, exit
     if not all_elb_data:
         utils.log_warning("No Elastic Load Balancers found in any AWS region.")

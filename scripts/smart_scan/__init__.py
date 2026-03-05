@@ -19,24 +19,24 @@ except ImportError:
 __version__ = utils.get_version()
 
 from .analyzer import (
-    find_latest_services_export,
-    parse_services_from_excel,
-    map_services_to_scripts,
-    generate_recommendations,
+    ServiceAnalyzer,
     analyze_services,
     analyze_services_from_dict,
-    ServiceAnalyzer,
+    find_latest_services_export,
+    generate_recommendations,
+    map_services_to_scripts,
+    parse_services_from_excel,
 )
+from .executor import ExecutionResult, ScriptExecutor, execute_scripts
 from .mapping import (
-    SERVICE_SCRIPT_MAP,
-    SERVICE_ALIASES,
-    SCRIPT_CATEGORIES,
     ALWAYS_RUN_SCRIPTS,
+    SCRIPT_CATEGORIES,
+    SERVICE_ALIASES,
+    SERVICE_SCRIPT_MAP,
     get_canonical_service_name,
     get_scripts_for_service,
 )
-from .selector import interactive_select, SmartScanSelector, QUESTIONARY_AVAILABLE
-from .executor import execute_scripts, ScriptExecutor, ExecutionResult
+from .selector import QUESTIONARY_AVAILABLE, SmartScanSelector, interactive_select
 
 __all__ = [
     # Analyzer functions

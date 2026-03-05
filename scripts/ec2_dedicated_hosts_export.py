@@ -25,7 +25,8 @@ Note: Requires ec2:DescribeHosts and ec2:DescribeHostReservations permissions
 import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -86,7 +87,7 @@ def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
             # Extract instance information
             instances = host.get('Instances', [])
             instance_ids = [inst.get('InstanceId', 'N/A') for inst in instances]
-            instance_types = list(set([inst.get('InstanceType', 'N/A') for inst in instances]))
+            instance_types = list({inst.get('InstanceType', 'N/A') for inst in instances})
 
             # Calculate utilization
             total_capacity = available_capacity.get('AvailableInstanceCapacity', [])

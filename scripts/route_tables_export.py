@@ -18,10 +18,8 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import os
-import sys
 import datetime
-from botocore.exceptions import ClientError
+import sys
 from pathlib import Path
 
 # Add path to import utils module
@@ -31,7 +29,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -39,7 +37,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -63,10 +61,10 @@ def get_all_regions():
 def is_valid_region(region_name):
     """
     Check if a region name is valid.
-    
+
     Args:
         region_name (str): AWS region name
-        
+
     Returns:
         bool: True if valid region, False otherwise
     """
@@ -76,52 +74,52 @@ def is_valid_region(region_name):
 def get_vpc_tags(ec2_client, vpc_id):
     """
     Get tags for a VPC.
-    
+
     Args:
         ec2_client: The boto3 EC2 client
         vpc_id (str): The VPC ID
-        
+
     Returns:
         dict: Dictionary of tags
     """
     if not vpc_id:
         return {}
-    
+
     try:
         response = ec2_client.describe_vpcs(VpcIds=[vpc_id])
         if response and 'Vpcs' in response and response['Vpcs']:
             return {tag['Key']: tag['Value'] for tag in response['Vpcs'][0].get('Tags', [])}
     except Exception:
         pass
-    
+
     return {}
 
 def format_tags(tags_list):
     """
     Format tags into a string.
-    
+
     Args:
         tags_list (list): List of tag dictionaries
-        
+
     Returns:
         str: Formatted tags string
     """
     if not tags_list:
         return "N/A"
-    
+
     tags = []
     for tag in tags_list:
         tags.append(f"{tag.get('Key', '')}={tag.get('Value', '')}")
-    
+
     return "; ".join(tags)
 
 def get_route_type(route):
     """
     Determine the type of route based on its target.
-    
+
     Args:
         route (dict): The route information
-        
+
     Returns:
         str: The route type
     """
@@ -155,10 +153,10 @@ def get_route_type(route):
 def get_route_target(route):
     """
     Get the target identifier for a route.
-    
+
     Args:
         route (dict): The route information
-        
+
     Returns:
         str: The target identifier
     """
@@ -184,10 +182,10 @@ def get_route_target(route):
 def get_route_destination(route):
     """
     Get the destination for a route.
-    
+
     Args:
         route (dict): The route information
-        
+
     Returns:
         str: The route destination
     """
@@ -203,15 +201,15 @@ def get_route_destination(route):
 def get_route_tables(region):
     """
     Get all route tables in a specific region.
-    
+
     Args:
         region (str): AWS region name
-        
+
     Returns:
         list: List of dictionaries with route table information
     """
     route_table_data = []
-    
+
     try:
         # Create EC2 client for the region
         ec2_client = utils.get_boto3_client('ec2', region_name=region)
@@ -222,25 +220,25 @@ def get_route_tables(region):
             for route_table in page['RouteTables']:
                 rt_id = route_table['RouteTableId']
                 vpc_id = route_table.get('VpcId', 'N/A')
-                
+
                 # Get routes
                 routes = route_table.get('Routes', [])
-                
+
                 # Get subnet associations
                 subnet_associations = []
                 for association in route_table.get('Associations', []):
                     if 'SubnetId' in association:
                         subnet_associations.append(association['SubnetId'])
-                
+
                 # Get edge associations (like gateways)
                 edge_associations = []
                 for association in route_table.get('Associations', []):
                     if 'GatewayId' in association:
                         edge_associations.append(association['GatewayId'])
-                
+
                 # Get tags
                 tags = format_tags(route_table.get('Tags', []))
-                
+
                 # For each route, create a separate entry
                 if routes:
                     for route in routes:
@@ -249,7 +247,7 @@ def get_route_tables(region):
                         route_state = route.get('State', 'N/A')
                         route_type = get_route_type(route)
                         propagated = route.get('Origin', '') == 'EnableVgwRoutePropagation'
-                        
+
                         # Create entry for this route
                         route_entry = {
                             'Region': region,
@@ -264,7 +262,7 @@ def get_route_tables(region):
                             'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
                             'Tags': tags
                         }
-                        
+
                         route_table_data.append(route_entry)
                 else:
                     # Create an entry for the route table with no routes
@@ -281,12 +279,12 @@ def get_route_tables(region):
                         'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
                         'Tags': tags
                     }
-                    
+
                     route_table_data.append(route_entry)
-    
+
     except Exception as e:
         print(f"Error getting route tables in region {region}: {e}")
-    
+
     return route_table_data
 
 def export_route_tables(account_name, regions, region_suffix=""):
@@ -311,7 +309,7 @@ def export_route_tables(account_name, regions, region_suffix=""):
         print(f"Processing region: {regions[0]}")
     else:
         print(f"Processing {len(regions)} AWS regions")
-    
+
     # Collect route table data from all regions (Phase 4B: concurrent)
     all_route_tables = []
 
@@ -332,22 +330,22 @@ def export_route_tables(account_name, regions, region_suffix=""):
     # Flatten results
     for route_tables in region_results:
         all_route_tables.extend(route_tables)
-    
+
     # Check if we found any route tables
     if not all_route_tables:
         print("No route tables found.")
         return None
-    
+
     # Create DataFrame
     df = pd.DataFrame(all_route_tables)
-    
+
     # Generate file name
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
     filename = utils.create_export_filename(account_name, "route-tables", region_suffix, current_date)
-    
+
     # Export to Excel
     output_path = utils.save_dataframe_to_excel(df, filename)
-    
+
     if output_path:
         return output_path
     return None
@@ -360,14 +358,13 @@ def main():
         # Print script header and get account info
         utils.setup_logging("route-tables-export")
         account_id, account_name = utils.print_script_banner("AWS ROUTE TABLES EXPORT")
-        
+
         # Check for required dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-        
+
         # Import pandas now that we've checked dependencies
-        import pandas as pd
-        
+
         # Detect partition and set partition-aware example regions
         regions = utils.prompt_region_selection()
 
@@ -379,7 +376,7 @@ def main():
             print(f"Output file: {output_file}")
         else:
             print("\nExport failed or no data was found.")
-    
+
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

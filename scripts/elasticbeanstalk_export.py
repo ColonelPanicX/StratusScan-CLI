@@ -19,8 +19,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -46,8 +45,10 @@ def collect_applications_from_region(region: str) -> List[Dict[str, Any]]:
     applications = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
-    response = eb_client.describe_applications()
-    apps = response.get('Applications', [])
+    paginator = eb_client.get_paginator('describe_applications')
+    apps = []
+    for page in paginator.paginate():
+        apps.extend(page.get('Applications', []))
 
     for app in apps:
         app_name = app.get('ApplicationName', 'N/A')
@@ -128,8 +129,10 @@ def collect_environments_from_region(region: str) -> List[Dict[str, Any]]:
     environments = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
-    response = eb_client.describe_environments()
-    envs = response.get('Environments', [])
+    paginator = eb_client.get_paginator('describe_environments')
+    envs = []
+    for page in paginator.paginate():
+        envs.extend(page.get('Environments', []))
 
     for env in envs:
         env_name = env.get('EnvironmentName', 'N/A')
@@ -246,16 +249,20 @@ def collect_application_versions_from_region(region: str) -> List[Dict[str, Any]
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
     # First get all applications
-    apps_response = eb_client.describe_applications()
-    applications = apps_response.get('Applications', [])
+    apps_paginator = eb_client.get_paginator('describe_applications')
+    applications = []
+    for page in apps_paginator.paginate():
+        applications.extend(page.get('Applications', []))
 
     for app in applications:
         app_name = app.get('ApplicationName', '')
 
         # Get versions for this application
         try:
-            versions_response = eb_client.describe_application_versions(ApplicationName=app_name)
-            app_versions = versions_response.get('ApplicationVersions', [])
+            versions_paginator = eb_client.get_paginator('describe_application_versions')
+            app_versions = []
+            for vpage in versions_paginator.paginate(ApplicationName=app_name):
+                app_versions.extend(vpage.get('ApplicationVersions', []))
 
             for version in app_versions:
                 version_label = version.get('VersionLabel', 'N/A')
@@ -330,8 +337,10 @@ def collect_configuration_templates_from_region(region: str) -> List[Dict[str, A
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
     # First get all applications
-    apps_response = eb_client.describe_applications()
-    applications = apps_response.get('Applications', [])
+    apps_paginator = eb_client.get_paginator('describe_applications')
+    applications = []
+    for page in apps_paginator.paginate():
+        applications.extend(page.get('Applications', []))
 
     for app in applications:
         app_name = app.get('ApplicationName', '')
@@ -549,7 +558,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
