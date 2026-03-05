@@ -21,6 +21,7 @@ Features:
 - Encryption at-rest and in-transit
 """
 
+import json
 import sys
 import datetime
 from pathlib import Path
@@ -44,6 +45,63 @@ except ImportError:
         sys.exit(1)
 
 
+def load_elasticache_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+    """Load ElastiCache pricing data from the reference JSON file."""
+    pricing_data: Dict[str, Any] = {}
+    try:
+        script_dir = Path(__file__).parent.absolute()
+        pricing_file = script_dir.parent / 'reference' / 'elasticache-pricing.json'
+        if not pricing_file.exists():
+            utils.log_warning(f"ElastiCache pricing file not found at {pricing_file}")
+            return pricing_data
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        partition = utils.detect_partition(region)
+        pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        for node_type, info in data.get('records', {}).items():
+            regional = (
+                info.get('pricing', {}).get(pricing_region)
+                or info.get('pricing', {}).get('us-east-1', {})
+            )
+            if regional:
+                pricing_data[node_type] = regional
+        utils.log_info(
+            f"Loaded ElastiCache pricing data for {len(pricing_data)} node types "
+            f"({pricing_region} pricing)"
+        )
+        return pricing_data
+    except Exception as e:
+        utils.log_warning(f"Error loading ElastiCache pricing data: {e}")
+        return pricing_data
+
+
+def calculate_elasticache_monthly_cost(
+    node_type: str,
+    node_count: int,
+    engine: str,
+    pricing_data: Dict[str, Any],
+) -> Any:
+    """Calculate total monthly cost for an ElastiCache cluster (engine-aware)."""
+    if node_type not in pricing_data or not node_count:
+        return 'N/A'
+    try:
+        node_pricing = pricing_data[node_type]
+        engine_lower = (engine or '').lower()
+        if engine_lower == 'memcached':
+            key = 'memcached_on_demand_monthly_usd'
+        elif engine_lower == 'valkey':
+            key = 'valkey_on_demand_monthly_usd'
+        else:  # redis and default
+            key = 'redis_on_demand_monthly_usd'
+        monthly = node_pricing.get(key)
+        if monthly is None:
+            return 'N/A'
+        return round(float(monthly) * int(node_count), 2)
+    except Exception as e:
+        utils.log_warning(f"Error calculating ElastiCache cost for {node_type}: {e}")
+        return 'N/A'
+
+
 def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
     """
     Scan ElastiCache replication groups (Redis) in a single region.
@@ -55,6 +113,13 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
         list: List of dictionaries with replication group information from this region
     """
     regional_replication_groups = []
+    pricing_data = load_elasticache_pricing_data(region)
+    partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing)"
+        if partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing)"
+    )
 
     try:
         elasticache_client = utils.get_boto3_client('elasticache', region_name=region)
@@ -110,6 +175,11 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
                 # ARN
                 arn = rg.get('ARN', 'N/A')
 
+                # Cost estimation (member_count = total nodes across the replication group)
+                monthly_cost = calculate_elasticache_monthly_cost(
+                    cache_node_type, member_count, engine, pricing_data
+                )
+
                 regional_replication_groups.append({
                     'Region': region,
                     'Replication Group ID': rg_id,
@@ -129,7 +199,9 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
                     'Auth Token Enabled': 'Yes' if auth_token_enabled else 'No',
                     'Subnet Group': cache_subnet_group,
                     'Parameter Group': cache_param_group_name,
-                    'ARN': arn
+                    'ARN': arn,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': cost_note,
                 })
 
         utils.log_info(f"Found {len(regional_replication_groups)} ElastiCache replication groups in {region}")
@@ -177,6 +249,13 @@ def scan_cache_clusters_in_region(region: str) -> List[Dict[str, Any]]:
         list: List of dictionaries with cache cluster information from this region
     """
     regional_clusters = []
+    pricing_data = load_elasticache_pricing_data(region)
+    partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing)"
+        if partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing)"
+    )
 
     try:
         elasticache_client = utils.get_boto3_client('elasticache', region_name=region)
@@ -228,6 +307,11 @@ def scan_cache_clusters_in_region(region: str) -> List[Dict[str, Any]]:
                 # ARN
                 arn = cluster.get('ARN', 'N/A')
 
+                # Cost estimation
+                monthly_cost = calculate_elasticache_monthly_cost(
+                    cache_node_type, num_cache_nodes, engine, pricing_data
+                )
+
                 regional_clusters.append({
                     'Region': region,
                     'Cluster ID': cluster_id,
@@ -244,7 +328,9 @@ def scan_cache_clusters_in_region(region: str) -> List[Dict[str, Any]]:
                     'Endpoint Address': endpoint_address,
                     'Endpoint Port': endpoint_port,
                     'Created Date': creation_time if creation_time else 'N/A',
-                    'ARN': arn
+                    'ARN': arn,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': cost_note,
                 })
 
         utils.log_info(f"Found {len(regional_clusters)} ElastiCache cache clusters in {region}")
