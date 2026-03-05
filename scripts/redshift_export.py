@@ -15,6 +15,7 @@ Features:
 Output: Excel file with 5 worksheets
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -38,6 +39,54 @@ except ImportError:
     sys.exit(1)
 
 
+def load_redshift_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+    """Load Redshift pricing data from the reference JSON file."""
+    pricing_data: Dict[str, Any] = {}
+    try:
+        script_dir = Path(__file__).parent.absolute()
+        pricing_file = script_dir.parent / 'reference' / 'redshift-pricing.json'
+        if not pricing_file.exists():
+            utils.log_warning(f"Redshift pricing file not found at {pricing_file}")
+            return pricing_data
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        partition = utils.detect_partition(region)
+        pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        for node_type, info in data.get('records', {}).items():
+            regional = (
+                info.get('pricing', {}).get(pricing_region)
+                or info.get('pricing', {}).get('us-east-1', {})
+            )
+            if regional:
+                pricing_data[node_type] = regional
+        utils.log_info(
+            f"Loaded Redshift pricing data for {len(pricing_data)} node types "
+            f"({pricing_region} pricing)"
+        )
+        return pricing_data
+    except Exception as e:
+        utils.log_warning(f"Error loading Redshift pricing data: {e}")
+        return pricing_data
+
+
+def calculate_redshift_monthly_cost(
+    node_type: str,
+    number_of_nodes: int,
+    pricing_data: Dict[str, Any],
+) -> Any:
+    """Calculate total monthly cost for a Redshift cluster (per-node price × node count)."""
+    if node_type not in pricing_data or not number_of_nodes:
+        return 'N/A'
+    try:
+        monthly = pricing_data[node_type].get('on_demand_monthly_usd')
+        if monthly is None:
+            return 'N/A'
+        return round(float(monthly) * int(number_of_nodes), 2)
+    except Exception as e:
+        utils.log_warning(f"Error calculating Redshift cost for {node_type}: {e}")
+        return 'N/A'
+
+
 def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
     """
     Scan Redshift clusters in a single AWS region.
@@ -49,6 +98,13 @@ def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
         list: List of Redshift cluster dictionaries for this region
     """
     region_clusters = []
+    pricing_data = load_redshift_pricing_data(region)
+    partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing)"
+        if partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing)"
+    )
 
     try:
         redshift_client = utils.get_boto3_client('redshift', region_name=region)
@@ -150,6 +206,11 @@ def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
                 logging_enabled = logging_status.get('LoggingEnabled', False) if logging_status else False
                 s3_bucket_name = logging_status.get('BucketName', 'N/A') if logging_enabled else 'N/A'
 
+                # Cost estimation
+                monthly_cost = calculate_redshift_monthly_cost(
+                    node_type, number_of_nodes, pricing_data
+                )
+
                 region_clusters.append({
                     'Region': region,
                     'Cluster ID': cluster_id,
@@ -184,6 +245,8 @@ def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
                     'Log S3 Bucket': s3_bucket_name,
                     'Created': cluster_create_time_str,
                     'Cluster Revision': cluster_revision_number,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': cost_note,
                 })
 
     except Exception as e:

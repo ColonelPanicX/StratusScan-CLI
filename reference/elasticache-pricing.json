@@ -1,0 +1,1133 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-04",
+  "currency": "USD",
+  "pricing_basis": "hourly",
+  "notes": "On-Demand rates from AWS Pricing MCP. Monthly = hourly * 730. Three engines: Memcached, Redis, Valkey (not all engines available on all families). Non-anchor sizes derived by linear scaling within family. us-gov-west-1 rates confirmed for m7g, r5, r6g, r7g; null for other families.",
+  "record_count": 59,
+  "generated_at": "2026-03-04",
+  "source": "AWS Pricing MCP (instances.for.business) \u2014 manual quarterly refresh",
+  "records": {
+    "cache.t3.micro": {
+      "vcpu": 2,
+      "memory_gib": 0.5,
+      "family": "General Purpose (t3)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.017,
+          "memcached_on_demand_monthly_usd": 12.41,
+          "redis_on_demand_hourly_usd": 0.027,
+          "redis_on_demand_monthly_usd": 19.71,
+          "valkey_on_demand_hourly_usd": 0.0136,
+          "valkey_on_demand_monthly_usd": 9.93
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.t3.small": {
+      "vcpu": 2,
+      "memory_gib": 1.37,
+      "family": "General Purpose (t3)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.034,
+          "memcached_on_demand_monthly_usd": 24.82,
+          "redis_on_demand_hourly_usd": 0.054,
+          "redis_on_demand_monthly_usd": 39.42,
+          "valkey_on_demand_hourly_usd": 0.0272,
+          "valkey_on_demand_monthly_usd": 19.86
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.t3.medium": {
+      "vcpu": 2,
+      "memory_gib": 3.09,
+      "family": "General Purpose (t3)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.068,
+          "memcached_on_demand_monthly_usd": 49.64,
+          "redis_on_demand_hourly_usd": 0.108,
+          "redis_on_demand_monthly_usd": 78.84,
+          "valkey_on_demand_hourly_usd": 0.0544,
+          "valkey_on_demand_monthly_usd": 39.71
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.t4g.micro": {
+      "vcpu": 2,
+      "memory_gib": 0.5,
+      "family": "General Purpose (t4g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.016,
+          "memcached_on_demand_monthly_usd": 11.68,
+          "redis_on_demand_hourly_usd": 0.013,
+          "redis_on_demand_monthly_usd": 9.49,
+          "valkey_on_demand_hourly_usd": 0.0128,
+          "valkey_on_demand_monthly_usd": 9.34
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.t4g.small": {
+      "vcpu": 2,
+      "memory_gib": 1.37,
+      "family": "General Purpose (t4g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.032,
+          "memcached_on_demand_monthly_usd": 23.36,
+          "redis_on_demand_hourly_usd": 0.026,
+          "redis_on_demand_monthly_usd": 18.98,
+          "valkey_on_demand_hourly_usd": 0.0256,
+          "valkey_on_demand_monthly_usd": 18.69
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.t4g.medium": {
+      "vcpu": 2,
+      "memory_gib": 3.09,
+      "family": "General Purpose (t4g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.064,
+          "memcached_on_demand_monthly_usd": 46.72,
+          "redis_on_demand_hourly_usd": 0.052,
+          "redis_on_demand_monthly_usd": 37.96,
+          "valkey_on_demand_hourly_usd": 0.0512,
+          "valkey_on_demand_monthly_usd": 37.38
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.large": {
+      "vcpu": 2,
+      "memory_gib": 6.38,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.06,
+          "memcached_on_demand_monthly_usd": 43.8,
+          "redis_on_demand_hourly_usd": 0.156,
+          "redis_on_demand_monthly_usd": 113.88,
+          "valkey_on_demand_hourly_usd": 0.048,
+          "valkey_on_demand_monthly_usd": 35.04
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 12.93,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.12,
+          "memcached_on_demand_monthly_usd": 87.6,
+          "redis_on_demand_hourly_usd": 0.312,
+          "redis_on_demand_monthly_usd": 227.76,
+          "valkey_on_demand_hourly_usd": 0.096,
+          "valkey_on_demand_monthly_usd": 70.08
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 26.04,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.24,
+          "memcached_on_demand_monthly_usd": 175.2,
+          "redis_on_demand_hourly_usd": 0.624,
+          "redis_on_demand_monthly_usd": 455.52,
+          "valkey_on_demand_hourly_usd": 0.192,
+          "valkey_on_demand_monthly_usd": 140.16
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 52.22,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.48,
+          "memcached_on_demand_monthly_usd": 350.4,
+          "redis_on_demand_hourly_usd": 1.248,
+          "redis_on_demand_monthly_usd": 911.04,
+          "valkey_on_demand_hourly_usd": 0.384,
+          "valkey_on_demand_monthly_usd": 280.32
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 157.12,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.44,
+          "memcached_on_demand_monthly_usd": 1051.2,
+          "redis_on_demand_hourly_usd": 3.744,
+          "redis_on_demand_monthly_usd": 2733.12,
+          "valkey_on_demand_hourly_usd": 1.152,
+          "valkey_on_demand_monthly_usd": 840.96
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m5.24xlarge": {
+      "vcpu": 96,
+      "memory_gib": 314.32,
+      "family": "General Purpose (m5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 2.88,
+          "memcached_on_demand_monthly_usd": 2102.4,
+          "redis_on_demand_hourly_usd": 7.488,
+          "redis_on_demand_monthly_usd": 5466.24,
+          "valkey_on_demand_hourly_usd": 2.304,
+          "valkey_on_demand_monthly_usd": 1681.92
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.large": {
+      "vcpu": 2,
+      "memory_gib": 6.38,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.149,
+          "memcached_on_demand_monthly_usd": 108.77,
+          "redis_on_demand_hourly_usd": 0.238,
+          "redis_on_demand_monthly_usd": 173.74,
+          "valkey_on_demand_hourly_usd": 0.1192,
+          "valkey_on_demand_monthly_usd": 87.02
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 12.93,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.298,
+          "memcached_on_demand_monthly_usd": 217.54,
+          "redis_on_demand_hourly_usd": 0.476,
+          "redis_on_demand_monthly_usd": 347.48,
+          "valkey_on_demand_hourly_usd": 0.2384,
+          "valkey_on_demand_monthly_usd": 174.03
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 26.04,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.596,
+          "memcached_on_demand_monthly_usd": 435.08,
+          "redis_on_demand_hourly_usd": 0.952,
+          "redis_on_demand_monthly_usd": 694.96,
+          "valkey_on_demand_hourly_usd": 0.4768,
+          "valkey_on_demand_monthly_usd": 348.06
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 52.22,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.192,
+          "memcached_on_demand_monthly_usd": 870.16,
+          "redis_on_demand_hourly_usd": 1.904,
+          "redis_on_demand_monthly_usd": 1389.92,
+          "valkey_on_demand_hourly_usd": 0.9536,
+          "valkey_on_demand_monthly_usd": 696.13
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 104.76,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 2.384,
+          "memcached_on_demand_monthly_usd": 1740.32,
+          "redis_on_demand_hourly_usd": 3.808,
+          "redis_on_demand_monthly_usd": 2779.84,
+          "valkey_on_demand_hourly_usd": 1.9072,
+          "valkey_on_demand_monthly_usd": 1392.26
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 157.12,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 3.576,
+          "memcached_on_demand_monthly_usd": 2610.48,
+          "redis_on_demand_hourly_usd": 5.712,
+          "redis_on_demand_monthly_usd": 4169.76,
+          "valkey_on_demand_hourly_usd": 2.8608,
+          "valkey_on_demand_monthly_usd": 2088.38
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m6g.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 209.55,
+      "family": "General Purpose (m6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 4.768,
+          "memcached_on_demand_monthly_usd": 3480.64,
+          "redis_on_demand_hourly_usd": 7.616,
+          "redis_on_demand_monthly_usd": 5559.68,
+          "valkey_on_demand_hourly_usd": 3.8144,
+          "valkey_on_demand_monthly_usd": 2784.51
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.m7g.large": {
+      "vcpu": 2,
+      "memory_gib": 6.38,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.158,
+          "memcached_on_demand_monthly_usd": 115.34,
+          "redis_on_demand_hourly_usd": 0.158,
+          "redis_on_demand_monthly_usd": 115.34,
+          "valkey_on_demand_hourly_usd": 0.1264,
+          "valkey_on_demand_monthly_usd": 92.27
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.1982,
+          "memcached_on_demand_monthly_usd": 144.69,
+          "redis_on_demand_hourly_usd": 0.159,
+          "redis_on_demand_monthly_usd": 116.07,
+          "valkey_on_demand_hourly_usd": 0.1586,
+          "valkey_on_demand_monthly_usd": 115.78
+        }
+      }
+    },
+    "cache.m7g.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 12.93,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.316,
+          "memcached_on_demand_monthly_usd": 230.68,
+          "redis_on_demand_hourly_usd": 0.316,
+          "redis_on_demand_monthly_usd": 230.68,
+          "valkey_on_demand_hourly_usd": 0.2528,
+          "valkey_on_demand_monthly_usd": 184.54
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.3964,
+          "memcached_on_demand_monthly_usd": 289.37,
+          "redis_on_demand_hourly_usd": 0.318,
+          "redis_on_demand_monthly_usd": 232.14,
+          "valkey_on_demand_hourly_usd": 0.3172,
+          "valkey_on_demand_monthly_usd": 231.56
+        }
+      }
+    },
+    "cache.m7g.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 26.04,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.632,
+          "memcached_on_demand_monthly_usd": 461.36,
+          "redis_on_demand_hourly_usd": 0.632,
+          "redis_on_demand_monthly_usd": 461.36,
+          "valkey_on_demand_hourly_usd": 0.5056,
+          "valkey_on_demand_monthly_usd": 369.09
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.7928,
+          "memcached_on_demand_monthly_usd": 578.74,
+          "redis_on_demand_hourly_usd": 0.636,
+          "redis_on_demand_monthly_usd": 464.28,
+          "valkey_on_demand_hourly_usd": 0.6344,
+          "valkey_on_demand_monthly_usd": 463.11
+        }
+      }
+    },
+    "cache.m7g.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 52.22,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.264,
+          "memcached_on_demand_monthly_usd": 922.72,
+          "redis_on_demand_hourly_usd": 1.264,
+          "redis_on_demand_monthly_usd": 922.72,
+          "valkey_on_demand_hourly_usd": 1.0112,
+          "valkey_on_demand_monthly_usd": 738.18
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 1.5856,
+          "memcached_on_demand_monthly_usd": 1157.49,
+          "redis_on_demand_hourly_usd": 1.272,
+          "redis_on_demand_monthly_usd": 928.56,
+          "valkey_on_demand_hourly_usd": 1.2688,
+          "valkey_on_demand_monthly_usd": 926.22
+        }
+      }
+    },
+    "cache.m7g.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 104.76,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 2.528,
+          "memcached_on_demand_monthly_usd": 1845.44,
+          "redis_on_demand_hourly_usd": 2.528,
+          "redis_on_demand_monthly_usd": 1845.44,
+          "valkey_on_demand_hourly_usd": 2.0224,
+          "valkey_on_demand_monthly_usd": 1476.35
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 3.1712,
+          "memcached_on_demand_monthly_usd": 2314.98,
+          "redis_on_demand_hourly_usd": 2.544,
+          "redis_on_demand_monthly_usd": 1857.12,
+          "valkey_on_demand_hourly_usd": 2.5376,
+          "valkey_on_demand_monthly_usd": 1852.45
+        }
+      }
+    },
+    "cache.m7g.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 157.12,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 3.792,
+          "memcached_on_demand_monthly_usd": 2768.16,
+          "redis_on_demand_hourly_usd": 3.792,
+          "redis_on_demand_monthly_usd": 2768.16,
+          "valkey_on_demand_hourly_usd": 3.0336,
+          "valkey_on_demand_monthly_usd": 2214.53
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 4.7568,
+          "memcached_on_demand_monthly_usd": 3472.46,
+          "redis_on_demand_hourly_usd": 3.816,
+          "redis_on_demand_monthly_usd": 2785.68,
+          "valkey_on_demand_hourly_usd": 3.8064,
+          "valkey_on_demand_monthly_usd": 2778.67
+        }
+      }
+    },
+    "cache.m7g.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 209.55,
+      "family": "General Purpose (m7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 5.056,
+          "memcached_on_demand_monthly_usd": 3690.88,
+          "redis_on_demand_hourly_usd": 5.056,
+          "redis_on_demand_monthly_usd": 3690.88,
+          "valkey_on_demand_hourly_usd": 4.0448,
+          "valkey_on_demand_monthly_usd": 2952.7
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 6.3424,
+          "memcached_on_demand_monthly_usd": 4629.95,
+          "redis_on_demand_hourly_usd": 5.088,
+          "redis_on_demand_monthly_usd": 3714.24,
+          "valkey_on_demand_hourly_usd": 5.0752,
+          "valkey_on_demand_monthly_usd": 3704.9
+        }
+      }
+    },
+    "cache.r5.large": {
+      "vcpu": 2,
+      "memory_gib": 13.07,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.09,
+          "memcached_on_demand_monthly_usd": 65.7,
+          "redis_on_demand_hourly_usd": 0.173,
+          "redis_on_demand_monthly_usd": 126.29,
+          "valkey_on_demand_hourly_usd": 0.072,
+          "valkey_on_demand_monthly_usd": 52.56
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.259,
+          "memcached_on_demand_monthly_usd": 189.07,
+          "redis_on_demand_hourly_usd": 0.414,
+          "redis_on_demand_monthly_usd": 302.22,
+          "valkey_on_demand_hourly_usd": 0.2072,
+          "valkey_on_demand_monthly_usd": 151.26
+        }
+      }
+    },
+    "cache.r5.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 26.32,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.18,
+          "memcached_on_demand_monthly_usd": 131.4,
+          "redis_on_demand_hourly_usd": 0.346,
+          "redis_on_demand_monthly_usd": 252.58,
+          "valkey_on_demand_hourly_usd": 0.144,
+          "valkey_on_demand_monthly_usd": 105.12
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.518,
+          "memcached_on_demand_monthly_usd": 378.14,
+          "redis_on_demand_hourly_usd": 0.828,
+          "redis_on_demand_monthly_usd": 604.44,
+          "valkey_on_demand_hourly_usd": 0.4144,
+          "valkey_on_demand_monthly_usd": 302.51
+        }
+      }
+    },
+    "cache.r5.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 52.82,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.36,
+          "memcached_on_demand_monthly_usd": 262.8,
+          "redis_on_demand_hourly_usd": 0.692,
+          "redis_on_demand_monthly_usd": 505.16,
+          "valkey_on_demand_hourly_usd": 0.288,
+          "valkey_on_demand_monthly_usd": 210.24
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 1.036,
+          "memcached_on_demand_monthly_usd": 756.28,
+          "redis_on_demand_hourly_usd": 1.656,
+          "redis_on_demand_monthly_usd": 1208.88,
+          "valkey_on_demand_hourly_usd": 0.8288,
+          "valkey_on_demand_monthly_usd": 605.02
+        }
+      }
+    },
+    "cache.r5.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 105.81,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.72,
+          "memcached_on_demand_monthly_usd": 525.6,
+          "redis_on_demand_hourly_usd": 1.384,
+          "redis_on_demand_monthly_usd": 1010.32,
+          "valkey_on_demand_hourly_usd": 0.576,
+          "valkey_on_demand_monthly_usd": 420.48
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 2.072,
+          "memcached_on_demand_monthly_usd": 1512.56,
+          "redis_on_demand_hourly_usd": 3.312,
+          "redis_on_demand_monthly_usd": 2417.76,
+          "valkey_on_demand_hourly_usd": 1.6576,
+          "valkey_on_demand_monthly_usd": 1210.05
+        }
+      }
+    },
+    "cache.r5.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 317.77,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 2.16,
+          "memcached_on_demand_monthly_usd": 1576.8,
+          "redis_on_demand_hourly_usd": 4.152,
+          "redis_on_demand_monthly_usd": 3030.96,
+          "valkey_on_demand_hourly_usd": 1.728,
+          "valkey_on_demand_monthly_usd": 1261.44
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 6.216,
+          "memcached_on_demand_monthly_usd": 4537.68,
+          "redis_on_demand_hourly_usd": 9.936,
+          "redis_on_demand_monthly_usd": 7253.28,
+          "valkey_on_demand_hourly_usd": 4.9728,
+          "valkey_on_demand_monthly_usd": 3630.14
+        }
+      }
+    },
+    "cache.r5.24xlarge": {
+      "vcpu": 96,
+      "memory_gib": 635.61,
+      "family": "Memory Optimized (r5)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 4.32,
+          "memcached_on_demand_monthly_usd": 3153.6,
+          "redis_on_demand_hourly_usd": 8.304,
+          "redis_on_demand_monthly_usd": 6061.92,
+          "valkey_on_demand_hourly_usd": 3.456,
+          "valkey_on_demand_monthly_usd": 2522.88
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 12.432,
+          "memcached_on_demand_monthly_usd": 9075.36,
+          "redis_on_demand_hourly_usd": 19.872,
+          "redis_on_demand_monthly_usd": 14506.56,
+          "valkey_on_demand_hourly_usd": 9.9456,
+          "valkey_on_demand_monthly_usd": 7260.29
+        }
+      }
+    },
+    "cache.r6g.large": {
+      "vcpu": 2,
+      "memory_gib": 13.07,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.206,
+          "memcached_on_demand_monthly_usd": 150.38,
+          "redis_on_demand_hourly_usd": 0.33,
+          "redis_on_demand_monthly_usd": 240.9,
+          "valkey_on_demand_hourly_usd": 0.1648,
+          "valkey_on_demand_monthly_usd": 120.3
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.246,
+          "memcached_on_demand_monthly_usd": 179.58,
+          "redis_on_demand_hourly_usd": 0.246,
+          "redis_on_demand_monthly_usd": 179.58,
+          "valkey_on_demand_hourly_usd": 0.1968,
+          "valkey_on_demand_monthly_usd": 143.66
+        }
+      }
+    },
+    "cache.r6g.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 26.32,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.412,
+          "memcached_on_demand_monthly_usd": 300.76,
+          "redis_on_demand_hourly_usd": 0.66,
+          "redis_on_demand_monthly_usd": 481.8,
+          "valkey_on_demand_hourly_usd": 0.3296,
+          "valkey_on_demand_monthly_usd": 240.61
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.492,
+          "memcached_on_demand_monthly_usd": 359.16,
+          "redis_on_demand_hourly_usd": 0.492,
+          "redis_on_demand_monthly_usd": 359.16,
+          "valkey_on_demand_hourly_usd": 0.3936,
+          "valkey_on_demand_monthly_usd": 287.33
+        }
+      }
+    },
+    "cache.r6g.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 52.82,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.824,
+          "memcached_on_demand_monthly_usd": 601.52,
+          "redis_on_demand_hourly_usd": 1.32,
+          "redis_on_demand_monthly_usd": 963.6,
+          "valkey_on_demand_hourly_usd": 0.6592,
+          "valkey_on_demand_monthly_usd": 481.22
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.984,
+          "memcached_on_demand_monthly_usd": 718.32,
+          "redis_on_demand_hourly_usd": 0.984,
+          "redis_on_demand_monthly_usd": 718.32,
+          "valkey_on_demand_hourly_usd": 0.7872,
+          "valkey_on_demand_monthly_usd": 574.66
+        }
+      }
+    },
+    "cache.r6g.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 105.81,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.648,
+          "memcached_on_demand_monthly_usd": 1203.04,
+          "redis_on_demand_hourly_usd": 2.64,
+          "redis_on_demand_monthly_usd": 1927.2,
+          "valkey_on_demand_hourly_usd": 1.3184,
+          "valkey_on_demand_monthly_usd": 962.43
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 1.968,
+          "memcached_on_demand_monthly_usd": 1436.64,
+          "redis_on_demand_hourly_usd": 1.968,
+          "redis_on_demand_monthly_usd": 1436.64,
+          "valkey_on_demand_hourly_usd": 1.5744,
+          "valkey_on_demand_monthly_usd": 1149.31
+        }
+      }
+    },
+    "cache.r6g.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 211.66,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 3.296,
+          "memcached_on_demand_monthly_usd": 2406.08,
+          "redis_on_demand_hourly_usd": 5.28,
+          "redis_on_demand_monthly_usd": 3854.4,
+          "valkey_on_demand_hourly_usd": 2.6368,
+          "valkey_on_demand_monthly_usd": 1924.86
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 3.936,
+          "memcached_on_demand_monthly_usd": 2873.28,
+          "redis_on_demand_hourly_usd": 3.936,
+          "redis_on_demand_monthly_usd": 2873.28,
+          "valkey_on_demand_hourly_usd": 3.1488,
+          "valkey_on_demand_monthly_usd": 2298.62
+        }
+      }
+    },
+    "cache.r6g.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 317.77,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 4.944,
+          "memcached_on_demand_monthly_usd": 3609.12,
+          "redis_on_demand_hourly_usd": 7.92,
+          "redis_on_demand_monthly_usd": 5781.6,
+          "valkey_on_demand_hourly_usd": 3.9552,
+          "valkey_on_demand_monthly_usd": 2887.3
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 5.904,
+          "memcached_on_demand_monthly_usd": 4309.92,
+          "redis_on_demand_hourly_usd": 5.904,
+          "redis_on_demand_monthly_usd": 4309.92,
+          "valkey_on_demand_hourly_usd": 4.7232,
+          "valkey_on_demand_monthly_usd": 3447.94
+        }
+      }
+    },
+    "cache.r6g.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 423.77,
+      "family": "Memory Optimized (r6g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 6.592,
+          "memcached_on_demand_monthly_usd": 4812.16,
+          "redis_on_demand_hourly_usd": 10.56,
+          "redis_on_demand_monthly_usd": 7708.8,
+          "valkey_on_demand_hourly_usd": 5.2736,
+          "valkey_on_demand_monthly_usd": 3849.73
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 7.872,
+          "memcached_on_demand_monthly_usd": 5746.56,
+          "redis_on_demand_hourly_usd": 7.872,
+          "redis_on_demand_monthly_usd": 5746.56,
+          "valkey_on_demand_hourly_usd": 6.2976,
+          "valkey_on_demand_monthly_usd": 4597.25
+        }
+      }
+    },
+    "cache.r6gd.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 26.32,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 0.625,
+          "redis_on_demand_monthly_usd": 456.25,
+          "valkey_on_demand_hourly_usd": 0.6248,
+          "valkey_on_demand_monthly_usd": 456.1
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r6gd.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 52.82,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 1.25,
+          "redis_on_demand_monthly_usd": 912.5,
+          "valkey_on_demand_hourly_usd": 1.2496,
+          "valkey_on_demand_monthly_usd": 912.21
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r6gd.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 105.81,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 2.5,
+          "redis_on_demand_monthly_usd": 1825.0,
+          "valkey_on_demand_hourly_usd": 2.4992,
+          "valkey_on_demand_monthly_usd": 1824.42
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r6gd.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 211.66,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 5.0,
+          "redis_on_demand_monthly_usd": 3650.0,
+          "valkey_on_demand_hourly_usd": 4.9984,
+          "valkey_on_demand_monthly_usd": 3648.83
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r6gd.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 317.77,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 7.5,
+          "redis_on_demand_monthly_usd": 5475.0,
+          "valkey_on_demand_hourly_usd": 7.4976,
+          "valkey_on_demand_monthly_usd": 5473.25
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r6gd.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 423.77,
+      "family": "Memory Optimized with NVMe (r6gd Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "redis_on_demand_hourly_usd": 10.0,
+          "redis_on_demand_monthly_usd": 7300.0,
+          "valkey_on_demand_hourly_usd": 9.9968,
+          "valkey_on_demand_monthly_usd": 7297.66
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.r7g.large": {
+      "vcpu": 2,
+      "memory_gib": 13.07,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.219,
+          "memcached_on_demand_monthly_usd": 159.87,
+          "redis_on_demand_hourly_usd": 0.175,
+          "redis_on_demand_monthly_usd": 127.75,
+          "valkey_on_demand_hourly_usd": 0.1752,
+          "valkey_on_demand_monthly_usd": 127.9
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.2615,
+          "memcached_on_demand_monthly_usd": 190.9,
+          "redis_on_demand_hourly_usd": 0.2615,
+          "redis_on_demand_monthly_usd": 190.9,
+          "valkey_on_demand_hourly_usd": 0.2092,
+          "valkey_on_demand_monthly_usd": 152.72
+        }
+      }
+    },
+    "cache.r7g.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 26.32,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.438,
+          "memcached_on_demand_monthly_usd": 319.74,
+          "redis_on_demand_hourly_usd": 0.35,
+          "redis_on_demand_monthly_usd": 255.5,
+          "valkey_on_demand_hourly_usd": 0.3504,
+          "valkey_on_demand_monthly_usd": 255.79
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 0.523,
+          "memcached_on_demand_monthly_usd": 381.79,
+          "redis_on_demand_hourly_usd": 0.523,
+          "redis_on_demand_monthly_usd": 381.79,
+          "valkey_on_demand_hourly_usd": 0.4184,
+          "valkey_on_demand_monthly_usd": 305.43
+        }
+      }
+    },
+    "cache.r7g.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 52.82,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.876,
+          "memcached_on_demand_monthly_usd": 639.48,
+          "redis_on_demand_hourly_usd": 0.7,
+          "redis_on_demand_monthly_usd": 511.0,
+          "valkey_on_demand_hourly_usd": 0.7008,
+          "valkey_on_demand_monthly_usd": 511.58
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 1.046,
+          "memcached_on_demand_monthly_usd": 763.58,
+          "redis_on_demand_hourly_usd": 1.046,
+          "redis_on_demand_monthly_usd": 763.58,
+          "valkey_on_demand_hourly_usd": 0.8368,
+          "valkey_on_demand_monthly_usd": 610.86
+        }
+      }
+    },
+    "cache.r7g.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 105.81,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.752,
+          "memcached_on_demand_monthly_usd": 1278.96,
+          "redis_on_demand_hourly_usd": 1.4,
+          "redis_on_demand_monthly_usd": 1022.0,
+          "valkey_on_demand_hourly_usd": 1.4016,
+          "valkey_on_demand_monthly_usd": 1023.17
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 2.092,
+          "memcached_on_demand_monthly_usd": 1527.16,
+          "redis_on_demand_hourly_usd": 2.092,
+          "redis_on_demand_monthly_usd": 1527.16,
+          "valkey_on_demand_hourly_usd": 1.6736,
+          "valkey_on_demand_monthly_usd": 1221.73
+        }
+      }
+    },
+    "cache.r7g.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 211.66,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 3.504,
+          "memcached_on_demand_monthly_usd": 2557.92,
+          "redis_on_demand_hourly_usd": 2.8,
+          "redis_on_demand_monthly_usd": 2044.0,
+          "valkey_on_demand_hourly_usd": 2.8032,
+          "valkey_on_demand_monthly_usd": 2046.34
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 4.184,
+          "memcached_on_demand_monthly_usd": 3054.32,
+          "redis_on_demand_hourly_usd": 4.184,
+          "redis_on_demand_monthly_usd": 3054.32,
+          "valkey_on_demand_hourly_usd": 3.3472,
+          "valkey_on_demand_monthly_usd": 2443.46
+        }
+      }
+    },
+    "cache.r7g.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 317.77,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 5.256,
+          "memcached_on_demand_monthly_usd": 3836.88,
+          "redis_on_demand_hourly_usd": 4.2,
+          "redis_on_demand_monthly_usd": 3066.0,
+          "valkey_on_demand_hourly_usd": 4.2048,
+          "valkey_on_demand_monthly_usd": 3069.5
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 6.276,
+          "memcached_on_demand_monthly_usd": 4581.48,
+          "redis_on_demand_hourly_usd": 6.276,
+          "redis_on_demand_monthly_usd": 4581.48,
+          "valkey_on_demand_hourly_usd": 5.0208,
+          "valkey_on_demand_monthly_usd": 3665.18
+        }
+      }
+    },
+    "cache.r7g.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 423.77,
+      "family": "Memory Optimized (r7g Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 7.008,
+          "memcached_on_demand_monthly_usd": 5115.84,
+          "redis_on_demand_hourly_usd": 5.6,
+          "redis_on_demand_monthly_usd": 4088.0,
+          "valkey_on_demand_hourly_usd": 5.6064,
+          "valkey_on_demand_monthly_usd": 4092.67
+        },
+        "us-gov-west-1": {
+          "memcached_on_demand_hourly_usd": 8.368,
+          "memcached_on_demand_monthly_usd": 6108.64,
+          "redis_on_demand_hourly_usd": 8.368,
+          "redis_on_demand_monthly_usd": 6108.64,
+          "valkey_on_demand_hourly_usd": 6.6944,
+          "valkey_on_demand_monthly_usd": 4886.91
+        }
+      }
+    },
+    "cache.c7gn.large": {
+      "vcpu": 2,
+      "memory_gib": 13.07,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.255,
+          "memcached_on_demand_monthly_usd": 186.15,
+          "redis_on_demand_hourly_usd": 0.408,
+          "redis_on_demand_monthly_usd": 297.84,
+          "valkey_on_demand_hourly_usd": 0.204,
+          "valkey_on_demand_monthly_usd": 148.92
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 26.14,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 0.51,
+          "memcached_on_demand_monthly_usd": 372.3,
+          "redis_on_demand_hourly_usd": 0.816,
+          "redis_on_demand_monthly_usd": 595.68,
+          "valkey_on_demand_hourly_usd": 0.408,
+          "valkey_on_demand_monthly_usd": 297.84
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 52.28,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 1.02,
+          "memcached_on_demand_monthly_usd": 744.6,
+          "redis_on_demand_hourly_usd": 1.632,
+          "redis_on_demand_monthly_usd": 1191.36,
+          "valkey_on_demand_hourly_usd": 0.816,
+          "valkey_on_demand_monthly_usd": 595.68
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 104.56,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 2.04,
+          "memcached_on_demand_monthly_usd": 1489.2,
+          "redis_on_demand_hourly_usd": 3.264,
+          "redis_on_demand_monthly_usd": 2382.72,
+          "valkey_on_demand_hourly_usd": 1.632,
+          "valkey_on_demand_monthly_usd": 1191.36
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 209.12,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 4.08,
+          "memcached_on_demand_monthly_usd": 2978.4,
+          "redis_on_demand_hourly_usd": 6.528,
+          "redis_on_demand_monthly_usd": 4765.44,
+          "valkey_on_demand_hourly_usd": 3.264,
+          "valkey_on_demand_monthly_usd": 2382.72
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 313.68,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 6.12,
+          "memcached_on_demand_monthly_usd": 4467.6,
+          "redis_on_demand_hourly_usd": 9.792,
+          "redis_on_demand_monthly_usd": 7148.16,
+          "valkey_on_demand_hourly_usd": 4.896,
+          "valkey_on_demand_monthly_usd": 3574.08
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "cache.c7gn.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 418.24,
+      "family": "Network Optimized (c7gn Graviton)",
+      "pricing": {
+        "us-east-1": {
+          "memcached_on_demand_hourly_usd": 8.16,
+          "memcached_on_demand_monthly_usd": 5956.8,
+          "redis_on_demand_hourly_usd": 13.056,
+          "redis_on_demand_monthly_usd": 9530.88,
+          "valkey_on_demand_hourly_usd": 6.528,
+          "valkey_on_demand_monthly_usd": 4765.44
+        },
+        "us-gov-west-1": null
+      }
+    }
+  }
+}

@@ -26,7 +26,7 @@ Phase 4B Update:
 """
 
 import datetime
-import csv
+import json
 import sys
 from pathlib import Path
 import re
@@ -106,32 +106,23 @@ def format_tags(tags):
 
 def load_ebs_pricing_data():
     """
-    Load EBS volume pricing data from the reference CSV file
+    Load EBS volume pricing data from the reference JSON file.
 
     Returns:
         dict: Dictionary mapping volume types to price per GB per month
     """
     pricing_data = {}
     try:
-        # Get the reference directory path relative to the script
         script_dir = Path(__file__).parent.absolute()
-        pricing_file = script_dir.parent / 'reference' / 'ebsvol-pricing.csv'
+        pricing_file = script_dir.parent / 'reference' / 'ebs-pricing.json'
 
         if not pricing_file.exists():
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                volume_type = row.get('Type', '').strip()
-                price_str = row.get(' Cost per GB/month ', '').strip()
-
-                if volume_type and price_str:
-                    price = parse_ebs_price(price_str)
-                    if price is not None:
-                        pricing_data[volume_type] = price
-
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        pricing_data = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded pricing data for {len(pricing_data)} EBS volume types")
         return pricing_data
 
