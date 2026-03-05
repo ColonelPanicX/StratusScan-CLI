@@ -1,6 +1,6 @@
 # StratusScan-CLI
 
-[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
+[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -55,11 +55,17 @@ Select a resource category from the menu and follow the prompts. Exports are sav
 1. **Service Discovery**: Scans your AWS account to identify which services are actively in use
 2. **Script Recommendations**: Maps discovered services to relevant export scripts
 3. **Scope Selection**: Choose Quick Scan (all recommended scripts) or Deep Scan (full catalog)
-4. **Batch Execution**: Runs selected scripts sequentially with real-time progress output and a Markdown summary report
+4. **Batch Execution**: Quick Scan generates a Markdown summary report only (no individual exports). Deep Scan runs all selected scripts with real-time progress output and bundles all export files into a single zip archive on completion.
 
 ### Cost Estimation
 
-Built-in cost reference data for EC2 and RDS, sourced from AWS pricing and stored as static CSVs in `reference/`. No live pricing API calls at runtime.
+Built-in cost reference data stored as static JSON files in `reference/`. No live pricing API calls at runtime. Cost columns (`Monthly Cost (On-Demand)` and `Cost Note`) are included in exports for:
+
+- **Compute**: EC2 instances, EKS node groups, EC2 Dedicated Hosts, SageMaker notebook instances and real-time endpoints
+- **Compute (actual cost)**: SageMaker training jobs — actual billed cost derived from `BillableTimeInSeconds`, not a monthly estimate
+- **Storage**: S3 (Standard storage), EBS volumes, EFS file systems, FSx file systems
+- **Database**: RDS, ElastiCache, OpenSearch, Redshift, Neptune, DocumentDB
+- **Network**: NAT Gateways
 
 ### GovCloud Support
 
@@ -181,8 +187,8 @@ Access Smart Scan from the main menu. The workflow:
 
 1. **Discovery phase**: StratusScan scans the account and identifies active AWS services
 2. **Analysis**: Discovered services are mapped to relevant export scripts
-3. **Selection**: Choose Quick Scan (all recommended) or Deep Scan (full catalog), with optional manual deselection
-4. **Execution**: Scripts run sequentially; a Markdown summary report is written on completion
+3. **Selection**: Choose Quick Scan (Markdown report only, no individual exports) or Deep Scan (runs all selected scripts), with optional manual deselection
+4. **Execution**: Scripts run sequentially with live progress output. Quick Scan writes a Markdown summary; Deep Scan bundles all export files into a zip archive on completion.
 
 ### Region Selection
 
@@ -382,14 +388,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the exporter script template and cont
 
 ## Project Status
 
-**Current version: 0.3.0-beta**
+**Current version: 0.4.0-beta**
 
 StratusScan-CLI is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
 
-### What's in v0.3.0
+### What's new in v0.4.0
 
-- **Smart Scan redesign**: Fully integrated orchestrator in the main menu. Replaces the old `services_in_use_export.py` flow. Supports Quick Scan and Deep Scan modes with Markdown execution reports.
-- **API correctness audit**: 6-PR remediation pass across all 107 exporter scripts covering runtime crashes, pagination gaps, GovCloud guard improvements, inaccurate field mappings, and missing API coverage (lifecycle hooks, target groups, listeners, rule groups, backup jobs, Neptune Analytics, and more).
+- **Cost columns for 14 exporters**: `Monthly Cost (On-Demand)` and `Cost Note` columns added to ElastiCache, OpenSearch, Redshift, Neptune, DocumentDB, S3, EFS, FSx, NAT Gateways, EKS node groups, SageMaker notebook instances and real-time endpoints, and EC2 Dedicated Hosts. EC2 and RDS already had cost columns. SageMaker training jobs show actual billed job cost (not a monthly estimate) derived from `BillableTimeInSeconds`.
+- **Pricing reference overhaul**: 11 static JSON pricing files in `reference/` replace the legacy CSV approach. Covers `ml.*` SageMaker instances, dedicated host families, FSx storage types, EFS tier rates, Neptune, DocumentDB, ElastiCache, OpenSearch, Redshift, NAT Gateways, and S3.
+- **Smart Scan Deep Scan archive**: After a Deep Scan completes, all export files are bundled into a single zip archive for easy transport.
+- **Service discovery improvements**: Short per-future boto3 timeouts prevent Timestream and other slow-service hangs; progress heartbeat added for the discovery phase.
+
+### Previously in v0.3.0
+
+- **Smart Scan redesign**: Fully integrated orchestrator in the main menu with Quick Scan and Deep Scan modes.
+- **API correctness audit**: 6-PR remediation pass across all 107 exporter scripts covering runtime crashes, pagination gaps, GovCloud guard improvements, and missing API coverage.
 - **Configure.py refactor**: Preset-based region selection, streamlined 4-step flow, improved GovCloud detection.
 - **Main menu styling**: Box-drawing UI consistent with configure.py design standard applied throughout.
 
@@ -397,7 +410,7 @@ StratusScan-CLI is in active beta development. The API and output format may cha
 
 | Version | Target | Notes |
 |---|---|---|
-| `0.3.x` | Patch releases | S3 large-account performance, coverage gaps |
+| `0.4.x` | Patch releases | Coverage gaps, pricing data refresh |
 | `1.0.0` | Planned | Full Textual-based TUI; subprocess output streamed live |
 
 ---
@@ -411,7 +424,8 @@ StratusScan-CLI uses [Semantic Versioning](https://semver.org/).
 | `3.x.x` | Deprecated | Superseded by governance reset at `0.1.0` |
 | `0.1.x` | Superseded | Initial relaunch |
 | `0.2.x` | Superseded | Backend stabilization, pricing data v2 |
-| `0.3.x` | Current (Beta) | Smart Scan orchestrator, full API correctness audit |
+| `0.3.x` | Superseded | Smart Scan orchestrator, full API correctness audit |
+| `0.4.x` | Current (Beta) | Cost columns for 14 exporters, pricing JSON overhaul |
 | `1.0.0` | Planned | Textual TUI, stable API |
 
 ---
