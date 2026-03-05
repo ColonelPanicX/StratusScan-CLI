@@ -22,6 +22,7 @@ Features:
 Note: Requires ec2:DescribeHosts and ec2:DescribeHostReservations permissions
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
@@ -41,11 +42,34 @@ except ImportError:
 utils.setup_logging('ec2-dedicated-hosts-export')
 
 
+def _load_dedicated_host_pricing() -> Dict[str, Dict[str, float]]:
+    """Load per-family dedicated host on-demand rates (us-east-1).
+
+    Returns dict: {family: {'hourly': float, 'monthly': float}}
+    """
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'dedicated-host-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        rates = data.get('rates', {})
+        return {
+            family: {
+                'hourly': float(v['on_demand_hourly_usd']),
+                'monthly': float(v['on_demand_monthly_usd']),
+            }
+            for family, v in rates.items()
+        }
+    except Exception:
+        return {}
+
+
 @utils.aws_error_handler("Collecting dedicated hosts", default_return=[])
 def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
     """Collect all EC2 Dedicated Hosts in a region."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     hosts = []
+    host_pricing = _load_dedicated_host_pricing()
+    is_govcloud = utils.detect_partition(region) == 'aws-us-gov'
 
     paginator = ec2.get_paginator('describe_hosts')
     for page in paginator.paginate():
@@ -79,6 +103,21 @@ def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
             for tag in host.get('Tags', []):
                 tags.append(f"{tag.get('Key')}={tag.get('Value')}")
 
+            # Cost estimation — per-host flat rate keyed by InstanceFamily
+            state = host.get('State', 'N/A')
+            instance_family = properties.get('InstanceFamily', 'N/A')
+            family_pricing = host_pricing.get(instance_family)
+            if state == 'released':
+                monthly_cost = 0.0
+                cost_note = 'Host released; no longer billed'
+            elif family_pricing:
+                monthly_cost = family_pricing['monthly']
+                gc_note = ' (us-east-1 rates; GovCloud may differ)' if is_govcloud else ''
+                cost_note = f'Estimate: flat per-host rate × 730 hr/mo{gc_note}'
+            else:
+                monthly_cost = 'N/A'
+                cost_note = f'Family {instance_family!r} not in pricing data'
+
             hosts.append({
                 'Region': region,
                 'HostId': host.get('HostId', 'N/A'),
@@ -106,6 +145,8 @@ def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
                 'OutpostArn': host.get('OutpostArn', 'N/A'),
                 'AssetId': host.get('AssetId', 'N/A'),
                 'Tags': ', '.join(tags) if tags else 'N/A',
+                'Monthly Cost (On-Demand)': monthly_cost,
+                'Cost Note': cost_note,
             })
 
     return hosts
