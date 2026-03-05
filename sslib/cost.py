@@ -8,7 +8,7 @@ pricing.  For accurate pricing use AWS Pricing Calculator or Cost Explorer.
 Zero dependency on utils.py — uses only stdlib + third-party packages.
 """
 
-import csv
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -22,40 +22,79 @@ logger = logging.getLogger(__name__)
 _REFERENCE_DIR = Path(__file__).parent.parent / "reference"
 
 
-def _load_pricing_csv(filename: str, key_col: str, val_col: str, default: Dict[str, float]) -> Dict[str, float]:
+def _load_pricing_json(filename: str, default: Dict[str, float]) -> Dict[str, float]:
     """
-    Load a two-column pricing CSV from the reference/ directory.
+    Load a flat key→value pricing dict from a JSON file in reference/.
 
-    Falls back to ``default`` on any I/O or parse error so cost estimation
-    continues to work even when the CSV is missing or malformed.
+    The JSON file must have a top-level ``rates`` object whose values are
+    floats.  Falls back to ``default`` on any I/O or parse error.
 
     Args:
-        filename: CSV filename inside reference/ (e.g. 's3-pricing.csv')
-        key_col:  Name of the column to use as dict key
-        val_col:  Name of the column to use as dict value (must be numeric)
+        filename: JSON filename inside reference/ (e.g. 's3-pricing.json')
         default:  Fallback dict returned on error
 
     Returns:
-        Dict mapping key_col values → float(val_col values)
+        Dict mapping rate keys → float values
     """
-    csv_path = _REFERENCE_DIR / filename
+    json_path = _REFERENCE_DIR / filename
     try:
+        with json_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        rates = data.get("rates", {})
+        if rates:
+            return {k: float(v) for k, v in rates.items()}
+        logger.warning("Pricing JSON %s has no 'rates' key — using built-in defaults", filename)
+    except FileNotFoundError:
+        logger.warning("Pricing JSON not found: %s — using built-in defaults", json_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Error reading pricing JSON %s: %s — using built-in defaults", filename, exc)
+    return default
+
+
+def _load_rds_instance_pricing() -> Dict[str, float]:
+    """
+    Build an ``{instance_class: hourly_rate_usd}`` map from rds-pricing.json.
+
+    Uses MySQL / us-east-1 on-demand monthly rate ÷ 730 as the hourly baseline.
+    Falls back to a small built-in table if rds-pricing.json is missing.
+    """
+    _defaults: Dict[str, float] = {
+        "db.t3.micro": 0.017,
+        "db.t3.small": 0.034,
+        "db.t3.medium": 0.068,
+        "db.t3.large": 0.136,
+        "db.t3.xlarge": 0.272,
+        "db.t3.2xlarge": 0.544,
+        "db.m5.large": 0.192,
+        "db.m5.xlarge": 0.384,
+        "db.m5.2xlarge": 0.768,
+        "db.m5.4xlarge": 1.536,
+        "db.r5.large": 0.24,
+        "db.r5.xlarge": 0.48,
+        "db.r5.2xlarge": 0.96,
+        "db.r5.4xlarge": 1.92,
+    }
+    json_path = _REFERENCE_DIR / "rds-pricing.json"
+    try:
+        with json_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
         pricing: Dict[str, float] = {}
-        with csv_path.open(newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                key = row.get(key_col, "").strip()
-                val_str = row.get(val_col, "").strip()
-                if key and val_str:
-                    pricing[key] = float(val_str)
+        for instance_class, info in data.get("records", {}).items():
+            monthly = (
+                info.get("pricing", {})
+                .get("us-east-1", {})
+                .get("mysql_on_demand_monthly_usd")
+            )
+            if monthly is not None:
+                pricing[instance_class] = round(monthly / 730, 6)
         if pricing:
             return pricing
-        logger.warning("Pricing CSV %s is empty — using built-in defaults", filename)
+        logger.warning("No RDS pricing extracted from rds-pricing.json — using built-in defaults")
     except FileNotFoundError:
-        logger.warning("Pricing CSV not found: %s — using built-in defaults", csv_path)
+        logger.warning("rds-pricing.json not found — using built-in defaults")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Error reading pricing CSV %s: %s — using built-in defaults", filename, exc)
-    return default
+        logger.warning("Error reading rds-pricing.json: %s — using built-in defaults", exc)
+    return _defaults
 
 
 # =============================================================================
@@ -121,26 +160,7 @@ def estimate_rds_monthly_cost(
         - Does not include data transfer, backups, or other charges
         - Multi-AZ deployments approximately double instance costs
     """
-    # Approximate instance pricing per hour (us-east-1, on-demand)
-    _instance_defaults: Dict[str, float] = {
-        "db.t3.micro": 0.017,
-        "db.t3.small": 0.034,
-        "db.t3.medium": 0.068,
-        "db.t3.large": 0.136,
-        "db.t3.xlarge": 0.272,
-        "db.t3.2xlarge": 0.544,
-        "db.m5.large": 0.192,
-        "db.m5.xlarge": 0.384,
-        "db.m5.2xlarge": 0.768,
-        "db.m5.4xlarge": 1.536,
-        "db.r5.large": 0.24,
-        "db.r5.xlarge": 0.48,
-        "db.r5.2xlarge": 0.96,
-        "db.r5.4xlarge": 1.92,
-    }
-    instance_pricing = _load_pricing_csv(
-        "rds-instance-pricing.csv", "instance_class", "hourly_rate_usd", _instance_defaults
-    )
+    instance_pricing = _load_rds_instance_pricing()
 
     # Storage pricing per GB/month
     _storage_defaults: Dict[str, float] = {
@@ -149,9 +169,7 @@ def estimate_rds_monthly_cost(
         "io1": 0.125,
         "magnetic": 0.10,
     }
-    storage_pricing = _load_pricing_csv(
-        "rds-storage-pricing.csv", "storage_type", "price_per_gb_month", _storage_defaults
-    )
+    storage_pricing = _load_pricing_json("rds-storage-pricing.json", _storage_defaults)
 
     # Get instance cost
     hourly_instance_cost = instance_pricing.get(instance_class, 0.10)
@@ -218,9 +236,7 @@ def estimate_s3_monthly_cost(
         "GLACIER_IR": 0.0036,
         "DEEP_ARCHIVE": 0.00099,
     }
-    storage_pricing = _load_pricing_csv(
-        "s3-pricing.csv", "storage_class", "price_per_gb_month", _s3_defaults
-    )
+    storage_pricing = _load_pricing_json("s3-pricing.json", _s3_defaults)
 
     # Request pricing (per 1,000 requests)
     request_pricing = {
@@ -300,9 +316,7 @@ def calculate_nat_gateway_monthly_cost(
         "hourly": 0.045,
         "data_processing_per_gb": 0.045,
     }
-    natgw_pricing = _load_pricing_csv(
-        "natgw-pricing.csv", "rate_type", "rate_usd", _natgw_defaults
-    )
+    natgw_pricing = _load_pricing_json("natgw-pricing.json", _natgw_defaults)
     hourly_rate = natgw_pricing.get("hourly", 0.045)
     data_processing_rate = natgw_pricing.get("data_processing_per_gb", 0.045)
 

@@ -18,6 +18,7 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import json
 import sys
 import datetime
 from pathlib import Path
@@ -410,6 +411,18 @@ def collect_vpc_subnet_data(regions):
     utils.log_success(f"Total subnets collected: {len(all_subnet_data)}")
     return all_subnet_data
 
+def _load_natgw_monthly_cost() -> float:
+    """Return NAT Gateway base hourly cost × 730 from pricing JSON."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'natgw-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        hourly = float(data.get('rates', {}).get('hourly', 0.045))
+        return round(hourly * 730, 2)
+    except Exception:
+        return 32.85
+
+
 @utils.aws_error_handler("Collecting NAT Gateway data for region", default_return=[])
 def collect_nat_gateway_data_for_region(region):
     """
@@ -422,6 +435,7 @@ def collect_nat_gateway_data_for_region(region):
         list: List of dictionaries with NAT Gateway information
     """
     nat_gateways = []
+    natgw_monthly_cost = _load_natgw_monthly_cost()
 
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -476,6 +490,14 @@ def collect_nat_gateway_data_for_region(region):
             primary_private_ip = primary_nat_address.get('PrivateIp', '')
             primary_eni_id = primary_nat_address.get('NetworkInterfaceId', '')
 
+        # Cost: hourly base charge applies to 'available' gateways only
+        if state == 'available':
+            monthly_cost = natgw_monthly_cost
+            cost_note = 'Hourly base only; excludes data processing charges'
+        else:
+            monthly_cost = 0.0
+            cost_note = f'Not billed (state: {state})'
+
         # Add to results
         nat_gateways.append({
             'Region': region,
@@ -488,7 +510,9 @@ def collect_nat_gateway_data_for_region(region):
             'Primary Network Interface ID': primary_eni_id,
             'VPC': vpc_id,
             'Subnet': subnet_id,
-            'Creation Date': creation_date
+            'Creation Date': creation_date,
+            'Monthly Cost (On-Demand)': monthly_cost,
+            'Cost Note': cost_note,
         })
 
     return nat_gateways

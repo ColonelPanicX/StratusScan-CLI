@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-05",
+  "source": "us-east-1 on-demand rates — static reference, refresh quarterly",
+  "currency": "USD",
+  "unit": "USD per GB per month",
+  "notes": "Regional = Multi-AZ EFS. One Zone = single-AZ EFS. IA = Infrequent Access tier.",
+  "rates": {
+    "regional_standard_per_gb_month": 0.30,
+    "regional_ia_per_gb_month": 0.025,
+    "one_zone_standard_per_gb_month": 0.16,
+    "one_zone_ia_per_gb_month": 0.01
+  }
+}

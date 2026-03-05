@@ -38,10 +38,6 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 
-# Check required packages
-utils.check_required_packages(['boto3', 'pandas', 'openpyxl'])
-
-
 @utils.aws_error_handler("Collecting Health events", default_return=[])
 def collect_health_events(region: str, time_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Collect AWS Health events for the account."""

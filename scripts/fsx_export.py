@@ -21,6 +21,7 @@ Features:
 - Network and security settings
 """
 
+import json
 import sys
 import datetime
 from pathlib import Path
@@ -44,12 +45,48 @@ except ImportError:
         sys.exit(1)
 
 
+def _load_fsx_pricing() -> Dict[str, float]:
+    """Load FSx per-GB-month storage rates from pricing JSON."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'fsx-pricing.json'
+    defaults = {
+        'WINDOWS_SSD': 0.13, 'WINDOWS_HDD': 0.025,
+        'LUSTRE_SSD': 0.14,  'LUSTRE_HDD': 0.0125,
+        'ONTAP_SSD': 0.12,   'ONTAP_HDD': 0.025,
+        'OPENZFS_SSD': 0.09, 'OPENZFS_HDD': 0.025,
+    }
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        rates = data.get('rates', {})
+        if rates:
+            return {k: float(v) for k, v in rates.items()}
+    except Exception:
+        pass
+    return defaults
+
+
+def calculate_fsx_monthly_cost(
+    file_system_type: str,
+    storage_type: str,
+    storage_capacity_gb: int,
+    pricing: Dict[str, float],
+) -> float:
+    """Return estimated monthly storage cost for an FSx file system."""
+    key = f"{file_system_type}_{storage_type}"
+    rate = pricing.get(key)
+    if rate is None or not storage_capacity_gb:
+        return 'N/A'
+    return round(float(storage_capacity_gb) * rate, 2)
+
+
 def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for FSx file systems."""
     file_systems_data = []
 
     if not utils.is_aws_region(region):
         return file_systems_data
+
+    pricing = _load_fsx_pricing()
 
     try:
         fsx_client = utils.get_boto3_client('fsx', region_name=region)
@@ -130,6 +167,10 @@ def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
                 tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
                 tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
 
+                monthly_cost = calculate_fsx_monthly_cost(
+                    file_system_type, storage_type, storage_capacity, pricing
+                )
+
                 file_systems_data.append({
                     'Region': region,
                     'File System ID': file_system_id,
@@ -147,7 +188,9 @@ def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
                     'KMS Key ID': kms_key_id,
                     'Creation Time': creation_time,
                     'Tags': tags_str,
-                    'Resource ARN': resource_arn
+                    'Resource ARN': resource_arn,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': 'Estimate (us-east-1 storage only; excludes throughput capacity charges)',
                 })
 
     except Exception as e:

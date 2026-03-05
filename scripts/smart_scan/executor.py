@@ -165,6 +165,24 @@ class ScriptExecutor:
                 env=env,
             )
 
+            # When not streaming output, run a background heartbeat so the user
+            # knows a slow script is still working (fires every 10s).
+            _hb_stop = threading.Event()
+            _hb_thread: Optional[threading.Thread] = None
+            if not self.show_output:
+                _hb_t0 = time.monotonic()
+
+                def _heartbeat() -> None:
+                    while not _hb_stop.wait(timeout=10):
+                        print(
+                            f"  ... {script_name}: still running "
+                            f"({int(time.monotonic() - _hb_t0)}s elapsed)",
+                            flush=True,
+                        )
+
+                _hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+                _hb_thread.start()
+
             t_out = threading.Thread(
                 target=_drain,
                 args=(proc.stdout, stdout_lines, self.show_output),
@@ -190,6 +208,11 @@ class ScriptExecutor:
                 proc.kill()
                 return_code = -1
                 timed_out = True
+
+            # Stop the per-script heartbeat before logging the result
+            if _hb_thread is not None:
+                _hb_stop.set()
+                _hb_thread.join()
 
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -326,8 +349,11 @@ class ScriptExecutor:
                 if new_files:
                     new_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                     return str(new_files[0])
+                # pre_run_set was provided but no new file found — don't attribute
+                # a pre-existing file to this script
+                return None
 
-            # Fall back to newest file overall
+            # Fall back to newest file overall (no pre-run snapshot available)
             xlsx_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return str(xlsx_files[0])
 

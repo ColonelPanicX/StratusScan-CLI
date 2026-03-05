@@ -19,6 +19,7 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import json
 import os
 import sys
 import time
@@ -300,6 +301,17 @@ def convert_to_mb(size_in_bytes):
     except (ValueError, TypeError):
         return 0.0
 
+def _load_s3_standard_rate() -> float:
+    """Load S3 Standard storage rate from pricing JSON, falling back to built-in default."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 's3-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        return float(data.get('rates', {}).get('STANDARD', 0.023))
+    except Exception:
+        return 0.023
+
+
 @utils.aws_error_handler("Collecting S3 buckets", default_return=[])
 def get_s3_buckets_info(use_storage_lens=False, target_region=None):
     """
@@ -314,6 +326,7 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
     """
     # Initialize global S3 client to list all buckets
     s3_client = utils.get_boto3_client('s3')
+    standard_rate = _load_s3_standard_rate()
 
     all_buckets_info = []
     storage_lens_data = {}
@@ -390,6 +403,17 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
         # Get owner information
         owner_id = utils.get_account_name_formatted(account_id)
 
+        # Estimate monthly storage cost (Standard tier only)
+        if size_source != "Not Available" and size_mb > 0:
+            monthly_cost = round(size_mb / 1024 * standard_rate, 4)
+            cost_note = 'Standard storage estimate only'
+        elif size_source != "Not Available":
+            monthly_cost = 0.0
+            cost_note = 'Standard storage estimate only'
+        else:
+            monthly_cost = 'N/A'
+            cost_note = 'Size data unavailable'
+
         # Add bucket info to our list
         bucket_info = {
             'Bucket Name': bucket_name,
@@ -398,7 +422,9 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
             'Object Count': object_count,
             'Size (MB)': size_mb,
             'Size Source': size_source,
-            'Owner': owner_id
+            'Owner': owner_id,
+            'Monthly Cost (On-Demand)': monthly_cost,
+            'Cost Note': cost_note,
         }
 
         all_buckets_info.append(bucket_info)
@@ -430,12 +456,14 @@ def export_to_excel(buckets_info, account_name, target_region=None):
 
     # Reorder columns for better readability
     column_order = [
-        'Bucket Name', 
-        'Region', 
-        'Creation Date', 
+        'Bucket Name',
+        'Region',
+        'Creation Date',
         'Object Count',
         'Size (MB)',
         'Size Source',
+        'Monthly Cost (On-Demand)',
+        'Cost Note',
         'Owner'
     ]
     
@@ -498,12 +526,14 @@ def export_to_csv(buckets_info, account_name, target_region=None):
 
     # Reorder columns for better readability
     column_order = [
-        'Bucket Name', 
-        'Region', 
-        'Creation Date', 
+        'Bucket Name',
+        'Region',
+        'Creation Date',
         'Object Count',
         'Size (MB)',
         'Size Source',
+        'Monthly Cost (On-Demand)',
+        'Cost Note',
         'Owner'
     ]
     

@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-05",
+  "currency": "USD",
+  "pricing_basis": "monthly",
+  "notes": "On-Demand hourly rates from AWS Pricing MCP. Monthly = hourly * 730. us-gov-west-1 rates included where available.",
+  "record_count": 6,
+  "generated_at": "2026-03-05",
+  "source": "AWS Pricing MCP (instances.for.business) — manual quarterly refresh",
+  "records": {
+    "dc2.large": {
+      "vcpu": 2,
+      "memory_gib": 15,
+      "storage": "160 GB NVMe-SSD",
+      "family": "Dense Compute",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.25,
+          "on_demand_monthly_usd": 182.5
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.30,
+          "on_demand_monthly_usd": 219.0
+        }
+      }
+    },
+    "dc2.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 244,
+      "storage": "2.56 TB NVMe-SSD",
+      "family": "Dense Compute",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.80,
+          "on_demand_monthly_usd": 3504.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 5.76,
+          "on_demand_monthly_usd": 4204.8
+        }
+      }
+    },
+    "ra3.large": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "storage": "8 TB RMS",
+      "family": "RA3 Managed Storage",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.543,
+          "on_demand_monthly_usd": 396.39
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.543,
+          "on_demand_monthly_usd": 396.39
+        }
+      }
+    },
+    "ra3.xlplus": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "storage": "32 TB RMS",
+      "family": "RA3 Managed Storage",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.086,
+          "on_demand_monthly_usd": 792.78
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 1.086,
+          "on_demand_monthly_usd": 792.78
+        }
+      }
+    },
+    "ra3.4xlarge": {
+      "vcpu": 12,
+      "memory_gib": 96,
+      "storage": "128 TB RMS",
+      "family": "RA3 Managed Storage",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.26,
+          "on_demand_monthly_usd": 2379.8
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 3.26,
+          "on_demand_monthly_usd": 2379.8
+        }
+      }
+    },
+    "ra3.16xlarge": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "storage": "128 TB RMS",
+      "family": "RA3 Managed Storage",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 13.04,
+          "on_demand_monthly_usd": 9519.2
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 13.04,
+          "on_demand_monthly_usd": 9519.2
+        }
+      }
+    }
+  }
+}

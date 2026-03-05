@@ -34,12 +34,45 @@ try:
 except ImportError:
     print("Error: pandas is not installed. Please install it using 'pip install pandas'")
     sys.exit(1)
+
+
+def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
+    """Load SageMaker on-demand pricing for ml.* instance types.
+
+    Returns dict: {instance_type: {'hourly': float, 'monthly': float}}
+    Training cost = (billable_seconds / 3600) x instances x hourly.
+    Notebooks/endpoints use monthly for 730 hr/mo estimates.
+    """
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'sagemaker-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        records = data.get('records', {})
+        partition = utils.detect_partition(region)
+        price_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        pricing = {}
+        for instance_type, info in records.items():
+            region_pricing = (info.get('pricing') or {}).get(price_region)
+            if region_pricing:
+                hourly = region_pricing.get('on_demand_hourly_usd')
+                monthly = region_pricing.get('on_demand_monthly_usd')
+                if hourly is not None:
+                    pricing[instance_type] = {
+                        'hourly': float(hourly),
+                        'monthly': float(monthly) if monthly is not None else round(float(hourly) * 730, 2),
+                    }
+        return pricing
+    except Exception:
+        return {}
+
+
 def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
     """Scan SageMaker notebook instances in a single region."""
     regional_notebooks = []
 
     try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+        sm_pricing_data = _load_sagemaker_pricing_data(region)
 
         try:
             paginator = sagemaker_client.get_paginator('list_notebook_instances')
@@ -97,6 +130,21 @@ def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = notebook_response.get('FailureReason', 'N/A')
 
+                        # Cost estimation — monthly if always running; $0 when stopped
+                        nb_pricing = sm_pricing_data.get(instance_type, {})
+                        if status == 'InService' and nb_pricing:
+                            monthly_cost = nb_pricing['monthly']
+                            cost_note = 'Estimate: monthly if running 24/7; $0 when stopped'
+                        elif status == 'Stopped':
+                            monthly_cost = 0.0
+                            cost_note = 'No compute charge while stopped'
+                        elif nb_pricing:
+                            monthly_cost = 'N/A'
+                            cost_note = f'Status={status}; cost not estimated'
+                        else:
+                            monthly_cost = 'N/A'
+                            cost_note = 'Instance type not in pricing data'
+
                         regional_notebooks.append({
                             'Region': region,
                             'Notebook Name': notebook_name,
@@ -115,7 +163,9 @@ def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
                             'Lifecycle Config': lifecycle_config,
                             'KMS Key': kms_key,
                             'URL': url,
-                            'Failure Reason': failure_reason
+                            'Failure Reason': failure_reason,
+                            'Monthly Cost (On-Demand)': monthly_cost,
+                            'Cost Note': cost_note,
                         })
 
                     except Exception as e:
@@ -147,6 +197,7 @@ def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
 
     try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+        sm_pricing_data = _load_sagemaker_pricing_data(region)
 
         try:
             # List recent training jobs (limit to 50)
@@ -228,6 +279,18 @@ def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = job_response.get('FailureReason', 'N/A')
 
+                        # Actual job cost from billable seconds (only meaningful for Completed)
+                        tj_pricing = sm_pricing_data.get(instance_type, {})
+                        if status == 'Completed' and billable_seconds and instance_count and tj_pricing:
+                            actual_cost = round((billable_seconds / 3600) * instance_count * tj_pricing['hourly'], 4)
+                            cost_note = 'Actual: (billable_sec / 3600) x instances x on-demand rate'
+                        elif status == 'Completed' and not tj_pricing:
+                            actual_cost = 'N/A'
+                            cost_note = 'Instance type not in pricing data'
+                        else:
+                            actual_cost = 'N/A'
+                            cost_note = f'Status={status}; actual cost unavailable'
+
                         regional_jobs.append({
                             'Region': region,
                             'Job Name': job_name,
@@ -245,7 +308,9 @@ def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
                             'Hyperparameters': hyperparam_count,
                             'Final Metrics': metric_count,
                             'Model Artifacts': s3_model_artifacts,
-                            'Failure Reason': failure_reason
+                            'Failure Reason': failure_reason,
+                            'Job Cost (On-Demand)': actual_cost,
+                            'Cost Note': cost_note,
                         })
 
                         job_count += 1
@@ -364,6 +429,7 @@ def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
 
     try:
         sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+        sm_pricing_data = _load_sagemaker_pricing_data(region)
 
         try:
             paginator = sagemaker_client.get_paginator('list_endpoints')
@@ -413,6 +479,19 @@ def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
                         # Failure reason
                         failure_reason = endpoint_response.get('FailureReason', 'N/A')
 
+                        # Monthly cost for InService endpoints (first variant × current count)
+                        ep_pricing = sm_pricing_data.get(instance_type, {})
+                        instance_count_for_cost = current_instance_count or desired_instance_count
+                        if status == 'InService' and ep_pricing and instance_count_for_cost:
+                            monthly_cost = round(ep_pricing['monthly'] * instance_count_for_cost, 2)
+                            cost_note = 'Estimate: first variant × instance count × 730 hr/mo; multi-variant may be higher'
+                        elif status == 'InService' and not ep_pricing:
+                            monthly_cost = 'N/A'
+                            cost_note = 'Instance type not in pricing data'
+                        else:
+                            monthly_cost = 'N/A'
+                            cost_note = f'Status={status}; cost not estimated'
+
                         regional_endpoints.append({
                             'Region': region,
                             'Endpoint Name': endpoint_name,
@@ -426,7 +505,9 @@ def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
                             'Desired Instances': desired_instance_count,
                             'Production Variants': variant_count,
                             'Data Capture Enabled': data_capture_enabled,
-                            'Failure Reason': failure_reason
+                            'Failure Reason': failure_reason,
+                            'Monthly Cost (On-Demand)': monthly_cost,
+                            'Cost Note': cost_note,
                         })
 
                     except Exception as e:

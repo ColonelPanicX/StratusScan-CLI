@@ -24,8 +24,6 @@ import sys
 import datetime
 from pathlib import Path
 from typing import List, Dict, Any
-from decimal import Decimal
-
 # Add path to import utils module
 try:
     import utils
@@ -92,8 +90,10 @@ def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
                 # Budget limit
                 budget_limit = budget.get('BudgetLimit', {})
                 limit_amount = budget_limit.get('Amount', '0')
-                if isinstance(limit_amount, Decimal):
+                try:
                     limit_amount = float(limit_amount)
+                except (ValueError, TypeError):
+                    limit_amount = 0.0
                 limit_unit = budget_limit.get('Unit', 'USD')
 
                 # Calculated spend
@@ -102,14 +102,18 @@ def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
                 # Actual spend
                 actual_spend = calculated_spend.get('ActualSpend', {})
                 actual_amount = actual_spend.get('Amount', '0')
-                if isinstance(actual_amount, Decimal):
+                try:
                     actual_amount = float(actual_amount)
+                except (ValueError, TypeError):
+                    actual_amount = 0.0
 
                 # Forecasted spend
                 forecasted_spend = calculated_spend.get('ForecastedSpend', {})
                 forecasted_amount = forecasted_spend.get('Amount', '0')
-                if isinstance(forecasted_amount, Decimal):
+                try:
                     forecasted_amount = float(forecasted_amount)
+                except (ValueError, TypeError):
+                    forecasted_amount = 0.0
 
                 # Cost filters
                 cost_filters = budget.get('CostFilters', {})

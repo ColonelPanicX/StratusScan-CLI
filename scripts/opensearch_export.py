@@ -40,9 +40,66 @@ except ImportError:
     sys.exit(1)
 
 
+def load_opensearch_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+    """Load OpenSearch pricing data from the reference JSON file."""
+    pricing_data: Dict[str, Any] = {}
+    try:
+        script_dir = Path(__file__).parent.absolute()
+        pricing_file = script_dir.parent / 'reference' / 'opensearch-pricing.json'
+        if not pricing_file.exists():
+            utils.log_warning(f"OpenSearch pricing file not found at {pricing_file}")
+            return pricing_data
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        partition = utils.detect_partition(region)
+        pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        for instance_type, info in data.get('records', {}).items():
+            regional = (
+                info.get('pricing', {}).get(pricing_region)
+                or info.get('pricing', {}).get('us-east-1', {})
+            )
+            if regional:
+                pricing_data[instance_type] = regional
+        utils.log_info(
+            f"Loaded OpenSearch pricing data for {len(pricing_data)} instance types "
+            f"({pricing_region} pricing)"
+        )
+        return pricing_data
+    except Exception as e:
+        utils.log_warning(f"Error loading OpenSearch pricing data: {e}")
+        return pricing_data
+
+
+def calculate_opensearch_monthly_cost(
+    instance_type: str,
+    instance_count: int,
+    pricing_data: Dict[str, Any],
+) -> Any:
+    """Calculate monthly cost for OpenSearch data nodes (excludes dedicated masters and warm nodes)."""
+    # Strip .search suffix: 'm6g.large.search' -> 'm6g.large'
+    lookup_type = instance_type.removesuffix('.search')
+    if lookup_type not in pricing_data or not instance_count:
+        return 'N/A'
+    try:
+        monthly = pricing_data[lookup_type].get('on_demand_monthly_usd')
+        if monthly is None:
+            return 'N/A'
+        return round(float(monthly) * int(instance_count), 2)
+    except Exception as e:
+        utils.log_warning(f"Error calculating OpenSearch cost for {instance_type}: {e}")
+        return 'N/A'
+
+
 def scan_opensearch_domains_in_region(region: str) -> List[Dict[str, Any]]:
     """Scan OpenSearch domains in a single AWS region."""
     region_domains = []
+    pricing_data = load_opensearch_pricing_data(region)
+    partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing); data nodes only"
+        if partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing); data nodes only"
+    )
 
     try:
         opensearch_client = utils.get_boto3_client('opensearch', region_name=region)
@@ -169,6 +226,11 @@ def scan_opensearch_domains_in_region(region: str) -> List[Dict[str, Any]]:
                 else:
                     created_time_str = 'Unknown'
 
+                # Cost estimation (data nodes only)
+                monthly_cost = calculate_opensearch_monthly_cost(
+                    instance_type, instance_count, pricing_data
+                )
+
                 region_domains.append({
                     'Region': region,
                     'Domain Name': domain_name,
@@ -207,6 +269,8 @@ def scan_opensearch_domains_in_region(region: str) -> List[Dict[str, Any]]:
                     'Public Access': public_access,
                     'Created': created_time_str,
                     'ARN': arn,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': cost_note,
                 })
 
             except Exception as e:

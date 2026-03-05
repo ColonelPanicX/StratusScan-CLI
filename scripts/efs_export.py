@@ -22,6 +22,7 @@ Features:
 - File system policies
 """
 
+import json
 import sys
 import datetime
 from pathlib import Path
@@ -45,6 +46,46 @@ except ImportError:
         sys.exit(1)
 
 
+def load_efs_pricing_data() -> Dict[str, float]:
+    """Load EFS storage tier rates from pricing JSON."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'efs-pricing.json'
+    defaults = {
+        'regional_standard_per_gb_month': 0.30,
+        'regional_ia_per_gb_month': 0.025,
+        'one_zone_standard_per_gb_month': 0.16,
+        'one_zone_ia_per_gb_month': 0.01,
+    }
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        rates = data.get('rates', {})
+        if rates:
+            return {k: float(v) for k, v in rates.items()}
+    except Exception:
+        pass
+    return defaults
+
+
+def calculate_efs_monthly_cost(
+    size_standard_bytes: int,
+    size_ia_bytes: int,
+    availability_zone: str,
+    pricing: Dict[str, float],
+) -> float:
+    """Return estimated monthly cost for an EFS file system based on storage tiers."""
+    is_one_zone = availability_zone not in ('Regional', 'N/A', '')
+    if is_one_zone:
+        standard_rate = pricing.get('one_zone_standard_per_gb_month', 0.16)
+        ia_rate = pricing.get('one_zone_ia_per_gb_month', 0.01)
+    else:
+        standard_rate = pricing.get('regional_standard_per_gb_month', 0.30)
+        ia_rate = pricing.get('regional_ia_per_gb_month', 0.025)
+
+    standard_gb = (size_standard_bytes or 0) / (1024 ** 3)
+    ia_gb = (size_ia_bytes or 0) / (1024 ** 3)
+    return round(standard_gb * standard_rate + ia_gb * ia_rate, 4)
+
+
 def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
     """
     Scan EFS file systems in a single region.
@@ -56,6 +97,7 @@ def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
         list: List of dictionaries with file system information from this region
     """
     regional_file_systems = []
+    pricing = load_efs_pricing_data()
 
     try:
         efs_client = utils.get_boto3_client('efs', region_name=region)
@@ -111,6 +153,10 @@ def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
                 tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
                 tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
 
+                monthly_cost = calculate_efs_monthly_cost(
+                    value_in_standard, value_in_ia, availability_zone_name, pricing
+                )
+
                 regional_file_systems.append({
                     'Region': region,
                     'File System ID': file_system_id,
@@ -129,7 +175,9 @@ def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
                     'Creation Time': creation_time,
                     'Creation Token': creation_token,
                     'Tags': tags_str,
-                    'File System ARN': file_system_arn
+                    'File System ARN': file_system_arn,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': 'Estimate (us-east-1 on-demand; storage only; excludes throughput)',
                 })
 
         utils.log_info(f"Found {fs_count} EFS file systems in {region}")

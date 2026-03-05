@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-05",
+  "source": "us-east-1 on-demand rates — static reference, refresh quarterly",
+  "currency": "USD",
+  "unit": "USD per dedicated host per hour",
+  "notes": "Keys are InstanceFamily (e.g. 'm5', 'c5'). One host = one physical server billed at a flat rate regardless of instance count running on it. GovCloud rates not verified; estimates will note this. Families not listed return N/A.",
+  "rates": {
+    "m4":  {"on_demand_hourly_usd": 3.190,  "on_demand_monthly_usd": 2328.70},
+    "c4":  {"on_demand_hourly_usd": 2.313,  "on_demand_monthly_usd": 1688.49},
+    "r4":  {"on_demand_hourly_usd": 5.491,  "on_demand_monthly_usd": 4008.43},
+    "x1":  {"on_demand_hourly_usd": 13.338, "on_demand_monthly_usd": 9736.74},
+    "x1e": {"on_demand_hourly_usd": 26.688, "on_demand_monthly_usd": 19482.24},
+    "m5":  {"on_demand_hourly_usd": 4.608,  "on_demand_monthly_usd": 3363.84},
+    "m5d": {"on_demand_hourly_usd": 5.424,  "on_demand_monthly_usd": 3959.52},
+    "m5n": {"on_demand_hourly_usd": 5.328,  "on_demand_monthly_usd": 3889.44},
+    "c5":  {"on_demand_hourly_usd": 3.366,  "on_demand_monthly_usd": 2457.18},
+    "c5d": {"on_demand_hourly_usd": 4.200,  "on_demand_monthly_usd": 3066.00},
+    "c5n": {"on_demand_hourly_usd": 4.464,  "on_demand_monthly_usd": 3258.72},
+    "r5":  {"on_demand_hourly_usd": 6.669,  "on_demand_monthly_usd": 4868.37},
+    "r5d": {"on_demand_hourly_usd": 7.824,  "on_demand_monthly_usd": 5711.52},
+    "r5n": {"on_demand_hourly_usd": 7.719,  "on_demand_monthly_usd": 5634.87},
+    "z1d": {"on_demand_hourly_usd": 5.952,  "on_demand_monthly_usd": 4344.96},
+    "i3":  {"on_demand_hourly_usd": 6.800,  "on_demand_monthly_usd": 4964.00},
+    "i3en":{"on_demand_hourly_usd": 14.112, "on_demand_monthly_usd": 10301.76},
+    "g4dn":{"on_demand_hourly_usd": 7.822,  "on_demand_monthly_usd": 5710.06},
+    "p3":  {"on_demand_hourly_usd": 24.480, "on_demand_monthly_usd": 17870.40}
+  }
+}

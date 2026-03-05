@@ -15,6 +15,7 @@ Features:
 Output: Excel file with 5 worksheets
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -36,6 +37,33 @@ except ImportError:
     utils.log_error("pandas library is required but not installed")
     utils.log_error("Install with: pip install pandas")
     sys.exit(1)
+
+
+def load_documentdb_pricing_data(region: str) -> Dict[str, float]:
+    """Load DocumentDB on-demand monthly pricing for the given region's partition."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'documentdb-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        records = data.get('records', {})
+        partition = utils.detect_partition(region)
+        price_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        pricing = {}
+        for instance_type, info in records.items():
+            region_pricing = (info.get('pricing') or {}).get(price_region)
+            if region_pricing:
+                pricing[instance_type] = region_pricing.get('on_demand_monthly_usd')
+        return pricing
+    except Exception:
+        return {}
+
+
+def calculate_documentdb_instance_monthly_cost(instance_class: str, pricing_data: Dict[str, float]):
+    """Return monthly on-demand cost for a single DocumentDB instance, or 'N/A'."""
+    monthly = pricing_data.get(instance_class)
+    if monthly is None:
+        return 'N/A'
+    return round(float(monthly), 2)
 
 
 def _scan_documentdb_clusters_region(region: str) -> List[Dict[str, Any]]:
@@ -160,6 +188,7 @@ def collect_documentdb_clusters(regions: List[str]) -> List[Dict[str, Any]]:
 def _scan_documentdb_instances_region(region: str) -> List[Dict[str, Any]]:
     """Scan a single region for DocumentDB instances."""
     instances_data = []
+    pricing_data = load_documentdb_pricing_data(region)
 
     try:
         docdb_client = utils.get_boto3_client('docdb', region_name=region)
@@ -212,6 +241,8 @@ def _scan_documentdb_instances_region(region: str) -> List[Dict[str, Any]]:
                 enabled_cloudwatch_logs_exports = instance.get('EnabledCloudwatchLogsExports', [])
                 logs_exports_str = ', '.join(enabled_cloudwatch_logs_exports) if enabled_cloudwatch_logs_exports else 'None'
 
+                monthly_cost = calculate_documentdb_instance_monthly_cost(instance_class, pricing_data)
+
                 instances_data.append({
                     'Region': region,
                     'Instance ID': instance_id,
@@ -229,6 +260,8 @@ def _scan_documentdb_instances_region(region: str) -> List[Dict[str, Any]]:
                     'Created': instance_create_time_str,
                     'CA Certificate': ca_certificate_identifier,
                     'CloudWatch Logs': logs_exports_str,
+                    'Monthly Cost (On-Demand)': monthly_cost,
+                    'Cost Note': 'Estimate (us-east-1 on-demand; Standard config; instance only)' if monthly_cost != 'N/A' else 'Pricing unavailable for this instance type',
                 })
 
     except Exception as e:
@@ -535,7 +568,8 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

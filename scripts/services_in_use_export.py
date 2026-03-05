@@ -19,11 +19,15 @@ Output: Multi-worksheet Excel file with services categorized by type
 
 import argparse
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import boto3
+from botocore.config import Config as BotocoreConfig
 
 try:
     import utils
@@ -593,6 +597,11 @@ _SERVICE_CONFIG_FLAT: Dict[str, dict] = {
 }
 
 
+# Per-service resource count cap for discovery display.
+# Counts above this value are shown as "500+" in the console and reports.
+# The actual count is still stored internally and used for totals.
+DISCOVERY_CAP = 500
+
 # Error message fragments that indicate a service is simply not in use or not
 # available in this region — expected states, not genuine unexpected errors.
 _NOT_IN_USE_FRAGMENTS = (
@@ -605,7 +614,30 @@ _NOT_IN_USE_FRAGMENTS = (
     "not enabled",                                # Macie, others: not enabled
     "must create a landing zone",                 # Control Tower: not deployed
     "endpoint discovery failed",                  # Timestream: endpoint issue
+    "read timeout",                               # service took too long — treat as not detected
+    "connect timeout",                            # connection too slow — treat as not detected
+    "readtimeouterror",                           # botocore ReadTimeoutError class name
+    "connecttimeouterror",                        # botocore ConnectTimeoutError class name
 )
+
+# Boto3 client config for service discovery checks: fast failure over resilience.
+# Discovery checks need to know quickly whether a service has resources — if a
+# service doesn't respond within 15s it's almost certainly not in use or the
+# endpoint is unavailable. Export scripts still use the default 60s timeout.
+_DISCOVERY_CLIENT_CONFIG = BotocoreConfig(
+    connect_timeout=5,
+    read_timeout=15,
+    retries={'max_attempts': 2, 'mode': 'standard'},
+)
+
+
+def _get_discovery_client(service: str, region: str):
+    """Create a boto3 client configured for fast service discovery checks."""
+    session = boto3.Session(region_name=region)
+    kwargs = {}
+    if region and region.startswith("us-gov-"):
+        kwargs["use_fips_endpoint"] = True
+    return session.client(service, config=_DISCOVERY_CLIENT_CONFIG, **kwargs)
 
 
 def _is_not_in_use_error(exc: Exception) -> bool:
@@ -625,6 +657,33 @@ def _is_not_in_use_error(exc: Exception) -> bool:
     return False
 
 
+def _start_heartbeat(service_name: str):
+    """
+    Start a background thread that prints a 'still scanning' line every 5 seconds.
+
+    Only fires if the check actually takes longer than the interval, so fast
+    services never see any output. Returns (stop_event, thread) — caller must
+    call stop_event.set() and thread.join() when done.
+    """
+    stop_event = threading.Event()
+    start = time.monotonic()
+
+    def _beat():
+        while not stop_event.wait(timeout=5):
+            elapsed = int(time.monotonic() - start)
+            print(f"    ... {service_name}: still scanning ({elapsed}s elapsed)", flush=True)
+
+    t = threading.Thread(target=_beat, daemon=True)
+    t.start()
+    return stop_event, t
+
+
+def _stop_heartbeat(stop_event, thread) -> None:
+    """Signal the heartbeat thread to stop and wait for it to exit."""
+    stop_event.set()
+    thread.join()
+
+
 def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
@@ -635,7 +694,7 @@ def check_service_in_region(service_name: str, config: dict, region: str) -> Tup
         success or on a recognized "not in use / not available" condition.
     """
     try:
-        client = utils.get_boto3_client(config['client'], region_name=region)
+        client = _get_discovery_client(config['client'], region)
         count = config['check'](client, region)
         return (service_name, count, region, None)
     except Exception as e:
@@ -726,48 +785,60 @@ def discover_services(
 
                 concurrent_config = utils.config_value('advanced_settings.concurrent_scanning', default={})
                 max_workers = concurrent_config.get('max_workers', 3)
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {
-                        executor.submit(check_service_in_region, service_name, config, region): region
-                        for region in check_regions
-                    }
+                stop_hb, hb_thread = _start_heartbeat(service_name)
+                try:
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {
+                            executor.submit(check_service_in_region, service_name, config, region): region
+                            for region in check_regions
+                        }
 
-                    for future in as_completed(futures):
-                        try:
-                            svc_name, count, region, err_msg = future.result(timeout=30)
-                        except Exception:
-                            region = futures[future]
-                            errors.setdefault(service_name, []).append(f"{region}: check timed out")
-                            continue
-                        if count is not None and count > 0:
-                            regional_counts[region] = count
-                            total_count += count
-                        elif count is None:
-                            errors.setdefault(service_name, []).append(f"{region}: {err_msg}")
+                        for future in as_completed(futures):
+                            try:
+                                svc_name, count, region, err_msg = future.result(timeout=30)
+                            except Exception:
+                                region = futures[future]
+                                errors.setdefault(service_name, []).append(f"{region}: check timed out")
+                                continue
+                            if count is not None and count > 0:
+                                regional_counts[region] = count
+                                total_count += count
+                            elif count is None:
+                                errors.setdefault(service_name, []).append(f"{region}: {err_msg}")
+                finally:
+                    _stop_heartbeat(stop_hb, hb_thread)
 
                 if total_count > 0:
+                    capped = total_count > DISCOVERY_CAP
                     all_services[service_name] = {
                         'category': category,
                         'count': total_count,
+                        'capped': capped,
                         'unit': config['unit'],
                         'regions': regional_counts,
                         'regional': True
                     }
-                    utils.log_success(f"  ✓ {service_name}: {total_count} {config['unit']} across {len(regional_counts)} region(s)")
+                    count_str = f"500+" if capped else str(total_count)
+                    utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']} across {len(regional_counts)} region(s)")
             else:
                 # Global service - single check
                 utils.log_info(f"[{progress:5.1f}%] Checking {service_name} (global service)...")
+                stop_hb, hb_thread = _start_heartbeat(service_name)
                 _, count, _, err_msg = check_service_in_region(service_name, config, check_regions[0])
+                _stop_heartbeat(stop_hb, hb_thread)
 
                 if count is not None and count > 0:
+                    capped = count > DISCOVERY_CAP
                     all_services[service_name] = {
                         'category': category,
                         'count': count,
+                        'capped': capped,
                         'unit': config['unit'],
                         'regions': {},
                         'regional': False
                     }
-                    utils.log_success(f"  ✓ {service_name}: {count} {config['unit']}")
+                    count_str = f"500+" if capped else str(count)
+                    utils.log_success(f"  ✓ {service_name}: {count_str} {config['unit']}")
                 elif count is None:
                     errors.setdefault(service_name, []).append(f"{check_regions[0]}: {err_msg}")
 

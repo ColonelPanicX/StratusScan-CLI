@@ -13,6 +13,7 @@ Usage:
 """
 
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -67,8 +68,8 @@ def _prompt_scan_mode() -> str:
     """Prompt user for Quick or Deep scan mode. Exits on b/x."""
     print()
     print("  ─── SCAN MODE ───────────────────────────────────────────────")
-    print("  [1] Quick Scan  — service presence and resource counts")
-    print("  [2] Deep Scan   — counts + asset breakdown per service (slower)")
+    print("  [1] Quick Scan  — discover services, save a report, done")
+    print("  [2] Deep Scan   — discover services, then run export scripts")
     print("  ─────────────────────────────────────────────────────────────")
     print("  [B] Back    [X] Exit")
     print("  ─────────────────────────────────────────────────────────────")
@@ -83,8 +84,11 @@ def _format_detail(detail: Dict[str, int]) -> str:
     return "  |  ".join(f"{k}: {v}" for k, v in detail.items() if v > 0)
 
 
-def _print_discovery_summary(services: Dict[str, Any], mode: str) -> None:
-    """Print formatted discovery results to console."""
+def _print_discovery_summary(
+    services: Dict[str, Any],
+    recommendations: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Print formatted discovery results to console (Deep Scan only)."""
     print()
     print("=" * 70)
     print("  SERVICES DISCOVERED")
@@ -96,25 +100,67 @@ def _print_discovery_summary(services: Dict[str, Any], mode: str) -> None:
         cat = data['category']
         by_category.setdefault(cat, []).append((name, data))
 
+    service_scripts = (recommendations or {}).get('service_based', {})
+
     for category, items in sorted(by_category.items()):
         print(f"\n  {category}")
         print(f"  {'─' * 60}")
         for name, data in items:
-            region_str = (
-                ', '.join(sorted(data['regions']))
-                if data['regional'] and data['regions']
-                else 'global'
-            )
-            print(f"  {name:<35} {data['count']:>5} {data['unit']}")
-            if mode == 'deep' and data.get('detail'):
+            capped = data.get('capped', False)
+            count_str = f"{'500+':>5}" if capped else f"{data['count']:>5}"
+            print(f"  {name:<35} {count_str} {data['unit']}")
+            if data.get('detail'):
                 print(f"    └─ {_format_detail(data['detail'])}")
-            print(f"    └─ {region_str}")
+            if data['regional'] and data['regions']:
+                region_breakdown = "  |  ".join(
+                    f"{r}: {c}" for r, c in sorted(data['regions'].items())
+                )
+                print(f"    └─ {region_breakdown}")
+            else:
+                print("    └─ global")
+            if capped:
+                scripts = service_scripts.get(name, [])
+                script_hint = f" — run {scripts[0]} for the complete inventory" if scripts else ""
+                print(f"    └─ 500+ found{script_hint}")
 
     total_resources = sum(s['count'] for s in services.values())
     print()
     print("=" * 70)
     print(f"  Total services: {len(services)}   Total resources: {total_resources:,}")
     print("=" * 70)
+
+
+def _write_quick_scan_excel(
+    recommendations: Dict[str, Any],
+    account_name: str,
+    regions: List[str],
+) -> None:
+    """
+    Write a minimal two-column Excel for Quick Scan results.
+
+    Columns: Service In Use | Recommended Script
+    One row per service × script pair. Security baseline scripts are
+    grouped under a 'Security Baseline' service label.
+    """
+    rows = []
+
+    for script in sorted(recommendations.get('always_run', [])):
+        rows.append({'Service In Use': 'Security Baseline', 'Recommended Script': script})
+
+    for service_name, scripts in sorted(recommendations.get('service_based', {}).items()):
+        for script in sorted(scripts):
+            rows.append({'Service In Use': service_name, 'Recommended Script': script})
+
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows)
+    df = utils.prepare_dataframe_for_export(df)
+
+    region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
+    filename = utils.create_export_filename(account_name, 'quick-scan', region_suffix)
+    utils.save_dataframe_to_excel(df, filename)
+    utils.log_success(f"  Excel saved: {utils.get_output_filepath(filename)}")
 
 
 def _write_markdown_report(
@@ -164,6 +210,8 @@ def _write_markdown_report(
     for name, data in sorted(services.items()):
         by_category.setdefault(data['category'], []).append((name, data))
 
+    service_scripts = recommendations.get('service_based', {})
+
     for category, items in sorted(by_category.items()):
         lines.append(f"### {category}")
         lines.append("")
@@ -175,8 +223,13 @@ def _write_markdown_report(
                     ', '.join(sorted(data['regions'])) if data['regional'] else 'global'
                 )
                 detail_str = _format_detail(data.get('detail', {})) or '—'
+                count_str = '500+' if data.get('capped') else str(data['count'])
+                if data.get('capped'):
+                    scripts = service_scripts.get(name, [])
+                    if scripts:
+                        detail_str = f"500+ found — run `{scripts[0]}` for complete data"
                 lines.append(
-                    f"| {name} | {data['count']} | {data['unit']} | {region_str} | {detail_str} |"
+                    f"| {name} | {count_str} | {data['unit']} | {region_str} | {detail_str} |"
                 )
         else:
             lines.append("| Service | Count | Unit | Regions |")
@@ -185,8 +238,9 @@ def _write_markdown_report(
                 region_str = (
                     ', '.join(sorted(data['regions'])) if data['regional'] else 'global'
                 )
+                count_str = '500+' if data.get('capped') else str(data['count'])
                 lines.append(
-                    f"| {name} | {data['count']} | {data['unit']} | {region_str} |"
+                    f"| {name} | {count_str} | {data['unit']} | {region_str} |"
                 )
         lines.append("")
 
@@ -228,6 +282,44 @@ def _write_markdown_report(
         return None
 
 
+def _zip_export_files(results: list, account_name: str) -> Optional[Path]:
+    """
+    Zip all output files produced by the batch execution into a single archive.
+
+    Args:
+        results: List of ExecutionResult objects from execute_all()
+        account_name: AWS account name (used in the zip filename)
+
+    Returns:
+        Path to the zip file, or None if no files to zip or on failure.
+    """
+    output_files = [Path(r.output_file) for r in results if r.output_file]
+    if not output_files:
+        return None
+
+    timestamp = utils.get_export_date()
+    zip_name = f"{account_name}-service-discovery-export-{timestamp}.zip"
+    zip_path = utils.get_output_dir() / zip_name
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file_path in output_files:
+                if file_path.exists():
+                    zf.write(file_path, file_path.name)
+
+        # Remove individual files now that they are safely inside the zip
+        for file_path in output_files:
+            try:
+                file_path.unlink(missing_ok=True)
+            except Exception as e:
+                utils.log_warning(f"Could not remove {file_path.name} after zipping: {e}")
+
+        return zip_path
+    except Exception as e:
+        utils.log_warning(f"Failed to create zip archive: {e}")
+        return None
+
+
 def main() -> None:
     """Main Smart Scan workflow."""
     utils.log_script_start('smart-scan')
@@ -262,9 +354,6 @@ def main() -> None:
     if errors:
         utils.log_warning(f"  {len(errors)} service(s) had unexpected check failures (see log)")
 
-    # Console summary
-    _print_discovery_summary(services, scan_mode)
-
     # Recommendations — in-memory, no Excel roundtrip
     utils.log_info("Generating recommendations...")
     recommendations = analyze_services_from_dict(services)
@@ -276,6 +365,27 @@ def main() -> None:
         f"\n  Recommended scripts: {n_scripts}"
         f"  ({n_baseline} security baseline + {n_service} service-specific)"
     )
+
+    # Quick Scan: write lightweight reports and exit
+    if scan_mode == 'quick':
+        md_path = _write_markdown_report(
+            services, recommendations, account_name, account_id, regions, scan_mode
+        )
+        if md_path:
+            utils.log_success(f"  Report saved: {md_path}")
+
+        _write_quick_scan_excel(recommendations, account_name, regions)
+
+        print()
+        print("  Quick Scan complete.")
+        print(f"  {n_scripts} export scripts are recommended for this account.")
+        print("  Run a Deep Scan or individual scripts to collect full resource data.")
+        if not utils.is_auto_run():
+            input("\n  Press Enter to return to menu...")
+        return
+
+    # Deep Scan: show full discovery table
+    _print_discovery_summary(services, recommendations=recommendations)
 
     # Write Markdown report
     md_path = _write_markdown_report(
@@ -314,7 +424,8 @@ def main() -> None:
     except Exception as e:
         utils.log_warning(f"Excel export failed (continuing): {e}")
 
-    # Execution prompt — skip in CI/headless mode
+    # Deep Scan: prompt to execute recommended scripts
+    # Skip execution prompt in CI/headless mode
     if utils.is_auto_run():
         utils.log_info("Auto-run mode: skipping execution prompt")
         return
@@ -354,8 +465,13 @@ def main() -> None:
         show_progress=True,
         save_log=True,
         regions=regions,
-        show_output=True,
+        show_output=False,
     )
+
+    # Zip all output files produced by this run
+    zip_path = _zip_export_files(summary.get('results', []), account_name)
+    if zip_path:
+        utils.log_success(f"  Exports zipped: {zip_path}")
 
     print()
     print("=" * 70)

@@ -125,10 +125,15 @@ def collect_rest_apis(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING REST APIs (v1) ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_apis = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=scan_rest_apis_in_region,
-    )
+    # scan_regions_concurrent returns a list-of-lists (one list per region); flatten.
+    all_apis = [
+        api
+        for region_apis in utils.scan_regions_concurrent(
+            regions=regions,
+            scan_function=scan_rest_apis_in_region,
+        )
+        for api in region_apis
+    ]
 
     utils.log_success(f"Total REST APIs collected: {len(all_apis)}")
     return all_apis
@@ -218,10 +223,15 @@ def collect_http_apis(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING HTTP APIs (v2) ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_apis = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=scan_http_apis_in_region,
-    )
+    # scan_regions_concurrent returns a list-of-lists (one list per region); flatten.
+    all_apis = [
+        api
+        for region_apis in utils.scan_regions_concurrent(
+            regions=regions,
+            scan_function=scan_http_apis_in_region,
+        )
+        for api in region_apis
+    ]
 
     utils.log_success(f"Total HTTP APIs collected: {len(all_apis)}")
     return all_apis
@@ -339,10 +349,15 @@ def collect_api_stages(regions: List[str]) -> List[Dict[str, Any]]:
     print("\n=== COLLECTING API STAGES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_stages = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=scan_api_stages_in_region,
-    )
+    # scan_regions_concurrent returns a list-of-lists (one list per region); flatten.
+    all_stages = [
+        stage
+        for region_stages in utils.scan_regions_concurrent(
+            regions=regions,
+            scan_function=scan_api_stages_in_region,
+        )
+        for stage in region_stages
+    ]
 
     utils.log_success(f"Total API stages collected: {len(all_stages)}")
     return all_stages
