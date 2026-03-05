@@ -189,6 +189,27 @@ def collect_cluster_details(client, cluster_name, region):
 
     return cluster_info
 
+def _load_ec2_pricing_for_eks(region: str) -> dict:
+    """Load EC2 Linux on-demand monthly prices for EKS node cost estimation."""
+    pricing_file = Path(__file__).parent.parent / 'reference' / 'ec2-pricing.json'
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        records = data.get('records', {})
+        partition = utils.detect_partition(region)
+        price_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
+        pricing = {}
+        for instance_type, info in records.items():
+            region_pricing = (info.get('pricing') or {}).get(price_region)
+            if region_pricing:
+                monthly = region_pricing.get('linux_on_demand_monthly_usd')
+                if monthly is not None:
+                    pricing[instance_type] = float(monthly)
+        return pricing
+    except Exception:
+        return {}
+
+
 @utils.aws_error_handler("Collecting node groups", default_return=[])
 def collect_node_groups(client, cluster_name, region):
     """
@@ -203,6 +224,7 @@ def collect_node_groups(client, cluster_name, region):
         list: List of dictionaries containing node group details
     """
     node_groups_data = []
+    ec2_pricing = _load_ec2_pricing_for_eks(region)
 
     # List all node groups for the cluster
     response = client.list_nodegroups(clusterName=cluster_name)
@@ -259,13 +281,34 @@ def collect_node_groups(client, cluster_name, region):
             tags = nodegroup.get('tags', {})
             tag_string = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'No Tags'
 
+            # Cost estimation for ON_DEMAND single-type node groups
+            capacity_type = nodegroup.get('capacityType', 'N/A')
+            desired_size = scaling_config.get('desiredSize', 0)
+            if capacity_type == 'SPOT':
+                monthly_cost = 'N/A'
+                cost_note = 'SPOT capacity; cost varies'
+            elif len(instance_types) == 1 and desired_size:
+                unit_price = ec2_pricing.get(instance_types[0])
+                if unit_price is not None:
+                    monthly_cost = round(unit_price * int(desired_size), 2)
+                    cost_note = 'Estimate (Linux on-demand × desired node count)'
+                else:
+                    monthly_cost = 'N/A'
+                    cost_note = 'Instance type not in pricing data'
+            elif len(instance_types) > 1:
+                monthly_cost = 'N/A'
+                cost_note = 'Mixed instance types; cannot estimate'
+            else:
+                monthly_cost = 'N/A'
+                cost_note = 'Desired size unavailable'
+
             nodegroup_info = {
                 'Region': region,
                 'Cluster Name': cluster_name,
                 'Node Group Name': nodegroup.get('nodegroupName', 'N/A'),
                 'Node Group ARN': nodegroup.get('nodegroupArn', 'N/A'),
                 'Status': nodegroup.get('status', 'N/A'),
-                'Capacity Type': nodegroup.get('capacityType', 'N/A'),
+                'Capacity Type': capacity_type,
                 'AMI Type': nodegroup.get('amiType', 'N/A'),
                 'Release Version': nodegroup.get('releaseVersion', 'N/A'),
                 'Kubernetes Version': nodegroup.get('version', 'N/A'),
@@ -281,7 +324,9 @@ def collect_node_groups(client, cluster_name, region):
                 'Update Strategy': update_strategy[:200],  # Limit length
                 'Created At': format_timestamp(nodegroup.get('createdAt')),
                 'Modified At': format_timestamp(nodegroup.get('modifiedAt')),
-                'Tags': tag_string[:500]  # Limit tag length
+                'Tags': tag_string[:500],  # Limit tag length
+                'Monthly Cost (On-Demand)': monthly_cost,
+                'Cost Note': cost_note,
             }
 
             node_groups_data.append(nodegroup_info)
