@@ -1,0 +1,200 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-05",
+  "source": "us-east-1 Standard on-demand rates. db.r5.large ($0.277/hr) confirmed from AWS DocumentDB pricing page; other instances scaled proportionally within family. GovCloud pricing unavailable — null. Refresh quarterly.",
+  "notes": "DocumentDB Standard (pay-per-use I/O) configuration. Instance cost only; excludes storage, I/O, and backup charges.",
+  "records": {
+    "db.t3.medium": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "family": "t3",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.076,
+          "on_demand_monthly_usd": 55.48
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.t4g.medium": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "family": "t4g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.068,
+          "on_demand_monthly_usd": 49.64
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.large": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.277,
+          "on_demand_monthly_usd": 202.21
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.554,
+          "on_demand_monthly_usd": 404.42
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.108,
+          "on_demand_monthly_usd": 808.84
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.216,
+          "on_demand_monthly_usd": 1617.68
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.432,
+          "on_demand_monthly_usd": 3235.36
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.648,
+          "on_demand_monthly_usd": 4853.04
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r5.24xlarge": {
+      "vcpu": 96,
+      "memory_gib": 768,
+      "family": "r5",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 13.296,
+          "on_demand_monthly_usd": 9706.08
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.large": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.251,
+          "on_demand_monthly_usd": 183.23
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.xlarge": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.502,
+          "on_demand_monthly_usd": 366.46
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.2xlarge": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.004,
+          "on_demand_monthly_usd": 732.92
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.4xlarge": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.008,
+          "on_demand_monthly_usd": 1465.84
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.8xlarge": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.016,
+          "on_demand_monthly_usd": 2931.68
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.12xlarge": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.024,
+          "on_demand_monthly_usd": 4397.52
+        },
+        "us-gov-west-1": null
+      }
+    },
+    "db.r6g.16xlarge": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "family": "r6g",
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 8.032,
+          "on_demand_monthly_usd": 5863.36
+        },
+        "us-gov-west-1": null
+      }
+    }
+  }
+}
