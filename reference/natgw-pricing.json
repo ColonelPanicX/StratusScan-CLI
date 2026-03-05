@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-04",
+  "source": "us-east-1 on-demand rates — static reference, refresh quarterly",
+  "currency": "USD",
+  "notes": "us-east-1 On-Demand rates. NAT Gateway costs vary by region. Per-gateway charges apply (hourly + data processing).",
+  "rates": {
+    "hourly": 0.045,
+    "data_processing_per_gb": 0.045
+  }
+}

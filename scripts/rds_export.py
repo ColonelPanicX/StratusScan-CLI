@@ -25,7 +25,6 @@ Phase 4B Update:
 import sys
 import time
 import datetime
-import csv
 import json
 import re
 from pathlib import Path
@@ -199,7 +198,7 @@ def load_rds_pricing_data(region='us-east-1'):
 
 def load_storage_pricing_data():
     """
-    Load EBS volume pricing data from the reference CSV file
+    Load EBS volume pricing data from the reference JSON file.
 
     Returns:
         dict: Dictionary mapping volume types to cost per GB/month
@@ -207,23 +206,15 @@ def load_storage_pricing_data():
     storage_pricing = {}
     try:
         script_dir = Path(__file__).parent.absolute()
-        pricing_file = script_dir.parent / 'reference' / 'ebsvol-pricing.csv'
+        pricing_file = script_dir.parent / 'reference' / 'ebs-pricing.json'
 
         if not pricing_file.exists():
             utils.log_warning(f"Storage pricing file not found at {pricing_file}")
             return storage_pricing
 
-        with open(pricing_file, 'r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                volume_type = row.get('Type', '').strip()
-                price_str = row.get(' Cost per GB/month ', '').strip()
-
-                if volume_type and price_str:
-                    price = parse_price(price_str)
-                    if price is not None:
-                        storage_pricing[volume_type] = price
-
+        with open(pricing_file, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        storage_pricing = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded storage pricing data for {len(storage_pricing)} volume types")
         return storage_pricing
 

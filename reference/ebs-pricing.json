@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-04",
+  "source": "us-east-1 on-demand rates — static reference, refresh quarterly",
+  "currency": "USD",
+  "unit": "USD per GB per month",
+  "notes": "us-east-1 On-Demand rates. Actual costs vary by region.",
+  "rates": {
+    "gp3": 0.08,
+    "gp2": 0.10,
+    "io2": 0.125,
+    "io1": 0.125,
+    "st1": 0.045,
+    "sc1": 0.015,
+    "standard": 0.05
+  }
+}

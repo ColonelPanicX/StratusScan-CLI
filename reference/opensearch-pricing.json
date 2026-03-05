@@ -1,0 +1,2588 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_date": "2026-03-05",
+  "currency": "USD",
+  "pricing_basis": "monthly",
+  "notes": "Modern families only (gen 5+). Legacy families excluded: c4, i2, m3, m4, r3, r4, t2, oi2, om2. us-east-1 pricing sourced from instances MCP index minimum (confirmed equal to us-east-1 on-demand for all individually sampled instances). us-gov-west-1 pricing: confirmed for r5 and ultrawarm1 (individually measured); null for all other families. vcpu/memory derived from EC2 instance family specifications. ultrawarm1.large vcpu/memory not individually verified.",
+  "record_count": 184,
+  "generated_at": "2026-03-05",
+  "source": "AWS Pricing MCP (instances.for.business) \u2014 manual quarterly refresh",
+  "records": {
+    "c5.large.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.125,
+          "on_demand_monthly_usd": 91.25
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c5.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.251,
+          "on_demand_monthly_usd": 183.23
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c5.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.502,
+          "on_demand_monthly_usd": 366.46
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c5.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.003,
+          "on_demand_monthly_usd": 732.19
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c5.9xlarge.search": {
+      "vcpu": 36,
+      "memory_gib": 72,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.257,
+          "on_demand_monthly_usd": 1647.61
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c5.18xlarge.search": {
+      "vcpu": 72,
+      "memory_gib": 144,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.514,
+          "on_demand_monthly_usd": 3295.22
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.113,
+          "on_demand_monthly_usd": 82.49
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.226,
+          "on_demand_monthly_usd": 164.98
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.452,
+          "on_demand_monthly_usd": 329.96
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.903,
+          "on_demand_monthly_usd": 659.19
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.806,
+          "on_demand_monthly_usd": 1318.38
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c6g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 96,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.709,
+          "on_demand_monthly_usd": 1977.57
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.12,
+          "on_demand_monthly_usd": 87.6
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.241,
+          "on_demand_monthly_usd": 175.93
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.481,
+          "on_demand_monthly_usd": 351.13
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.963,
+          "on_demand_monthly_usd": 702.99
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.926,
+          "on_demand_monthly_usd": 1405.98
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 96,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.888,
+          "on_demand_monthly_usd": 2108.24
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.851,
+          "on_demand_monthly_usd": 2811.23
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.large.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.143,
+          "on_demand_monthly_usd": 104.39
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.286,
+          "on_demand_monthly_usd": 208.78
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.571,
+          "on_demand_monthly_usd": 416.83
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.142,
+          "on_demand_monthly_usd": 833.66
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.285,
+          "on_demand_monthly_usd": 1668.05
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 96,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.427,
+          "on_demand_monthly_usd": 2501.71
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c7i.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.57,
+          "on_demand_monthly_usd": 3336.1
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.133,
+          "on_demand_monthly_usd": 97.09
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.265,
+          "on_demand_monthly_usd": 193.45
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.53,
+          "on_demand_monthly_usd": 386.9
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.06,
+          "on_demand_monthly_usd": 773.8
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.119,
+          "on_demand_monthly_usd": 1546.87
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 96,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.178,
+          "on_demand_monthly_usd": 2319.94
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "c8g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.237,
+          "on_demand_monthly_usd": 3093.01
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.large.search": {
+      "vcpu": 2,
+      "memory_gib": 15.25,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.25,
+          "on_demand_monthly_usd": 182.5
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 30.5,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.499,
+          "on_demand_monthly_usd": 364.27
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 61,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.998,
+          "on_demand_monthly_usd": 728.54
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 122,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.997,
+          "on_demand_monthly_usd": 1457.81
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 244,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.994,
+          "on_demand_monthly_usd": 2915.62
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i3.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 488,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 7.987,
+          "on_demand_monthly_usd": 5830.51
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.247,
+          "on_demand_monthly_usd": 180.31
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.494,
+          "on_demand_monthly_usd": 360.62
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.988,
+          "on_demand_monthly_usd": 721.24
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.977,
+          "on_demand_monthly_usd": 1443.21
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.954,
+          "on_demand_monthly_usd": 2886.42
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 7.907,
+          "on_demand_monthly_usd": 5772.11
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.275,
+          "on_demand_monthly_usd": 200.75
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.549,
+          "on_demand_monthly_usd": 400.77
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.098,
+          "on_demand_monthly_usd": 801.54
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.197,
+          "on_demand_monthly_usd": 1603.81
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.394,
+          "on_demand_monthly_usd": 3207.62
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.589,
+          "on_demand_monthly_usd": 4809.97
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 8.786,
+          "on_demand_monthly_usd": 6413.78
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.24xlarge.search": {
+      "vcpu": 96,
+      "memory_gib": 768,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 13.179,
+          "on_demand_monthly_usd": 9620.67
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i4i.32xlarge.search": {
+      "vcpu": 128,
+      "memory_gib": 1024,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 17.572,
+          "on_demand_monthly_usd": 12827.56
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.302,
+          "on_demand_monthly_usd": 220.46
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.604,
+          "on_demand_monthly_usd": 440.92
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.208,
+          "on_demand_monthly_usd": 881.84
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.416,
+          "on_demand_monthly_usd": 1763.68
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.832,
+          "on_demand_monthly_usd": 3527.36
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 7.248,
+          "on_demand_monthly_usd": 5291.04
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i7i.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 9.664,
+          "on_demand_monthly_usd": 7054.72
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.275,
+          "on_demand_monthly_usd": 200.75
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.549,
+          "on_demand_monthly_usd": 400.77
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.098,
+          "on_demand_monthly_usd": 801.54
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.196,
+          "on_demand_monthly_usd": 1603.08
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.393,
+          "on_demand_monthly_usd": 3206.89
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.589,
+          "on_demand_monthly_usd": 4809.97
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "i8g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 8.786,
+          "on_demand_monthly_usd": 6413.78
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.273,
+          "on_demand_monthly_usd": 199.29
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.546,
+          "on_demand_monthly_usd": 398.58
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.091,
+          "on_demand_monthly_usd": 796.43
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.183,
+          "on_demand_monthly_usd": 1593.59
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.366,
+          "on_demand_monthly_usd": 3187.18
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "im4gn.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 8.731,
+          "on_demand_monthly_usd": 6373.63
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m5.large.search": {
+      "vcpu": 2,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.142,
+          "on_demand_monthly_usd": 103.66
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m5.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.283,
+          "on_demand_monthly_usd": 206.59
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m5.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.566,
+          "on_demand_monthly_usd": 413.18
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m5.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.133,
+          "on_demand_monthly_usd": 827.09
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m5.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 192,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.398,
+          "on_demand_monthly_usd": 2480.54
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.128,
+          "on_demand_monthly_usd": 93.44
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.256,
+          "on_demand_monthly_usd": 186.88
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.511,
+          "on_demand_monthly_usd": 373.03
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.023,
+          "on_demand_monthly_usd": 746.79
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.045,
+          "on_demand_monthly_usd": 1492.85
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m6g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 192,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.068,
+          "on_demand_monthly_usd": 2239.64
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.068,
+          "on_demand_monthly_usd": 49.64
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.135,
+          "on_demand_monthly_usd": 98.55
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.271,
+          "on_demand_monthly_usd": 197.83
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.542,
+          "on_demand_monthly_usd": 395.66
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.084,
+          "on_demand_monthly_usd": 791.32
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.167,
+          "on_demand_monthly_usd": 1581.91
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 192,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.251,
+          "on_demand_monthly_usd": 2373.23
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.335,
+          "on_demand_monthly_usd": 3164.55
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.large.search": {
+      "vcpu": 2,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.161,
+          "on_demand_monthly_usd": 117.53
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.323,
+          "on_demand_monthly_usd": 235.79
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.645,
+          "on_demand_monthly_usd": 470.85
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.29,
+          "on_demand_monthly_usd": 941.7
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.58,
+          "on_demand_monthly_usd": 1883.4
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 192,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.871,
+          "on_demand_monthly_usd": 2825.83
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m7i.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.161,
+          "on_demand_monthly_usd": 3767.53
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.075,
+          "on_demand_monthly_usd": 54.75
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.15,
+          "on_demand_monthly_usd": 109.5
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.299,
+          "on_demand_monthly_usd": 218.27
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.597,
+          "on_demand_monthly_usd": 435.81
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.193,
+          "on_demand_monthly_usd": 870.89
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.385,
+          "on_demand_monthly_usd": 1741.05
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 192,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.577,
+          "on_demand_monthly_usd": 2611.21
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "m8g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.769,
+          "on_demand_monthly_usd": 3481.37
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.105,
+          "on_demand_monthly_usd": 76.65
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.209,
+          "on_demand_monthly_usd": 152.57
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.419,
+          "on_demand_monthly_usd": 305.87
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.836,
+          "on_demand_monthly_usd": 610.28
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.674,
+          "on_demand_monthly_usd": 1222.02
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.346,
+          "on_demand_monthly_usd": 2442.58
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.02,
+          "on_demand_monthly_usd": 3664.6
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or1.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.683,
+          "on_demand_monthly_usd": 4878.59
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.1,
+          "on_demand_monthly_usd": 73.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.2,
+          "on_demand_monthly_usd": 146.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.401,
+          "on_demand_monthly_usd": 292.73
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.6,
+          "on_demand_monthly_usd": 1168.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.2,
+          "on_demand_monthly_usd": 2336.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.8,
+          "on_demand_monthly_usd": 3504.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "or2.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.4,
+          "on_demand_monthly_usd": 4672.0
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r5.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.186,
+          "on_demand_monthly_usd": 135.78
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.223,
+          "on_demand_monthly_usd": 162.79
+        }
+      }
+    },
+    "r5.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.372,
+          "on_demand_monthly_usd": 271.56
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.446,
+          "on_demand_monthly_usd": 325.58
+        }
+      }
+    },
+    "r5.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.743,
+          "on_demand_monthly_usd": 542.39
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.891,
+          "on_demand_monthly_usd": 650.43
+        }
+      }
+    },
+    "r5.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.487,
+          "on_demand_monthly_usd": 1085.51
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 1.783,
+          "on_demand_monthly_usd": 1301.59
+        }
+      }
+    },
+    "r5.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.46,
+          "on_demand_monthly_usd": 3255.8
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 5.347,
+          "on_demand_monthly_usd": 3903.31
+        }
+      }
+    },
+    "r6g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.167,
+          "on_demand_monthly_usd": 121.91
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.335,
+          "on_demand_monthly_usd": 244.55
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.669,
+          "on_demand_monthly_usd": 488.37
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.339,
+          "on_demand_monthly_usd": 977.47
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.677,
+          "on_demand_monthly_usd": 1954.21
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.016,
+          "on_demand_monthly_usd": 2931.68
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.191,
+          "on_demand_monthly_usd": 139.43
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.382,
+          "on_demand_monthly_usd": 278.86
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.765,
+          "on_demand_monthly_usd": 558.45
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.53,
+          "on_demand_monthly_usd": 1116.9
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.06,
+          "on_demand_monthly_usd": 2233.8
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.59,
+          "on_demand_monthly_usd": 3350.7
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r6gd.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.119,
+          "on_demand_monthly_usd": 4466.87
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.089,
+          "on_demand_monthly_usd": 64.97
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.178,
+          "on_demand_monthly_usd": 129.94
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.356,
+          "on_demand_monthly_usd": 259.88
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.711,
+          "on_demand_monthly_usd": 519.03
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.422,
+          "on_demand_monthly_usd": 1038.06
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.845,
+          "on_demand_monthly_usd": 2076.85
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.267,
+          "on_demand_monthly_usd": 3114.91
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.689,
+          "on_demand_monthly_usd": 4152.97
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.113,
+          "on_demand_monthly_usd": 82.49
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.226,
+          "on_demand_monthly_usd": 164.98
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.452,
+          "on_demand_monthly_usd": 329.96
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.904,
+          "on_demand_monthly_usd": 659.92
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.807,
+          "on_demand_monthly_usd": 1319.11
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.614,
+          "on_demand_monthly_usd": 2638.22
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.421,
+          "on_demand_monthly_usd": 3957.33
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7gd.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 7.229,
+          "on_demand_monthly_usd": 5277.17
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.212,
+          "on_demand_monthly_usd": 154.76
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.423,
+          "on_demand_monthly_usd": 308.79
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.847,
+          "on_demand_monthly_usd": 618.31
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.693,
+          "on_demand_monthly_usd": 1235.89
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.387,
+          "on_demand_monthly_usd": 2472.51
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.08,
+          "on_demand_monthly_usd": 3708.4
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r7i.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.774,
+          "on_demand_monthly_usd": 4945.02
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.098,
+          "on_demand_monthly_usd": 71.54
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.196,
+          "on_demand_monthly_usd": 143.08
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.392,
+          "on_demand_monthly_usd": 286.16
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.783,
+          "on_demand_monthly_usd": 571.59
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.565,
+          "on_demand_monthly_usd": 1142.45
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.13,
+          "on_demand_monthly_usd": 2284.9
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 4.694,
+          "on_demand_monthly_usd": 3426.62
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8g.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 6.259,
+          "on_demand_monthly_usd": 4569.07
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.medium.search": {
+      "vcpu": 1,
+      "memory_gib": 8,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.122,
+          "on_demand_monthly_usd": 89.06
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.large.search": {
+      "vcpu": 2,
+      "memory_gib": 16,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.244,
+          "on_demand_monthly_usd": 178.12
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.xlarge.search": {
+      "vcpu": 4,
+      "memory_gib": 32,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.488,
+          "on_demand_monthly_usd": 356.24
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.2xlarge.search": {
+      "vcpu": 8,
+      "memory_gib": 64,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.976,
+          "on_demand_monthly_usd": 712.48
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.4xlarge.search": {
+      "vcpu": 16,
+      "memory_gib": 128,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 1.952,
+          "on_demand_monthly_usd": 1424.96
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.8xlarge.search": {
+      "vcpu": 32,
+      "memory_gib": 256,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 3.904,
+          "on_demand_monthly_usd": 2849.92
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.12xlarge.search": {
+      "vcpu": 48,
+      "memory_gib": 384,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 5.855,
+          "on_demand_monthly_usd": 4274.15
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "r8gd.16xlarge.search": {
+      "vcpu": 64,
+      "memory_gib": 512,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 7.807,
+          "on_demand_monthly_usd": 5699.11
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "t3.small.search": {
+      "vcpu": 2,
+      "memory_gib": 2,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.036,
+          "on_demand_monthly_usd": 26.28
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "t3.medium.search": {
+      "vcpu": 2,
+      "memory_gib": 4,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.073,
+          "on_demand_monthly_usd": 53.29
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": null,
+          "on_demand_monthly_usd": null
+        }
+      }
+    },
+    "ultrawarm1.medium.search": {
+      "vcpu": 2,
+      "memory_gib": 15.25,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 0.238,
+          "on_demand_monthly_usd": 173.74
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 0.287,
+          "on_demand_monthly_usd": 209.51
+        }
+      }
+    },
+    "ultrawarm1.large.search": {
+      "vcpu": null,
+      "memory_gib": null,
+      "pricing": {
+        "us-east-1": {
+          "on_demand_hourly_usd": 2.68,
+          "on_demand_monthly_usd": 1956.4
+        },
+        "us-gov-west-1": {
+          "on_demand_hourly_usd": 3.232,
+          "on_demand_monthly_usd": 2359.36
+        }
+      }
+    }
+  }
+}
