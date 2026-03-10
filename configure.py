@@ -410,8 +410,14 @@ def print_dashboard(config: Dict, config_path: Path):
     print("╔" + "═" * 68 + "╗")
 
     if identity:
+        mappings = config.get('account_mappings', {})
+        friendly = mappings.get(identity['account_id'], '—')
+        default_regions = config.get('default_regions', [])
+        region_str = ', '.join(default_regions) if default_regions else 'Not set'
         print_status_line("Environment", identity['partition_name'], 70)
-        print_status_line("Account", f"{identity['account_id']}", 70)
+        print_status_line("Account ID", identity['account_id'], 70)
+        print_status_line("Account Friendly", friendly, 70)
+        print_status_line("Region", region_str, 70)
     else:
         print_status_line("AWS Credentials", "❌ Not configured", 70)
 
