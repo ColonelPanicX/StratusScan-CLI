@@ -923,7 +923,7 @@ def export_vpc_subnet_natgw_peering_info(account_id, account_name):
 
         if output_path:
             utils.log_success("AWS VPC data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data
