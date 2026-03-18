@@ -265,7 +265,7 @@ def main():
 
         if output_path:
             utils.log_success("AWS Network ACL data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total Network ACLs exported: {len(all_nacl_data)}")
             print("\nScript execution completed.")

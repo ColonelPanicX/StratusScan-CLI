@@ -490,7 +490,7 @@ def export_to_excel(buckets_info, account_name, target_region=None):
 
     if output_path:
         utils.log_success("AWS S3 data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         return output_path
     else:
         utils.log_error("Error creating Excel file. Attempting to save as CSV instead.")

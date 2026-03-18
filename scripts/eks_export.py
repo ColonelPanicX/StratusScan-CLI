@@ -574,7 +574,7 @@ def export_to_excel(all_clusters_data, all_node_groups_data, all_addons_data, ac
 
         if output_path:
             utils.log_success("AWS EKS data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_clusters = len(all_clusters_data)

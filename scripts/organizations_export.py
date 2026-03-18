@@ -740,7 +740,7 @@ def export_to_excel(org_info, ou_data, accounts_data, policies_data, account_id,
 
         if output_path:
             utils.log_success("AWS Organizations data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_ous = len([ou for ou in ou_data if ou.get('OU Type') == 'ORGANIZATIONAL_UNIT'])

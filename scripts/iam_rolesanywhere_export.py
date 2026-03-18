@@ -389,7 +389,7 @@ def export_to_excel(trust_anchors: List[Dict], profiles: List[Dict], crls: List[
 
         if output_path:
             utils.log_success("IAM Roles Anywhere data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {len(trust_anchors)} trust anchors, {len(profiles)} profiles, and {len(crls)} CRLs")
             return str(output_path)
         else:

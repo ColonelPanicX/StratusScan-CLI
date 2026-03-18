@@ -1090,7 +1090,7 @@ def _export_users_to_excel(user_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS IAM user data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data for {len(user_data)} IAM users")
             return str(output_path)
         else:
@@ -1162,7 +1162,7 @@ def _export_roles_to_excel(role_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS IAM role data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data for {len(role_data)} IAM roles")
             return str(output_path)
         else:
@@ -1314,7 +1314,7 @@ def _export_policies_to_excel(managed_policies, inline_policies, account_id, acc
                 utils.log_warning(f"Could not apply conditional formatting: {e}")
 
             utils.log_success("AWS IAM policy data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {len(managed_policies)} managed and {len(inline_policies)} inline policies")
             return str(output_path)
         else:
@@ -1417,7 +1417,7 @@ def _export_comprehensive_to_excel(users_data, roles_data, policies_data, accoun
 
         if output_path:
             utils.log_success("AWS comprehensive IAM data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {len(users_data)} users, {len(roles_data)} roles, and {len(policies_data)} policies")
             return str(output_path)
         else:

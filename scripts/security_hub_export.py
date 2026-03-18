@@ -458,7 +458,7 @@ def export_to_excel(all_findings_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS Security Hub data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_findings = len(all_findings_data)

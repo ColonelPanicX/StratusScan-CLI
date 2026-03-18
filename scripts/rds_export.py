@@ -535,7 +535,7 @@ def export_to_excel(data, account_name, region_filter=None):
 
         if saved_file:
             utils.log_success("AWS RDS data exported successfully!")
-            utils.log_info(f"File location: {saved_file}")
+            utils.log_success(f"File location: {saved_file}")
             return saved_file
         else:
             utils.log_error("Failed to save using utils.save_dataframe_to_excel()")

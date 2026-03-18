@@ -706,7 +706,7 @@ def export_to_excel(
 
         if output_path:
             utils.log_success("Transfer Family data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info("Export contains:")
             utils.log_info(f"  - {len(servers_data)} servers")
             utils.log_info(f"  - {len(users_data)} users")

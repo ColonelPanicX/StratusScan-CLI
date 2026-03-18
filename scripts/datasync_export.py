@@ -718,7 +718,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
     if output_path:
         utils.log_success("AWS DataSync data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         utils.log_info(f"Export contains data from {len(regions)} region(s)")
         utils.log_info(f"Total sheets: {len(dataframes)}")
         print("\nScript execution completed.")
