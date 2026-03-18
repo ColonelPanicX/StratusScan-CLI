@@ -248,7 +248,7 @@ def export_savings_plans_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("Savings Plans data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Summary of exported data
             for sheet_name, df in data_frames.items():

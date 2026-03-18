@@ -618,7 +618,7 @@ def export_to_excel(security_group_rules, account_name, region_suffix=""):
 
     if output_path:
         utils.log_success("AWS Security Group data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         return output_path
     else:
         utils.log_error("Error exporting data. Please check the logs.")

@@ -522,7 +522,7 @@ def export_access_analyzer_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("Access Analyzer data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

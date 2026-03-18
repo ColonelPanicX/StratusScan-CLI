@@ -718,7 +718,7 @@ def export_globalaccelerator_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("Global Accelerator data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Summary of exported data
             print("\n=== EXPORT SUMMARY ===")

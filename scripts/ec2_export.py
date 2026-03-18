@@ -730,7 +730,7 @@ def _run_export(account_id, account_name, regions, instance_filter, filter_desc)
 
     if output_path:
         utils.log_success("AWS EC2 data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
         utils.log_info(f"Total instances exported: {total_instances}")
         print("\nScript execution completed.")

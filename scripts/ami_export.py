@@ -237,7 +237,7 @@ def export_ami_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("AMI data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total AMIs: {len(df)} records")
             print(f"Total AMIs: {len(df)} records")

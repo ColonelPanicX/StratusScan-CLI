@@ -449,7 +449,7 @@ def export_to_excel(
 
     if output_path:
         utils.log_success("S3 Access Points data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         return output_path
     else:
         utils.log_error("Error creating Excel file")

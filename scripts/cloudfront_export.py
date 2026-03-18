@@ -467,7 +467,7 @@ def export_cloudfront_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("CloudFront data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Summary of exported data
             for sheet_name, df in data_frames.items():

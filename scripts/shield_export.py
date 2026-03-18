@@ -640,7 +640,7 @@ def export_to_excel(
 
         if output_path:
             utils.log_success("AWS Shield Advanced data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_protections = len(protections_data)

@@ -387,7 +387,7 @@ def main():
 
         if excel_path:
             utils.log_success("AWS EBS volume data exported successfully!")
-            utils.log_info(f"File location: {excel_path}")
+            utils.log_success(f"File location: {excel_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total volumes exported: {len(all_volumes)}")
             print("\nScript execution completed.")

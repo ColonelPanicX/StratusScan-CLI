@@ -822,7 +822,7 @@ def export_vpn_data(account_id: str, account_name: str, regions: List[str]):
 
         if output_path:
             utils.log_success("VPN data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Summary of exported data
             print("\n" + "=" * 60)
