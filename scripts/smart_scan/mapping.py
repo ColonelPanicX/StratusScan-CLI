@@ -17,8 +17,10 @@ ALWAYS_RUN_SCRIPTS = [
     "cloudtrail_export.py",
     "config_export.py",
     "guardduty_export.py",
+    "vpc_data_export.py",
     "security_groups_export.py",
     "nacl_export.py",
+    "route_tables_export.py",
     "trusted_advisor_cost_optimization_export.py",
     "budgets_export.py",
 ]
