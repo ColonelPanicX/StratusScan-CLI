@@ -185,11 +185,13 @@ def collect_user_pools(regions: List[str]) -> List[Dict[str, Any]]:
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_pools = utils.scan_regions_concurrent(
+    region_results = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pools_in_region,
     )
+    all_pools = []
+    for pools in region_results:
+        all_pools.extend(pools)
 
     utils.log_info(f"Collected {len(all_pools)} user pools")
     return all_pools
@@ -282,11 +284,13 @@ def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_identity_pools = utils.scan_regions_concurrent(
+    region_results = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_identity_pools_in_region,
     )
+    all_identity_pools = []
+    for pools in region_results:
+        all_identity_pools.extend(pools)
 
     utils.log_info(f"Collected {len(all_identity_pools)} identity pools")
     return all_identity_pools
@@ -424,11 +428,13 @@ def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_clients = utils.scan_regions_concurrent(
+    region_results = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pool_clients_in_region,
     )
+    all_clients = []
+    for clients in region_results:
+        all_clients.extend(clients)
 
     utils.log_info(f"Collected {len(all_clients)} user pool clients")
     return all_clients
@@ -552,11 +558,13 @@ def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_providers = utils.scan_regions_concurrent(
+    region_results = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_identity_providers_in_region,
     )
+    all_providers = []
+    for providers in region_results:
+        all_providers.extend(providers)
 
     utils.log_info(f"Collected {len(all_providers)} identity providers")
     return all_providers
@@ -641,11 +649,13 @@ def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_groups = utils.scan_regions_concurrent(
+    region_results = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pool_groups_in_region,
     )
+    all_groups = []
+    for groups in region_results:
+        all_groups.extend(groups)
 
     utils.log_info(f"Collected {len(all_groups)} user pool groups")
     return all_groups

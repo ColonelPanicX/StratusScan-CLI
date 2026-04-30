@@ -376,7 +376,7 @@ def main():
         account_id, account_name = utils.print_script_banner("AWS ACCOUNT BILLING DATA EXPORT")
 
         # Check dependencies
-        if not utils.ensure_dependencies('pandas', 'openpyxl', 'python-dateutil'):
+        if not utils.ensure_dependencies('pandas', 'openpyxl', 'dateutil'):
             sys.exit(1)
 
         # Get user input for date range

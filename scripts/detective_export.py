@@ -482,8 +482,7 @@ def main():
 
         # Get regions to scan
         regions = utils.prompt_region_selection(
-            prompt_message="Select AWS region(s) to scan for Detective:",
-            allow_all=True
+            service_name="Amazon Detective"
         )
 
         utils.log_info(f"Will scan Detective in regions: {', '.join(regions)}")
