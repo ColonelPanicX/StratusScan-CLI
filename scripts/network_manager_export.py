@@ -27,7 +27,8 @@ Note: Network Manager is a global service accessed through us-west-2
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -405,10 +406,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
-    total_resources = (len(global_networks) + len(all_sites) + len(all_links) +
-                      len(all_devices) + len(all_connections) +
-                      len(all_tgw_registrations) + len(all_cgw_associations))
-
     utils.log_info(f"  Global Networks: {len(global_networks)}")
     utils.log_info(f"  Sites: {len(all_sites)}")
     utils.log_info(f"  Links: {len(all_links)}")

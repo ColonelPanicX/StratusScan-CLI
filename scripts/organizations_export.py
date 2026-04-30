@@ -24,12 +24,11 @@ Collected information includes:
 - Comprehensive summary analytics for governance oversight
 """
 
-import os
-import sys
 import datetime
-import time
 import json
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # Add path to import utils module
@@ -92,8 +91,6 @@ def get_account_info():
     sts = utils.get_boto3_client('sts')
     account_id = sts.get_caller_identity()['Account']
 
-    # Validate AWS environment
-    caller_arn = sts.get_caller_identity()['Arn']
     account_name = utils.get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
 
     return account_id, account_name
@@ -351,7 +348,7 @@ def get_account_parent(org_client, account_id):
             'full_path': full_path
         }
 
-    except Exception as e:
+    except Exception:
         return {
             'parent_id': 'Unknown',
             'parent_name': 'Unknown',
@@ -421,7 +418,7 @@ def get_account_tags(org_client, account_id):
         else:
             return 'No Tags'
 
-    except Exception as e:
+    except Exception:
         return 'Unable to retrieve tags'
 
 def collect_policies():
@@ -551,7 +548,7 @@ def analyze_scp_content(policy_content):
                     stmt_summary += f" for {len(resources)} resources"
 
             if conditions:
-                stmt_summary += f" with conditions"
+                stmt_summary += " with conditions"
 
             summary_parts.append(stmt_summary)
 
@@ -743,7 +740,7 @@ def export_to_excel(org_info, ou_data, accounts_data, policies_data, account_id,
 
         if output_path:
             utils.log_success("AWS Organizations data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_ous = len([ou for ou in ou_data if ou.get('OU Type') == 'ORGANIZATIONAL_UNIT'])
@@ -770,7 +767,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Print title and get account info
         utils.setup_logging("organizations-export")
@@ -826,7 +822,7 @@ def main():
         filename = export_to_excel(org_info, ou_data, accounts_data, policies_data, account_id, account_name)
 
         if filename:
-            utils.log_info(f"Results exported with AWS compliance markers")
+            utils.log_info("Results exported with AWS compliance markers")
             utils.log_info(f"Organization ID: {org_info.get('Id', 'Unknown')}")
             utils.log_info(f"Total OUs processed: {len([ou for ou in ou_data if ou.get('OU Type') == 'ORGANIZATIONAL_UNIT'])}")
             utils.log_info(f"Total accounts processed: {len(accounts_data)}")

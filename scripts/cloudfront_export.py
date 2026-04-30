@@ -24,10 +24,10 @@ Features:
 - Price class and cost optimization insights
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -258,8 +258,6 @@ def collect_origin_details() -> List[Dict[str, Any]]:
                         http_port = custom_origin.get('HTTPPort', 80)
                         https_port = custom_origin.get('HTTPSPort', 443)
                         protocol_policy = custom_origin.get('OriginProtocolPolicy', 'N/A')
-                        ssl_protocols = custom_origin.get('OriginSslProtocols', {}).get('Items', [])
-
                         access_method = f"{protocol_policy} (HTTP:{http_port}, HTTPS:{https_port})"
 
                     # Connection settings
@@ -469,7 +467,7 @@ def export_cloudfront_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("CloudFront data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Summary of exported data
             for sheet_name, df in data_frames.items():

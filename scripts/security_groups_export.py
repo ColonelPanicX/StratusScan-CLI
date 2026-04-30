@@ -19,9 +19,9 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import datetime
 import sys
 import time
-import datetime
 from pathlib import Path
 
 # Add path to import utils module
@@ -31,7 +31,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -39,7 +39,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -50,10 +50,10 @@ except ImportError:
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region.
-    
+
     Args:
         region_name (str): The region name to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
@@ -62,50 +62,50 @@ def is_valid_aws_region(region_name):
 def get_vpc_name(ec2_client, vpc_id):
     """
     Get the name of a VPC from its ID.
-    
+
     Args:
         ec2_client: The boto3 EC2 client
         vpc_id: The VPC ID
-        
+
     Returns:
         str: The VPC name and ID or default value
     """
     if not vpc_id:
         return "No VPC (EC2-Classic)"
-    
+
     try:
         response = ec2_client.describe_vpcs(VpcIds=[vpc_id])
-        
+
         if not response['Vpcs']:
             return vpc_id  # Return the ID if no VPC found
-        
+
         # Look for the Name tag
         for tag in response['Vpcs'][0].get('Tags', []):
             if tag['Key'] == 'Name':
                 return f"{tag['Value']} ({vpc_id})"
-        
+
         # If no Name tag, just return the ID
         return vpc_id
-    except Exception as e:
+    except Exception:
         return vpc_id  # Return the ID on error
 
 def format_ip_range(ip_range, protocol, from_port, to_port, is_inbound=True):
     """
     Format IP range rule details.
-    
+
     Args:
         ip_range: The IP range dictionary
         protocol: The protocol
         from_port: The from port
         to_port: The to port
         is_inbound: Whether this is an inbound rule
-        
+
     Returns:
         str: Formatted rule string
     """
     if protocol == '-1':
         protocol = 'All'
-    
+
     # Format port range
     port_range = ''
     if from_port is not None and to_port is not None:
@@ -115,10 +115,10 @@ def format_ip_range(ip_range, protocol, from_port, to_port, is_inbound=True):
             port_range = f"{from_port}-{to_port}"
     else:
         port_range = 'All'
-    
+
     # Format CIDR
     cidr = ip_range.get('CidrIp', ip_range.get('CidrIpv6', 'Unknown'))
-    
+
     if is_inbound:
         return f"{cidr} → {protocol}:{port_range}"
     else:
@@ -127,20 +127,20 @@ def format_ip_range(ip_range, protocol, from_port, to_port, is_inbound=True):
 def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inbound=True):
     """
     Format security group reference rule details.
-    
+
     Args:
         sg_ref: The security group reference dictionary
         protocol: The protocol
         from_port: The from port
         to_port: The to port
         is_inbound: Whether this is an inbound rule
-        
+
     Returns:
         str: Formatted rule string
     """
     if protocol == '-1':
         protocol = 'All'
-    
+
     # Format port range
     port_range = ''
     if from_port is not None and to_port is not None:
@@ -150,7 +150,7 @@ def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inb
             port_range = f"{from_port}-{to_port}"
     else:
         port_range = 'All'
-    
+
     # Format security group reference
     sg_identifier = ""
     if 'GroupId' in sg_ref:
@@ -159,7 +159,7 @@ def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inb
         sg_identifier = f"sg:{sg_ref['GroupName']}"
     else:
         sg_identifier = "sg:Unknown"
-    
+
     if is_inbound:
         return f"{sg_identifier} → {protocol}:{port_range}"
     else:
@@ -168,22 +168,22 @@ def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inb
 def get_security_group_resources(ec2_client, sg_id):
     """
     Find EC2 instances, RDS instances, and other resources using this security group.
-    
+
     Args:
         ec2_client: The boto3 EC2 client
         sg_id: The security group ID
-        
+
     Returns:
         list: List of resources using this security group
     """
     resources = []
-    
+
     # Check EC2 instances
     try:
         response = ec2_client.describe_instances(
             Filters=[{'Name': 'instance.group-id', 'Values': [sg_id]}]
         )
-        
+
         for reservation in response.get('Reservations', []):
             for instance in reservation.get('Instances', []):
                 # Get instance name from tags
@@ -192,7 +192,7 @@ def get_security_group_resources(ec2_client, sg_id):
                     if tag['Key'] == 'Name':
                         instance_name = tag['Value']
                         break
-                
+
                 resources.append(f"EC2:{instance_name} ({instance['InstanceId']})")
     except Exception as e:
         utils.log_warning(f"Could not fetch EC2 instances for SG {sg_id}: {e}")
@@ -254,7 +254,7 @@ def get_security_group_resources(ec2_client, sg_id):
                 resources.append(f"Lambda:{function['FunctionName']}")
     except Exception as e:
         utils.log_warning(f"Could not fetch Lambda functions for SG {sg_id}: {e}")
-    
+
     return resources
 
 @utils.aws_error_handler("Collecting security group rules", default_return=[])
@@ -579,21 +579,21 @@ def get_security_group_rules(region):
 def export_to_excel(security_group_rules, account_name, region_suffix=""):
     """
     Export security group rules data to Excel with AWS identifier.
-    
+
     Args:
         security_group_rules: List of security group rules
         account_name: AWS account name
         region_suffix: Region suffix for filename
-        
+
     Returns:
         str: Path to the exported file or None if failed
     """
     import pandas as pd
-    
+
     if not security_group_rules:
         utils.log_warning("No security group rules found to export.")
         return None
-    
+
     # Create a DataFrame
     df = pd.DataFrame(security_group_rules)
 
@@ -615,10 +615,10 @@ def export_to_excel(security_group_rules, account_name, region_suffix=""):
 
     # Save using utils function
     output_path = utils.save_dataframe_to_excel(df, filename, sheet_name='Security Group Rules')
-    
+
     if output_path:
         utils.log_success("AWS Security Group data exported successfully!")
-        utils.log_info(f"File location: {output_path}")
+        utils.log_success(f"File location: {output_path}")
         return output_path
     else:
         utils.log_error("Error exporting data. Please check the logs.")
@@ -632,20 +632,19 @@ def main():
         # Print title and get account information
         utils.setup_logging("security-groups-export")
         account_id, account_name = utils.print_script_banner("AWS SECURITY GROUPS EXPORT")
-        
+
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-        
+
         # Import pandas after dependency check
-        import pandas as pd
-        
+
         if account_name.startswith("UNKNOWN"):
             proceed = utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False)
             if not proceed:
                 utils.log_info("Exiting script...")
                 sys.exit(0)
-        
+
         regions = utils.prompt_region_selection()
         region_suffix = 'all'
 
@@ -671,16 +670,16 @@ def main():
         all_security_group_rules = []
         for rules in region_results:
             all_security_group_rules.extend(rules)
-        
+
         # Print summary
         total_rules = len(all_security_group_rules)
         utils.log_success(f"Total security group rules found across all AWS regions: {total_rules}")
-        
+
         if total_rules > 0:
             # Export to Excel
             utils.log_info("Exporting security group rules to Excel format...")
             output_file = export_to_excel(all_security_group_rules, account_name, region_suffix)
-            
+
             if output_file:
                 utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
                 utils.log_info(f"Total security group rules exported: {total_rules}")
@@ -690,7 +689,7 @@ def main():
                 sys.exit(1)
         else:
             utils.log_warning("No security group rules found. Nothing to export.")
-    
+
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)

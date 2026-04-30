@@ -24,10 +24,10 @@ Features:
 Note: This exports WAFv2 (latest version). WAF Classic is deprecated.
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -610,7 +610,7 @@ def export_waf_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("WAF data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s) + CloudFront (global)")
 
             # Summary of exported data

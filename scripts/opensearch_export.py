@@ -16,11 +16,10 @@ Features:
 Output: Excel file with 3 worksheets
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -540,7 +539,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

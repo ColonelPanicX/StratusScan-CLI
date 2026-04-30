@@ -22,13 +22,12 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import sys
-import time
 import datetime
 import json
 import re
+import sys
+import time
 from pathlib import Path
-from botocore.exceptions import ClientError
 
 # Add path to import utils module
 try:
@@ -37,7 +36,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -45,7 +44,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -57,10 +56,10 @@ except ImportError:
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region.
-    
+
     Args:
         region_name (str): AWS region name to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
@@ -84,7 +83,7 @@ def get_security_group_info(rds_client, sg_ids):
         # Create EC2 client in the same region as the RDS client
         region = rds_client.meta.region_name
         ec2_client = utils.get_boto3_client('ec2', region_name=region)
-        
+
         # Get security group information using EC2 describe_security_groups API
         response = ec2_client.describe_security_groups(GroupIds=sg_ids)
         # Format as "name (id), name (id), ..."
@@ -113,7 +112,7 @@ def get_vpc_info(rds_client, vpc_id):
         # Create EC2 client in the same region as the RDS client
         region = rds_client.meta.region_name
         ec2_client = utils.get_boto3_client('ec2', region_name=region)
-        
+
         # Get VPC information using EC2 describe_vpcs API
         response = ec2_client.describe_vpcs(VpcIds=[vpc_id])
         if response['Vpcs']:
@@ -496,19 +495,19 @@ def get_rds_instances(region):
 def export_to_excel(data, account_name, region_filter=None):
     """
     Export RDS instance data to an Excel file using pandas and openpyxl.
-    
+
     Args:
         data (list): List of dictionaries containing RDS instance information
         account_name (str): Name of the AWS account for filename
         region_filter (str, optional): Region filter to include in filename
-        
+
     Returns:
         str: Path to the exported file, or None if export failed
     """
     if not data:
         utils.log_warning("No RDS instances found to export.")
         return None
-    
+
     try:
         # Import pandas (should be installed by now)
         import pandas as pd
@@ -518,33 +517,33 @@ def export_to_excel(data, account_name, region_filter=None):
 
         # Sanitize and prepare security-sensitive RDS data (contains usernames, endpoints)
         df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(df))
-        
+
         # Define output file name with date and optional region filter
         today = datetime.datetime.now().strftime("%m.%d.%Y")
         region_suffix = f"{region_filter}" if region_filter else ""
-        
+
         # Use the utility function for consistent AWS file naming
         filename = utils.create_export_filename(
-            account_name, 
-            "rds-instances", 
-            region_suffix, 
+            account_name,
+            "rds-instances",
+            region_suffix,
             today
         )
-        
+
         # Save using utils function
         saved_file = utils.save_dataframe_to_excel(df, filename, sheet_name='RDS Instances')
-        
+
         if saved_file:
             utils.log_success("AWS RDS data exported successfully!")
-            utils.log_info(f"File location: {saved_file}")
+            utils.log_success(f"File location: {saved_file}")
             return saved_file
         else:
             utils.log_error("Failed to save using utils.save_dataframe_to_excel()")
             return None
-            
+
     except Exception as e:
         utils.log_error("Error exporting data", e)
-        
+
         # Fallback to CSV if Excel export fails
         try:
             import pandas as pd
@@ -569,16 +568,15 @@ def main():
     # Check and install dependencies using utils function
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         return
-    
+
     if account_name == "UNKNOWN-ACCOUNT":
         proceed = utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False)
         if not proceed:
             utils.log_info("Exiting script...")
             sys.exit(0)
-    
+
     # Detect partition and set partition-aware example regions
     regions = utils.prompt_region_selection()
-    region_filter = regions[0] if len(regions) == 1 else 'all'
     # Initialize data collection list
     all_rds_instances = []
 

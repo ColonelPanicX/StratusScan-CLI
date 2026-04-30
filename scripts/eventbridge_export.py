@@ -19,11 +19,10 @@ Features:
 - Schema registries and schemas
 """
 
-import sys
 import datetime
-import json
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -290,7 +289,7 @@ def export_eventbridge_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("EventBridge data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

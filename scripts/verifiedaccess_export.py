@@ -20,10 +20,10 @@ configurations, and Cedar policy documents.
 Note: AWS Verified Access is a regional service. This script scans all configured regions.
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -485,7 +485,7 @@ def export_to_excel(all_data: Dict[str, List[Dict]], account_id: str, account_na
 
         if output_path:
             utils.log_success("AWS Verified Access data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             total_resources = (len(all_data['instances']) + len(all_data['trust_providers']) +
                              len(all_data['groups']) + len(all_data['endpoints']))
             utils.log_info(f"Export contains {total_resources} total resources across all regions")

@@ -19,8 +19,8 @@ output file and be reported as skipped in the summary.
 """
 
 import os
-import sys
 import subprocess
+import sys
 import time
 import zipfile
 from dataclasses import dataclass

@@ -26,7 +26,8 @@ Features:
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -249,7 +250,7 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     if not df_stacks.empty:
         active_stacks = len(df_stacks[df_stacks['Status'].str.contains('COMPLETE', na=False)])
         failed_stacks = len(df_stacks[df_stacks['Status'].str.contains('FAILED', na=False)])
-        protected_stacks = len(df_stacks[df_stacks['TerminationProtection'] == True])
+        protected_stacks = len(df_stacks[df_stacks['TerminationProtection']])
 
         summary_data.append({'Metric': 'Active Stacks (COMPLETE)', 'Value': active_stacks})
         summary_data.append({'Metric': 'Failed Stacks', 'Value': failed_stacks})

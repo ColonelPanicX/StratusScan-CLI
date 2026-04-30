@@ -16,9 +16,9 @@ Output: Excel file with 5 worksheets
 """
 
 import sys
-from pathlib import Path
-from typing import Dict, List, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -75,7 +75,6 @@ def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
 
                 # Log config
                 log_config = api.get('logConfig', {})
-                logging_enabled = bool(log_config)
                 field_log_level = log_config.get('fieldLogLevel', 'NONE') if log_config else 'NONE'
                 cloudwatch_logs_role_arn = log_config.get('cloudWatchLogsRoleArn', 'N/A') if log_config else 'N/A'
 

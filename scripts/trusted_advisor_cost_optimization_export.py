@@ -15,11 +15,11 @@ detailed tabs for each cost saving opportunity.
 
 """
 
-import sys
-import json
 import datetime
-from botocore.exceptions import ClientError
+import sys
 from pathlib import Path
+
+from botocore.exceptions import ClientError
 
 # Add path to import utils module
 try:
@@ -300,7 +300,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
         return
 
-    import pandas as pd
 
     utils.log_info("IMPORTANT: AWS Trusted Advisor requires Business or Enterprise Support.")
     utils.log_info("Trusted Advisor API is only available in the us-east-1 region.")

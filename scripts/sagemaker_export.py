@@ -13,11 +13,10 @@ Exports comprehensive Amazon SageMaker machine learning information including:
 Output: Multi-worksheet Excel file with SageMaker resources
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -376,7 +375,6 @@ def _scan_models_region(region: str) -> List[Dict[str, Any]]:
                         # VPC config
                         vpc_config = model_response.get('VpcConfig', {})
                         subnets = vpc_config.get('Subnets', [])
-                        security_groups = vpc_config.get('SecurityGroupIds', [])
                         vpc_enabled = 'Yes' if subnets else 'No'
 
                         # Network isolation

@@ -22,8 +22,7 @@ Output: Excel file with 6 worksheets
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -353,7 +352,6 @@ def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
 
                 # Classifiable objects
                 classifiable_object_count = bucket.get('classifiableObjectCount', 0)
-                classifiable_size_in_bytes = bucket.get('classifiableSizeInBytes', 0)
 
                 # Shared access
                 shared_access = bucket.get('sharedAccess', 'N/A')
@@ -511,7 +509,7 @@ def generate_summary(status: List[Dict[str, Any]],
     summary.append({
         'Metric': 'Total Findings (Recent)',
         'Count': len(findings),
-        'Details': f"Last 50 findings per region"
+        'Details': "Last 50 findings per region"
     })
 
     summary.append({
@@ -616,7 +614,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

@@ -27,9 +27,9 @@ Phase 4B Update:
 
 import datetime
 import json
+import re
 import sys
 from pathlib import Path
-import re
 
 # Add path to import utils module
 try:
@@ -68,10 +68,10 @@ def is_valid_aws_region(region_name):
 def get_volume_name(volume):
     """
     Extract the volume name from tags.
-    
+
     Args:
         volume (dict): The volume object from the API response
-        
+
     Returns:
         str: The name of the volume or 'N/A' if not present
     """
@@ -330,16 +330,15 @@ def main():
         # Check for required dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-            
+
         # Import pandas now that we've checked dependencies
-        import pandas as pd
-        
+
         if account_name == "UNKNOWN-ACCOUNT":
             proceed = utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False)
             if not proceed:
                 utils.log_info("Exiting script...")
                 sys.exit(0)
-        
+
         # Get AWS regions
         utils.log_info("Getting list of AWS regions...")
         all_regions = utils.get_aws_regions()
@@ -374,28 +373,28 @@ def main():
         all_volumes = []
         for volumes in region_results:
             all_volumes.extend(volumes)
-        
+
         # Print summary of collected data
         utils.log_success(f"Total EBS volumes found across all AWS regions: {len(all_volumes)}")
 
         if not all_volumes:
             utils.log_warning("No volumes found in any AWS region. Exiting...")
             sys.exit(0)
-        
+
         # Export data to Excel file
         utils.log_info("Exporting data to Excel format...")
         excel_path = create_excel_file(account_name, all_volumes, region_input)
-        
+
         if excel_path:
             utils.log_success("AWS EBS volume data exported successfully!")
-            utils.log_info(f"File location: {excel_path}")
+            utils.log_success(f"File location: {excel_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total volumes exported: {len(all_volumes)}")
             print("\nScript execution completed.")
         else:
             utils.log_error("Error exporting data. Please check the logs.")
             sys.exit(1)
-        
+
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)

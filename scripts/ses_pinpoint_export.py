@@ -24,7 +24,8 @@ Note: SES is regional, Pinpoint applications are regional
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -382,7 +383,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     summary_data.append({'Metric': 'Regions Scanned', 'Value': len(regions)})
 
     if not df_ses_identities.empty:
-        verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == True])
+        verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == 'Success'])
         dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])
         summary_data.append({'Metric': 'Verified Identities', 'Value': verified_identities})
         summary_data.append({'Metric': 'DKIM Enabled Identities', 'Value': dkim_enabled})
@@ -402,7 +403,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     df_active_campaigns = pd.DataFrame()
 
     if not df_ses_identities.empty:
-        df_verified_identities = df_ses_identities[df_ses_identities['VerificationStatus'] == True]
+        df_verified_identities = df_ses_identities[df_ses_identities['VerificationStatus'] == 'Success']
 
     if not df_pinpoint_campaigns.empty:
         df_active_campaigns = df_pinpoint_campaigns[df_pinpoint_campaigns['State'] == 'RUNNING']
@@ -424,10 +425,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(sheets, filename)
-
-    total_resources = (len(all_ses_identities) + len(all_ses_config_sets) +
-                      len(all_ses_templates) + len(all_pinpoint_apps) +
-                      len(all_pinpoint_campaigns) + len(all_pinpoint_segments))
 
     utils.log_success("SES/Pinpoint export completed successfully!")
 

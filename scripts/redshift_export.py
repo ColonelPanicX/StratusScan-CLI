@@ -18,8 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -186,9 +185,6 @@ def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
 
                 # Allow version upgrade
                 allow_version_upgrade = cluster.get('AllowVersionUpgrade', False)
-
-                # Elastic resize
-                elastic_resize_number_of_node_options = cluster.get('ElasticResizeNumberOfNodeOptions', 'N/A')
 
                 # Aqua (Advanced Query Accelerator) configuration
                 aqua_configuration = cluster.get('AquaConfiguration', {})
@@ -447,8 +443,8 @@ def scan_redshift_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
                 subnet_ids = [s.get('SubnetIdentifier', '') for s in subnets]
                 subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
 
-                azs = set([s.get('SubnetAvailabilityZone', {}).get('Name', '')
-                          for s in subnets if s.get('SubnetAvailabilityZone')])
+                azs = {s.get('SubnetAvailabilityZone', {}).get('Name', '')
+                          for s in subnets if s.get('SubnetAvailabilityZone')}
                 az_list = ', '.join(sorted(azs)) if azs else 'N/A'
 
                 # Status
@@ -661,7 +657,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         'Summary': summary_df
     }
 
-    if utils.save_multiple_dataframes_to_excel(dataframes, filename):
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

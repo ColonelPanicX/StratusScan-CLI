@@ -18,11 +18,10 @@ Collected information includes: Security findings, severity levels, compliance s
 remediation steps, affected resources, and finding history for comprehensive security analysis.
 """
 
-import os
-import sys
 import datetime
-import time
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # Add path to import utils module
@@ -61,8 +60,6 @@ def get_account_info():
     sts = utils.get_boto3_client('sts')
     account_id = sts.get_caller_identity()['Account']
 
-    # Validate AWS environment
-    caller_arn = sts.get_caller_identity()['Arn']
     account_name = utils.get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
 
     return account_id, account_name
@@ -124,7 +121,7 @@ def collect_security_hub_findings(region):
 
         # Check if Security Hub is enabled
         try:
-            hub_info = client.describe_hub()
+            client.describe_hub()
             utils.log_success(f"Security Hub is enabled in {region}")
         except ClientError as e:
             error_code = e.response['Error']['Code']
@@ -448,7 +445,7 @@ def export_to_excel(all_findings_data, account_id, account_name):
                 len([f for f in all_findings_data if f.get('Severity Label') == 'INFORMATIONAL']),
                 len([f for f in all_findings_data if f.get('Compliance Status') == 'FAILED']),
                 len([f for f in all_findings_data if f.get('Compliance Status') == 'PASSED']),
-                len(set([f.get('Product Name') for f in all_findings_data if f.get('Product Name', 'N/A') != 'N/A'])),
+                len({f.get('Product Name') for f in all_findings_data if f.get('Product Name', 'N/A') != 'N/A'}),
                 len([f for f in all_findings_data if f.get('Remediation Available') == 'Yes'])
             ]
         }
@@ -461,7 +458,7 @@ def export_to_excel(all_findings_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS Security Hub data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_findings = len(all_findings_data)
@@ -487,7 +484,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Print title and get account info
         account_id, account_name = utils.print_script_banner("AWS SECURITY HUB INFORMATION COLLECTION EXPORT")
@@ -538,7 +534,7 @@ def main():
         filename = export_to_excel(all_findings_data, account_id, account_name)
 
         if filename:
-            utils.log_info(f"Results exported with AWS compliance markers")
+            utils.log_info("Results exported with AWS compliance markers")
             utils.log_info(f"Total findings processed: {len(all_findings_data)}")
 
             # Display summary statistics

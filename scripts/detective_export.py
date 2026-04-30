@@ -27,12 +27,11 @@ Prerequisites:
 - Regional service - scans multiple regions
 """
 
-import os
-import sys
 import datetime
-import time
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # Add path to import utils module
@@ -379,7 +378,7 @@ def export_to_excel(
                 len([m for m in members_data if m.get('Status') == 'VERIFICATION_IN_PROGRESS']),
                 len([m for m in members_data if m.get('Status') == 'DISABLED']),
                 len(invitations_data),
-                len(set([g['Region'] for g in graphs_data]))
+                len({g['Region'] for g in graphs_data})
             ]
         }
         summary_df = pd.DataFrame(summary_data)
@@ -428,7 +427,7 @@ def export_to_excel(
 
         if output_path:
             utils.log_success("AWS Detective data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_graphs = len(graphs_data)
@@ -456,7 +455,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Setup logging
         utils.setup_logging("detective-export")
@@ -484,8 +482,7 @@ def main():
 
         # Get regions to scan
         regions = utils.prompt_region_selection(
-            prompt_message="Select AWS region(s) to scan for Detective:",
-            allow_all=True
+            service_name="Amazon Detective"
         )
 
         utils.log_info(f"Will scan Detective in regions: {', '.join(regions)}")

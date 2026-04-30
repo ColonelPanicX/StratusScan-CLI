@@ -21,10 +21,10 @@ Features:
 - Phase 4B: Concurrent region scanning (4x-10x performance improvement)
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -522,7 +522,7 @@ def export_access_analyzer_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("Access Analyzer data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

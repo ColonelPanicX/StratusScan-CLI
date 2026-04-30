@@ -13,9 +13,7 @@ Output: Multi-worksheet Excel file with CodePipeline resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -260,7 +258,6 @@ def _scan_webhooks_region(region: str) -> List[Dict[str, Any]]:
 
                 # Authentication
                 authentication = definition.get('authentication', 'N/A')
-                auth_config = definition.get('authenticationConfiguration', {})
 
                 # URL and ARN
                 url = webhook.get('url', 'N/A')

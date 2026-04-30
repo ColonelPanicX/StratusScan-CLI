@@ -6,9 +6,8 @@ to relevant export scripts. Core intelligence engine for Smart Scan.
 """
 
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 try:
     import pandas as pd
@@ -25,11 +24,10 @@ except ImportError:
 
 from .mapping import (
     ALWAYS_RUN_SCRIPTS,
-    SERVICE_SCRIPT_MAP,
-    get_canonical_service_name,
-    get_scripts_for_service,
-    get_category_for_script,
     get_all_scripts,
+    get_canonical_service_name,
+    get_category_for_script,
+    get_scripts_for_service,
 )
 
 
@@ -238,11 +236,11 @@ class ServiceAnalyzer:
             total_available = len(get_all_scripts())
             total_recommended = len(all_scripts)
             service_based_count = len(
-                set(
+                {
                     script
                     for scripts in self.recommended_scripts.values()
                     for script in scripts
-                )
+                }
             )
 
             recommendations["coverage_stats"] = {

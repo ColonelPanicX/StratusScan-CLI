@@ -18,9 +18,9 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
+import datetime
 import sys
 import time
-import datetime
 from pathlib import Path
 
 # Add path to import utils module
@@ -30,7 +30,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -38,7 +38,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -61,10 +61,10 @@ def is_valid_aws_region(region_name):
 def get_snapshot_name(snapshot):
     """
     Extract the snapshot name from tags.
-    
+
     Args:
         snapshot (dict): The snapshot object from the API response
-        
+
     Returns:
         str: The name of the snapshot or 'N/A' if not present
     """
@@ -77,21 +77,21 @@ def get_snapshot_name(snapshot):
 def format_tags(tags):
     """
     Format snapshot tags in the format "Key1:Value1, Key2:Value2, etc..."
-    
+
     Args:
         tags (list): List of tag dictionaries with Key and Value
-        
+
     Returns:
         str: Formatted tags string or 'N/A' if no tags
     """
     if not tags:
         return 'N/A'
-    
+
     formatted_tags = []
     for tag in tags:
         if 'Key' in tag and 'Value' in tag:
             formatted_tags.append(f"{tag['Key']}:{tag['Value']}")
-    
+
     if formatted_tags:
         return ', '.join(formatted_tags)
     else:
@@ -200,10 +200,10 @@ def main():
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-        
+
         # Now import pandas (after dependency check)
         import pandas as pd
-        
+
         if account_name == "UNKNOWN-ACCOUNT":
             if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
                 print("Exiting script...")
@@ -233,15 +233,15 @@ def main():
         all_snapshots = []
         for snapshots in region_results:
             all_snapshots.extend(snapshots)
-        
+
         # Print summary
         total_snapshots = len(all_snapshots)
         utils.log_success(f"Total EBS snapshots found across all AWS regions: {total_snapshots}")
-        
+
         if total_snapshots == 0:
             utils.log_warning("No snapshots found. Nothing to export.")
             sys.exit(0)
-        
+
         # Create DataFrame from snapshot data
         utils.log_info("Preparing data for export to Excel format...")
         df = pd.DataFrame(all_snapshots)
@@ -264,17 +264,17 @@ def main():
 
         # Save the data using the utility function
         output_path = utils.save_dataframe_to_excel(df, filename)
-        
+
         if output_path:
             utils.log_success("AWS EBS snapshots data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total snapshots exported: {total_snapshots}")
             print("\nScript execution completed.")
         else:
             utils.log_error("Error exporting data. Please check the logs.")
             sys.exit(1)
-    
+
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)

@@ -22,10 +22,11 @@ Menu:
   4. All IAM Identity Center Resources (Users + Groups + Permission Sets)
 """
 
-import sys
 import datetime
 import json
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError
 
 # Add path to import utils module
@@ -1275,7 +1276,7 @@ def _export_users_to_excel(users_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS IAM Identity Center users exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {total_users} users ({active_users} active, {inactive_users} inactive)")
             return str(output_path)
         else:
@@ -1362,7 +1363,7 @@ def _export_combined_to_excel(users_data, groups_data, permission_sets_data, acc
 
         if output_path:
             utils.log_success("AWS IAM Identity Center data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {len(users_data)} users, {len(groups_data)} groups, and {len(permission_sets_data)} permission sets")
             return str(output_path)
         else:
@@ -1440,7 +1441,7 @@ def _export_groups_to_excel(groups_data, account_id, account_name):
 
         if output_path:
             utils.log_success("AWS IAM Identity Center groups data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {total_groups} groups with {total_members} total members")
             return str(output_path)
         else:
@@ -1509,7 +1510,7 @@ def _export_permission_sets_to_excel(permission_sets_data, account_id, account_n
 
         if output_path:
             utils.log_success("AWS IAM Identity Center permission sets exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {total_ps} permission sets")
             return str(output_path)
         else:
@@ -1611,7 +1612,7 @@ def _export_comprehensive_to_excel(users_data, groups_data, permission_sets_data
 
         if output_path:
             utils.log_success("AWS IAM Identity Center comprehensive data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains {len(users_data)} users, {len(groups_data)} groups, and {len(permission_sets_data)} permission sets")
             return str(output_path)
         else:

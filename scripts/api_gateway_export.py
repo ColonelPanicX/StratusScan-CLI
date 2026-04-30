@@ -21,10 +21,10 @@ Features:
 - Request validators and models
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -291,7 +291,7 @@ def scan_api_stages_in_region(region: str) -> List[Dict[str, Any]]:
                     method_settings = stage.get('methodSettings', {})
                     logging_level = 'OFF'
                     if method_settings:
-                        for key, value in method_settings.items():
+                        for _key, value in method_settings.items():
                             if 'loggingLevel' in value:
                                 logging_level = value.get('loggingLevel', 'OFF')
                                 break
@@ -434,7 +434,7 @@ def export_api_gateway_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("API Gateway data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

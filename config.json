@@ -1,9 +1,6 @@
 {
   "__comment": "StratusScan Configuration Template - Copy this file to config.json and customize",
   "account_mappings": {
-    "123456789012": "PROD-ACCOUNT",
-    "234567890123": "DEV-ACCOUNT",
-    "345678901234": "TEST-ACCOUNT",
     "__comment": "Add your own account mappings in the format 'account_id': 'friendly_name'"
   },
   "organization_name": "YOUR-ORGANIZATION",

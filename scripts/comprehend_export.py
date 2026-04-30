@@ -15,9 +15,7 @@ Output: Multi-worksheet Excel file with Comprehend resources
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -81,9 +79,6 @@ def collect_entity_recognizers(regions: List[str]) -> List[Dict[str, Any]]:
                     data_access_role = recognizer.get('DataAccessRoleArn', 'N/A')
 
                     # Input config
-                    input_config = recognizer.get('InputDataConfig', {})
-                    input_s3_uri = input_config.get('DataFormat', 'N/A')
-
                     # Message
                     message = recognizer.get('Message', 'N/A')
 
@@ -234,9 +229,6 @@ def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
                     # Desired inference units
                     desired_inference_units = endpoint.get('DesiredInferenceUnits', 0)
                     current_inference_units = endpoint.get('CurrentInferenceUnits', 0)
-
-                    # Desired model ARN
-                    desired_model_arn = endpoint.get('DesiredModelArn', model_arn)
 
                     creation_time = endpoint.get('CreationTime', 'N/A')
                     if creation_time != 'N/A':

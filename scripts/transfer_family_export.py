@@ -23,11 +23,11 @@ Collected information includes:
 - Agreements (AS2 trading partner agreements)
 """
 
-import sys
 import datetime
 import json
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -706,8 +706,8 @@ def export_to_excel(
 
         if output_path:
             utils.log_success("Transfer Family data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
-            utils.log_info(f"Export contains:")
+            utils.log_success(f"File location: {output_path}")
+            utils.log_info("Export contains:")
             utils.log_info(f"  - {len(servers_data)} servers")
             utils.log_info(f"  - {len(users_data)} users")
             utils.log_info(f"  - {len(connectors_data)} connectors")
@@ -735,7 +735,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Print title and get account info
         account_id, account_name = utils.print_script_banner("AWS TRANSFER FAMILY COMPREHENSIVE EXPORT")
@@ -831,7 +830,7 @@ def main():
             print("\n====================================================================")
             print("EXPORT COMPLETE")
             print("====================================================================")
-            utils.log_success(f"Transfer Family export completed successfully!")
+            utils.log_success("Transfer Family export completed successfully!")
             utils.log_info(f"Output file: {filename}")
         else:
             utils.log_error("Export failed. Please check the logs.")

@@ -24,9 +24,10 @@ Features:
 """
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import pandas as pd
 
 # Standard utils import pattern
@@ -394,8 +395,7 @@ def main():
         while True:
             if step == 1:
                 result = utils.prompt_region_selection(
-                    service_name="Reserved Instances",
-                    default_to_all=False
+                    service_name="Reserved Instances"
                 )
                 if result == 'back':
                     sys.exit(10)

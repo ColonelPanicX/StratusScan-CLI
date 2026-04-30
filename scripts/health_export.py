@@ -22,10 +22,11 @@ Note: Requires health:Describe* permissions
 """
 
 import sys
-from pathlib import Path
-from typing import List, Dict, Any
-import pandas as pd
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List
+
+import pandas as pd
 
 # Standard utils import pattern
 try:

@@ -21,11 +21,11 @@ Features:
 - Encryption at-rest and in-transit
 """
 
+import datetime
 import json
 import sys
-import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -403,7 +403,7 @@ def scan_cache_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
                 subnet_ids = ', '.join([s.get('SubnetIdentifier', '') for s in subnets])
 
                 # Availability zones
-                azs = set([s.get('SubnetAvailabilityZone', {}).get('Name', '') for s in subnets if s.get('SubnetAvailabilityZone')])
+                azs = {s.get('SubnetAvailabilityZone', {}).get('Name', '') for s in subnets if s.get('SubnetAvailabilityZone')}
                 az_list = ', '.join(sorted(azs)) if azs else 'N/A'
 
                 # ARN
@@ -541,7 +541,7 @@ def export_elasticache_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("ElastiCache data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

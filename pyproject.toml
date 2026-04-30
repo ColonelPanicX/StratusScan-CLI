@@ -137,6 +137,7 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    "N806",  # SCRIPT_START_TIME is an intentional UPPERCASE local constant convention across all exporters
 ]
 
 # Exclude directories
@@ -202,6 +203,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "aws: marks tests that interact with AWS (requires credentials)",
+    "smoke: marks smoke tests that run every exporter under moto mocking (deselect with '-m \"not smoke\"')",
 ]
 
 # Coverage configuration

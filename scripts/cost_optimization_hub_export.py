@@ -16,10 +16,11 @@ recommendation type. Aggregates savings across all sources
 
 """
 
-import sys
 import datetime
-from botocore.exceptions import ClientError
+import sys
 from pathlib import Path
+
+from botocore.exceptions import ClientError
 
 # Add path to import utils module
 try:
@@ -72,7 +73,6 @@ def get_all_recommendations(client):
     Returns:
         list: List of all recommendations
     """
-    import pandas as pd
 
     utils.log_info("Fetching Cost Optimization Hub recommendations...")
     recommendations = []
@@ -95,8 +95,10 @@ def get_all_recommendations(client):
         return recommendations
 
     except ClientError as e:
-        # Business logic: Special handling for opt-in errors
-        if 'OptInRequiredException' in str(e) or 'not subscribed' in str(e):
+        error_code = e.response.get('Error', {}).get('Code', '')
+        error_msg = str(e)
+        if ('OptInRequiredException' in error_msg or 'not subscribed' in error_msg
+                or error_code in ('404', 'ResourceNotFoundException')):
             utils.log_warning("Cost Optimization Hub is not enabled for this account. Skipping.")
             sys.exit(0)
         else:
@@ -235,7 +237,6 @@ def _run_export(account_id: str, account_name: str) -> None:
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
         return
 
-    import pandas as pd
 
     utils.log_info("IMPORTANT: AWS Cost Optimization Hub must be enabled in your account.")
     utils.log_info("Cost Optimization Hub API is only available in the us-east-1 region.")

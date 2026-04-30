@@ -24,12 +24,11 @@ Collected information includes:
 - Logging and monitoring configuration
 """
 
-import os
-import sys
 import datetime
-import time
 import json
+import sys
 from pathlib import Path
+
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # Add path to import utils module
@@ -65,8 +64,6 @@ def get_account_info():
     sts = utils.get_boto3_client('sts')
     account_id = sts.get_caller_identity()['Account']
 
-    # Validate AWS environment
-    caller_arn = sts.get_caller_identity()['Arn']
     account_name = utils.get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
 
     return account_id, account_name
@@ -227,8 +224,10 @@ def collect_node_groups(client, cluster_name, region):
     ec2_pricing = _load_ec2_pricing_for_eks(region)
 
     # List all node groups for the cluster
-    response = client.list_nodegroups(clusterName=cluster_name)
-    nodegroup_names = response.get('nodegroups', [])
+    paginator = client.get_paginator('list_nodegroups')
+    nodegroup_names = []
+    for page in paginator.paginate(clusterName=cluster_name):
+        nodegroup_names.extend(page.get('nodegroups', []))
 
     if not nodegroup_names:
         utils.log_info(f"No node groups found for cluster {cluster_name}")
@@ -353,8 +352,10 @@ def collect_cluster_addons(client, cluster_name, region):
     addons_data = []
 
     # List all add-ons for the cluster
-    response = client.list_addons(clusterName=cluster_name)
-    addon_names = response.get('addons', [])
+    paginator = client.get_paginator('list_addons')
+    addon_names = []
+    for page in paginator.paginate(clusterName=cluster_name):
+        addon_names.extend(page.get('addons', []))
 
     if not addon_names:
         utils.log_info(f"No add-ons found for cluster {cluster_name}")
@@ -573,7 +574,7 @@ def export_to_excel(all_clusters_data, all_node_groups_data, all_addons_data, ac
 
         if output_path:
             utils.log_success("AWS EKS data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
 
             # Log summary statistics
             total_clusters = len(all_clusters_data)
@@ -634,7 +635,6 @@ def main():
             return
 
         # Import pandas after dependency check
-        import pandas as pd
 
         # Print title and get account info
         utils.setup_logging("eks-export")
@@ -699,7 +699,7 @@ def main():
         filename = export_to_excel(all_clusters_data, all_node_groups_data, all_addons_data, account_id, account_name)
 
         if filename:
-            utils.log_info(f"Results exported with AWS compliance markers")
+            utils.log_info("Results exported with AWS compliance markers")
             utils.log_info(f"Total clusters processed: {len(all_clusters_data)}")
             utils.log_info(f"Total node groups processed: {len(all_node_groups_data)}")
             utils.log_info(f"Total add-ons processed: {len(all_addons_data)}")

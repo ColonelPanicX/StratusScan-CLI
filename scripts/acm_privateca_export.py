@@ -11,11 +11,10 @@ Exports comprehensive AWS Certificate Manager Private Certificate Authority info
 Output: Multi-worksheet Excel file with ACM Private CA resources
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils

@@ -22,10 +22,10 @@ Features:
 - Container recipes (for container images)
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -173,8 +173,10 @@ def collect_image_recipes(regions: List[str]) -> List[Dict[str, Any]]:
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get image recipes
-            response = imagebuilder.list_image_recipes()
-            recipe_arns = [r['arn'] for r in response.get('imageRecipeSummaryList', [])]
+            paginator = imagebuilder.get_paginator('list_image_recipes')
+            recipe_arns = []
+            for page in paginator.paginate():
+                recipe_arns.extend([r['arn'] for r in page.get('imageRecipeSummaryList', [])])
 
             for recipe_arn in recipe_arns:
                 try:
@@ -197,7 +199,6 @@ def collect_image_recipes(regions: List[str]) -> List[Dict[str, Any]]:
                     # Components
                     components = recipe.get('components', [])
                     component_count = len(components)
-                    component_arns = [c.get('componentArn', '') for c in components]
 
                     # Working directory
                     working_directory = recipe.get('workingDirectory', 'N/A')
@@ -258,8 +259,10 @@ def collect_components(regions: List[str]) -> List[Dict[str, Any]]:
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get components (owned by account)
-            response = imagebuilder.list_components(owner='Self')
-            component_arns = [c['arn'] for c in response.get('componentVersionList', [])]
+            paginator = imagebuilder.get_paginator('list_components')
+            component_arns = []
+            for page in paginator.paginate(owner='Self'):
+                component_arns.extend([c['arn'] for c in page.get('componentVersionList', [])])
 
             for component_arn in component_arns:
                 try:
@@ -335,8 +338,10 @@ def collect_infrastructure_configurations(regions: List[str]) -> List[Dict[str, 
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get infrastructure configurations
-            response = imagebuilder.list_infrastructure_configurations()
-            config_arns = [c['arn'] for c in response.get('infrastructureConfigurationSummaryList', [])]
+            paginator = imagebuilder.get_paginator('list_infrastructure_configurations')
+            config_arns = []
+            for page in paginator.paginate():
+                config_arns.extend([c['arn'] for c in page.get('infrastructureConfigurationSummaryList', [])])
 
             for config_arn in config_arns:
                 try:
@@ -472,7 +477,7 @@ def export_image_builder_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("EC2 Image Builder data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data

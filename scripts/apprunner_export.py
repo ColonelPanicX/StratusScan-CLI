@@ -17,8 +17,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, List
 
 try:
     import utils
@@ -74,7 +73,6 @@ def _scan_apprunner_services_region(region: str) -> List[Dict[str, Any]]:
                         source_details = f"{image_repo_type}: {image_identifier}"
                     elif code_repo:
                         source_type = 'Source Code'
-                        repo_url = code_repo.get('RepositoryUrl', 'N/A')
                         source_code_version = code_repo.get('SourceCodeVersion', {})
                         branch = source_code_version.get('Value', 'N/A')
                         source_details = f"Branch: {branch}"
@@ -104,7 +102,6 @@ def _scan_apprunner_services_region(region: str) -> List[Dict[str, Any]]:
                     health_check_timeout = health_check_config.get('Timeout', 'N/A')
 
                     # Auto scaling configuration ARN
-                    auto_scaling_config_arn = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationArn', 'N/A')
                     auto_scaling_config_name = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationName', 'N/A')
 
                     # Network configuration

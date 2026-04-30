@@ -18,8 +18,8 @@ Phase 4B Update:
 - Automatic fallback to sequential on errors
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
 
 # Add path to import utils module
@@ -29,7 +29,7 @@ try:
 except ImportError:
     # If import fails, try to find the module relative to this script
     script_dir = Path(__file__).parent.absolute()
-    
+
     # Check if we're in the scripts directory
     if script_dir.name.lower() == 'scripts':
         # Add the parent directory (StratusScan root) to the path
@@ -37,7 +37,7 @@ except ImportError:
     else:
         # Add the current directory to the path
         sys.path.append(str(script_dir))
-    
+
     # Try import again
     try:
         import utils
@@ -60,36 +60,36 @@ def is_valid_aws_region(region_name):
 def get_tag_value(tags, key='Name'):
     """
     Get a tag value from a list of tags.
-    
+
     Args:
         tags: List of tag dictionaries
         key: The tag key to look for
-        
+
     Returns:
         str: The tag value or "N/A" if not found
     """
     if not tags:
         return "N/A"
-    
+
     for tag in tags:
         if tag['Key'] == key:
             return tag['Value']
-    
+
     return "N/A"
 
 def format_rule(rule):
     """
     Format a NACL rule into a readable string.
-    
+
     Args:
         rule: The NACL rule dictionary
-        
+
     Returns:
         str: A formatted string representation of the rule
     """
     rule_number = rule.get('RuleNumber', 'N/A')
     protocol = rule.get('Protocol', 'N/A')
-    
+
     # Convert protocol number to name if possible
     if protocol == '-1':
         protocol = 'All'
@@ -99,15 +99,15 @@ def format_rule(rule):
         protocol = 'UDP'
     elif protocol == '1':
         protocol = 'ICMP'
-    
+
     # Get port range
     port_range = f"{rule.get('PortRange', {}).get('From', 'All')}-{rule.get('PortRange', {}).get('To', 'All')}"
     if port_range == "All-All":
         port_range = "All"
-    
+
     cidr = rule.get('CidrBlock', rule.get('Ipv6CidrBlock', 'N/A'))
     action = rule.get('RuleAction', 'N/A')
-    
+
     return f"{rule_number}: {action.upper()} {protocol}:{port_range} from {cidr}"
 
 @utils.aws_error_handler("Collecting Network ACL data", default_return=[])
@@ -202,20 +202,20 @@ def main():
         # Print title and get account information
         utils.setup_logging("nacl-export")
         account_id, account_name = utils.print_script_banner("AWS NETWORK ACL (NACL) DATA EXPORT")
-        
+
         # Check for required dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
-            
+
         # Now import pandas after ensuring it's installed
         import pandas as pd
-        
+
         if account_name == "UNKNOWN-ACCOUNT":
             proceed = utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False)
             if not proceed:
                 utils.log_info("Exiting script...")
                 sys.exit(0)
-        
+
         regions = utils.prompt_region_selection()
         region_suffix = 'all'
 
@@ -262,17 +262,17 @@ def main():
 
         # Save data using the utility function
         output_path = utils.save_dataframe_to_excel(df, filename)
-        
+
         if output_path:
             utils.log_success("AWS Network ACL data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
             utils.log_info(f"Total Network ACLs exported: {len(all_nacl_data)}")
             print("\nScript execution completed.")
         else:
             utils.log_error("Error exporting data. Please check the logs.")
             sys.exit(1)
-    
+
     except KeyboardInterrupt:
         print("\n\nScript interrupted by user. Exiting...")
         sys.exit(0)

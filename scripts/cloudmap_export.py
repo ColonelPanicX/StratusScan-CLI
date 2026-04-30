@@ -11,11 +11,10 @@ Exports comprehensive AWS Cloud Map information including:
 Output: Multi-worksheet Excel file with Cloud Map resources
 """
 
+import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime
-import json
+from typing import Any, Dict, List
 
 try:
     import utils

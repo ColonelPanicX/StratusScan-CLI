@@ -25,11 +25,10 @@ This script NEVER exports actual secret values. It only exports metadata and
 configuration information for inventory and compliance purposes.
 """
 
-import sys
 import datetime
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
-import json
+from typing import Any, Dict, List
 
 # Add path to import utils module
 try:
@@ -311,7 +310,6 @@ def scan_secret_replications_in_region(region: str) -> List[Dict[str, Any]]:
 
             for secret in secrets:
                 secret_name = secret.get('Name', '')
-                secret_arn = secret.get('ARN', '')
 
                 # Check for replication status
                 replication_status = secret.get('ReplicationStatus', [])
@@ -435,7 +433,7 @@ def export_secrets_data(account_id: str, account_name: str):
 
         if output_path:
             utils.log_success("Secrets Manager data exported successfully!")
-            utils.log_info(f"File location: {output_path}")
+            utils.log_success(f"File location: {output_path}")
             utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
 
             # Summary of exported data
