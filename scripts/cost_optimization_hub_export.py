@@ -95,8 +95,10 @@ def get_all_recommendations(client):
         return recommendations
 
     except ClientError as e:
-        # Business logic: Special handling for opt-in errors
-        if 'OptInRequiredException' in str(e) or 'not subscribed' in str(e):
+        error_code = e.response.get('Error', {}).get('Code', '')
+        error_msg = str(e)
+        if ('OptInRequiredException' in error_msg or 'not subscribed' in error_msg
+                or error_code in ('404', 'ResourceNotFoundException')):
             utils.log_warning("Cost Optimization Hub is not enabled for this account. Skipping.")
             sys.exit(0)
         else:

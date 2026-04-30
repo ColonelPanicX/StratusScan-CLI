@@ -395,8 +395,7 @@ def main():
         while True:
             if step == 1:
                 result = utils.prompt_region_selection(
-                    service_name="Reserved Instances",
-                    default_to_all=False
+                    service_name="Reserved Instances"
                 )
                 if result == 'back':
                     sys.exit(10)
