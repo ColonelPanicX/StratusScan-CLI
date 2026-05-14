@@ -402,6 +402,11 @@ def get_menu_structure():
             "file": Path(__file__).parent / "configure.py",
             "description": "Interactive configuration tool for account mappings and AWS settings"
         },
+        "O": {
+            "name": "Org Scan — Run exporter across all accounts",
+            "description": "Iterate all configured cross-account roles and run one exporter per account",
+            "action": "org_scan"
+        },
         "1": {
             "name": "Service Discovery",
             "file": Path(__file__).parent / "smart_scan.py",
@@ -629,7 +634,7 @@ def display_main_menu():
         print(f"  [{option:>2}] {info['name']}")
 
     print("\n" + "─" * 70)
-    print("  q = quit")
+    print("  o = org scan  |  q = quit")
     print("─" * 70)
 
     return menu_structure, account_name
@@ -737,6 +742,145 @@ def handle_submenu(category_option, account_name):
                 if not _confirm("Would you like to run another tool from this menu?"):
                     return
 
+def _collect_scripts(menu_structure: dict) -> list:
+    """
+    Recursively walk the menu structure and collect all leaf script entries.
+
+    Returns a flat list of dicts with keys 'name' and 'file', where 'file'
+    is a Path to an exporter script.  Entries with no 'file' key or with
+    file=None are skipped (e.g. the Configure and Org Scan top-level entries).
+
+    Args:
+        menu_structure: A menu dict (any level — top or submenu).
+
+    Returns:
+        list[dict]: Sorted list of {"name": str, "file": Path} entries.
+    """
+    results: list = []
+    for info in menu_structure.values():
+        if "submenu" in info:
+            results.extend(_collect_scripts(info["submenu"]))
+        elif info.get("file") is not None:
+            results.append({"name": info["name"], "file": info["file"]})
+    return results
+
+
+def run_org_scan() -> None:
+    """
+    Run a single exporter script across all configured cross-account roles.
+
+    Flow:
+      1. Load cross-account roles from config.
+      2. Display configured accounts.
+      3. Let the user pick an exporter from a flat numbered list.
+      4. Confirm, then iterate accounts — launching each exporter with
+         STRATUSSCAN_ROLE_ARN and STRATUSSCAN_AUTO_RUN set in the child env.
+      5. Print a pass/fail summary.
+
+    Raises:
+        BackSignal: propagated from the script-selection prompt so the caller
+            can suppress it and return to the main menu.
+    """
+    cross_account_roles: dict = utils.get_cross_account_roles()
+
+    if not cross_account_roles:
+        print("\nNo cross-account roles configured.")
+        print("Run [0] Configure StratusScan → Config Wizard → Step 5 to add roles.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    # Display configured accounts
+    SEP = "─" * 70
+    print(f"\nCONFIGURED ACCOUNTS ({len(cross_account_roles)})")
+    print(SEP)
+    print(f"  {'Account ID':<20} {'Name':<24} Role ARN (truncated)")
+    print(SEP)
+    for acct_id, role_arn in cross_account_roles.items():
+        acct_name = utils.get_account_name(acct_id)
+        truncated = role_arn[:47] + "..." if len(role_arn) > 50 else role_arn
+        print(f"  {acct_id:<20} {acct_name:<24} {truncated}")
+    print(SEP)
+
+    # Build flat exporter list from the full menu structure
+    menu_structure = get_menu_structure()
+    scripts: list = _collect_scripts(menu_structure)
+
+    if not scripts:
+        print("\nNo exporter scripts found.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    # Script selection loop
+    selected_script: dict | None = None
+    while selected_script is None:
+        print("\nSELECT EXPORTER")
+        print(SEP)
+        for idx, entry in enumerate(scripts, start=1):
+            print(f"  [{idx:>3}] {entry['name']}")
+        print(SEP)
+
+        raw = prompt_with_navigation("Select exporter to run across all accounts (b=back): ")
+        # prompt_with_navigation raises BackSignal for 'b' — let it propagate
+
+        if not raw.isdigit():
+            print("Invalid selection. Please enter a number.")
+            continue
+        choice = int(raw)
+        if not (1 <= choice <= len(scripts)):
+            print(f"Invalid selection. Enter a number between 1 and {len(scripts)}.")
+            continue
+        selected_script = scripts[choice - 1]
+
+    # Confirm
+    n_accounts = len(cross_account_roles)
+    answer = input(
+        f"\nRun [{selected_script['name']}] across {n_accounts} account(s)? (y/n): "
+    ).strip().lower()
+    if answer != "y":
+        return
+
+    # Execute across all accounts
+    results: list = []
+    script_file: Path = selected_script["file"]
+    for acct_id, role_arn in cross_account_roles.items():
+        acct_name = utils.get_account_name(acct_id)
+        print(f"\nScanning account: {acct_name} ({acct_id})...")
+
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_ROLE_ARN"] = role_arn
+        child_env["STRATUSSCAN_AUTO_RUN"] = "1"
+
+        exit_code: int = 0
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script_file)],
+                env=child_env,
+                timeout=1800,
+            )
+            exit_code = result.returncode
+        except subprocess.CalledProcessError as exc:
+            utils.log_error("Org scan: account %s exporter failed: %s", acct_id, exc)
+            exit_code = exc.returncode if exc.returncode is not None else 1
+        except subprocess.TimeoutExpired:
+            utils.log_error("Org scan: account %s exporter timed out (30 min)", acct_id)
+            exit_code = -1
+        except Exception as exc:  # noqa: BLE001
+            utils.log_error("Org scan: account %s unexpected error: %s", acct_id, exc)
+            exit_code = -1
+
+        results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
+
+    # Summary
+    print(f"\nORG SCAN COMPLETE")
+    print(SEP)
+    for r in results:
+        icon = "✅" if r["exit_code"] == 0 else "❌"
+        status = "success" if r["exit_code"] == 0 else f"failed (exit code {r['exit_code']})"
+        print(f"  {icon}  {r['acct_name']} ({r['acct_id']}) — {status}")
+    print(SEP)
+    input("\nPress Enter to return to menu...")
+
+
 def navigate_menus():
     """
     Display the main menu and handle user navigation through nested menus.
@@ -771,6 +915,12 @@ def navigate_menus():
 
             selected_option = menu_structure[user_choice]
             utils.log_menu_selection(user_choice, selected_option['name'])
+
+            # Org scan
+            if selected_option.get("action") == "org_scan":
+                with contextlib.suppress(BackSignal, ExitToMainSignal):
+                    run_org_scan()
+                continue
 
             # Direct script (e.g. Configure StratusScan, Service Discovery)
             if "file" in selected_option and "submenu" not in selected_option:
