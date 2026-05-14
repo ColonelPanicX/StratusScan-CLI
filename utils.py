@@ -3031,6 +3031,14 @@ def get_aws_session(
     Raises:
         ValueError: If role_arn partition mismatches the detected partition.
     """
+    # Env var fallback: allows org-scan subprocess launches to inject a role
+    # without modifying any exporter script.
+    if role_arn is None:
+        env_role = os.environ.get("STRATUSSCAN_ROLE_ARN", "").strip()
+        if env_role:
+            role_arn = env_role
+            log.debug("STRATUSSCAN_ROLE_ARN env var active: %s", role_arn)
+
     if role_arn:
         creds = _assume_role_cached(role_arn, region_name=region_name, profile_name=profile_name)
         return boto3.Session(
