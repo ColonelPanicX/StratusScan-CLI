@@ -24,6 +24,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -400,6 +401,7 @@ def print_dashboard(config: Dict, config_path: Path):
         config (dict): Configuration dictionary
         config_path (Path): Path to config file
     """
+    os.system('cls' if os.name == 'nt' else 'clear')
     identity = get_aws_identity()
 
     # Header
@@ -430,6 +432,10 @@ def print_dashboard(config: Dict, config_path: Path):
     print("\n" + "═" * 70)
     print("MAIN MENU")
     print("═" * 70)
+
+    # First-run wizard
+    print("\nFirst Run:")
+    print("  [0] Config Wizard             (account mappings → regions → deps → perms)")
 
     # Configuration options
     print("\nConfiguration:")
@@ -475,6 +481,33 @@ def print_dashboard(config: Dict, config_path: Path):
 
     print("\n" + "═" * 70)
 
+def config_wizard(config: Dict):
+    """
+    First-run wizard: account mappings → default regions → deps → perms.
+
+    Steps the user through the four essential setup tasks in sequence.
+    Re-entrant — safe to run on an already-configured system.
+    """
+    print_section("CONFIG WIZARD")
+    print("This wizard walks you through the four essential setup steps.")
+    print("You can skip any step by pressing Enter with no input where prompted.\n")
+
+    input("Step 1/4 — Account Mappings  (press Enter to begin) ")
+    manage_account_mappings(config)
+
+    input("\nStep 2/4 — Default Regions  (press Enter to begin) ")
+    configure_default_regions(config)
+
+    input("\nStep 3/4 — Dependencies Check  (press Enter to begin) ")
+    dependency_management_menu()
+
+    input("\nStep 4/4 — AWS Permissions Check  (press Enter to begin) ")
+    permissions_management_menu()
+
+    print("\n✅ Config Wizard complete.")
+    input("Press Enter to return to the main menu...")
+
+
 def main_menu_loop(config: Dict, config_path: Path):
     """
     Main menu loop.
@@ -486,9 +519,11 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (1-5, S to save, U to exit): ").strip().upper()
+        choice = input("\nSelect option (0-5, S to save, U to exit): ").strip().upper()
 
-        if choice == '1':
+        if choice == '0':
+            config_wizard(config)
+        elif choice == '1':
             view_configuration(config)
         elif choice == '2':
             manage_account_mappings(config)
@@ -536,7 +571,7 @@ def main_menu_loop(config: Dict, config_path: Path):
                 print("\n✅ Exiting...")
                 return
         else:
-            print("\n❌ Invalid choice. Please select 1-5, S, or U.")
+            print("\n❌ Invalid choice. Please select 0-5, S, or U.")
             input("Press Enter to continue...")
 
 # ============================================================================
