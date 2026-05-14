@@ -474,6 +474,13 @@ def print_dashboard(config: Dict, config_path: Path):
         perm_status = "❓ Not checked"
     print(f"  [5] Check AWS Permissions                  {perm_status}")
 
+    # Cross-account roles count
+    cross_roles = config.get('cross_account_roles', {})
+    real_cross_roles = {k: v for k, v in cross_roles.items() if validate_account_id(k)}
+    role_count = len(real_cross_roles)
+    role_status = f"{role_count} configured" if role_count else "None configured"
+    print(f"  [6] Cross-Account Roles                    {role_status}")
+
     # Actions
     print("\nActions:")
     print("  [S] Save & Exit")
@@ -483,26 +490,29 @@ def print_dashboard(config: Dict, config_path: Path):
 
 def config_wizard(config: Dict):
     """
-    First-run wizard: account mappings → default regions → deps → perms.
+    First-run wizard: account mappings → default regions → deps → perms → cross-account roles.
 
-    Steps the user through the four essential setup tasks in sequence.
+    Steps the user through the five essential setup tasks in sequence.
     Re-entrant — safe to run on an already-configured system.
     """
     print_section("CONFIG WIZARD")
-    print("This wizard walks you through the four essential setup steps.")
+    print("This wizard walks you through the five essential setup steps.")
     print("You can skip any step by pressing Enter with no input where prompted.\n")
 
-    input("Step 1/4 — Account Mappings  (press Enter to begin) ")
+    input("Step 1/5 — Account Mappings  (press Enter to begin) ")
     manage_account_mappings(config)
 
-    input("\nStep 2/4 — Default Regions  (press Enter to begin) ")
+    input("\nStep 2/5 — Default Regions  (press Enter to begin) ")
     configure_default_regions(config)
 
-    input("\nStep 3/4 — Dependencies Check  (press Enter to begin) ")
+    input("\nStep 3/5 — Dependencies Check  (press Enter to begin) ")
     dependency_management_menu()
 
-    input("\nStep 4/4 — AWS Permissions Check  (press Enter to begin) ")
+    input("\nStep 4/5 — AWS Permissions Check  (press Enter to begin) ")
     permissions_management_menu()
+
+    input("\nStep 5/5 — Cross-Account Roles  (press Enter to begin) ")
+    manage_cross_account_roles(config)
 
     print("\n✅ Config Wizard complete.")
     input("Press Enter to return to the main menu...")
@@ -519,7 +529,7 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (0-5, S to save, U to exit): ").strip().upper()
+        choice = input("\nSelect option (0-6, S to save, U to exit): ").strip().upper()
 
         if choice == '0':
             config_wizard(config)
@@ -533,6 +543,8 @@ def main_menu_loop(config: Dict, config_path: Path):
             dependency_management_menu()
         elif choice == '5':
             permissions_management_menu()
+        elif choice == '6':
+            manage_cross_account_roles(config)
         elif choice == 'S':
             # Save & Exit
             if _config_modified:
@@ -571,7 +583,7 @@ def main_menu_loop(config: Dict, config_path: Path):
                 print("\n✅ Exiting...")
                 return
         else:
-            print("\n❌ Invalid choice. Please select 0-5, S, or U.")
+            print("\n❌ Invalid choice. Please select 0-6, S, or U.")
             input("Press Enter to continue...")
 
 # ============================================================================
@@ -773,6 +785,119 @@ def configure_default_regions(config: Dict):
             print("  ❌ Invalid choice. Enter 1, C, or 0.")
 
     input("\nPress Enter to return to menu...")
+
+
+# ============================================================================
+# CROSS-ACCOUNT ROLES
+# ============================================================================
+
+_ROLE_ARN_RE = re.compile(r"^arn:(aws|aws-us-gov):iam::\d{12}:role/.+$")
+
+
+def manage_cross_account_roles(config: Dict):
+    """
+    Interactive menu for managing cross-account IAM role mappings.
+
+    Mirrors manage_account_mappings() — [A]dd, [R]emove, [B]ack.
+    Validates role ARN format before delegating to utils.
+    """
+    global _config_modified
+
+    while True:
+        print_section("CROSS-ACCOUNT ROLES")
+
+        roles = config.get('cross_account_roles', {})
+        # Filter comment keys
+        real_roles = {k: v for k, v in sorted(roles.items()) if validate_account_id(k)}
+
+        print(f"\nCurrent Cross-Account Roles ({len(real_roles)}):")
+        if real_roles:
+            for idx, (account_id, role_arn) in enumerate(real_roles.items(), 1):
+                print(f"  {idx}. {account_id} → {role_arn}")
+        else:
+            print("  None configured")
+
+        print("\nOptions:")
+        print("  [A] Add role")
+        print("  [R] Remove role")
+        print("  [B] Back to main menu")
+
+        choice = input("\nSelect option (A/R/B): ").strip().upper()
+
+        if choice == 'A':
+            while True:
+                account_id = input("\nEnter target AWS Account ID (12 digits): ").strip()
+                if not account_id:
+                    break
+                if not validate_account_id(account_id):
+                    print("❌ Invalid account ID. Must be exactly 12 digits (e.g., 123456789012)")
+                    continue
+                break
+
+            if not account_id:
+                continue
+
+            role_arn = input(f"Enter IAM role ARN for account {account_id}: ").strip()
+            if not role_arn:
+                print("\n❌ Role ARN cannot be empty")
+                continue
+
+            if not _ROLE_ARN_RE.match(role_arn):
+                print(
+                    "\n❌ Invalid role ARN format. Expected:"
+                    "\n   arn:aws:iam::<12-digit-id>:role/<role-name>"
+                    "\n   arn:aws-us-gov:iam::<12-digit-id>:role/<role-name>"
+                )
+                input("Press Enter to continue...")
+                continue
+
+            if utils.add_cross_account_role(account_id, role_arn):
+                roles[account_id] = role_arn
+                config['cross_account_roles'] = roles
+                _config_modified = True
+                print(f"\n✅ Added: {account_id} → {role_arn}")
+            else:
+                print(f"\n❌ Failed to add role for account {account_id}")
+            input("Press Enter to continue...")
+
+        elif choice == 'R':
+            if not real_roles:
+                print("\n❌ No roles configured to remove")
+                input("Press Enter to continue...")
+                continue
+
+            account_id = input("\nEnter Account ID to remove role for: ").strip()
+            if not validate_account_id(account_id):
+                print("❌ Invalid account ID. Must be exactly 12 digits.")
+                input("Press Enter to continue...")
+                continue
+
+            if account_id not in roles:
+                print(f"\n❌ No role configured for account {account_id}")
+                input("Press Enter to continue...")
+                continue
+
+            confirm = input(
+                f"Remove role for {account_id} ({roles[account_id]})? (y/n): "
+            ).lower().strip()
+            if confirm == 'y':
+                if utils.remove_cross_account_role(account_id):
+                    del roles[account_id]
+                    config['cross_account_roles'] = roles
+                    _config_modified = True
+                    print(f"\n✅ Removed role for account {account_id}")
+                else:
+                    print(f"\n❌ Failed to remove role for account {account_id}")
+            else:
+                print("\n↩ Cancelled")
+            input("Press Enter to continue...")
+
+        elif choice == 'B':
+            return
+
+        else:
+            print("\n❌ Invalid choice. Please select A, R, or B.")
+
 
 # ============================================================================
 # DEPENDENCY MANAGEMENT

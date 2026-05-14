@@ -1970,6 +1970,14 @@ CONFIG_DATA: Dict[str, Any] = {}
 _CONFIG_LOADED: bool = False
 _CONFIG_LOCK: threading.Lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# STS credential cache — keyed by (role_arn, region), stores (creds_dict, expiry)
+# ---------------------------------------------------------------------------
+
+_STS_CACHE: Dict[Tuple[str, Optional[str]], Tuple[Dict[str, str], datetime.datetime]] = {}
+_STS_CACHE_LOCK: threading.Lock = threading.Lock()
+_STS_CACHE_REFRESH_MARGIN: datetime.timedelta = datetime.timedelta(minutes=5)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -2246,6 +2254,145 @@ def get_account_name_formatted(owner_id: str) -> str:
     if owner_id in mappings:
         return f"{mappings[owner_id]} ({owner_id})"
     return owner_id
+
+
+# ---------------------------------------------------------------------------
+# Cross-account role management
+# ---------------------------------------------------------------------------
+
+_ROLE_ARN_RE = re.compile(
+    r"^arn:(aws|aws-us-gov):iam::\d{12}:role/.+$"
+)
+
+
+def get_cross_account_roles() -> Dict[str, str]:
+    """
+    Return the cross_account_roles map from config (account_id → role_arn).
+
+    Returns:
+        Dict[str, str]: Mapping of account_id to role ARN. Empty dict if not configured.
+    """
+    _, cfg = get_config()
+    roles = cfg.get("cross_account_roles", {})
+    # Filter comment keys — only return valid 12-digit account IDs
+    return {k: v for k, v in roles.items() if is_valid_aws_account_id(k)}
+
+
+def add_cross_account_role(account_id: str, role_arn: str) -> bool:
+    """
+    Add or update a cross-account role mapping in config.json.
+
+    Mirrors add_account_mapping() — atomic write (tmp + os.replace) with
+    in-memory cache update after successful file write.
+
+    Args:
+        account_id: 12-digit AWS account ID of the target account.
+        role_arn: IAM role ARN to assume (must match arn:(aws|aws-us-gov):iam::...).
+
+    Returns:
+        bool: True on success, False on validation failure or I/O error.
+    """
+    log = logging.getLogger(__name__)
+
+    if not is_valid_aws_account_id(account_id):
+        log.error("Invalid AWS account ID: %s", account_id)
+        return False
+
+    if not _ROLE_ARN_RE.match(role_arn):
+        log.error(
+            "Invalid role ARN format: %s — expected arn:(aws|aws-us-gov):iam::<12-digit-id>:role/<name>",
+            role_arn,
+        )
+        return False
+
+    try:
+        # Ensure config is loaded before acquiring lock
+        get_config()
+
+        config_file = _config_path()
+
+        with _CONFIG_LOCK:
+            if not config_file.exists():
+                log.error("config.json not found — cannot add cross-account role")
+                return False
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            if "cross_account_roles" not in config:
+                config["cross_account_roles"] = {}
+
+            config["cross_account_roles"][account_id] = role_arn
+
+            tmp_path = config_file.with_suffix(".json.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            os.replace(tmp_path, config_file)
+
+            # Update in-memory cache after successful write
+            CONFIG_DATA.setdefault("cross_account_roles", {})[account_id] = role_arn
+
+        log.info("Added cross-account role: %s → %s", account_id, role_arn)
+        return True
+
+    except Exception as e:
+        log.error("Failed to add cross-account role: %s", e)
+        return False
+
+
+def remove_cross_account_role(account_id: str) -> bool:
+    """
+    Remove a cross-account role mapping from config.json.
+
+    Atomic write (tmp + os.replace) with in-memory cache update.
+
+    Args:
+        account_id: 12-digit AWS account ID whose role mapping to remove.
+
+    Returns:
+        bool: True on success, False if not found or on I/O error.
+    """
+    log = logging.getLogger(__name__)
+
+    if not is_valid_aws_account_id(account_id):
+        log.error("Invalid AWS account ID: %s", account_id)
+        return False
+
+    try:
+        get_config()
+
+        config_file = _config_path()
+
+        with _CONFIG_LOCK:
+            if not config_file.exists():
+                log.error("config.json not found — cannot remove cross-account role")
+                return False
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            roles = config.get("cross_account_roles", {})
+            if account_id not in roles:
+                log.warning("No cross-account role found for account %s", account_id)
+                return False
+
+            del roles[account_id]
+            config["cross_account_roles"] = roles
+
+            tmp_path = config_file.with_suffix(".json.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            os.replace(tmp_path, config_file)
+
+            # Update in-memory cache
+            CONFIG_DATA.get("cross_account_roles", {}).pop(account_id, None)
+
+        log.info("Removed cross-account role for account %s", account_id)
+        return True
+
+    except Exception as e:
+        log.error("Failed to remove cross-account role: %s", e)
+        return False
 
 
 # =============================================================================
@@ -2747,14 +2894,128 @@ def detect_partition(region_name: Optional[str] = None) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _assume_role_cached(
+    role_arn: str,
+    region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Assume an IAM role via STS and return temporary credentials, using an
+    in-memory cache keyed by (role_arn, region_name).  Credentials are
+    refreshed automatically when within 5 minutes of expiry.
+
+    Args:
+        role_arn: Full IAM role ARN to assume.
+        region_name: AWS region for the STS call (None = default).
+        profile_name: Named profile for the caller session.
+
+    Returns:
+        Dict with keys: AccessKeyId, SecretAccessKey, SessionToken.
+
+    Raises:
+        ValueError: If the role ARN partition mismatches the detected partition.
+        botocore.exceptions.ClientError: On STS API errors (after retries).
+    """
+    log = logging.getLogger(__name__)
+    cache_key: Tuple[str, Optional[str]] = (role_arn, region_name)
+
+    # Validate partition alignment before any STS call
+    arn_partition = role_arn.split(":")[1] if role_arn.startswith("arn:") else ""
+    caller_partition = detect_partition(region_name)
+    if arn_partition and arn_partition != caller_partition:
+        raise ValueError(
+            f"Role ARN partition '{arn_partition}' does not match detected partition "
+            f"'{caller_partition}' for region '{region_name}'. Use a "
+            f"{'arn:aws-us-gov:' if caller_partition == 'aws-us-gov' else 'arn:aws:'} "
+            f"role ARN for this environment."
+        )
+
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    with _STS_CACHE_LOCK:
+        if cache_key in _STS_CACHE:
+            creds, expiry = _STS_CACHE[cache_key]
+            if now < expiry - _STS_CACHE_REFRESH_MARGIN:
+                log.debug("STS cache hit for role %s", role_arn)
+                return creds
+
+        # Extract account_id from ARN for session name
+        try:
+            account_id = role_arn.split(":")[4]
+        except IndexError:
+            account_id = "unknown"
+
+        session_name = f"stratusscan-{account_id}"[:64]
+
+        # Build caller session (uses profile / env creds, not the assumed role)
+        profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
+        caller_session = boto3.Session(region_name=region_name, profile_name=profile)
+
+        # FIPS for GovCloud STS
+        sts_kwargs: Dict[str, Any] = {}
+        if region_name and region_name.startswith("us-gov-"):
+            sts_kwargs["use_fips_endpoint"] = True
+
+        sts_client = caller_session.client("sts", **sts_kwargs)
+
+        # Assume role with exponential backoff for ThrottlingException
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response = sts_client.assume_role(
+                    RoleArn=role_arn,
+                    RoleSessionName=session_name,
+                    DurationSeconds=3600,
+                )
+                break
+            except botocore.exceptions.ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "")
+                if error_code in ("Throttling", "ThrottlingException") and attempt < max_attempts - 1:
+                    backoff = (2 ** attempt) * 0.5
+                    log.warning(
+                        "STS assume_role throttled (attempt %d/%d); retrying in %.1fs",
+                        attempt + 1,
+                        max_attempts,
+                        backoff,
+                    )
+                    time.sleep(backoff)
+                else:
+                    raise
+
+        raw = response["Credentials"]
+        creds = {
+            "AccessKeyId": raw["AccessKeyId"],
+            "SecretAccessKey": raw["SecretAccessKey"],
+            "SessionToken": raw["SessionToken"],
+        }
+        expiry = raw["Expiration"]
+        # Expiration may already be timezone-aware
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+
+        _STS_CACHE[cache_key] = (creds, expiry)
+        log.info("Assumed role %s (expires %s)", role_arn, expiry.isoformat())
+        return creds
+
+
 def get_aws_session(
     region_name: Optional[str] = None,
     profile_name: Optional[str] = None,
+    role_arn: Optional[str] = None,
 ) -> boto3.Session:
     """
     Create a boto3 session for the specified region.
 
-    Profile resolution order:
+    When ``role_arn`` is provided the caller's default session is used to call
+    STS ``AssumeRole`` and a new session is built from the resulting temporary
+    credentials.  A thread-safe cache avoids redundant STS calls; credentials
+    are refreshed automatically within 5 minutes of expiry.
+
+    Partition validation: raises ``ValueError`` if the role ARN partition does
+    not match the partition implied by ``region_name`` (e.g., passing an
+    ``arn:aws-us-gov:`` ARN in a commercial region or vice versa).
+
+    Profile resolution order (when role_arn is None):
       1. ``profile_name`` argument (explicit caller override)
       2. ``_SCRIPT_ARGS.profile`` set by ``parse_script_args()``
       3. boto3 default (AWS_PROFILE env var, ~/.aws/config default)
@@ -2762,15 +3023,33 @@ def get_aws_session(
     Args:
         region_name: AWS region (None = default from config)
         profile_name: AWS named profile (None = use CLI arg or boto3 default)
+        role_arn: IAM role ARN to assume for cross-account access (optional)
 
     Returns:
         boto3.Session: Configured session
+
+    Raises:
+        ValueError: If role_arn partition mismatches the detected partition.
     """
+    if role_arn:
+        creds = _assume_role_cached(role_arn, region_name=region_name, profile_name=profile_name)
+        return boto3.Session(
+            aws_access_key_id=creds["AccessKeyId"],
+            aws_secret_access_key=creds["SecretAccessKey"],
+            aws_session_token=creds["SessionToken"],
+            region_name=region_name,
+        )
+
     profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
     return boto3.Session(region_name=region_name, profile_name=profile)
 
 
-def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) -> BaseClient:
+def get_boto3_client(
+    service: str,
+    region_name: Optional[str] = None,
+    role_arn: Optional[str] = None,
+    **kwargs,
+) -> BaseClient:
     """
     Create boto3 client with standard configuration including retries.
 
@@ -2778,9 +3057,13 @@ def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) 
     (``us-gov-west-1``, ``us-gov-east-1``). This is a security-critical property
     that must survive any refactoring.
 
+    When ``role_arn`` is provided, credentials are obtained via STS
+    ``AssumeRole`` (with caching) before creating the client.
+
     Args:
         service: AWS service name (e.g., 'ec2', 'iam', 's3')
         region_name: AWS region name (optional)
+        role_arn: IAM role ARN for cross-account access (optional)
         **kwargs: Additional arguments to pass to client creation
 
     Returns:
@@ -2802,7 +3085,7 @@ def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) 
     if region_name and region_name.startswith("us-gov-") and "use_fips_endpoint" not in kwargs:
         kwargs["use_fips_endpoint"] = True
 
-    session = get_aws_session(region_name)
+    session = get_aws_session(region_name, role_arn=role_arn)
     return session.client(service, config=config, **kwargs)
 
 
