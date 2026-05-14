@@ -57,7 +57,7 @@ _logging_configured = False
 def get_version() -> str:
     """Return the installed package version, or 'dev' if not installed."""
     try:
-        return _pkg_version("stratusscan-cli")
+        return _pkg_version("stratusscancli-aws")
     except PackageNotFoundError:
         return "dev"
 

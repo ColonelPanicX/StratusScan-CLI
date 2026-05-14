@@ -499,7 +499,7 @@ def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
 
     Args:
         scripts_dir: Path to the scripts directory. If None, resolves relative
-                     to this file's grandparent (i.e., stratusscan-cli/scripts/).
+                     to this file's grandparent (i.e., stratusscancli-aws/scripts/).
 
     Returns:
         Dict with keys 'missing' and 'found', each containing a list of
