@@ -57,19 +57,10 @@ utils.log_script_start("stratusscan.py", "AWS Resource Scanner Main Menu")
 utils.log_system_info()
 
 # ---------------------------------------------------------------------------
-# Navigation signals — raised by prompt_with_navigation() for b / x / q input
+# Navigation signals — imported from utils so all modules share one hierarchy
 # ---------------------------------------------------------------------------
 
-class BackSignal(BaseException):
-    """Raised when the user enters 'b' to return to the parent menu."""
-
-
-class ExitToMainSignal(BaseException):
-    """Raised when the user enters 'x' to exit directly to the main menu."""
-
-
-class QuitSignal(BaseException):
-    """Raised when the user enters 'q' to quit StratusScan."""
+from utils import BackSignal, ExitToMainSignal, QuitSignal
 
 
 def prompt_with_navigation(prompt_text: str) -> str:

@@ -60,6 +60,22 @@ logger = None
 _logging_configured = False
 
 
+# ---------------------------------------------------------------------------
+# Navigation signals — raised by prompt_menu() for b / x input
+# ---------------------------------------------------------------------------
+
+class BackSignal(Exception):
+    """Raised when the user enters 'b' to return to the parent menu."""
+
+
+class ExitToMainSignal(Exception):
+    """Raised when the user enters 'x' to exit directly to the main menu."""
+
+
+class QuitSignal(Exception):
+    """Raised when the user enters 'q' to quit."""
+
+
 def get_version() -> str:
     """Return the installed package version, or 'dev' if not installed."""
     try:
@@ -203,7 +219,7 @@ def prompt_menu(
     options: List[str],
     allow_back: bool = True,
     allow_exit: bool = True,
-) -> Union[int, str]:
+) -> int:
     """
     Display a bordered numbered menu and return the user's choice.
 
@@ -214,9 +230,12 @@ def prompt_menu(
         allow_exit: If True, show and accept 'x' to exit (default: True)
 
     Returns:
-        int 1..N if the user picks a numbered option,
-        'back' if the user enters 'b' (and allow_back is True),
-        'exit' if the user enters 'x' (and allow_exit is True).
+        int 1..N if the user picks a numbered option.
+
+    Raises:
+        BackSignal: if the user enters 'b' (and allow_back is True).
+        QuitSignal: if the user enters 'x' (and allow_exit is True) or
+            presses Ctrl-C.
     """
     if is_auto_run():
         return 1
@@ -247,14 +266,14 @@ def prompt_menu(
         except KeyboardInterrupt:
             print()
             if allow_exit:
-                return 'exit'
+                raise QuitSignal
             continue
 
         if choice in valid:
             if choice == 'b':
-                return 'back'
+                raise BackSignal
             if choice == 'x':
-                return 'exit'
+                raise QuitSignal
             return int(choice)
         print("Invalid choice. Please try again.")
 
@@ -297,10 +316,11 @@ def prompt_region_selection(
     ]
 
     while True:
-        choice = prompt_menu("REGION SELECTION", options)
-        if choice == 'back':
+        try:
+            choice = prompt_menu("REGION SELECTION", options)
+        except BackSignal:
             return 'back'
-        if choice == 'exit':
+        except QuitSignal:
             return 'exit'
 
         if choice == 1:
