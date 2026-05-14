@@ -32,8 +32,10 @@ Deployment Structure:
 - Account mappings and configuration are stored in config.json
 """
 
+import argparse
 import contextlib
 import datetime
+import logging
 import os
 import subprocess
 import sys
@@ -815,10 +817,79 @@ def navigate_menus():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="stratusscan",
+        description="StratusScanCLI-AWS — export AWS resource inventories to Excel",
+        add_help=True,
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"StratusScanCLI-AWS {utils.get_version()}"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate credentials and config, show what would run, then exit",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="enable debug-level console output",
+    )
+    return parser
+
+
+def _run_dry_run() -> None:
+    """Validate credentials and config, print a summary, then exit 0."""
+    print("\nStratusScanCLI-AWS — dry run")
+    print("=" * 60)
+
+    ok, account_id, account_name = utils.validate_aws_credentials()
+    if not ok:
+        print("  [✗] AWS credentials: not found or invalid")
+        print("\nDry run failed. Configure credentials before running.")
+        sys.exit(1)
+
+    print(f"  [✓] AWS credentials: valid")
+    print(f"  [✓] Account: {account_name} ({account_id})")
+
+    partition = utils.detect_partition()
+    print(f"  [✓] Partition: {partition}")
+
+    config, _ = utils.get_config()
+    print(f"  [✓] Config: loaded")
+
+    # Count available scripts
+    scripts_dir = Path(__file__).parent / "scripts"
+    script_count = len(list(scripts_dir.glob("*_export.py")))
+    print(f"  [✓] Export scripts available: {script_count}")
+
+    print("=" * 60)
+    print("Dry run complete. No exports were run.")
+    sys.exit(0)
+
+
 def main():
     """
     Main function to display the menu and handle script execution.
     """
+    parser = _build_parser()
+    # parse_known_args so unrecognised flags don't abort interactive mode
+    args, _ = parser.parse_known_args()
+
+    if args.verbose:
+        # Lower the console handler to DEBUG so all log output reaches stdout
+        for handler in logging.getLogger("stratusscan").handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, logging.FileHandler
+            ):
+                handler.setLevel(logging.DEBUG)
+        utils.log_debug("Verbose mode enabled")
+
+    if args.dry_run:
+        _run_dry_run()
+        return  # sys.exit(0) called inside, but be explicit
+
     try:
         utils.log_section("STARTING MAIN MENU NAVIGATION")
         navigate_menus()
@@ -831,7 +902,6 @@ def main():
         utils.log_error("Error in main function", e)
         sys.exit(1)
     finally:
-        # Log script completion
         utils.log_script_end("stratusscan.py", SCRIPT_START_TIME)
 
 if __name__ == "__main__":
