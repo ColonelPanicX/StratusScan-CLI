@@ -42,6 +42,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export KMS keys and aliases to Excel")
 
 
 def scan_kms_keys_in_region(region: str, account_id: str) -> List[Dict[str, Any]]:

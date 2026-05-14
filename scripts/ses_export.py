@@ -26,6 +26,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon SES identities and configuration to Excel")
 
 # Setup logging
 logger = utils.setup_logging('ses-export')

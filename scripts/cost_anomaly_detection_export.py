@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Cost Anomaly Detection monitors and alerts to Excel")
 
 utils.setup_logging('cost-anomaly-detection-export')
 

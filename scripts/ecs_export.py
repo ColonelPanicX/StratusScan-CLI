@@ -54,6 +54,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export ECS clusters, services, and tasks to Excel")
 @utils.aws_error_handler("Getting account information", default_return=("UNKNOWN", "UNKNOWN-ACCOUNT"))
 def get_account_info():
     """

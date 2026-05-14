@@ -44,6 +44,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export VPC route tables to Excel")
 def get_all_regions():
     """Get list of all available AWS regions for the current partition."""
     try:

@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Service Catalog portfolios and products to Excel")
 
 @utils.aws_error_handler("Listing portfolios", default_return=[])
 def list_portfolios(region: str) -> List[Dict[str, Any]]:

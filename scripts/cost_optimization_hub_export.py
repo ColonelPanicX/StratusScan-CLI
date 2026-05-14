@@ -38,6 +38,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Cost Optimization Hub recommendations to Excel")
 
 utils.setup_logging("cost-optimization-hub-export")
 

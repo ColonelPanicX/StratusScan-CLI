@@ -25,6 +25,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export ACM Private Certificate Authority resources to Excel")
 
 try:
     import pandas as pd

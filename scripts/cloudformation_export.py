@@ -40,6 +40,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export CloudFormation stacks and resources to Excel")
 
 @utils.aws_error_handler("Collecting CloudFormation stacks", default_return=[])
 def collect_stacks(region: str) -> List[Dict[str, Any]]:

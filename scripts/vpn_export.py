@@ -47,6 +47,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export VPN connections and customer gateways to Excel")
 
 
 def scan_vpn_connections_in_region(region: str) -> List[Dict[str, Any]]:

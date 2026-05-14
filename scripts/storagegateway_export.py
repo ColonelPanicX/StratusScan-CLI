@@ -27,6 +27,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Storage Gateway resources to Excel")
 
 # Third-party imports (will be checked by dependency_check)
 import pandas as pd

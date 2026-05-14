@@ -40,6 +40,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export EC2 Reserved Instances to Excel")
 
 utils.setup_logging('reserved-instances-export')
 

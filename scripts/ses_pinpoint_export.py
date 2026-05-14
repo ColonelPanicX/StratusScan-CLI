@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon SES and Pinpoint resources to Excel")
 
 utils.setup_logging('ses-pinpoint-export')
 

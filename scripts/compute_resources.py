@@ -26,6 +26,7 @@ try:
 except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
+args = utils.parse_script_args("Export all compute resources (EC2, EKS, ECS, Lambda, etc.) to Excel")
 
 utils.setup_logging('compute-resources')
 

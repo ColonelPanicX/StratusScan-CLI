@@ -42,6 +42,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export DynamoDB tables and capacity to Excel")
 
 
 def scan_dynamodb_tables_in_region(region: str) -> List[Dict[str, Any]]:
