@@ -1743,18 +1743,19 @@ def main():
 
         while True:
             if step == 1:
-                result = utils.prompt_menu(
-                    "IAM IDENTITY CENTER EXPORT OPTIONS",
-                    [
-                        "Users",
-                        "Groups",
-                        "Permission Sets",
-                        "All IAM Identity Center Resources (Users + Groups + Permission Sets)",
-                    ],
-                )
-                if result == 'back':
+                try:
+                    result = utils.prompt_menu(
+                        "IAM IDENTITY CENTER EXPORT OPTIONS",
+                        [
+                            "Users",
+                            "Groups",
+                            "Permission Sets",
+                            "All IAM Identity Center Resources (Users + Groups + Permission Sets)",
+                        ],
+                    )
+                except utils.BackSignal:
                     sys.exit(10)
-                if result == 'exit':
+                except utils.QuitSignal:
                     sys.exit(11)
                 choice = result
                 step = 2

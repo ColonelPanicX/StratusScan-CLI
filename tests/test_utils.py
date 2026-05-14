@@ -301,15 +301,15 @@ class TestPromptMenu:
             result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
         assert result == 1
 
-    def test_back_returns_string(self):
+    def test_back_raises_signal(self):
         with patch('builtins.input', return_value='b'):
-            result = utils.prompt_menu("TEST MENU", ["Option A"])
-        assert result == 'back'
+            with pytest.raises(utils.BackSignal):
+                utils.prompt_menu("TEST MENU", ["Option A"])
 
-    def test_exit_returns_string(self):
+    def test_exit_raises_signal(self):
         with patch('builtins.input', return_value='x'):
-            result = utils.prompt_menu("TEST MENU", ["Option A"])
-        assert result == 'exit'
+            with pytest.raises(utils.QuitSignal):
+                utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_invalid_then_valid(self):
         with patch('builtins.input', side_effect=['z', '2']):
@@ -346,7 +346,7 @@ class TestPromptRegionSelectionNew:
 
     def test_back_returns_string(self, monkeypatch):
         monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
-        with patch('utils.prompt_menu', return_value='back'), \
+        with patch('utils.prompt_menu', side_effect=utils.BackSignal), \
              patch('utils.get_default_regions', return_value=['us-east-1']), \
              patch('utils.detect_partition', return_value='aws'):
             result = utils.prompt_region_selection()
@@ -354,7 +354,7 @@ class TestPromptRegionSelectionNew:
 
     def test_exit_returns_string(self, monkeypatch):
         monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
-        with patch('utils.prompt_menu', return_value='exit'), \
+        with patch('utils.prompt_menu', side_effect=utils.QuitSignal), \
              patch('utils.get_default_regions', return_value=['us-east-1']), \
              patch('utils.detect_partition', return_value='aws'):
             result = utils.prompt_region_selection()

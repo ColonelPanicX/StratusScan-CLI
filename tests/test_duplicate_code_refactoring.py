@@ -62,7 +62,7 @@ class TestEnsureDependencies(unittest.TestCase):
 
         self.assertFalse(result)
         mock_log_warning.assert_called()
-        mock_log_error.assert_called_with("Cannot continue without required packages")
+        mock_log_error.assert_called_with("Cannot continue without required packages. Run manually: pip install pandas")
 
     @patch('builtins.__import__')
     @patch('builtins.input', return_value='y')
@@ -197,7 +197,7 @@ class TestPromptRegionSelection(unittest.TestCase):
         self.assertIsInstance(regions, list)
         self.assertGreater(len(regions), 0)
 
-    @patch('utils.prompt_menu', return_value='back')
+    @patch('utils.prompt_menu', side_effect=utils.BackSignal)
     @patch('utils.get_default_regions', return_value=['us-east-1'])
     @patch('utils.detect_partition', return_value='aws')
     def test_back_returns_string(self, mock_partition, mock_defaults, mock_menu):
@@ -205,7 +205,7 @@ class TestPromptRegionSelection(unittest.TestCase):
         result = utils.prompt_region_selection()
         self.assertEqual(result, 'back')
 
-    @patch('utils.prompt_menu', return_value='exit')
+    @patch('utils.prompt_menu', side_effect=utils.QuitSignal)
     @patch('utils.get_default_regions', return_value=['us-east-1'])
     @patch('utils.detect_partition', return_value='aws')
     def test_exit_returns_string(self, mock_partition, mock_defaults, mock_menu):

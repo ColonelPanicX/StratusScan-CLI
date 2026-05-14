@@ -1515,18 +1515,19 @@ def main():
 
         while True:
             if step == 1:
-                result = utils.prompt_menu(
-                    "IAM EXPORT OPTIONS",
-                    [
-                        "IAM Users",
-                        "IAM Roles",
-                        "IAM Policies",
-                        "All IAM Resources (Users + Roles + Policies)",
-                    ],
-                )
-                if result == 'back':
+                try:
+                    result = utils.prompt_menu(
+                        "IAM EXPORT OPTIONS",
+                        [
+                            "IAM Users",
+                            "IAM Roles",
+                            "IAM Policies",
+                            "All IAM Resources (Users + Roles + Policies)",
+                        ],
+                    )
+                except utils.BackSignal:
                     sys.exit(10)
-                if result == 'exit':
+                except utils.QuitSignal:
                     sys.exit(11)
                 choice = result
                 step = 2
@@ -1534,17 +1535,18 @@ def main():
             elif step == 2:
                 # Policy scope sub-menu only for choice 3 (Policies)
                 if choice == 3:
-                    result = utils.prompt_menu(
-                        "POLICY SCOPE",
-                        [
-                            "Customer Managed Policies only",
-                            "Customer Managed + AWS Managed Policies",
-                        ],
-                    )
-                    if result == 'back':
+                    try:
+                        result = utils.prompt_menu(
+                            "POLICY SCOPE",
+                            [
+                                "Customer Managed Policies only",
+                                "Customer Managed + AWS Managed Policies",
+                            ],
+                        )
+                    except utils.BackSignal:
                         step = 1
                         continue
-                    if result == 'exit':
+                    except utils.QuitSignal:
                         sys.exit(11)
                     include_aws_managed = (result == 2)
                     step = 3
