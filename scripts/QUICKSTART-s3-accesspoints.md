@@ -11,7 +11,7 @@ Exports all S3 Access Points configurations from your AWS account:
 
 ```bash
 # Navigate to StratusScan directory
-cd /path/to/stratusscan-cli
+cd /path/to/stratusscancli-aws
 
 # Run the script
 python scripts/s3-accesspoints-export.py

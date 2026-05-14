@@ -264,7 +264,7 @@ Could not get details for MRAP {name}: ...
 ## Output File Location
 
 ```
-/home/asimov/code/github/public/stratusscan-cli/output/{account-name}-s3-accesspoints-all-export-{MM.DD.YYYY}.xlsx
+/home/asimov/code/projects/stratusscancli-aws/output/{account-name}-s3-accesspoints-all-export-{MM.DD.YYYY}.xlsx
 ```
 
 ## Dependencies
