@@ -1342,13 +1342,11 @@ def ensure_dependencies(*packages: str) -> bool:
     response = input("Would you like to install these packages now? (y/n): ").lower().strip()
 
     if response != 'y':
-        log_error("Cannot continue without required packages")
-        print("Exiting. Please install required packages manually with:")
-        print(f"  pip install {' '.join(missing)}")
+        log_error(f"Cannot continue without required packages. Run manually: pip install {' '.join(missing)}")
         return False
 
     # Install missing packages
-    print(f"Installing: {' '.join(missing)}")
+    log_warning(f"Installing: {' '.join(missing)}")
     try:
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install"] + missing
