@@ -18,8 +18,6 @@ import sys
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import utils
-import sslib.config
-import sslib.aws_client
 
 
 class TestMaskAccountId:
@@ -46,19 +44,19 @@ class TestAccountMapping:
 
     def test_get_account_name_with_mapping(self):
         """Test retrieval of account name when mapping exists."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {'123456789012': 'PROD-ACCOUNT'}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {'123456789012': 'PROD-ACCOUNT'}):
             result = utils.get_account_name('123456789012')
             assert result == 'PROD-ACCOUNT'
 
     def test_get_account_name_with_default(self):
         """Test fallback to default when no mapping exists."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             result = utils.get_account_name('999999999999', default='TEST-DEFAULT')
             assert result == 'TEST-DEFAULT'
 
     def test_get_account_name_default_fallback(self):
         """Test default fallback value is used."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             result = utils.get_account_name('999999999999')
             assert result == 'UNKNOWN-ACCOUNT'
 
@@ -135,7 +133,7 @@ class TestRegionValidation:
 class TestAccountInfo:
     """Test account information retrieval."""
 
-    @patch('sslib.aws_client.get_boto3_client')
+    @patch('utils.get_boto3_client')
     def test_get_account_info_success(self, mock_get_client):
         """Test successful account info retrieval."""
         mock_sts = Mock()
@@ -145,14 +143,14 @@ class TestAccountInfo:
         }
         mock_get_client.return_value = mock_sts
 
-        with patch.object(sslib.aws_client, '_account_info_cache', None), \
-             patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {'123456789012': 'TEST-ACCOUNT'}):
+        with patch.object(utils, '_account_info_cache', None), \
+             patch.object(utils, 'ACCOUNT_MAPPINGS', {'123456789012': 'TEST-ACCOUNT'}):
             account_id, account_name = utils.get_account_info()
             assert account_id == '123456789012'
             assert account_name == 'TEST-ACCOUNT'
             mock_sts.get_caller_identity.assert_called_once()
 
-    @patch('sslib.aws_client.get_boto3_client')
+    @patch('utils.get_boto3_client')
     def test_get_account_info_with_fallback(self, mock_get_client):
         """Test account info with fallback for unmapped account."""
         mock_sts = Mock()
@@ -162,8 +160,8 @@ class TestAccountInfo:
         }
         mock_get_client.return_value = mock_sts
 
-        with patch.object(sslib.aws_client, '_account_info_cache', None), \
-             patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, '_account_info_cache', None), \
+             patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             account_id, account_name = utils.get_account_info()
             assert account_id == '999999999999'
             assert '999999999999' in account_name
@@ -172,7 +170,7 @@ class TestAccountInfo:
 class TestBoto3ClientCreation:
     """Test boto3 client creation with retry configuration."""
 
-    @patch('sslib.aws_client.boto3.Session')
+    @patch('utils.boto3.Session')
     def test_get_boto3_client_basic(self, mock_session):
         """Test basic client creation."""
         # Setup mock
@@ -194,7 +192,7 @@ class TestBoto3ClientCreation:
         # Check config was passed
         assert 'config' in call_args[1]
 
-    @patch('sslib.aws_client.boto3.Session')
+    @patch('utils.boto3.Session')
     def test_get_boto3_client_with_retries(self, mock_session):
         """Test client includes retry configuration."""
         # Setup mock
