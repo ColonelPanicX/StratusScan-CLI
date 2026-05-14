@@ -43,6 +43,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export AWS Certificate Manager certificates to Excel")
 
 
 def scan_acm_certificates_in_region(region: str) -> List[Dict[str, Any]]:

@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon Verified Permissions policy stores to Excel")
 
 utils.setup_logging('verifiedpermissions-export')
 

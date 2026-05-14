@@ -42,6 +42,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Compute Optimizer recommendations to Excel")
 @utils.aws_error_handler("Getting available regions", default_return=[
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
     'ca-central-1', 'eu-west-1', 'eu-west-2', 'eu-central-1',

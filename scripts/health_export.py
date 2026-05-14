@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Health events and affected entities to Excel")
 
 @utils.aws_error_handler("Collecting Health events", default_return=[])
 def collect_health_events(region: str, time_filter: Dict[str, Any]) -> List[Dict[str, Any]]:

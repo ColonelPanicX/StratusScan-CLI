@@ -46,6 +46,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Security Hub findings and standards to Excel")
 
 # Setup logging
 logger = utils.setup_logging('security-hub-export')

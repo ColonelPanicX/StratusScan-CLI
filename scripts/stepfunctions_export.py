@@ -28,6 +28,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Step Functions state machines to Excel")
 
 try:
     import pandas as pd

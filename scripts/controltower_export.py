@@ -32,6 +32,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Control Tower landing zone configuration to Excel")
 
 try:
     import pandas as pd

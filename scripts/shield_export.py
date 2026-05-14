@@ -50,6 +50,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Shield Advanced protections to Excel")
 
 
 @utils.aws_error_handler("Checking Shield Advanced subscription", default_return=None)

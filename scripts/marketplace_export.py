@@ -23,6 +23,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Marketplace subscriptions to Excel")
 
 try:
     import pandas as pd

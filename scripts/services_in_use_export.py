@@ -37,6 +37,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Discover AWS services in use and export inventory to Excel")
 
 # Setup logging
 logger = utils.setup_logging('services-in-use-export')

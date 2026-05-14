@@ -26,6 +26,7 @@ try:
 except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
+args = utils.parse_script_args("Export all storage resources (S3, EFS, EBS, etc.) to Excel")
 
 utils.setup_logging('storage-resources')
 

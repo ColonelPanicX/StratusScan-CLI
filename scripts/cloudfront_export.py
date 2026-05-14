@@ -45,6 +45,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export CloudFront distributions to Excel")
 
 
 @utils.aws_error_handler("Collecting CloudFront distributions", default_return=[])

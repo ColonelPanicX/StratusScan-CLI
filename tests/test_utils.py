@@ -431,3 +431,101 @@ class TestPromptConfirmation:
         monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
         result = utils.prompt_confirmation("Ready to export?")
         assert result == 'confirm'
+
+
+class TestParseScriptArgs:
+    """Tests for parse_script_args() and the _SCRIPT_ARGS module store."""
+
+    def _parse(self, argv: list, monkeypatch) -> "utils.argparse.Namespace":
+        """Helper: patch sys.argv, reset _SCRIPT_ARGS, and call parse_script_args."""
+        monkeypatch.setattr(sys, "argv", ["script.py"] + argv)
+        # Reset the global store before each parse so tests are independent
+        utils._SCRIPT_ARGS = None
+        return utils.parse_script_args("Test script description")
+
+    def test_single_region(self, monkeypatch):
+        args = self._parse(["--region", "us-east-1"], monkeypatch)
+        assert args.region == "us-east-1"
+        assert args.regions is None
+        assert args.all_regions is False
+
+    def test_multiple_regions(self, monkeypatch):
+        args = self._parse(["--regions", "us-east-1,us-west-2"], monkeypatch)
+        assert args.regions == "us-east-1,us-west-2"
+        region_list = [r.strip() for r in args.regions.split(",")]
+        assert len(region_list) == 2
+        assert "us-east-1" in region_list
+        assert "us-west-2" in region_list
+
+    def test_all_regions_flag(self, monkeypatch):
+        args = self._parse(["--all-regions"], monkeypatch)
+        assert args.all_regions is True
+        assert args.region is None
+        assert args.regions is None
+
+    def test_region_and_all_regions_mutually_exclusive(self, monkeypatch):
+        """--region and --all-regions together must raise SystemExit."""
+        monkeypatch.setattr(sys, "argv", ["script.py", "--region", "us-east-1", "--all-regions"])
+        utils._SCRIPT_ARGS = None
+        with pytest.raises(SystemExit):
+            utils.parse_script_args("Test script description")
+
+    def test_yes_flag(self, monkeypatch):
+        args = self._parse(["--yes"], monkeypatch)
+        assert args.yes is True
+
+    def test_yes_short_flag(self, monkeypatch):
+        args = self._parse(["-y"], monkeypatch)
+        assert args.yes is True
+
+    def test_profile(self, monkeypatch):
+        args = self._parse(["--profile", "my-profile"], monkeypatch)
+        assert args.profile == "my-profile"
+
+    def test_output_dir(self, monkeypatch):
+        args = self._parse(["--output-dir", "/tmp/test"], monkeypatch)
+        assert args.output_dir == "/tmp/test"
+
+    def test_defaults_when_no_args(self, monkeypatch):
+        args = self._parse([], monkeypatch)
+        assert args.region is None
+        assert args.regions is None
+        assert args.all_regions is False
+        assert args.yes is False
+        assert args.profile is None
+        assert args.output_dir == "output"
+
+    def test_sets_module_global(self, monkeypatch):
+        """parse_script_args() must populate utils._SCRIPT_ARGS."""
+        utils._SCRIPT_ARGS = None
+        args = self._parse(["--region", "eu-west-1"], monkeypatch)
+        assert utils._SCRIPT_ARGS is not None
+        assert utils._SCRIPT_ARGS.region == "eu-west-1"
+        assert utils.get_script_args() is utils._SCRIPT_ARGS
+
+    def test_get_script_args_returns_none_before_parse(self):
+        """get_script_args() returns None when parse_script_args() has not run."""
+        utils._SCRIPT_ARGS = None
+        assert utils.get_script_args() is None
+
+    def test_prompt_region_selection_respects_region_flag(self, monkeypatch):
+        """prompt_region_selection() must return single-item list when --region set."""
+        args = self._parse(["--region", "ap-southeast-1"], monkeypatch)
+        result = utils.prompt_region_selection()
+        assert result == ["ap-southeast-1"]
+
+    def test_prompt_region_selection_respects_regions_flag(self, monkeypatch):
+        """prompt_region_selection() must return list when --regions set."""
+        args = self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
+        result = utils.prompt_region_selection()
+        assert result == ["us-east-1", "eu-west-1"]
+
+    def test_prompt_for_confirmation_respects_yes_flag(self, monkeypatch):
+        """prompt_for_confirmation() must return True when --yes set."""
+        self._parse(["--yes"], monkeypatch)
+        result = utils.prompt_for_confirmation("Continue?")
+        assert result is True
+
+    def teardown_method(self, method):
+        """Reset _SCRIPT_ARGS after each test to avoid cross-test contamination."""
+        utils._SCRIPT_ARGS = None

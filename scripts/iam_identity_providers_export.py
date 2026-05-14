@@ -24,6 +24,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export IAM identity providers to Excel")
 
 try:
     import pandas as pd

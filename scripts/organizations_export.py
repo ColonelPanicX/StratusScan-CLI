@@ -53,6 +53,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export AWS Organizations structure and SCPs to Excel")
 
 def convert_datetime_to_string(dt_obj):
     """

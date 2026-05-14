@@ -44,6 +44,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon Detective graphs and findings to Excel")
 
 
 @utils.aws_error_handler("Collecting Detective graphs", default_return=[])

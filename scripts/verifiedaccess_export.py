@@ -35,6 +35,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Verified Access instances and groups to Excel")
 
 def format_tags(tags: List[Dict[str, str]]) -> str:
     """Format tags for display."""

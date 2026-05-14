@@ -46,6 +46,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export EC2 security groups and rules to Excel")
 
 def is_valid_aws_region(region_name):
     """

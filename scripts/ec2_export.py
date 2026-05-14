@@ -51,6 +51,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export EC2 instances to Excel")
 
 def get_os_info_from_ssm(instance_id, region):
     """

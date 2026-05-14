@@ -59,6 +59,17 @@ logger = None
 # Tracks whether setup_logging() has been explicitly called
 _logging_configured = False
 
+# ---------------------------------------------------------------------------
+# Script args store — populated by parse_script_args() at script start
+# ---------------------------------------------------------------------------
+
+_SCRIPT_ARGS: Optional["argparse.Namespace"] = None
+
+
+def get_script_args() -> Optional["argparse.Namespace"]:
+    """Return the parsed script args namespace, or None if not yet parsed."""
+    return _SCRIPT_ARGS
+
 
 # ---------------------------------------------------------------------------
 # Navigation signals — raised by prompt_menu() for b / x input
@@ -299,6 +310,16 @@ def prompt_region_selection(
             return auto_regions
         _partition = detect_partition()
         return get_partition_regions(_partition, all_regions=True)
+
+    # CLI flag override — takes precedence over interactive prompts
+    if _SCRIPT_ARGS is not None:
+        if _SCRIPT_ARGS.region:
+            return [_SCRIPT_ARGS.region]
+        if _SCRIPT_ARGS.regions:
+            return [r.strip() for r in _SCRIPT_ARGS.regions.split(",") if r.strip()]
+        if _SCRIPT_ARGS.all_regions:
+            _partition = detect_partition()
+            return get_partition_regions(_partition, all_regions=True)
 
     partition = detect_partition()
     default_regions = get_default_regions()
@@ -654,6 +675,10 @@ def prompt_for_confirmation(message: str = "Do you want to continue?", default: 
     if is_auto_run():
         return default
 
+    # CLI flag override — --yes / -y skips confirmation
+    if _SCRIPT_ARGS is not None and _SCRIPT_ARGS.yes:
+        return True
+
     # TODO: Issue #C — add b/x navigation support here
     default_prompt = " (Y/n): " if default else " (y/N): "
     response = input(f"{message}{default_prompt}").strip().lower()
@@ -792,18 +817,23 @@ def get_output_dir() -> Path:
     """
     Get the path to the output directory and create it if it doesn't exist.
 
+    Resolution order:
+      1. ``_SCRIPT_ARGS.output_dir`` set by ``parse_script_args()`` (absolute
+         path is used as-is; relative path is resolved from CWD)
+      2. ``output/`` subdirectory of the StratusScan project root
+
     Returns:
-        Path: Path to the output directory
+        Path: Path to the output directory (guaranteed to exist)
     """
-    # Get StratusScan root directory
-    root_dir = get_stratusscan_root()
+    if _SCRIPT_ARGS is not None and _SCRIPT_ARGS.output_dir != "output":
+        output_dir = Path(_SCRIPT_ARGS.output_dir)
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+    else:
+        root_dir = get_stratusscan_root()
+        output_dir = root_dir / "output"
 
-    # Define the output directory path
-    output_dir = root_dir / "output"
-
-    # Create the directory if it doesn't exist
-    output_dir.mkdir(exist_ok=True)
-
+    output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
 def get_output_filepath(filename: str) -> Path:
@@ -2542,6 +2572,70 @@ def get_auto_regions() -> Optional[List[str]]:
     return [r.strip() for r in val.split(",") if r.strip()] if val else None
 
 
+def parse_script_args(script_description: str) -> "argparse.Namespace":
+    """
+    Parse standard CLI arguments for an exporter script.
+
+    Must be called at the top of each exporter script (after ``import utils``)
+    to populate the module-level ``_SCRIPT_ARGS`` store.  Subsequent calls to
+    ``prompt_region_selection()``, ``prompt_for_confirmation()``,
+    ``get_aws_session()``, and ``create_export_filename()`` read from this
+    store automatically — no per-script wiring required.
+
+    Uses ``parse_known_args()`` so that pytest's own argv does not cause
+    errors when test files import exporter modules.
+
+    Args:
+        script_description: One-line description shown in ``--help`` output.
+
+    Returns:
+        argparse.Namespace with attributes:
+            region, regions, all_regions, profile, output_dir, yes
+    """
+    import argparse  # lazy import — keeps argparse out of the global namespace
+
+    global _SCRIPT_ARGS
+
+    parser = argparse.ArgumentParser(description=script_description)
+
+    region_group = parser.add_mutually_exclusive_group()
+    region_group.add_argument(
+        "--region",
+        help="Single AWS region to scan (e.g. us-east-1)",
+    )
+    region_group.add_argument(
+        "--regions",
+        help="Comma-separated list of AWS regions to scan (e.g. us-east-1,us-west-2)",
+    )
+    region_group.add_argument(
+        "--all-regions",
+        action="store_true",
+        dest="all_regions",
+        help="Scan all available regions for the detected partition",
+    )
+
+    parser.add_argument(
+        "--profile",
+        help="AWS named profile to use for authentication",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="output",
+        dest="output_dir",
+        help="Output directory for exported files (default: output/)",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompts (non-interactive mode)",
+    )
+
+    args, _ = parser.parse_known_args()
+    _SCRIPT_ARGS = args
+    return args
+
+
 # ---------------------------------------------------------------------------
 # Region validation
 # ---------------------------------------------------------------------------
@@ -2653,17 +2747,27 @@ def detect_partition(region_name: Optional[str] = None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_aws_session(region_name: Optional[str] = None) -> boto3.Session:
+def get_aws_session(
+    region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
+) -> boto3.Session:
     """
     Create a boto3 session for the specified region.
 
+    Profile resolution order:
+      1. ``profile_name`` argument (explicit caller override)
+      2. ``_SCRIPT_ARGS.profile`` set by ``parse_script_args()``
+      3. boto3 default (AWS_PROFILE env var, ~/.aws/config default)
+
     Args:
         region_name: AWS region (None = default from config)
+        profile_name: AWS named profile (None = use CLI arg or boto3 default)
 
     Returns:
         boto3.Session: Configured session
     """
-    return boto3.Session(region_name=region_name)
+    profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
+    return boto3.Session(region_name=region_name, profile_name=profile)
 
 
 def get_boto3_client(service: str, region_name: Optional[str] = None, **kwargs) -> BaseClient:

@@ -41,6 +41,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Systems Manager fleet and patch data to Excel")
 
 
 def _scan_managed_instances_region(region: str) -> List[Dict[str, Any]]:

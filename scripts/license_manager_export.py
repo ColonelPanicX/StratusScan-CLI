@@ -38,6 +38,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS License Manager configurations to Excel")
 
 @utils.aws_error_handler("Collecting license configurations", default_return=[])
 def collect_license_configurations(region: str) -> List[Dict[str, Any]]:

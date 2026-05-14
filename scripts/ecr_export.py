@@ -43,6 +43,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Elastic Container Registry repositories and images to Excel")
 
 
 def scan_ecr_repositories_in_region(region: str) -> List[Dict[str, Any]]:

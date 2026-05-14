@@ -26,6 +26,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS X-Ray groups and sampling rules to Excel")
 
 try:
     import pandas as pd

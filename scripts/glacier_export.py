@@ -27,6 +27,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export S3 Glacier vaults to Excel")
 
 try:
     import pandas as pd
