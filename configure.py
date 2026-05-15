@@ -548,28 +548,41 @@ def config_wizard(config: Dict):
     Steps the user through six essential setup tasks in sequence.
     Re-entrant — safe to run on an already-configured system.
     """
+    _clr = lambda: os.system('cls' if os.name == 'nt' else 'clear')
+
+    _clr()
     print_section("CONFIG WIZARD")
     print("This wizard walks you through six essential setup steps.")
     print("You can skip any step by pressing Enter with no input where prompted.\n")
-
     input("Step 1/6 — Account Mappings  (press Enter to begin) ")
     manage_account_mappings(config)
 
-    input("\nStep 2/6 — Export Format  (press Enter to begin) ")
+    _clr()
+    print("✅ Step 1/6 complete — Account Mappings\n")
+    input("Step 2/6 — Export Format  (press Enter to begin) ")
     configure_output_settings(config)
 
-    input("\nStep 3/6 — Default Regions  (press Enter to begin) ")
+    _clr()
+    print("✅ Step 2/6 complete — Export Format\n")
+    input("Step 3/6 — Default Regions  (press Enter to begin) ")
     configure_default_regions(config)
 
-    input("\nStep 4/6 — Dependencies Check  (press Enter to begin) ")
+    _clr()
+    print("✅ Step 3/6 complete — Default Regions\n")
+    input("Step 4/6 — Dependencies Check  (press Enter to begin) ")
     dependency_management_menu()
 
-    input("\nStep 5/6 — AWS Permissions Check  (press Enter to begin) ")
+    _clr()
+    print("✅ Step 4/6 complete — Dependencies Check\n")
+    input("Step 5/6 — AWS Permissions Check  (press Enter to begin) ")
     permissions_management_menu()
 
-    input("\nStep 6/6 — Cross-Account Roles  (press Enter to begin) ")
+    _clr()
+    print("✅ Step 5/6 complete — AWS Permissions Check\n")
+    input("Step 6/6 — Cross-Account Roles  (press Enter to begin) ")
     manage_cross_account_roles(config)
 
+    _clr()
     print("\n✅ Config Wizard complete.")
     input("Press Enter to return to the main menu...")
 
@@ -682,6 +695,7 @@ def manage_account_mappings(config: Dict):
     global _config_modified
 
     while True:
+        os.system('cls' if os.name == 'nt' else 'clear')
         print_section("MANAGE ACCOUNT MAPPINGS")
 
         mappings = config.get('account_mappings', {})
@@ -704,9 +718,24 @@ def manage_account_mappings(config: Dict):
         choice = input("\nSelect option (A/E/D/B): ").strip().upper()
 
         if choice == 'A':
-            # Add new account
+            # Fetch current account identity for defaults
+            identity = get_current_account_info()
+            default_id = identity['account_id'] if identity and identity.get('account_id') != 'Unknown' else ''
+            default_name = ''
+            if identity and default_id:
+                try:
+                    iam = utils.get_boto3_client('iam', identity['default_region'])
+                    aliases = iam.list_account_aliases().get('AccountAliases', [])
+                    if aliases:
+                        default_name = aliases[0]
+                except Exception:
+                    pass
+
+            account_id = ''
             while True:
-                account_id = input("\nEnter AWS Account ID (12 digits): ").strip()
+                prompt = f"\nEnter AWS Account ID [{default_id}]: " if default_id else "\nEnter AWS Account ID (12 digits): "
+                raw = input(prompt).strip()
+                account_id = raw if raw else default_id
                 if not account_id:
                     break
                 if validate_account_id(account_id):
@@ -719,7 +748,9 @@ def manage_account_mappings(config: Dict):
                     print("❌ Invalid account ID. Must be exactly 12 digits (e.g., 123456789012)")
 
             if account_id:
-                account_name = input(f"Enter friendly name for account {account_id}: ").strip()
+                prompt = f"Enter friendly name for account {account_id} [{default_name}]: " if default_name else f"Enter friendly name for account {account_id}: "
+                raw = input(prompt).strip()
+                account_name = raw if raw else default_name
                 if account_name:
                     mappings[account_id] = account_name
                     config['account_mappings'] = mappings

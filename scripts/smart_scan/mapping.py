@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Special category: Always recommended for security/compliance audits
 ALWAYS_RUN_SCRIPTS = [
-    "iam_comprehensive_export.py",
+    "iam_export.py",
     "cloudtrail_export.py",
     "config_export.py",
     "guardduty_export.py",
@@ -222,16 +222,10 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
     # Security, Identity & Compliance
     "AWS Identity and Access Management": [
         "iam_export.py",
-        "iam_comprehensive_export.py",
-        "iam_roles_export.py",
-        "iam_policies_export.py",
         "iam_identity_providers_export.py",
         "iam_rolesanywhere_export.py",
     ],
     "AWS IAM Identity Center": [
-        "iam_identity_center_comprehensive_export.py",
-        "iam_identity_center_permission_sets_export.py",
-        "iam_identity_center_groups_export.py",
         "iam_identity_center_export.py",
     ],
     "Amazon Cognito": ["cognito_export.py"],
@@ -312,7 +306,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
 # Script categories for organization
 SCRIPT_CATEGORIES: Dict[str, List[str]] = {
     "Security & Compliance": [
-        "iam_comprehensive_export.py",
+        "iam_export.py",
         "guardduty_export.py",
         "security_hub_export.py",
         "cloudtrail_export.py",
