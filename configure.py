@@ -426,6 +426,9 @@ def print_dashboard(config: Dict, config_path: Path):
     config_status = get_config_status(config, config_path)
     print_status_line("Configuration", config_status, 70)
 
+    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
+    print_status_line("Export Format", output_fmt, 70)
+
     print("╚" + "═" * 68 + "╝")
 
     # Main menu
@@ -481,6 +484,9 @@ def print_dashboard(config: Dict, config_path: Path):
     role_status = f"{role_count} configured" if role_count else "None configured"
     print(f"  [6] Cross-Account Roles                    {role_status}")
 
+    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
+    print(f"  [7] Output Format                          {output_fmt}")
+
     # Actions
     print("\nActions:")
     print("  [S] Save & Exit")
@@ -488,30 +494,80 @@ def print_dashboard(config: Dict, config_path: Path):
 
     print("\n" + "═" * 70)
 
+def configure_output_settings(config: Dict):
+    """
+    Configure the export output format (xlsx or csv).
+
+    Reads current output_settings from config, shows the current value, and
+    prompts the user to change it. Updates config in place and sets the
+    _config_modified flag when a change is made.
+
+    Args:
+        config (dict): Configuration dictionary (mutated in place)
+    """
+    global _config_modified
+
+    current_settings = config.get("output_settings", {})
+    current_fmt = current_settings.get("format", utils.detect_default_format())
+
+    print("\n" + "═" * 70)
+    print("OUTPUT FORMAT SETTINGS")
+    print("═" * 70)
+    print(f"  Current format: {current_fmt}")
+    print()
+    print("  [1] xlsx  — Excel workbook (requires openpyxl)")
+    print("  [2] csv   — Universal CSV (stdlib only, multi-sheet exports split into files)")
+    print()
+    choice = input("Select format (1/2, or Enter to keep current): ").strip()
+
+    if choice == "1":
+        new_fmt = "xlsx"
+    elif choice == "2":
+        new_fmt = "csv"
+    else:
+        print("  No change made.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    if new_fmt == current_fmt:
+        print(f"  Format already set to '{new_fmt}'. No change.")
+    else:
+        if "output_settings" not in config:
+            config["output_settings"] = {}
+        config["output_settings"]["format"] = new_fmt
+        _config_modified = True
+        print(f"  Export format set to '{new_fmt}'.")
+
+    input("\nPress Enter to return to menu...")
+
+
 def config_wizard(config: Dict):
     """
-    First-run wizard: account mappings → default regions → deps → perms → cross-account roles.
+    First-run wizard: account mappings → export format → default regions → deps → perms → cross-account roles.
 
-    Steps the user through the five essential setup tasks in sequence.
+    Steps the user through six essential setup tasks in sequence.
     Re-entrant — safe to run on an already-configured system.
     """
     print_section("CONFIG WIZARD")
-    print("This wizard walks you through the five essential setup steps.")
+    print("This wizard walks you through six essential setup steps.")
     print("You can skip any step by pressing Enter with no input where prompted.\n")
 
-    input("Step 1/5 — Account Mappings  (press Enter to begin) ")
+    input("Step 1/6 — Account Mappings  (press Enter to begin) ")
     manage_account_mappings(config)
 
-    input("\nStep 2/5 — Default Regions  (press Enter to begin) ")
+    input("\nStep 2/6 — Export Format  (press Enter to begin) ")
+    configure_output_settings(config)
+
+    input("\nStep 3/6 — Default Regions  (press Enter to begin) ")
     configure_default_regions(config)
 
-    input("\nStep 3/5 — Dependencies Check  (press Enter to begin) ")
+    input("\nStep 4/6 — Dependencies Check  (press Enter to begin) ")
     dependency_management_menu()
 
-    input("\nStep 4/5 — AWS Permissions Check  (press Enter to begin) ")
+    input("\nStep 5/6 — AWS Permissions Check  (press Enter to begin) ")
     permissions_management_menu()
 
-    input("\nStep 5/5 — Cross-Account Roles  (press Enter to begin) ")
+    input("\nStep 6/6 — Cross-Account Roles  (press Enter to begin) ")
     manage_cross_account_roles(config)
 
     print("\n✅ Config Wizard complete.")
@@ -529,7 +585,7 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (0-6, S to save, U to exit): ").strip().upper()
+        choice = input("\nSelect option (0-7, S to save, U to exit): ").strip().upper()
 
         if choice == '0':
             config_wizard(config)
@@ -545,6 +601,8 @@ def main_menu_loop(config: Dict, config_path: Path):
             permissions_management_menu()
         elif choice == '6':
             manage_cross_account_roles(config)
+        elif choice == '7':
+            configure_output_settings(config)
         elif choice == 'S':
             # Save & Exit
             if _config_modified:
@@ -583,7 +641,7 @@ def main_menu_loop(config: Dict, config_path: Path):
                 print("\n✅ Exiting...")
                 return
         else:
-            print("\n❌ Invalid choice. Please select 0-6, S, or U.")
+            print("\n❌ Invalid choice. Please select 0-7, S, or U.")
             input("Press Enter to continue...")
 
 # ============================================================================

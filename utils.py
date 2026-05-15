@@ -852,7 +852,8 @@ def create_export_filename(
     account_name: str,
     resource_type: str,
     suffix: str = "",
-    current_date: Optional[str] = None
+    current_date: Optional[str] = None,
+    fmt: Optional[str] = None
 ) -> str:
     """
     Create a standardized filename for exported data.
@@ -862,27 +863,34 @@ def create_export_filename(
         resource_type: Type of resource being exported (e.g., "ec2", "vpc")
         suffix: Optional suffix for the filename (e.g., "running", "all")
         current_date: Date to use in the filename (defaults to today)
+        fmt: Export format override ('xlsx' or 'csv'). Reads from config if None.
 
     Returns:
         str: Standardized filename with path
     """
+    # Resolve format: explicit arg > config > default
+    if fmt is None:
+        fmt = config_value("format", default="xlsx", section="output_settings")
+
+    ext = f".{fmt}"
+
     # Get current date if not provided
     if not current_date:
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
 
     # Build the base filename
     if suffix:
-        base_filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}{ext}"
     else:
-        base_filename = f"{account_name}-{resource_type}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-export-{current_date}{ext}"
 
     # Same-day overwrite protection: append -v2, -v3, etc. until the name is unique
     output_dir = get_output_dir()
     candidate = base_filename
     version = 2
     while (output_dir / candidate).exists():
-        stem = base_filename[: -len(".xlsx")]
-        candidate = f"{stem}-v{version}.xlsx"
+        stem = base_filename[: -len(ext)]
+        candidate = f"{stem}-v{version}{ext}"
         version += 1
 
     return candidate
@@ -898,32 +906,50 @@ def _adjust_column_widths(worksheet, df) -> None:
 
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_adjust_columns: bool = True, prepare: bool = False) -> Optional[str]:
     """
-    Save a pandas DataFrame to an Excel file in the output directory.
+    Save a pandas DataFrame to an Excel file (or CSV) in the output directory.
+
+    The output format is determined by the 'format' key in the 'output_settings'
+    config section ('xlsx' or 'csv'). Defaults to 'xlsx'.
 
     Args:
         df: pandas DataFrame to save
         filename: Name of the file to save
-        sheet_name: Name of the sheet in Excel
-        auto_adjust_columns: Whether to auto-adjust column widths
+        sheet_name: Name of the sheet in Excel (ignored for CSV)
+        auto_adjust_columns: Whether to auto-adjust column widths (xlsx only)
         prepare: If True, apply prepare_dataframe_for_export() before saving (default: False)
 
     Returns:
-        str: Full path to the saved file
+        str: Full path to the saved file, or None on error
     """
     try:
         # Import pandas here to avoid dependency issues
         import pandas as pd
 
+        # Resolve output format from config
+        fmt = config_value("format", default="xlsx", section="output_settings")
+
         # Prepare DataFrame if requested
         if prepare:
             df = prepare_dataframe_for_export(df)
 
-        # Get the full path
-        output_path = get_output_filepath(filename)
+        if fmt == "csv":
+            # Normalise filename: strip .xlsx if caller passed it, force .csv
+            if filename.endswith(".xlsx"):
+                filename = filename[:-5] + ".csv"
+            elif not filename.endswith(".csv"):
+                filename = filename + ".csv"
 
+            output_path = get_output_filepath(filename)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            df.to_csv(output_path, index=False)
+            logger.info(f"Data successfully exported to: {output_path}")
+            return str(output_path)
+
+        # --- xlsx path ---
         # Ensure the output directory exists
+        output_path = get_output_filepath(filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
+
         # Save to Excel
         if auto_adjust_columns:
             # Create Excel writer using context manager to ensure proper close/save
@@ -937,42 +963,43 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         else:
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
-        
+
         logger.info(f"Data successfully exported to: {output_path}")
-        
         return str(output_path)
-    
+
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}")
-        
-        # Try CSV as fallback
-        try:
-            csv_filename = filename.replace('.xlsx', '.csv')
-            csv_path = get_output_filepath(csv_filename)
-            
-            df.to_csv(csv_path, index=False)
-            logger.info(f"Saved as CSV instead: {csv_path}")
-            return str(csv_path)
-            
-        except Exception as csv_e:
-            logger.error(f"Error saving CSV file: {csv_e}")
-            return None
+        logger.error(f"Error saving file: {e}")
+        return None
 
 def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename: str, prepare: bool = False) -> Optional[str]:
     """
-    Save multiple pandas DataFrames to a single Excel file with multiple sheets.
+    Save multiple pandas DataFrames to a single Excel file with multiple sheets,
+    or to individual CSV files (one per sheet) when format is 'csv'.
+
+    The output format is determined by the 'format' key in the 'output_settings'
+    config section ('xlsx' or 'csv'). Defaults to 'xlsx'.
+
+    For CSV mode, each sheet is written as a separate file:
+        <base>-<sheet-slug>.csv
+    e.g. account-ec2-export-05.15.2026.xlsx + "EC2 Instances"
+         → account-ec2-export-05.15.2026-ec2-instances.csv
 
     Args:
         dataframes_dict: Dictionary of {sheet_name: dataframe}
-        filename: Name of the file to save
+        filename: Name of the base file to save
         prepare: If True, apply prepare_dataframe_for_export() to each DataFrame (default: False)
 
     Returns:
-        str: Full path to the saved file
+        str: Full path to the saved file (xlsx), or path of the first CSV written, or None on error
     """
+    import re as _re
+
     try:
         # Import pandas here to avoid dependency issues
         import pandas as pd
+
+        # Resolve output format from config
+        fmt = config_value("format", default="xlsx", section="output_settings")
 
         # Prepare DataFrames if requested
         if prepare:
@@ -981,11 +1008,31 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
                 for sheet_name, df in dataframes_dict.items()
             }
 
-        # Get the full path
-        output_path = get_output_filepath(filename)
+        output_dir = get_output_dir()
+        os.makedirs(output_dir, exist_ok=True)
 
-        # Ensure the output directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        if fmt == "csv":
+            # Strip any extension from the base filename to get a clean stem
+            base_stem = filename
+            for ext in (".xlsx", ".csv"):
+                if base_stem.endswith(ext):
+                    base_stem = base_stem[: -len(ext)]
+                    break
+
+            first_path: Optional[str] = None
+            for sheet_name, df in dataframes_dict.items():
+                slug = _re.sub(r'[^a-z0-9]+', '-', sheet_name.lower()).strip('-')
+                csv_filename = f"{base_stem}-{slug}.csv"
+                csv_path = output_dir / csv_filename
+                df.to_csv(csv_path, index=False)
+                logger.info(f"Data successfully exported to: {csv_path}")
+                if first_path is None:
+                    first_path = str(csv_path)
+
+            return first_path
+
+        # --- xlsx path ---
+        output_path = get_output_filepath(filename)
 
         # Create Excel writer using context manager to ensure proper close/save
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
@@ -996,13 +1043,31 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
-        
+
         logger.info(f"Data successfully exported to: {output_path}")
         return str(output_path)
-    
+
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}")
+        logger.error(f"Error saving file: {e}")
         return None
+
+def detect_default_format() -> str:
+    """
+    Detect the default export format based on available dependencies.
+
+    Returns 'xlsx' when openpyxl is importable, 'csv' otherwise. Intended
+    for use by configure.py at wizard time to pre-populate a sensible default.
+    The actual runtime format is always read from config by save functions.
+
+    Returns:
+        str: 'xlsx' or 'csv'
+    """
+    try:
+        import openpyxl  # noqa: F401
+        return "xlsx"
+    except ImportError:
+        return "csv"
+
 
 def create_aws_arn(service: str, resource: str, region: Optional[str] = None, account_id: Optional[str] = None) -> str:
     """

@@ -8,6 +8,10 @@
   },
   "agency_name": "YOUR-AGENCY",
   "default_regions": ["us-east-1", "us-west-2"],
+  "output_settings": {
+    "__comment": "Export format: xlsx (requires openpyxl) or csv. Set automatically by Config Wizard.",
+    "format": "xlsx"
+  },
   "resource_preferences": {
     "ec2": {
       "default_filter": "all", 
