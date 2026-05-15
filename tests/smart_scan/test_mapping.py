@@ -145,7 +145,7 @@ class TestAlwaysRunScripts:
     def test_security_scripts_in_always_run(self):
         """Verify critical security scripts are in always-run."""
         expected_scripts = [
-            "iam_comprehensive_export.py",
+            "iam_export.py",
             "cloudtrail_export.py",
             "guardduty_export.py",
             "security_groups_export.py",
@@ -271,7 +271,7 @@ class TestGetCategoryForScript:
 
     def test_security_script(self):
         """Test categorization of a security script."""
-        assert get_category_for_script("iam_comprehensive_export.py") == "Security & Compliance"
+        assert get_category_for_script("iam_export.py") == "Security & Compliance"
 
     def test_cost_management_script(self):
         """Test categorization of a cost management script."""

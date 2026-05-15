@@ -192,7 +192,7 @@ class TestGenerateRecommendations:
         assert "all_scripts" in result
         # Should include always-run scripts
         assert len(result["all_scripts"]) > 0
-        assert "iam_comprehensive_export.py" in result["all_scripts"]
+        assert "iam_export.py" in result["all_scripts"]
         assert "cloudtrail_export.py" in result["all_scripts"]
 
     def test_generate_without_always_run(self):
@@ -205,7 +205,7 @@ class TestGenerateRecommendations:
         # Should only have ec2-export.py
         assert "ec2_export.py" in result["all_scripts"]
         # Should not have always-run scripts
-        assert "iam_comprehensive_export.py" not in result["all_scripts"]
+        assert "iam_export.py" not in result["all_scripts"]
 
     def test_generate_with_services(self):
         """Test recommendations with actual services."""
@@ -321,7 +321,7 @@ class TestServiceAnalyzerIntegration:
         assert recommendations["coverage_stats"]["total_scripts_recommended"] > 2  # Scripts + always-run
         assert "ec2_export.py" in recommendations["all_scripts"]
         assert "s3_export.py" in recommendations["all_scripts"]
-        assert "iam_comprehensive_export.py" in recommendations["all_scripts"]
+        assert "iam_export.py" in recommendations["all_scripts"]
 
 
 if __name__ == "__main__":
