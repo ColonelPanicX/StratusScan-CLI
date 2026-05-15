@@ -39,6 +39,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -63,6 +64,9 @@ utils.log_system_info()
 # ---------------------------------------------------------------------------
 
 from utils import BackSignal, ExitToMainSignal, QuitSignal
+
+# Set to True after the interrupted-session notice is shown once per run
+_interruption_notice_shown: bool = False
 
 
 def prompt_with_navigation(prompt_text: str) -> str:
@@ -634,7 +638,7 @@ def display_main_menu():
         print(f"  [{option:>2}] {info['name']}")
 
     print("\n" + "─" * 70)
-    print("  o = org scan  |  q = quit")
+    print("  o = org scan  |  h = scan history  |  q = quit")
     print("─" * 70)
 
     return menu_structure, account_name
@@ -839,11 +843,54 @@ def run_org_scan() -> None:
     if answer != "y":
         return
 
+    script_file: Path = selected_script["file"]
+
+    # Build planned list for session tracking
+    planned = [
+        {
+            "key": acct_id,
+            "script": script_file.name,
+            "account_id": acct_id,
+            "account_name": utils.get_account_name(acct_id),
+        }
+        for acct_id in cross_account_roles
+    ]
+
+    # Check for an interrupted session for the same script; offer resume
+    skip_accounts: set = set()
+    interrupted_sessions = [
+        s for s in utils.get_interrupted_sessions()
+        if any(p.get("script") == script_file.name for p in s.get("planned", []))
+    ]
+    if interrupted_sessions:
+        prev = interrupted_sessions[0]
+        n_done = len(prev.get("results", []))
+        n_total = len(prev.get("planned", []))
+        resume_ans = input(
+            f"  Resume interrupted session ({n_done}/{n_total} accounts completed)? (y/n): "
+        ).strip().lower()
+        if resume_ans == "y":
+            session = prev
+            utils.resume_scan_session(session)
+            skip_accounts = {
+                r["key"] for r in session.get("results", []) if r.get("status") == "success"
+            }
+        else:
+            label = f"{selected_script['name']} ({script_file.name}) — {n_accounts} accounts"
+            session = utils.start_scan_session("org-scan", label, planned)
+    else:
+        label = f"{selected_script['name']} ({script_file.name}) — {n_accounts} accounts"
+        session = utils.start_scan_session("org-scan", label, planned)
+
     # Execute across all accounts
     results: list = []
-    script_file: Path = selected_script["file"]
     for acct_id, role_arn in cross_account_roles.items():
         acct_name = utils.get_account_name(acct_id)
+
+        if acct_id in skip_accounts:
+            print(f"  ⏭  Skipping {acct_name} ({acct_id}) — already completed")
+            continue
+
         print(f"\nScanning account: {acct_name} ({acct_id})...")
 
         child_env = os.environ.copy()
@@ -851,6 +898,7 @@ def run_org_scan() -> None:
         child_env["STRATUSSCAN_AUTO_RUN"] = "1"
 
         exit_code: int = 0
+        start_time = time.monotonic()
         try:
             result = subprocess.run(
                 [sys.executable, str(script_file)],
@@ -868,7 +916,21 @@ def run_org_scan() -> None:
             utils.log_error("Org scan: account %s unexpected error: %s", acct_id, exc)
             exit_code = -1
 
+        duration_s = time.monotonic() - start_time
+        status_str = "success" if exit_code == 0 else "failed"
+        utils.record_scan_result(
+            session,
+            acct_id,
+            status_str,
+            exit_code,
+            duration_s,
+            script=script_file.name,
+            account_id=acct_id,
+            account_name=acct_name,
+        )
         results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
+
+    utils.complete_scan_session(session)
 
     # Summary
     print(f"\nORG SCAN COMPLETE")
@@ -879,6 +941,61 @@ def run_org_scan() -> None:
         print(f"  {icon}  {r['acct_name']} ({r['acct_id']}) — {status}")
     print(SEP)
     input("\nPress Enter to return to menu...")
+
+
+def _show_session_detail(session: dict) -> None:
+    """Display per-item status for a single scan session."""
+    results_map = {r["key"]: r for r in session.get("results", [])}
+    planned = session.get("planned", [])
+    SEP = "─" * 70
+
+    print(f"\n{session.get('label', 'Session')} — {session.get('started_at', '')[:16]}")
+    print(SEP)
+
+    for item in planned:
+        key = item["key"]
+        if key in results_map:
+            r = results_map[key]
+            icon = "✅" if r["status"] == "success" else "❌"
+            label = item.get("account_name") or item.get("script") or key
+            print(f"  {icon} {label} ({key}) — {r['duration_s']}s")
+        else:
+            label = item.get("account_name") or item.get("script") or key
+            print(f"  ⏳ {label} ({key}) — not run")
+
+    print(SEP)
+    input("\nPress Enter to return...")
+
+
+def show_scan_history() -> None:
+    """Display recent scan sessions and allow drilling into details."""
+    sessions = utils.load_scan_sessions(10)
+    SEP = "─" * 70
+    print(f"\nSCAN HISTORY (last {len(sessions)} sessions)")
+    print(SEP)
+
+    if not sessions:
+        print("  No scan sessions found.")
+        input("\nPress Enter to return...")
+        return
+
+    for idx, s in enumerate(sessions, 1):
+        n_done = len(s.get("results", []))
+        n_total = len(s.get("planned", []))
+        status = s.get("status", "?")
+        icon = "✅" if status == "completed" else ("⚠ " if status == "running" else "?")
+        ts = s.get("started_at", "")[:16].replace("T", " ")
+        print(f"  [{idx}] {icon} {s.get('label', s.get('scan_type'))} — {n_done}/{n_total} | {ts}")
+
+    print(SEP)
+    print("  [#] View session details    [B] Back")
+    choice = input("\nSelect: ").strip().upper()
+    if choice == "B" or not choice:
+        return
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(sessions):
+            _show_session_detail(sessions[idx])
 
 
 def navigate_menus():
@@ -892,12 +1009,26 @@ def navigate_menus():
 
         ensure_directory_structure()
 
+        global _interruption_notice_shown
+
         while True:
             menu_structure, account_name = display_main_menu()
 
             if not menu_structure:
                 print("\nNo scripts found in the mapping. Please ensure script files exist in the scripts directory.")
                 sys.exit(1)
+
+            # Show interrupted-session notice once per process run
+            if not _interruption_notice_shown:
+                _interruption_notice_shown = True
+                interrupted = utils.get_interrupted_sessions()
+                if interrupted:
+                    s = interrupted[0]
+                    n_done = len(s.get("results", []))
+                    n_total = len(s.get("planned", []))
+                    ts = s.get("started_at", "")[:16].replace("T", " ")
+                    print(f"\n⚠  Interrupted scan: {s.get('label', s.get('scan_type', 'unknown'))} | {n_done}/{n_total} completed ({ts})")
+                    print("   Run [H] Scan History to view details or resume.\n")
 
             print("\nSelect an option:")
             try:
@@ -908,6 +1039,11 @@ def navigate_menus():
                 return
             except (BackSignal, ExitToMainSignal):
                 continue  # Already at main menu — just redisplay
+
+            # Scan history (special key — not in menu_structure dict)
+            if user_choice.upper() == "H":
+                show_scan_history()
+                continue
 
             if user_choice not in menu_structure:
                 print("Invalid selection. Please try again.")

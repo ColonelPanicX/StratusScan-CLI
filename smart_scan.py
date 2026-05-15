@@ -459,6 +459,42 @@ def main() -> None:
         utils.log_info("No scripts selected. Exiting.")
         return
 
+    # Build planned list for session persistence
+    planned = [{"key": s, "script": s} for s in sorted(selected_scripts)]
+
+    # Offer resume of an interrupted smart-scan session
+    session: dict
+    skip_scripts: Optional[set] = None
+    interrupted_smart = [
+        s for s in utils.get_interrupted_sessions()
+        if s.get("scan_type") == "smart-scan"
+    ]
+    if interrupted_smart and not utils.is_auto_run():
+        prev = interrupted_smart[0]
+        n_done = len(prev.get("results", []))
+        n_total = len(prev.get("planned", []))
+        ans = input(
+            f"  Resume interrupted smart scan? ({n_done}/{n_total} scripts done) [y/n]: "
+        ).strip().lower()
+        if ans == "y":
+            utils.resume_scan_session(prev)
+            session = prev
+            done_keys = {r["key"] for r in prev.get("results", []) if r.get("status") == "success"}
+            selected_scripts = selected_scripts - done_keys
+            skip_scripts = None  # already filtered from selected_scripts
+        else:
+            session = utils.start_scan_session(
+                "smart-scan",
+                f"Smart Scan ({len(selected_scripts)} scripts)",
+                planned,
+            )
+    else:
+        session = utils.start_scan_session(
+            "smart-scan",
+            f"Smart Scan ({len(selected_scripts)} scripts)",
+            planned,
+        )
+
     print(f"\n  Executing {len(selected_scripts)} scripts...\n")
     summary = execute_scripts(
         selected_scripts,
@@ -466,6 +502,8 @@ def main() -> None:
         save_log=True,
         regions=regions,
         show_output=False,
+        session=session,
+        skip_scripts=skip_scripts,
     )
 
     # Zip all output files produced by this run
