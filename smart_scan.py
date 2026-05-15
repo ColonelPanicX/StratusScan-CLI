@@ -12,6 +12,7 @@ Usage:
     STRATUSSCAN_AUTO_RUN=1 python smart_scan.py  # CI / headless (Quick Scan)
 """
 
+import os
 import sys
 import zipfile
 from datetime import datetime
@@ -320,9 +321,59 @@ def _zip_export_files(results: list, account_name: str) -> Optional[Path]:
         return None
 
 
+def _resume_from_session(session_path: str) -> None:
+    """
+    Execute the remaining scripts from an interrupted smart-scan session.
+    Skips service discovery entirely — uses the planned list from the session file.
+    """
+    import json
+    try:
+        session: dict = json.loads(Path(session_path).read_text(encoding="utf-8"))
+        session["_path"] = session_path
+    except Exception as exc:
+        print(f"\n  ❌ Could not load session: {exc}")
+        return
+
+    done_keys = {r["key"] for r in session.get("results", []) if r.get("status") == "success"}
+    all_planned = {p["key"] for p in session.get("planned", [])}
+    remaining = all_planned - done_keys
+
+    n_done = len(done_keys)
+    n_total = len(session.get("planned", []))
+
+    print(f"\n  Resuming Smart Scan: {n_done}/{n_total} scripts already complete")
+    print(f"  {len(remaining)} script(s) remaining\n")
+
+    if not remaining:
+        print("  ✅ All scripts already completed.")
+        utils.complete_scan_session(session)
+        return
+
+    regions = utils.prompt_region_selection()
+    utils.resume_scan_session(session)
+
+    print(f"\n  Executing {len(remaining)} scripts...\n")
+    execute_scripts(
+        remaining,
+        show_progress=True,
+        save_log=False,
+        regions=regions,
+        show_output=False,
+        session=session,
+        skip_scripts=None,
+    )
+
+
 def main() -> None:
     """Main Smart Scan workflow."""
     utils.log_script_start('smart-scan')
+
+    # Startup resume: stratusscan.py passes session path via env var
+    resume_path = os.environ.get("STRATUSSCAN_RESUME_SESSION_PATH", "")
+    if resume_path:
+        utils.print_script_banner("SMART SCAN — RESUME INTERRUPTED SESSION")
+        _resume_from_session(resume_path)
+        return
 
     account_id, account_name = utils.print_script_banner(
         "SMART SCAN — SERVICE DISCOVERY & RECOMMENDATIONS"

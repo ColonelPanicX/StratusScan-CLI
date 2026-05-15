@@ -65,8 +65,6 @@ utils.log_system_info()
 
 from utils import BackSignal, ExitToMainSignal, QuitSignal
 
-# Set to True after the interrupted-session notice is shown once per run
-_interruption_notice_shown: bool = False
 
 
 def prompt_with_navigation(prompt_text: str) -> str:
@@ -998,6 +996,137 @@ def show_scan_history() -> None:
             _show_session_detail(sessions[idx])
 
 
+def _resume_org_scan_from_session(session: dict) -> None:
+    """Execute remaining org-scan accounts from an interrupted session."""
+    planned = session.get("planned", [])
+    if not planned:
+        print("\n  ❌ Session has no planned entries — cannot resume.")
+        input("  Press Enter to return to menu...")
+        return
+
+    script_name = planned[0].get("script", "")
+    script_file = Path(__file__).parent / "scripts" / script_name
+    if not script_file.exists():
+        print(f"\n  ❌ Script {script_name} not found on disk — cannot resume.")
+        input("  Press Enter to return to menu...")
+        return
+
+    cross_account_roles = utils.get_cross_account_roles()
+    if not cross_account_roles:
+        print("\n  ❌ No cross-account roles configured.")
+        input("  Press Enter to return to menu...")
+        return
+
+    done_keys = {r["key"] for r in session.get("results", []) if r.get("status") == "success"}
+    remaining = {acct: role for acct, role in cross_account_roles.items() if acct not in done_keys}
+
+    SEP = "─" * 70
+    n_done = len(done_keys)
+    n_remaining = len(remaining)
+    print(f"\n  Script:   {script_name}")
+    print(f"  Done:     {n_done} account(s)")
+    print(f"  Pending:  {n_remaining} account(s)")
+    print(f"  {SEP}")
+
+    if not remaining:
+        print("\n  ✅ All accounts already completed. Marking session done.")
+        utils.complete_scan_session(session)
+        input("  Press Enter to return to menu...")
+        return
+
+    confirm = input(f"\n  Run {script_name} across {n_remaining} remaining account(s)? (y/n): ").strip().lower()
+    if confirm != "y":
+        return
+
+    utils.resume_scan_session(session)
+    results: list = []
+
+    for acct_id, role_arn in remaining.items():
+        acct_name = utils.get_account_name(acct_id)
+        print(f"\n  Scanning: {acct_name} ({acct_id})...")
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_ROLE_ARN"] = role_arn
+        child_env["STRATUSSCAN_AUTO_RUN"] = "1"
+        start_t = time.monotonic()
+        exit_code = 0
+        try:
+            proc = subprocess.run([sys.executable, str(script_file)], env=child_env, timeout=1800)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            utils.log_error("Resume org-scan: %s timed out", acct_id)
+            exit_code = -1
+        except Exception as exc:  # noqa: BLE001
+            utils.log_error("Resume org-scan: %s error: %s", acct_id, exc)
+            exit_code = -1
+        duration_s = time.monotonic() - start_t
+        status_str = "success" if exit_code == 0 else "failed"
+        utils.record_scan_result(session, acct_id, status_str, exit_code, duration_s,
+                                 script=script_name, account_id=acct_id, account_name=acct_name)
+        results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
+
+    utils.complete_scan_session(session)
+    print(f"\n  RESUME COMPLETE")
+    print(f"  {SEP}")
+    for r in results:
+        icon = "✅" if r["exit_code"] == 0 else "❌"
+        status = "success" if r["exit_code"] == 0 else f"failed ({r['exit_code']})"
+        print(f"  {icon}  {r['acct_name']} ({r['acct_id']}) — {status}")
+    print(f"  {SEP}")
+    input("\n  Press Enter to return to menu...")
+
+
+def _startup_interrupted_check() -> None:
+    """
+    If an interrupted scan session exists, surface it immediately at startup
+    with a Y/N resume prompt — before the main menu renders.
+    """
+    interrupted = utils.get_interrupted_sessions()
+    if not interrupted:
+        return
+
+    session = interrupted[0]
+    scan_type = session.get("scan_type", "")
+    label = session.get("label", scan_type)
+    n_done = len(session.get("results", []))
+    n_total = len(session.get("planned", []))
+    ts = session.get("started_at", "")[:16].replace("T", " ")
+
+    SEP = "─" * 60
+    print()
+    print(f"  {SEP}")
+    print(f"  ⚠  INTERRUPTED SCAN DETECTED")
+    print(f"  {SEP}")
+    print(f"  {label}")
+    print(f"  Started: {ts}  |  Completed: {n_done}/{n_total}")
+    print(f"  {SEP}")
+    print("  [Y] Resume now")
+    print("  [N] Skip — go to main menu")
+    print("  [H] View scan history")
+    print(f"  {SEP}")
+
+    choice = input("\n  Choice [Y/N/H]: ").strip().upper() or "N"
+
+    if choice == "H":
+        show_scan_history()
+        return
+
+    if choice != "Y":
+        return
+
+    if scan_type == "org-scan":
+        _resume_org_scan_from_session(session)
+    elif scan_type == "smart-scan":
+        session_path = session.get("_path", "")
+        smart_scan_path = Path(__file__).parent / "smart_scan.py"
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_RESUME_SESSION_PATH"] = session_path
+        subprocess.run([sys.executable, str(smart_scan_path)], env=child_env)
+        input("\n  Press Enter to return to menu...")
+    else:
+        print(f"\n  ❌ Unknown scan type '{scan_type}' — use [H] Scan History to view details.")
+        input("  Press Enter to return to menu...")
+
+
 def navigate_menus():
     """
     Display the main menu and handle user navigation through nested menus.
@@ -1008,8 +1137,7 @@ def navigate_menus():
             sys.exit(1)
 
         ensure_directory_structure()
-
-        global _interruption_notice_shown
+        _startup_interrupted_check()
 
         while True:
             menu_structure, account_name = display_main_menu()
@@ -1017,18 +1145,6 @@ def navigate_menus():
             if not menu_structure:
                 print("\nNo scripts found in the mapping. Please ensure script files exist in the scripts directory.")
                 sys.exit(1)
-
-            # Show interrupted-session notice once per process run
-            if not _interruption_notice_shown:
-                _interruption_notice_shown = True
-                interrupted = utils.get_interrupted_sessions()
-                if interrupted:
-                    s = interrupted[0]
-                    n_done = len(s.get("results", []))
-                    n_total = len(s.get("planned", []))
-                    ts = s.get("started_at", "")[:16].replace("T", " ")
-                    print(f"\n⚠  Interrupted scan: {s.get('label', s.get('scan_type', 'unknown'))} | {n_done}/{n_total} completed ({ts})")
-                    print("   Run [H] Scan History to view details or resume.\n")
 
             print("\nSelect an option:")
             try:
