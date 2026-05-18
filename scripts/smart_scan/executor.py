@@ -441,12 +441,23 @@ class ScriptExecutor:
         print("=" * 80)
         print()
 
-    def execute_all(self, show_progress: bool = True) -> Dict[str, Any]:
+    def execute_all(
+        self,
+        show_progress: bool = True,
+        session: Optional[dict] = None,
+        skip_scripts: Optional[Set[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Execute all scripts in sequence.
 
         Args:
             show_progress: Whether to show progress display
+            session: Optional scan session dict from utils.start_scan_session().
+                     When provided, each completed script is recorded via
+                     utils.record_scan_result() and the session is marked
+                     complete after all scripts finish.
+            skip_scripts: Optional set of script filenames to skip (already
+                          completed in a prior session being resumed).
 
         Returns:
             Dictionary with execution summary:
@@ -462,6 +473,14 @@ class ScriptExecutor:
         batch_start = datetime.now()
 
         for script_name in self.scripts:
+            # Skip scripts already completed in a resumed session
+            if skip_scripts and script_name in skip_scripts:
+                if show_progress:
+                    self._show_progress(script_name)
+                    print(f"⏭  Skipped (already completed in prior session)")
+                    print()
+                continue
+
             # Find script path
             script_path = self._find_script_path(script_name)
 
@@ -481,6 +500,10 @@ class ScriptExecutor:
                     self._show_progress(script_name)
                     print(f"✗ Script not found: {script_name}")
                     print()
+                if session is not None:
+                    utils.record_scan_result(
+                        session, script_name, "failed", -1, 0.0, script=script_name
+                    )
                 continue
 
             # Show progress
@@ -491,6 +514,18 @@ class ScriptExecutor:
             result = self._execute_script(script_path)
             self.results.append(result)
 
+            # Persist result to session file
+            if session is not None:
+                status_str = "success" if result.success else "failed"
+                utils.record_scan_result(
+                    session,
+                    script_name,
+                    status_str,
+                    result.return_code,
+                    result.duration_seconds,
+                    script=script_name,
+                )
+
             # Brief pause between scripts
             if show_progress:
                 print()
@@ -498,6 +533,10 @@ class ScriptExecutor:
 
         batch_end = datetime.now()
         total_duration = (batch_end - batch_start).total_seconds()
+
+        # Mark session complete
+        if session is not None:
+            utils.complete_scan_session(session)
 
         # Show summary
         if show_progress:
@@ -584,6 +623,8 @@ def execute_scripts(
     save_log: bool = False,
     regions: Optional[List[str]] = None,
     show_output: bool = True,
+    session: Optional[dict] = None,
+    skip_scripts: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Execute multiple scripts in batch.
@@ -595,12 +636,20 @@ def execute_scripts(
         regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS
         show_output: When True, stream script stdout to console in real time.
                      When False, capture silently (for future TUI use).
+        session: Optional scan session dict from utils.start_scan_session().
+                 When provided, results are persisted to disk after each script.
+        skip_scripts: Optional set of script filenames to skip (already
+                      completed in a resumed session).
 
     Returns:
         Execution summary dictionary
     """
     executor = ScriptExecutor(scripts, regions=regions, show_output=show_output)
-    summary = executor.execute_all(show_progress=show_progress)
+    summary = executor.execute_all(
+        show_progress=show_progress,
+        session=session,
+        skip_scripts=skip_scripts,
+    )
 
     if save_log:
         executor.save_execution_log()

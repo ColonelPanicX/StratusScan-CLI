@@ -12,6 +12,7 @@ Usage:
     STRATUSSCAN_AUTO_RUN=1 python smart_scan.py  # CI / headless (Quick Scan)
 """
 
+import os
 import sys
 import zipfile
 from datetime import datetime
@@ -320,9 +321,59 @@ def _zip_export_files(results: list, account_name: str) -> Optional[Path]:
         return None
 
 
+def _resume_from_session(session_path: str) -> None:
+    """
+    Execute the remaining scripts from an interrupted smart-scan session.
+    Skips service discovery entirely — uses the planned list from the session file.
+    """
+    import json
+    try:
+        session: dict = json.loads(Path(session_path).read_text(encoding="utf-8"))
+        session["_path"] = session_path
+    except Exception as exc:
+        print(f"\n  ❌ Could not load session: {exc}")
+        return
+
+    done_keys = {r["key"] for r in session.get("results", []) if r.get("status") == "success"}
+    all_planned = {p["key"] for p in session.get("planned", [])}
+    remaining = all_planned - done_keys
+
+    n_done = len(done_keys)
+    n_total = len(session.get("planned", []))
+
+    print(f"\n  Resuming Smart Scan: {n_done}/{n_total} scripts already complete")
+    print(f"  {len(remaining)} script(s) remaining\n")
+
+    if not remaining:
+        print("  ✅ All scripts already completed.")
+        utils.complete_scan_session(session)
+        return
+
+    regions = utils.prompt_region_selection()
+    utils.resume_scan_session(session)
+
+    print(f"\n  Executing {len(remaining)} scripts...\n")
+    execute_scripts(
+        remaining,
+        show_progress=True,
+        save_log=False,
+        regions=regions,
+        show_output=False,
+        session=session,
+        skip_scripts=None,
+    )
+
+
 def main() -> None:
     """Main Smart Scan workflow."""
     utils.log_script_start('smart-scan')
+
+    # Startup resume: stratusscan.py passes session path via env var
+    resume_path = os.environ.get("STRATUSSCAN_RESUME_SESSION_PATH", "")
+    if resume_path:
+        utils.print_script_banner("SMART SCAN — RESUME INTERRUPTED SESSION")
+        _resume_from_session(resume_path)
+        return
 
     account_id, account_name = utils.print_script_banner(
         "SMART SCAN — SERVICE DISCOVERY & RECOMMENDATIONS"
@@ -459,6 +510,42 @@ def main() -> None:
         utils.log_info("No scripts selected. Exiting.")
         return
 
+    # Build planned list for session persistence
+    planned = [{"key": s, "script": s} for s in sorted(selected_scripts)]
+
+    # Offer resume of an interrupted smart-scan session
+    session: dict
+    skip_scripts: Optional[set] = None
+    interrupted_smart = [
+        s for s in utils.get_interrupted_sessions()
+        if s.get("scan_type") == "smart-scan"
+    ]
+    if interrupted_smart and not utils.is_auto_run():
+        prev = interrupted_smart[0]
+        n_done = len(prev.get("results", []))
+        n_total = len(prev.get("planned", []))
+        ans = input(
+            f"  Resume interrupted smart scan? ({n_done}/{n_total} scripts done) [y/n]: "
+        ).strip().lower()
+        if ans == "y":
+            utils.resume_scan_session(prev)
+            session = prev
+            done_keys = {r["key"] for r in prev.get("results", []) if r.get("status") == "success"}
+            selected_scripts = selected_scripts - done_keys
+            skip_scripts = None  # already filtered from selected_scripts
+        else:
+            session = utils.start_scan_session(
+                "smart-scan",
+                f"Smart Scan ({len(selected_scripts)} scripts)",
+                planned,
+            )
+    else:
+        session = utils.start_scan_session(
+            "smart-scan",
+            f"Smart Scan ({len(selected_scripts)} scripts)",
+            planned,
+        )
+
     print(f"\n  Executing {len(selected_scripts)} scripts...\n")
     summary = execute_scripts(
         selected_scripts,
@@ -466,6 +553,8 @@ def main() -> None:
         save_log=True,
         regions=regions,
         show_output=False,
+        session=session,
+        skip_scripts=skip_scripts,
     )
 
     # Zip all output files produced by this run

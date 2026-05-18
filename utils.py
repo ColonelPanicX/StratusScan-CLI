@@ -3983,3 +3983,123 @@ def generate_cost_optimization_recommendations(
         recommendations.append("No specific cost optimization recommendations at this time")
 
     return recommendations
+
+
+# ============================================================================
+# SCAN SESSION TRACKING
+# ============================================================================
+
+def _get_scan_sessions_dir() -> Path:
+    """Return (and create) the scan-sessions directory inside the output dir."""
+    sessions_dir = get_output_dir() / "scan-sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return sessions_dir
+
+
+def start_scan_session(scan_type: str, label: str, planned: list) -> dict:
+    """
+    Create a new scan session file and return the session dict.
+
+    Args:
+        scan_type: 'org-scan' or 'smart-scan'
+        label: Human-readable run description
+        planned: List of dicts, each with at least 'key' (unique per item)
+
+    Returns:
+        Session dict — pass to record_scan_result() and complete_scan_session()
+    """
+    session_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    session_path = _get_scan_sessions_dir() / f"scan-{session_id}.json"
+    session = {
+        "session_id": session_id,
+        "scan_type": scan_type,
+        "label": label,
+        "status": "running",
+        "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "completed_at": None,
+        "planned": planned,
+        "results": [],
+        "_path": str(session_path),
+    }
+    _write_scan_session(session)
+    return session
+
+
+def _write_scan_session(session: dict) -> None:
+    """Atomically write session dict to its file (temp-rename pattern)."""
+    path = Path(session["_path"])
+    data = {k: v for k, v in session.items() if not k.startswith("_")}
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception as exc:
+        log_warning(f"Failed to write scan session: {exc}")
+
+
+def record_scan_result(
+    session: dict,
+    key: str,
+    status: str,
+    exit_code: int,
+    duration_s: float,
+    **kwargs,
+) -> None:
+    """
+    Append a completed item to the session file.
+
+    Args:
+        session: Session dict from start_scan_session()
+        key: Unique key matching a 'planned' entry
+        status: 'success' or 'failed'
+        exit_code: Process exit code
+        duration_s: Wall-clock seconds
+        **kwargs: Extra fields to include (account_id, account_name, script, etc.)
+    """
+    result = {
+        "key": key,
+        "status": status,
+        "exit_code": exit_code,
+        "duration_s": round(duration_s, 1),
+        "completed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        **kwargs,
+    }
+    session["results"].append(result)
+    _write_scan_session(session)
+
+
+def complete_scan_session(session: dict) -> None:
+    """Mark session as completed and write final state."""
+    session["status"] = "completed"
+    session["completed_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _write_scan_session(session)
+
+
+def load_scan_sessions(limit: int = 10) -> list:
+    """Load recent scan sessions, newest first."""
+    try:
+        sessions_dir = _get_scan_sessions_dir()
+    except Exception:
+        return []
+    files = sorted(sessions_dir.glob("scan-*.json"), reverse=True)[:limit]
+    sessions = []
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_path"] = str(f)
+            sessions.append(data)
+        except Exception:
+            pass
+    return sessions
+
+
+def get_interrupted_sessions() -> list:
+    """Return sessions that were never completed (status still 'running')."""
+    return [s for s in load_scan_sessions(20) if s.get("status") == "running"]
+
+
+def resume_scan_session(session: dict) -> None:
+    """Mark an interrupted session as running again (for resume flows)."""
+    session["status"] = "running"
+    session["completed_at"] = None
+    _write_scan_session(session)
