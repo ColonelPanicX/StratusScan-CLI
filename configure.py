@@ -554,32 +554,32 @@ def config_wizard(config: Dict):
     print_section("CONFIG WIZARD")
     print("This wizard walks you through six essential setup steps.")
     print("You can skip any step by pressing Enter with no input where prompted.\n")
-    input("Step 1/6 — Account Mappings  (press Enter to begin) ")
+    print("Step 1/6 — Account Mappings\n")
     manage_account_mappings(config)
 
     _clr()
     print("✅ Step 1/6 complete — Account Mappings\n")
-    input("Step 2/6 — Export Format  (press Enter to begin) ")
+    print("Step 2/6 — Export Format\n")
     configure_output_settings(config)
 
     _clr()
     print("✅ Step 2/6 complete — Export Format\n")
-    input("Step 3/6 — Default Regions  (press Enter to begin) ")
+    print("Step 3/6 — Default Regions\n")
     configure_default_regions(config)
 
     _clr()
     print("✅ Step 3/6 complete — Default Regions\n")
-    input("Step 4/6 — Dependencies Check  (press Enter to begin) ")
+    print("Step 4/6 — Dependencies Check\n")
     dependency_management_menu()
 
     _clr()
     print("✅ Step 4/6 complete — Dependencies Check\n")
-    input("Step 5/6 — AWS Permissions Check  (press Enter to begin) ")
+    print("Step 5/6 — AWS Permissions Check\n")
     permissions_management_menu()
 
     _clr()
     print("✅ Step 5/6 complete — AWS Permissions Check\n")
-    input("Step 6/6 — Cross-Account Roles  (press Enter to begin) ")
+    print("Step 6/6 — Cross-Account Roles\n")
     manage_cross_account_roles(config)
 
     _clr()
