@@ -719,7 +719,7 @@ def manage_account_mappings(config: Dict):
 
         if choice == 'A':
             # Fetch current account identity for defaults
-            identity = get_current_account_info()
+            identity = get_aws_identity()
             default_id = identity['account_id'] if identity and identity.get('account_id') != 'Unknown' else ''
             default_name = ''
             if identity and default_id:
