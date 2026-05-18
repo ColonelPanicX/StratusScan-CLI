@@ -21,7 +21,6 @@ Phase 4B Update:
 
 import datetime
 import sys
-import time
 from pathlib import Path
 
 # Add path to import utils module
@@ -60,35 +59,104 @@ def is_valid_aws_region(region_name):
     """
     return utils.is_aws_region(region_name)
 
-def get_vpc_name(ec2_client, vpc_id):
+def build_vpc_name_map(ec2_client):
     """
-    Get the name of a VPC from its ID.
-
-    Args:
-        ec2_client: The boto3 EC2 client
-        vpc_id: The VPC ID
-
-    Returns:
-        str: The VPC name and ID or default value
+    Fetch all VPCs in a region and return a {vpc_id: display_name} map.
     """
-    if not vpc_id:
-        return "No VPC (EC2-Classic)"
-
+    vpc_map = {}
     try:
-        response = ec2_client.describe_vpcs(VpcIds=[vpc_id])
-
-        if not response['Vpcs']:
-            return vpc_id  # Return the ID if no VPC found
-
-        # Look for the Name tag
-        for tag in response['Vpcs'][0].get('Tags', []):
-            if tag['Key'] == 'Name':
-                return f"{tag['Value']} ({vpc_id})"
-
-        # If no Name tag, just return the ID
-        return vpc_id
+        paginator = ec2_client.get_paginator('describe_vpcs')
+        for page in paginator.paginate():
+            for vpc in page.get('Vpcs', []):
+                vpc_id = vpc['VpcId']
+                name = vpc_id
+                for tag in vpc.get('Tags', []):
+                    if tag['Key'] == 'Name':
+                        name = f"{tag['Value']} ({vpc_id})"
+                        break
+                vpc_map[vpc_id] = name
     except Exception:
-        return vpc_id  # Return the ID on error
+        pass
+    return vpc_map
+
+
+def build_sg_resource_map(ec2_client, region):
+    """
+    Fetch EC2, RDS, ELB, ALBv2, and Lambda resources once per region
+    and return a {sg_id: [resource_strings]} map.
+    """
+    sg_resources = {}
+
+    def _append(sg_id, label):
+        sg_resources.setdefault(sg_id, []).append(label)
+
+    # EC2 instances
+    try:
+        paginator = ec2_client.get_paginator('describe_instances')
+        for page in paginator.paginate():
+            for res in page.get('Reservations', []):
+                for inst in res.get('Instances', []):
+                    inst_name = 'Unnamed'
+                    for tag in inst.get('Tags', []):
+                        if tag['Key'] == 'Name':
+                            inst_name = tag['Value']
+                            break
+                    label = f"EC2:{inst_name} ({inst['InstanceId']})"
+                    for sg in inst.get('SecurityGroups', []):
+                        _append(sg['GroupId'], label)
+    except Exception as e:
+        utils.log_warning(f"Could not fetch EC2 instances for resource map: {e}")
+
+    # RDS instances
+    try:
+        rds_client = utils.get_boto3_client('rds', region_name=region)
+        paginator = rds_client.get_paginator('describe_db_instances')
+        for page in paginator.paginate():
+            for inst in page.get('DBInstances', []):
+                label = f"RDS:{inst['DBInstanceIdentifier']}"
+                for sg in inst.get('VpcSecurityGroups', []):
+                    _append(sg.get('VpcSecurityGroupId', ''), label)
+    except Exception as e:
+        utils.log_warning(f"Could not fetch RDS instances for resource map: {e}")
+
+    # Classic ELBs
+    try:
+        elb_client = utils.get_boto3_client('elb', region_name=region)
+        paginator = elb_client.get_paginator('describe_load_balancers')
+        for page in paginator.paginate():
+            for lb in page.get('LoadBalancerDescriptions', []):
+                label = f"ELB:{lb['LoadBalancerName']}"
+                for sg_id in lb.get('SecurityGroups', []):
+                    _append(sg_id, label)
+    except Exception as e:
+        utils.log_warning(f"Could not fetch ELBs for resource map: {e}")
+
+    # ALBv2 / NLB
+    try:
+        elbv2_client = utils.get_boto3_client('elbv2', region_name=region)
+        paginator = elbv2_client.get_paginator('describe_load_balancers')
+        for page in paginator.paginate():
+            for lb in page.get('LoadBalancers', []):
+                label = f"ALB/NLB:{lb['LoadBalancerName']}"
+                for sg_id in lb.get('SecurityGroups', []):
+                    _append(sg_id, label)
+    except Exception as e:
+        utils.log_warning(f"Could not fetch ALBs/NLBs for resource map: {e}")
+
+    # Lambda functions
+    try:
+        lambda_client = utils.get_boto3_client('lambda', region_name=region)
+        paginator = lambda_client.get_paginator('list_functions')
+        for page in paginator.paginate():
+            for fn in page.get('Functions', []):
+                vpc_cfg = fn.get('VpcConfig', {})
+                label = f"Lambda:{fn['FunctionName']}"
+                for sg_id in vpc_cfg.get('SecurityGroupIds', []):
+                    _append(sg_id, label)
+    except Exception as e:
+        utils.log_warning(f"Could not fetch Lambda functions for resource map: {e}")
+
+    return sg_resources
 
 def format_ip_range(ip_range, protocol, from_port, to_port, is_inbound=True):
     """
@@ -166,97 +234,6 @@ def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inb
     else:
         return f"{protocol}:{port_range} → {sg_identifier}"
 
-def get_security_group_resources(ec2_client, sg_id):
-    """
-    Find EC2 instances, RDS instances, and other resources using this security group.
-
-    Args:
-        ec2_client: The boto3 EC2 client
-        sg_id: The security group ID
-
-    Returns:
-        list: List of resources using this security group
-    """
-    resources = []
-
-    # Check EC2 instances
-    try:
-        response = ec2_client.describe_instances(
-            Filters=[{'Name': 'instance.group-id', 'Values': [sg_id]}]
-        )
-
-        for reservation in response.get('Reservations', []):
-            for instance in reservation.get('Instances', []):
-                # Get instance name from tags
-                instance_name = 'Unnamed'
-                for tag in instance.get('Tags', []):
-                    if tag['Key'] == 'Name':
-                        instance_name = tag['Value']
-                        break
-
-                resources.append(f"EC2:{instance_name} ({instance['InstanceId']})")
-    except Exception as e:
-        utils.log_warning(f"Could not fetch EC2 instances for SG {sg_id}: {e}")
-
-    # Try to check RDS instances
-    try:
-        rds_client = utils.get_boto3_client('rds', region_name=ec2_client.meta.region_name)
-        rds_paginator = rds_client.get_paginator('describe_db_instances')
-        rds_instances = []
-        for page in rds_paginator.paginate():
-            rds_instances.extend(page.get('DBInstances', []))
-
-        for instance in rds_instances:
-            for sg in instance.get('VpcSecurityGroups', []):
-                if sg.get('VpcSecurityGroupId') == sg_id:
-                    resources.append(f"RDS:{instance['DBInstanceIdentifier']}")
-                    break
-    except Exception as e:
-        utils.log_warning(f"Could not fetch RDS instances for SG {sg_id}: {e}")
-
-    # Try to check ELBs (Classic Load Balancers)
-    try:
-        elb_client = utils.get_boto3_client('elb', region_name=ec2_client.meta.region_name)
-        elb_paginator = elb_client.get_paginator('describe_load_balancers')
-        elb_lbs = []
-        for page in elb_paginator.paginate():
-            elb_lbs.extend(page.get('LoadBalancerDescriptions', []))
-
-        for lb in elb_lbs:
-            if sg_id in lb.get('SecurityGroups', []):
-                resources.append(f"ELB:{lb['LoadBalancerName']}")
-    except Exception as e:
-        utils.log_warning(f"Could not fetch ELBs for SG {sg_id}: {e}")
-
-    # Try to check ELBv2 (Application and Network Load Balancers)
-    try:
-        elbv2_client = utils.get_boto3_client('elbv2', region_name=ec2_client.meta.region_name)
-        elbv2_paginator = elbv2_client.get_paginator('describe_load_balancers')
-        elbv2_lbs = []
-        for page in elbv2_paginator.paginate():
-            elbv2_lbs.extend(page.get('LoadBalancers', []))
-
-        for lb in elbv2_lbs:
-            if sg_id in lb.get('SecurityGroups', []):
-                resources.append(f"ALB/NLB:{lb['LoadBalancerName']}")
-    except Exception as e:
-        utils.log_warning(f"Could not fetch ALBs/NLBs for SG {sg_id}: {e}")
-
-    # Try to check Lambda functions
-    try:
-        lambda_client = utils.get_boto3_client('lambda', region_name=ec2_client.meta.region_name)
-        lambda_paginator = lambda_client.get_paginator('list_functions')
-        lambda_funcs = []
-        for page in lambda_paginator.paginate():
-            lambda_funcs.extend(page.get('Functions', []))
-
-        for function in lambda_funcs:
-            if 'VpcConfig' in function and sg_id in function['VpcConfig'].get('SecurityGroupIds', []):
-                resources.append(f"Lambda:{function['FunctionName']}")
-    except Exception as e:
-        utils.log_warning(f"Could not fetch Lambda functions for SG {sg_id}: {e}")
-
-    return resources
 
 @utils.aws_error_handler("Collecting security group rules", default_return=[])
 def get_security_group_rules(region):
@@ -269,31 +246,31 @@ def get_security_group_rules(region):
     Returns:
         list: List of dictionaries with security group rule information
     """
-    # Validate region is AWS
     if not utils.is_aws_region(region):
         utils.log_error(f"Invalid AWS region: {region}")
         return []
 
     security_group_rules = []
 
-    # Create EC2 client for this AWS region
     ec2_client = utils.get_boto3_client('ec2', region_name=region)
 
-    # Get all security groups using paginator
-    sg_paginator = ec2_client.get_paginator('describe_security_groups')
-    security_groups_all = []
-    for page in sg_paginator.paginate():
-        security_groups_all.extend(page.get('SecurityGroups', []))
-        time.sleep(0.1)
+    # Batch-fetch lookup maps (one pass each instead of per-SG)
+    vpc_map = build_vpc_name_map(ec2_client)
+    sg_resource_map = build_sg_resource_map(ec2_client, region)
 
-    # Get all security group rules using paginator
+    # Get all security groups
+    sg_paginator = ec2_client.get_paginator('describe_security_groups')
+    security_groups = []
+    for page in sg_paginator.paginate():
+        security_groups.extend(page.get('SecurityGroups', []))
+
+    # Get all security group rules
     rules_paginator = ec2_client.get_paginator('describe_security_group_rules')
     all_rules = []
     for page in rules_paginator.paginate():
         all_rules.extend(page.get('SecurityGroupRules', []))
-        time.sleep(0.1)
 
-    # Create a map of security group rules for faster lookup
+    # Build rules lookup by SG ID
     rules_map = {}
     for rule in all_rules:
         sg_id = rule.get('GroupId', '')
@@ -301,7 +278,6 @@ def get_security_group_rules(region):
             rules_map[sg_id] = []
         rules_map[sg_id].append(rule)
 
-    security_groups = security_groups_all
     total_sgs = len(security_groups)
 
     if total_sgs > 0:
@@ -314,12 +290,10 @@ def get_security_group_rules(region):
 
         utils.log_info(f"[{progress:.1f}%] Processing security group {sg_index}/{total_sgs}: {sg_id} ({sg_name})")
 
-        # Get VPC name if available
         vpc_id = sg.get('VpcId', '')
-        vpc_name = get_vpc_name(ec2_client, vpc_id) if vpc_id else "No VPC (EC2-Classic)"
+        vpc_name = vpc_map.get(vpc_id, vpc_id) if vpc_id else "No VPC (EC2-Classic)"
 
-        # Get resources using this security group
-        resources = get_security_group_resources(ec2_client, sg_id)
+        resources = sg_resource_map.get(sg_id, [])
         resources_str = '; '.join(resources) if resources else 'None'
 
         # Get description
