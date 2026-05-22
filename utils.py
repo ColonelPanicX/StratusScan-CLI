@@ -1034,6 +1034,22 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
         # --- xlsx path ---
         output_path = get_output_filepath(filename)
 
+        # Sanitize sheet names for Excel (max 31 chars, no invalid chars, unique)
+        sanitized_dict: Dict[str, Any] = {}
+        for raw_name, df in dataframes_dict.items():
+            safe = raw_name
+            for ch in ('\\', '/', '*', '?', ':', '[', ']'):
+                safe = safe.replace(ch, '')
+            safe = safe[:31].strip()
+            if safe in sanitized_dict:
+                base = safe[:27]
+                n = 2
+                while f"{base} ({n})" in sanitized_dict:
+                    n += 1
+                safe = f"{base} ({n})"
+            sanitized_dict[safe] = df
+        dataframes_dict = sanitized_dict
+
         # Create Excel writer using context manager to ensure proper close/save
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             # Write each DataFrame to a separate sheet
