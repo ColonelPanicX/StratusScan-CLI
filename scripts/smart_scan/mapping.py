@@ -34,10 +34,10 @@ SERVICE_ALIASES: Dict[str, str] = {
     "elastic compute cloud": "Amazon Elastic Compute Cloud",
     "lambda": "AWS Lambda",
     "eks": "Amazon Elastic Kubernetes Service",
-    "Amazon EKS": "Amazon Elastic Kubernetes Service",
+    "amazon eks": "Amazon Elastic Kubernetes Service",
     "kubernetes": "Amazon Elastic Kubernetes Service",
     "ecs": "Amazon Elastic Container Service",
-    "Amazon ECS": "Amazon Elastic Container Service",
+    "amazon ecs": "Amazon Elastic Container Service",
     "fargate": "AWS Fargate",
     "app runner": "AWS App Runner",
     "apprunner": "AWS App Runner",
@@ -47,17 +47,21 @@ SERVICE_ALIASES: Dict[str, str] = {
     "amazon s3": "Amazon Simple Storage Service",
     "simple storage service": "Amazon Simple Storage Service",
     "ebs": "Amazon Elastic Block Store",
+    "amazon ebs": "Amazon Elastic Block Store",
     "elastic block store": "Amazon Elastic Block Store",
     "efs": "Amazon Elastic File System",
+    "amazon efs": "Amazon Elastic File System",
     "elastic file system": "Amazon Elastic File System",
     "fsx": "Amazon FSx",
     "glacier": "Amazon S3 Glacier",
+    "amazon glacier": "Amazon S3 Glacier",
     "s3 glacier": "Amazon S3 Glacier",
     "storage gateway": "AWS Storage Gateway",
     "backup": "AWS Backup",
 
     # Database
     "rds": "Amazon Relational Database Service",
+    "amazon rds": "Amazon Relational Database Service",
     "relational database service": "Amazon Relational Database Service",
     "dynamodb": "Amazon DynamoDB",
     "elasticache": "Amazon ElastiCache",
@@ -68,6 +72,7 @@ SERVICE_ALIASES: Dict[str, str] = {
 
     # Networking
     "vpc": "Amazon Virtual Private Cloud",
+    "amazon vpc": "Amazon Virtual Private Cloud",
     "virtual private cloud": "Amazon Virtual Private Cloud",
     "cloudfront": "Amazon CloudFront",
     "route 53": "Amazon Route 53",
@@ -79,6 +84,7 @@ SERVICE_ALIASES: Dict[str, str] = {
     "direct connect": "AWS Direct Connect",
     "directconnect": "AWS Direct Connect",
     "vpn": "AWS Virtual Private Network",
+    "aws vpn": "AWS Virtual Private Network",
     "transit gateway": "AWS Transit Gateway",
     "global accelerator": "AWS Global Accelerator",
     "api gateway": "Amazon API Gateway",
@@ -86,11 +92,13 @@ SERVICE_ALIASES: Dict[str, str] = {
 
     # Security & Identity
     "iam": "AWS Identity and Access Management",
+    "aws iam": "AWS Identity and Access Management",
     "identity and access management": "AWS Identity and Access Management",
     "cognito": "Amazon Cognito",
     "secrets manager": "AWS Secrets Manager",
     "secretsmanager": "AWS Secrets Manager",
     "kms": "AWS Key Management Service",
+    "aws kms": "AWS Key Management Service",
     "key management service": "AWS Key Management Service",
     "acm": "AWS Certificate Manager",
     "certificate manager": "AWS Certificate Manager",
@@ -106,6 +114,7 @@ SERVICE_ALIASES: Dict[str, str] = {
 
     # Management & Governance
     "cloudwatch": "Amazon CloudWatch",
+    "amazon cloudwatch logs": "Amazon CloudWatch",
     "cloudtrail": "AWS CloudTrail",
     "config": "AWS Config",
     "systems manager": "AWS Systems Manager",
@@ -117,8 +126,10 @@ SERVICE_ALIASES: Dict[str, str] = {
 
     # Application Integration
     "sns": "Amazon Simple Notification Service",
+    "amazon sns": "Amazon Simple Notification Service",
     "simple notification service": "Amazon Simple Notification Service",
     "sqs": "Amazon Simple Queue Service",
+    "amazon sqs": "Amazon Simple Queue Service",
     "simple queue service": "Amazon Simple Queue Service",
     "eventbridge": "Amazon EventBridge",
     "step functions": "AWS Step Functions",
@@ -128,6 +139,7 @@ SERVICE_ALIASES: Dict[str, str] = {
     "athena": "Amazon Athena",
     "glue": "AWS Glue",
     "opensearch": "Amazon OpenSearch Service",
+    "amazon opensearch": "Amazon OpenSearch Service",
     "elasticsearch": "Amazon OpenSearch Service",
 
     # Developer Tools
@@ -135,6 +147,9 @@ SERVICE_ALIASES: Dict[str, str] = {
     "codebuild": "AWS CodeBuild",
     "codedeploy": "AWS CodeDeploy",
     "codepipeline": "AWS CodePipeline",
+
+    # Front-End Web & Mobile
+    "amazon appsync": "AWS AppSync",
 
     # Machine Learning
     "sagemaker": "Amazon SageMaker",
@@ -301,6 +316,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
 
     # Front-End Web & Mobile
     "AWS AppSync": ["appsync_export.py"],
+    "Amazon AppSync": ["appsync_export.py"],
 }
 
 # Script categories for organization
