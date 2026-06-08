@@ -21,7 +21,6 @@ import datetime
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 # Add path to import utils module
 try:
@@ -343,6 +342,8 @@ def main():
     # Check for required dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         sys.exit(1)
+    global pd
+    import pandas as pd
 
     regions = utils.prompt_region_selection()
     region_suffix = 'all'

@@ -29,11 +29,6 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon SageMaker resources to Excel")
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 
 
 def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
@@ -681,6 +676,10 @@ def generate_summary(notebooks: List[Dict[str, Any]],
 
 def main():
     """Main execution function."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

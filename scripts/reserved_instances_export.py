@@ -28,8 +28,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -388,6 +386,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         account_id, account_name = utils.print_script_banner("AWS RESERVED INSTANCES EXPORT")
 
         step = 1

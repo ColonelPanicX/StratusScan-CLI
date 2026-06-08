@@ -17,6 +17,8 @@ Features:
 Output: Multi-worksheet Excel file with services categorized by type
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import threading
@@ -42,11 +44,6 @@ args = utils.parse_script_args("Discover AWS services in use and export inventor
 # Setup logging
 logger = utils.setup_logging('services-in-use-export')
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 # Service detection configuration - maps to your export scripts
 SERVICE_CHECKS = {
     'Compute Resources': {
@@ -1064,6 +1061,10 @@ Examples:
 
     parser.parse_args()
 
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

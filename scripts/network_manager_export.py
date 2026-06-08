@@ -29,8 +29,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -429,6 +427,10 @@ def main():
     global home_region
 
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         account_id, account_name = utils.print_script_banner("AWS NETWORK MANAGER EXPORT")
 
         utils.log_info(f"Exporting Network Manager resources for account: {account_name} ({utils.mask_account_id(account_id)})")
