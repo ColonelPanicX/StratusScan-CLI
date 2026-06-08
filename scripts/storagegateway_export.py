@@ -13,6 +13,8 @@ Exports comprehensive Storage Gateway information including:
 Output: Multi-sheet Excel file with all Storage Gateway resources
 """
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,9 +30,6 @@ except ImportError:
         sys.path.append(str(script_dir))
     import utils
 args = utils.parse_script_args("Export AWS Storage Gateway resources to Excel")
-
-# Third-party imports (will be checked by dependency_check)
-import pandas as pd
 
 # ============================================================================
 # DATA COLLECTION FUNCTIONS
@@ -747,6 +746,8 @@ def main():
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             utils.log_error("Missing required dependencies. Please install them and try again.")
             sys.exit(1)
+        global pd
+        import pandas as pd
 
         utils.setup_logging('storagegateway-export')
         account_id, account_name = utils.print_script_banner("AWS STORAGE GATEWAY EXPORT")
