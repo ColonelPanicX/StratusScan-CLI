@@ -28,8 +28,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -289,6 +287,10 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
 def main():
     """Main function — 3-step state machine with b/x navigation."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         utils.setup_logging("cloudformation-export")
         account_id, account_name = utils.print_script_banner("AWS CLOUDFORMATION EXPORT")
 

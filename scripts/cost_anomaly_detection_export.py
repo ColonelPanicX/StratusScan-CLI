@@ -26,8 +26,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -372,6 +370,10 @@ def _run_export(account_id: str, account_name: str) -> None:
 def main():
     """Main execution function — 2-step state machine (confirm -> export) for global service."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         account_id, account_name = utils.print_script_banner("AWS COST ANOMALY DETECTION EXPORT")
 
         # GovCloud availability guard — Cost Explorer is not available in GovCloud

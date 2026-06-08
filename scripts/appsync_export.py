@@ -31,14 +31,6 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS AppSync GraphQL APIs to Excel")
 
-try:
-    import pandas as pd
-except ImportError:
-    utils.log_error("pandas library is required but not installed")
-    utils.log_error("Install with: pip install pandas")
-    sys.exit(1)
-
-
 def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
     """Scan AppSync GraphQL APIs in a single region."""
     regional_apis = []
@@ -512,6 +504,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     utils.setup_logging("appsync-export")
 
     try:
