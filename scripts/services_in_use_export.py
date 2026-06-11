@@ -631,10 +631,12 @@ _DISCOVERY_CLIENT_CONFIG = BotocoreConfig(
 def _get_discovery_client(service: str, region: str):
     """Create a boto3 client configured for fast service discovery checks."""
     session = boto3.Session(region_name=region)
-    kwargs = {}
+    config = _DISCOVERY_CLIENT_CONFIG
+    # FIPS belongs on the botocore Config, not as a client() kwarg (boto3
+    # rejects it there). GovCloud requires FIPS endpoints.
     if region and region.startswith("us-gov-"):
-        kwargs["use_fips_endpoint"] = True
-    return session.client(service, config=_DISCOVERY_CLIENT_CONFIG, **kwargs)
+        config = config.merge(BotocoreConfig(use_fips_endpoint=True))
+    return session.client(service, config=config)
 
 
 def _is_not_in_use_error(exc: Exception) -> bool:

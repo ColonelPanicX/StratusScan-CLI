@@ -3032,12 +3032,13 @@ def _assume_role_cached(
         profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
         caller_session = boto3.Session(region_name=region_name, profile_name=profile)
 
-        # FIPS for GovCloud STS
-        sts_kwargs: Dict[str, Any] = {}
+        # FIPS for GovCloud STS — must be set on the botocore Config, not as a
+        # client() kwarg (boto3 rejects it there).
+        sts_config = None
         if region_name and region_name.startswith("us-gov-"):
-            sts_kwargs["use_fips_endpoint"] = True
+            sts_config = Config(use_fips_endpoint=True)
 
-        sts_client = caller_session.client("sts", **sts_kwargs)
+        sts_client = caller_session.client("sts", config=sts_config)
 
         # Assume role with exponential backoff for ThrottlingException
         max_attempts = 5
@@ -3164,15 +3165,22 @@ def get_boto3_client(
     connect_timeout = sdk_config.get("connect_timeout", 10)
     read_timeout = sdk_config.get("read_timeout", 60)
 
-    config = Config(
-        retries=retry_config,
-        connect_timeout=connect_timeout,
-        read_timeout=read_timeout,
-    )
+    config_kwargs: Dict[str, Any] = {
+        "retries": retry_config,
+        "connect_timeout": connect_timeout,
+        "read_timeout": read_timeout,
+    }
 
-    # FIPS injection — GovCloud requires FIPS endpoints
-    if region_name and region_name.startswith("us-gov-") and "use_fips_endpoint" not in kwargs:
-        kwargs["use_fips_endpoint"] = True
+    # FIPS injection — GovCloud requires FIPS endpoints. This belongs on the
+    # botocore Config, NOT as a client() kwarg (boto3 rejects it there). A
+    # caller may still override via kwargs["use_fips_endpoint"].
+    fips_override = kwargs.pop("use_fips_endpoint", None)
+    if fips_override is not None:
+        config_kwargs["use_fips_endpoint"] = fips_override
+    elif region_name and region_name.startswith("us-gov-"):
+        config_kwargs["use_fips_endpoint"] = True
+
+    config = Config(**config_kwargs)
 
     session = get_aws_session(region_name, role_arn=role_arn)
     return session.client(service, config=config, **kwargs)

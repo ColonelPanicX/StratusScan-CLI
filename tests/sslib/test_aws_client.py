@@ -114,7 +114,12 @@ class TestDetectPartition:
 
 class TestGetBoto3ClientFips:
     def test_govcloud_injects_fips(self):
-        """GovCloud regions MUST use FIPS endpoints — security-critical property."""
+        """GovCloud regions MUST use FIPS endpoints — security-critical property.
+
+        FIPS must be set on the botocore Config, NOT passed as a client() kwarg
+        (boto3 rejects ``use_fips_endpoint`` as a client argument — see the
+        GovCloud regression fixed in fix/govcloud-fips-endpoint-kwarg).
+        """
         mock_session = MagicMock()
         mock_client = MagicMock()
         mock_session.client.return_value = mock_client
@@ -124,7 +129,10 @@ class TestGetBoto3ClientFips:
                 get_boto3_client("ec2", region_name="us-gov-west-1")
 
         call_kwargs = mock_session.client.call_args[1]
-        assert call_kwargs.get("use_fips_endpoint") is True, (
+        assert "use_fips_endpoint" not in call_kwargs, (
+            "use_fips_endpoint must NOT be a client() kwarg — boto3 rejects it"
+        )
+        assert call_kwargs["config"].use_fips_endpoint is True, (
             "FIPS endpoint must be injected for GovCloud region us-gov-west-1"
         )
 
@@ -138,7 +146,8 @@ class TestGetBoto3ClientFips:
                 get_boto3_client("s3", region_name="us-gov-east-1")
 
         call_kwargs = mock_session.client.call_args[1]
-        assert call_kwargs.get("use_fips_endpoint") is True
+        assert "use_fips_endpoint" not in call_kwargs
+        assert call_kwargs["config"].use_fips_endpoint is True
 
     def test_commercial_does_not_inject_fips(self):
         """Commercial regions must NOT have FIPS forced on."""
@@ -151,6 +160,7 @@ class TestGetBoto3ClientFips:
 
         call_kwargs = mock_session.client.call_args[1]
         assert "use_fips_endpoint" not in call_kwargs
+        assert call_kwargs["config"].use_fips_endpoint is None
 
     def test_includes_retry_config(self):
         mock_session = MagicMock()
