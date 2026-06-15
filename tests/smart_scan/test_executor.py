@@ -10,6 +10,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 # Add scripts directory to path
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "scripts"))
@@ -195,23 +196,36 @@ class TestScriptExecutorMethods:
 
         assert result is None
 
-    def test_find_output_file_pattern(self):
-        """Test finding output file returns None when output dir has no xlsx files."""
-        # _find_output_file uses utils.get_output_dir() internally; there is no
-        # executor.output_dir attribute to override, so in test environments without
-        # a populated output/ directory the function correctly returns None.
-        executor = ScriptExecutor({"ec2_export.py"})
-        result = executor._find_output_file("ec2_export")
-        assert result is None
+    def test_find_output_file_empty_dir(self):
+        """An empty output dir yields no candidate -> None.
+
+        _find_output_file reads utils.get_output_dir() directly, so the test
+        patches it to an isolated temp dir rather than relying on the real
+        output/ directory being empty (which leaks state between runs).
+        """
+        import utils
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(utils, "get_output_dir", return_value=Path(tmpdir)):
+                executor = ScriptExecutor({"ec2_export.py"})
+                result = executor._find_output_file("ec2_export")
+                assert result is None
 
     def test_find_output_file_not_found(self):
-        """Test finding output file when none exists."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            executor = ScriptExecutor({"ec2_export.py"})
-            executor.output_dir = Path(tmpdir)
+        """A pre-existing file present before the run is not attributed to it.
 
-            result = executor._find_output_file("nonexistent-export")
-            assert result is None
+        The output dir is non-empty, but the only xlsx is in the pre-run
+        snapshot, so it must not be returned as this run's output.
+        """
+        import utils
+        with tempfile.TemporaryDirectory() as tmpdir:
+            existing = Path(tmpdir) / "OTHER-ACCOUNT-ec2-us-east-1-export-01.01.2025.xlsx"
+            existing.write_text("stale")
+            with patch.object(utils, "get_output_dir", return_value=Path(tmpdir)):
+                executor = ScriptExecutor({"ec2_export.py"})
+                result = executor._find_output_file(
+                    "ec2_export", ({str(existing)}, 0.0)
+                )
+                assert result is None
 
 
 class TestExecuteScripts:
