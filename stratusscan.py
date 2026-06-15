@@ -32,11 +32,14 @@ Deployment Structure:
 - Account mappings and configuration are stored in config.json
 """
 
+import argparse
 import contextlib
 import datetime
+import logging
 import os
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -57,19 +60,11 @@ utils.log_script_start("stratusscan.py", "AWS Resource Scanner Main Menu")
 utils.log_system_info()
 
 # ---------------------------------------------------------------------------
-# Navigation signals — raised by prompt_with_navigation() for b / x / q input
+# Navigation signals — imported from utils so all modules share one hierarchy
 # ---------------------------------------------------------------------------
 
-class BackSignal(BaseException):
-    """Raised when the user enters 'b' to return to the parent menu."""
+from utils import BackSignal, ExitToMainSignal, QuitSignal
 
-
-class ExitToMainSignal(BaseException):
-    """Raised when the user enters 'x' to exit directly to the main menu."""
-
-
-class QuitSignal(BaseException):
-    """Raised when the user enters 'q' to quit StratusScan."""
 
 
 def prompt_with_navigation(prompt_text: str) -> str:
@@ -409,6 +404,11 @@ def get_menu_structure():
             "file": Path(__file__).parent / "configure.py",
             "description": "Interactive configuration tool for account mappings and AWS settings"
         },
+        "O": {
+            "name": "Org Scan — Run exporter across all accounts",
+            "description": "Iterate all configured cross-account roles and run one exporter per account",
+            "action": "org_scan"
+        },
         "1": {
             "name": "Service Discovery",
             "file": Path(__file__).parent / "smart_scan.py",
@@ -636,7 +636,7 @@ def display_main_menu():
         print(f"  [{option:>2}] {info['name']}")
 
     print("\n" + "─" * 70)
-    print("  q = quit")
+    print("  o = org scan  |  h = scan history  |  q = quit")
     print("─" * 70)
 
     return menu_structure, account_name
@@ -744,6 +744,389 @@ def handle_submenu(category_option, account_name):
                 if not _confirm("Would you like to run another tool from this menu?"):
                     return
 
+def _collect_scripts(menu_structure: dict) -> list:
+    """
+    Recursively walk the menu structure and collect all leaf script entries.
+
+    Returns a flat list of dicts with keys 'name' and 'file', where 'file'
+    is a Path to an exporter script.  Entries with no 'file' key or with
+    file=None are skipped (e.g. the Configure and Org Scan top-level entries).
+
+    Args:
+        menu_structure: A menu dict (any level — top or submenu).
+
+    Returns:
+        list[dict]: Sorted list of {"name": str, "file": Path} entries.
+    """
+    results: list = []
+    for info in menu_structure.values():
+        if "submenu" in info:
+            results.extend(_collect_scripts(info["submenu"]))
+        elif info.get("file") is not None:
+            results.append({"name": info["name"], "file": info["file"]})
+    return results
+
+
+def run_org_scan() -> None:
+    """
+    Run a single exporter script across all configured cross-account roles.
+
+    Flow:
+      1. Load cross-account roles from config.
+      2. Display configured accounts.
+      3. Let the user pick an exporter from a flat numbered list.
+      4. Confirm, then iterate accounts — launching each exporter with
+         STRATUSSCAN_ROLE_ARN and STRATUSSCAN_AUTO_RUN set in the child env.
+      5. Print a pass/fail summary.
+
+    Raises:
+        BackSignal: propagated from the script-selection prompt so the caller
+            can suppress it and return to the main menu.
+    """
+    cross_account_roles: dict = utils.get_cross_account_roles()
+
+    if not cross_account_roles:
+        print("\nNo cross-account roles configured.")
+        print("Run [0] Configure StratusScan → Config Wizard → Step 5 to add roles.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    # Display configured accounts
+    SEP = "─" * 70
+    print(f"\nCONFIGURED ACCOUNTS ({len(cross_account_roles)})")
+    print(SEP)
+    print(f"  {'Account ID':<20} {'Name':<24} Role ARN (truncated)")
+    print(SEP)
+    for acct_id, role_arn in cross_account_roles.items():
+        acct_name = utils.get_account_name(acct_id)
+        truncated = role_arn[:47] + "..." if len(role_arn) > 50 else role_arn
+        print(f"  {acct_id:<20} {acct_name:<24} {truncated}")
+    print(SEP)
+
+    # Build flat exporter list from the full menu structure
+    menu_structure = get_menu_structure()
+    scripts: list = _collect_scripts(menu_structure)
+
+    if not scripts:
+        print("\nNo exporter scripts found.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    # Script selection loop
+    selected_script: dict | None = None
+    while selected_script is None:
+        print("\nSELECT EXPORTER")
+        print(SEP)
+        for idx, entry in enumerate(scripts, start=1):
+            print(f"  [{idx:>3}] {entry['name']}")
+        print(SEP)
+
+        raw = prompt_with_navigation("Select exporter to run across all accounts (b=back): ")
+        # prompt_with_navigation raises BackSignal for 'b' — let it propagate
+
+        if not raw.isdigit():
+            print("Invalid selection. Please enter a number.")
+            continue
+        choice = int(raw)
+        if not (1 <= choice <= len(scripts)):
+            print(f"Invalid selection. Enter a number between 1 and {len(scripts)}.")
+            continue
+        selected_script = scripts[choice - 1]
+
+    # Confirm
+    n_accounts = len(cross_account_roles)
+    answer = input(
+        f"\nRun [{selected_script['name']}] across {n_accounts} account(s)? (y/n): "
+    ).strip().lower()
+    if answer != "y":
+        return
+
+    script_file: Path = selected_script["file"]
+
+    # Build planned list for session tracking
+    planned = [
+        {
+            "key": acct_id,
+            "script": script_file.name,
+            "account_id": acct_id,
+            "account_name": utils.get_account_name(acct_id),
+        }
+        for acct_id in cross_account_roles
+    ]
+
+    # Check for an interrupted session for the same script; offer resume
+    skip_accounts: set = set()
+    interrupted_sessions = [
+        s for s in utils.get_interrupted_sessions()
+        if any(p.get("script") == script_file.name for p in s.get("planned", []))
+    ]
+    if interrupted_sessions:
+        prev = interrupted_sessions[0]
+        n_done = len(prev.get("results", []))
+        n_total = len(prev.get("planned", []))
+        resume_ans = input(
+            f"  Resume interrupted session ({n_done}/{n_total} accounts completed)? (y/n): "
+        ).strip().lower()
+        if resume_ans == "y":
+            session = prev
+            utils.resume_scan_session(session)
+            skip_accounts = {
+                r["key"] for r in session.get("results", []) if r.get("status") == "success"
+            }
+        else:
+            label = f"{selected_script['name']} ({script_file.name}) — {n_accounts} accounts"
+            session = utils.start_scan_session("org-scan", label, planned)
+    else:
+        label = f"{selected_script['name']} ({script_file.name}) — {n_accounts} accounts"
+        session = utils.start_scan_session("org-scan", label, planned)
+
+    # Execute across all accounts
+    results: list = []
+    for acct_id, role_arn in cross_account_roles.items():
+        acct_name = utils.get_account_name(acct_id)
+
+        if acct_id in skip_accounts:
+            print(f"  ⏭  Skipping {acct_name} ({acct_id}) — already completed")
+            continue
+
+        print(f"\nScanning account: {acct_name} ({acct_id})...")
+
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_ROLE_ARN"] = role_arn
+        child_env["STRATUSSCAN_AUTO_RUN"] = "1"
+
+        exit_code: int = 0
+        start_time = time.monotonic()
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script_file)],
+                env=child_env,
+                timeout=1800,
+            )
+            exit_code = result.returncode
+        except subprocess.CalledProcessError as exc:
+            utils.log_error("Org scan: account %s exporter failed: %s", acct_id, exc)
+            exit_code = exc.returncode if exc.returncode is not None else 1
+        except subprocess.TimeoutExpired:
+            utils.log_error("Org scan: account %s exporter timed out (30 min)", acct_id)
+            exit_code = -1
+        except Exception as exc:  # noqa: BLE001
+            utils.log_error("Org scan: account %s unexpected error: %s", acct_id, exc)
+            exit_code = -1
+
+        duration_s = time.monotonic() - start_time
+        status_str = "success" if exit_code == 0 else "failed"
+        utils.record_scan_result(
+            session,
+            acct_id,
+            status_str,
+            exit_code,
+            duration_s,
+            script=script_file.name,
+            account_id=acct_id,
+            account_name=acct_name,
+        )
+        results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
+
+    utils.complete_scan_session(session)
+
+    # Summary
+    print(f"\nORG SCAN COMPLETE")
+    print(SEP)
+    for r in results:
+        icon = "✅" if r["exit_code"] == 0 else "❌"
+        status = "success" if r["exit_code"] == 0 else f"failed (exit code {r['exit_code']})"
+        print(f"  {icon}  {r['acct_name']} ({r['acct_id']}) — {status}")
+    print(SEP)
+    input("\nPress Enter to return to menu...")
+
+
+def _show_session_detail(session: dict) -> None:
+    """Display per-item status for a single scan session."""
+    results_map = {r["key"]: r for r in session.get("results", [])}
+    planned = session.get("planned", [])
+    SEP = "─" * 70
+
+    print(f"\n{session.get('label', 'Session')} — {session.get('started_at', '')[:16]}")
+    print(SEP)
+
+    for item in planned:
+        key = item["key"]
+        if key in results_map:
+            r = results_map[key]
+            icon = "✅" if r["status"] == "success" else "❌"
+            label = item.get("account_name") or item.get("script") or key
+            print(f"  {icon} {label} ({key}) — {r['duration_s']}s")
+        else:
+            label = item.get("account_name") or item.get("script") or key
+            print(f"  ⏳ {label} ({key}) — not run")
+
+    print(SEP)
+    input("\nPress Enter to return...")
+
+
+def show_scan_history() -> None:
+    """Display recent scan sessions and allow drilling into details."""
+    sessions = utils.load_scan_sessions(10)
+    SEP = "─" * 70
+    print(f"\nSCAN HISTORY (last {len(sessions)} sessions)")
+    print(SEP)
+
+    if not sessions:
+        print("  No scan sessions found.")
+        input("\nPress Enter to return...")
+        return
+
+    for idx, s in enumerate(sessions, 1):
+        n_done = len(s.get("results", []))
+        n_total = len(s.get("planned", []))
+        status = s.get("status", "?")
+        icon = "✅" if status == "completed" else ("⚠ " if status == "running" else "?")
+        ts = s.get("started_at", "")[:16].replace("T", " ")
+        print(f"  [{idx}] {icon} {s.get('label', s.get('scan_type'))} — {n_done}/{n_total} | {ts}")
+
+    print(SEP)
+    print("  [#] View session details    [B] Back")
+    choice = input("\nSelect: ").strip().upper()
+    if choice == "B" or not choice:
+        return
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(sessions):
+            _show_session_detail(sessions[idx])
+
+
+def _resume_org_scan_from_session(session: dict) -> None:
+    """Execute remaining org-scan accounts from an interrupted session."""
+    planned = session.get("planned", [])
+    if not planned:
+        print("\n  ❌ Session has no planned entries — cannot resume.")
+        input("  Press Enter to return to menu...")
+        return
+
+    script_name = planned[0].get("script", "")
+    script_file = Path(__file__).parent / "scripts" / script_name
+    if not script_file.exists():
+        print(f"\n  ❌ Script {script_name} not found on disk — cannot resume.")
+        input("  Press Enter to return to menu...")
+        return
+
+    cross_account_roles = utils.get_cross_account_roles()
+    if not cross_account_roles:
+        print("\n  ❌ No cross-account roles configured.")
+        input("  Press Enter to return to menu...")
+        return
+
+    done_keys = {r["key"] for r in session.get("results", []) if r.get("status") == "success"}
+    remaining = {acct: role for acct, role in cross_account_roles.items() if acct not in done_keys}
+
+    SEP = "─" * 70
+    n_done = len(done_keys)
+    n_remaining = len(remaining)
+    print(f"\n  Script:   {script_name}")
+    print(f"  Done:     {n_done} account(s)")
+    print(f"  Pending:  {n_remaining} account(s)")
+    print(f"  {SEP}")
+
+    if not remaining:
+        print("\n  ✅ All accounts already completed. Marking session done.")
+        utils.complete_scan_session(session)
+        input("  Press Enter to return to menu...")
+        return
+
+    confirm = input(f"\n  Run {script_name} across {n_remaining} remaining account(s)? (y/n): ").strip().lower()
+    if confirm != "y":
+        return
+
+    utils.resume_scan_session(session)
+    results: list = []
+
+    for acct_id, role_arn in remaining.items():
+        acct_name = utils.get_account_name(acct_id)
+        print(f"\n  Scanning: {acct_name} ({acct_id})...")
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_ROLE_ARN"] = role_arn
+        child_env["STRATUSSCAN_AUTO_RUN"] = "1"
+        start_t = time.monotonic()
+        exit_code = 0
+        try:
+            proc = subprocess.run([sys.executable, str(script_file)], env=child_env, timeout=1800)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            utils.log_error("Resume org-scan: %s timed out", acct_id)
+            exit_code = -1
+        except Exception as exc:  # noqa: BLE001
+            utils.log_error("Resume org-scan: %s error: %s", acct_id, exc)
+            exit_code = -1
+        duration_s = time.monotonic() - start_t
+        status_str = "success" if exit_code == 0 else "failed"
+        utils.record_scan_result(session, acct_id, status_str, exit_code, duration_s,
+                                 script=script_name, account_id=acct_id, account_name=acct_name)
+        results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
+
+    utils.complete_scan_session(session)
+    print(f"\n  RESUME COMPLETE")
+    print(f"  {SEP}")
+    for r in results:
+        icon = "✅" if r["exit_code"] == 0 else "❌"
+        status = "success" if r["exit_code"] == 0 else f"failed ({r['exit_code']})"
+        print(f"  {icon}  {r['acct_name']} ({r['acct_id']}) — {status}")
+    print(f"  {SEP}")
+    input("\n  Press Enter to return to menu...")
+
+
+def _startup_interrupted_check() -> None:
+    """
+    If an interrupted scan session exists, surface it immediately at startup
+    with a Y/N resume prompt — before the main menu renders.
+    """
+    interrupted = utils.get_interrupted_sessions()
+    if not interrupted:
+        return
+
+    session = interrupted[0]
+    scan_type = session.get("scan_type", "")
+    label = session.get("label", scan_type)
+    n_done = len(session.get("results", []))
+    n_total = len(session.get("planned", []))
+    ts = session.get("started_at", "")[:16].replace("T", " ")
+
+    SEP = "─" * 60
+    print()
+    print(f"  {SEP}")
+    print(f"  ⚠  INTERRUPTED SCAN DETECTED")
+    print(f"  {SEP}")
+    print(f"  {label}")
+    print(f"  Started: {ts}  |  Completed: {n_done}/{n_total}")
+    print(f"  {SEP}")
+    print("  [Y] Resume now")
+    print("  [N] Skip — go to main menu")
+    print("  [H] View scan history")
+    print(f"  {SEP}")
+
+    choice = input("\n  Choice [Y/N/H]: ").strip().upper() or "N"
+
+    if choice == "H":
+        show_scan_history()
+        return
+
+    if choice != "Y":
+        return
+
+    if scan_type == "org-scan":
+        _resume_org_scan_from_session(session)
+    elif scan_type == "smart-scan":
+        session_path = session.get("_path", "")
+        smart_scan_path = Path(__file__).parent / "smart_scan.py"
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_RESUME_SESSION_PATH"] = session_path
+        subprocess.run([sys.executable, str(smart_scan_path)], env=child_env)
+        input("\n  Press Enter to return to menu...")
+    else:
+        print(f"\n  ❌ Unknown scan type '{scan_type}' — use [H] Scan History to view details.")
+        input("  Press Enter to return to menu...")
+
+
 def navigate_menus():
     """
     Display the main menu and handle user navigation through nested menus.
@@ -754,6 +1137,7 @@ def navigate_menus():
             sys.exit(1)
 
         ensure_directory_structure()
+        _startup_interrupted_check()
 
         while True:
             menu_structure, account_name = display_main_menu()
@@ -772,12 +1156,23 @@ def navigate_menus():
             except (BackSignal, ExitToMainSignal):
                 continue  # Already at main menu — just redisplay
 
+            # Scan history (special key — not in menu_structure dict)
+            if user_choice.upper() == "H":
+                show_scan_history()
+                continue
+
             if user_choice not in menu_structure:
                 print("Invalid selection. Please try again.")
                 continue
 
             selected_option = menu_structure[user_choice]
             utils.log_menu_selection(user_choice, selected_option['name'])
+
+            # Org scan
+            if selected_option.get("action") == "org_scan":
+                with contextlib.suppress(BackSignal, ExitToMainSignal):
+                    run_org_scan()
+                continue
 
             # Direct script (e.g. Configure StratusScan, Service Discovery)
             if "file" in selected_option and "submenu" not in selected_option:
@@ -824,10 +1219,79 @@ def navigate_menus():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="stratusscan",
+        description="StratusScanCLI-AWS — export AWS resource inventories to Excel",
+        add_help=True,
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"StratusScanCLI-AWS {utils.get_version()}"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate credentials and config, show what would run, then exit",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="enable debug-level console output",
+    )
+    return parser
+
+
+def _run_dry_run() -> None:
+    """Validate credentials and config, print a summary, then exit 0."""
+    print("\nStratusScanCLI-AWS — dry run")
+    print("=" * 60)
+
+    ok, account_id, account_name = utils.validate_aws_credentials()
+    if not ok:
+        print("  [✗] AWS credentials: not found or invalid")
+        print("\nDry run failed. Configure credentials before running.")
+        sys.exit(1)
+
+    print(f"  [✓] AWS credentials: valid")
+    print(f"  [✓] Account: {account_name} ({account_id})")
+
+    partition = utils.detect_partition()
+    print(f"  [✓] Partition: {partition}")
+
+    config, _ = utils.get_config()
+    print(f"  [✓] Config: loaded")
+
+    # Count available scripts
+    scripts_dir = Path(__file__).parent / "scripts"
+    script_count = len(list(scripts_dir.glob("*_export.py")))
+    print(f"  [✓] Export scripts available: {script_count}")
+
+    print("=" * 60)
+    print("Dry run complete. No exports were run.")
+    sys.exit(0)
+
+
 def main():
     """
     Main function to display the menu and handle script execution.
     """
+    parser = _build_parser()
+    # parse_known_args so unrecognised flags don't abort interactive mode
+    args, _ = parser.parse_known_args()
+
+    if args.verbose:
+        # Lower the console handler to DEBUG so all log output reaches stdout
+        for handler in logging.getLogger("stratusscan").handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, logging.FileHandler
+            ):
+                handler.setLevel(logging.DEBUG)
+        utils.log_debug("Verbose mode enabled")
+
+    if args.dry_run:
+        _run_dry_run()
+        return  # sys.exit(0) called inside, but be explicit
+
     try:
         utils.log_section("STARTING MAIN MENU NAVIGATION")
         navigate_menus()
@@ -840,7 +1304,6 @@ def main():
         utils.log_error("Error in main function", e)
         sys.exit(1)
     finally:
-        # Log script completion
         utils.log_script_end("stratusscan.py", SCRIPT_START_TIME)
 
 if __name__ == "__main__":

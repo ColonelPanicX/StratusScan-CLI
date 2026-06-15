@@ -24,6 +24,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -400,6 +401,7 @@ def print_dashboard(config: Dict, config_path: Path):
         config (dict): Configuration dictionary
         config_path (Path): Path to config file
     """
+    os.system('cls' if os.name == 'nt' else 'clear')
     identity = get_aws_identity()
 
     # Header
@@ -424,12 +426,19 @@ def print_dashboard(config: Dict, config_path: Path):
     config_status = get_config_status(config, config_path)
     print_status_line("Configuration", config_status, 70)
 
+    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
+    print_status_line("Export Format", output_fmt, 70)
+
     print("╚" + "═" * 68 + "╝")
 
     # Main menu
     print("\n" + "═" * 70)
     print("MAIN MENU")
     print("═" * 70)
+
+    # First-run wizard
+    print("\nFirst Run:")
+    print("  [0] Config Wizard             (account mappings → regions → deps → perms)")
 
     # Configuration options
     print("\nConfiguration:")
@@ -468,12 +477,115 @@ def print_dashboard(config: Dict, config_path: Path):
         perm_status = "❓ Not checked"
     print(f"  [5] Check AWS Permissions                  {perm_status}")
 
+    # Cross-account roles count
+    cross_roles = config.get('cross_account_roles', {})
+    real_cross_roles = {k: v for k, v in cross_roles.items() if validate_account_id(k)}
+    role_count = len(real_cross_roles)
+    role_status = f"{role_count} configured" if role_count else "None configured"
+    print(f"  [6] Cross-Account Roles                    {role_status}")
+
+    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
+    print(f"  [7] Output Format                          {output_fmt}")
+
     # Actions
     print("\nActions:")
     print("  [S] Save & Exit")
     print("  [U] Exit Without Saving" + (" (Unsaved changes!)" if _config_modified else ""))
 
     print("\n" + "═" * 70)
+
+def configure_output_settings(config: Dict):
+    """
+    Configure the export output format (xlsx or csv).
+
+    Reads current output_settings from config, shows the current value, and
+    prompts the user to change it. Updates config in place and sets the
+    _config_modified flag when a change is made.
+
+    Args:
+        config (dict): Configuration dictionary (mutated in place)
+    """
+    global _config_modified
+
+    current_settings = config.get("output_settings", {})
+    current_fmt = current_settings.get("format", utils.detect_default_format())
+
+    print("\n" + "═" * 70)
+    print("OUTPUT FORMAT SETTINGS")
+    print("═" * 70)
+    print(f"  Current format: {current_fmt}")
+    print()
+    print("  [1] xlsx  — Excel workbook (requires openpyxl)")
+    print("  [2] csv   — Universal CSV (stdlib only, multi-sheet exports split into files)")
+    print()
+    choice = input("Select format (1/2, or Enter to keep current): ").strip()
+
+    if choice == "1":
+        new_fmt = "xlsx"
+    elif choice == "2":
+        new_fmt = "csv"
+    else:
+        print("  No change made.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    if new_fmt == current_fmt:
+        print(f"  Format already set to '{new_fmt}'. No change.")
+    else:
+        if "output_settings" not in config:
+            config["output_settings"] = {}
+        config["output_settings"]["format"] = new_fmt
+        _config_modified = True
+        print(f"  Export format set to '{new_fmt}'.")
+
+    input("\nPress Enter to return to menu...")
+
+
+def config_wizard(config: Dict):
+    """
+    First-run wizard: account mappings → export format → default regions → deps → perms → cross-account roles.
+
+    Steps the user through six essential setup tasks in sequence.
+    Re-entrant — safe to run on an already-configured system.
+    """
+    _clr = lambda: os.system('cls' if os.name == 'nt' else 'clear')
+
+    _clr()
+    print_section("CONFIG WIZARD")
+    print("This wizard walks you through six essential setup steps.")
+    print("You can skip any step by pressing Enter with no input where prompted.\n")
+    print("Step 1/6 — Account Mappings\n")
+    manage_account_mappings(config)
+
+    _clr()
+    print("✅ Step 1/6 complete — Account Mappings\n")
+    print("Step 2/6 — Export Format\n")
+    configure_output_settings(config)
+
+    _clr()
+    print("✅ Step 2/6 complete — Export Format\n")
+    print("Step 3/6 — Default Regions\n")
+    configure_default_regions(config)
+
+    _clr()
+    print("✅ Step 3/6 complete — Default Regions\n")
+    print("Step 4/6 — Dependencies Check\n")
+    dependency_management_menu()
+
+    _clr()
+    print("✅ Step 4/6 complete — Dependencies Check\n")
+    print("Step 5/6 — AWS Permissions Check\n")
+    permissions_management_menu()
+
+    _clr()
+    print("✅ Step 5/6 complete — AWS Permissions Check\n")
+    print("Step 6/6 — Cross-Account Roles\n")
+    manage_cross_account_roles(config)
+
+    _clr()
+    print("\n✅ Config Wizard complete.")
+    input("Press Enter to return to the main menu...")
+
 
 def main_menu_loop(config: Dict, config_path: Path):
     """
@@ -486,9 +598,11 @@ def main_menu_loop(config: Dict, config_path: Path):
     while True:
         print_dashboard(config, config_path)
 
-        choice = input("\nSelect option (1-5, S to save, U to exit): ").strip().upper()
+        choice = input("\nSelect option (0-7, S to save, U to exit): ").strip().upper()
 
-        if choice == '1':
+        if choice == '0':
+            config_wizard(config)
+        elif choice == '1':
             view_configuration(config)
         elif choice == '2':
             manage_account_mappings(config)
@@ -498,6 +612,10 @@ def main_menu_loop(config: Dict, config_path: Path):
             dependency_management_menu()
         elif choice == '5':
             permissions_management_menu()
+        elif choice == '6':
+            manage_cross_account_roles(config)
+        elif choice == '7':
+            configure_output_settings(config)
         elif choice == 'S':
             # Save & Exit
             if _config_modified:
@@ -536,7 +654,7 @@ def main_menu_loop(config: Dict, config_path: Path):
                 print("\n✅ Exiting...")
                 return
         else:
-            print("\n❌ Invalid choice. Please select 1-5, S, or U.")
+            print("\n❌ Invalid choice. Please select 0-7, S, or U.")
             input("Press Enter to continue...")
 
 # ============================================================================
@@ -577,6 +695,7 @@ def manage_account_mappings(config: Dict):
     global _config_modified
 
     while True:
+        os.system('cls' if os.name == 'nt' else 'clear')
         print_section("MANAGE ACCOUNT MAPPINGS")
 
         mappings = config.get('account_mappings', {})
@@ -599,9 +718,24 @@ def manage_account_mappings(config: Dict):
         choice = input("\nSelect option (A/E/D/B): ").strip().upper()
 
         if choice == 'A':
-            # Add new account
+            # Fetch current account identity for defaults
+            identity = get_aws_identity()
+            default_id = identity['account_id'] if identity and identity.get('account_id') != 'Unknown' else ''
+            default_name = ''
+            if identity and default_id:
+                try:
+                    iam = utils.get_boto3_client('iam', identity['default_region'])
+                    aliases = iam.list_account_aliases().get('AccountAliases', [])
+                    if aliases:
+                        default_name = aliases[0]
+                except Exception:
+                    pass
+
+            account_id = ''
             while True:
-                account_id = input("\nEnter AWS Account ID (12 digits): ").strip()
+                prompt = f"\nEnter AWS Account ID [{default_id}]: " if default_id else "\nEnter AWS Account ID (12 digits): "
+                raw = input(prompt).strip()
+                account_id = raw if raw else default_id
                 if not account_id:
                     break
                 if validate_account_id(account_id):
@@ -614,7 +748,9 @@ def manage_account_mappings(config: Dict):
                     print("❌ Invalid account ID. Must be exactly 12 digits (e.g., 123456789012)")
 
             if account_id:
-                account_name = input(f"Enter friendly name for account {account_id}: ").strip()
+                prompt = f"Enter friendly name for account {account_id} [{default_name}]: " if default_name else f"Enter friendly name for account {account_id}: "
+                raw = input(prompt).strip()
+                account_name = raw if raw else default_name
                 if account_name:
                     mappings[account_id] = account_name
                     config['account_mappings'] = mappings
@@ -738,6 +874,119 @@ def configure_default_regions(config: Dict):
             print("  ❌ Invalid choice. Enter 1, C, or 0.")
 
     input("\nPress Enter to return to menu...")
+
+
+# ============================================================================
+# CROSS-ACCOUNT ROLES
+# ============================================================================
+
+_ROLE_ARN_RE = re.compile(r"^arn:(aws|aws-us-gov):iam::\d{12}:role/.+$")
+
+
+def manage_cross_account_roles(config: Dict):
+    """
+    Interactive menu for managing cross-account IAM role mappings.
+
+    Mirrors manage_account_mappings() — [A]dd, [R]emove, [B]ack.
+    Validates role ARN format before delegating to utils.
+    """
+    global _config_modified
+
+    while True:
+        print_section("CROSS-ACCOUNT ROLES")
+
+        roles = config.get('cross_account_roles', {})
+        # Filter comment keys
+        real_roles = {k: v for k, v in sorted(roles.items()) if validate_account_id(k)}
+
+        print(f"\nCurrent Cross-Account Roles ({len(real_roles)}):")
+        if real_roles:
+            for idx, (account_id, role_arn) in enumerate(real_roles.items(), 1):
+                print(f"  {idx}. {account_id} → {role_arn}")
+        else:
+            print("  None configured")
+
+        print("\nOptions:")
+        print("  [A] Add role")
+        print("  [R] Remove role")
+        print("  [B] Back to main menu")
+
+        choice = input("\nSelect option (A/R/B): ").strip().upper()
+
+        if choice == 'A':
+            while True:
+                account_id = input("\nEnter target AWS Account ID (12 digits): ").strip()
+                if not account_id:
+                    break
+                if not validate_account_id(account_id):
+                    print("❌ Invalid account ID. Must be exactly 12 digits (e.g., 123456789012)")
+                    continue
+                break
+
+            if not account_id:
+                continue
+
+            role_arn = input(f"Enter IAM role ARN for account {account_id}: ").strip()
+            if not role_arn:
+                print("\n❌ Role ARN cannot be empty")
+                continue
+
+            if not _ROLE_ARN_RE.match(role_arn):
+                print(
+                    "\n❌ Invalid role ARN format. Expected:"
+                    "\n   arn:aws:iam::<12-digit-id>:role/<role-name>"
+                    "\n   arn:aws-us-gov:iam::<12-digit-id>:role/<role-name>"
+                )
+                input("Press Enter to continue...")
+                continue
+
+            if utils.add_cross_account_role(account_id, role_arn):
+                roles[account_id] = role_arn
+                config['cross_account_roles'] = roles
+                _config_modified = True
+                print(f"\n✅ Added: {account_id} → {role_arn}")
+            else:
+                print(f"\n❌ Failed to add role for account {account_id}")
+            input("Press Enter to continue...")
+
+        elif choice == 'R':
+            if not real_roles:
+                print("\n❌ No roles configured to remove")
+                input("Press Enter to continue...")
+                continue
+
+            account_id = input("\nEnter Account ID to remove role for: ").strip()
+            if not validate_account_id(account_id):
+                print("❌ Invalid account ID. Must be exactly 12 digits.")
+                input("Press Enter to continue...")
+                continue
+
+            if account_id not in roles:
+                print(f"\n❌ No role configured for account {account_id}")
+                input("Press Enter to continue...")
+                continue
+
+            confirm = input(
+                f"Remove role for {account_id} ({roles[account_id]})? (y/n): "
+            ).lower().strip()
+            if confirm == 'y':
+                if utils.remove_cross_account_role(account_id):
+                    del roles[account_id]
+                    config['cross_account_roles'] = roles
+                    _config_modified = True
+                    print(f"\n✅ Removed role for account {account_id}")
+                else:
+                    print(f"\n❌ Failed to remove role for account {account_id}")
+            else:
+                print("\n↩ Cancelled")
+            input("Press Enter to continue...")
+
+        elif choice == 'B':
+            return
+
+        else:
+            print("\n❌ Invalid choice. Please select A, R, or B.")
+
 
 # ============================================================================
 # DEPENDENCY MANAGEMENT

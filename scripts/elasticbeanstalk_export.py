@@ -30,14 +30,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
-
-try:
-    import pandas as pd
-except ImportError:
-    utils.log_error("pandas library is required but not installed")
-    utils.log_error("Install with: pip install pandas")
-    sys.exit(1)
-
+args = utils.parse_script_args("Export Elastic Beanstalk applications and environments to Excel")
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk applications from region", default_return=[])
 def collect_applications_from_region(region: str) -> List[Dict[str, Any]]:
@@ -562,6 +555,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     utils.setup_logging("elasticbeanstalk-export")
 
     try:

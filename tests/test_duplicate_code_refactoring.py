@@ -18,12 +18,10 @@ from pathlib import Path
 # Add path to import utils module
 try:
     import utils
-    import sslib.aws_client
 except ImportError:
     script_dir = Path(__file__).parent.absolute()
     sys.path.append(str(script_dir))
     import utils
-    import sslib.aws_client
 
 
 class TestEnsureDependencies(unittest.TestCase):
@@ -64,7 +62,7 @@ class TestEnsureDependencies(unittest.TestCase):
 
         self.assertFalse(result)
         mock_log_warning.assert_called()
-        mock_log_error.assert_called_with("Cannot continue without required packages")
+        mock_log_error.assert_called_with("Cannot continue without required packages. Run manually: pip install pandas")
 
     @patch('builtins.__import__')
     @patch('builtins.input', return_value='y')
@@ -121,10 +119,10 @@ class TestGetAccountInfo(unittest.TestCase):
 
     def setUp(self):
         """Reset the account info cache before each test."""
-        sslib.aws_client._account_info_cache = None
+        utils._account_info_cache = None
 
-    @patch('sslib.aws_client.get_boto3_client')
-    @patch('sslib.aws_client.get_account_name')
+    @patch('utils.get_boto3_client')
+    @patch('utils.get_account_name')
     def test_successful_account_retrieval(self, mock_get_name, mock_client):
         """Test successful retrieval of account information."""
         # Mock STS client
@@ -141,8 +139,8 @@ class TestGetAccountInfo(unittest.TestCase):
         self.assertEqual(account_name, 'PROD-ACCOUNT')
         mock_client.assert_called_once_with('sts')
 
-    @patch('sslib.aws_client.get_boto3_client')
-    @patch('sslib.aws_client.get_account_name')
+    @patch('utils.get_boto3_client')
+    @patch('utils.get_account_name')
     def test_account_info_caching(self, mock_get_name, mock_client):
         """Test that account info is cached (LRU cache)."""
         # Mock STS client
@@ -160,7 +158,7 @@ class TestGetAccountInfo(unittest.TestCase):
         # But boto3 client should only be called once (cached)
         mock_client.assert_called_once()
 
-    @patch('sslib.aws_client.get_boto3_client')
+    @patch('utils.get_boto3_client')
     def test_account_retrieval_failure(self, mock_client):
         """Test handling of errors during account retrieval."""
         # Mock STS client failure
@@ -199,7 +197,7 @@ class TestPromptRegionSelection(unittest.TestCase):
         self.assertIsInstance(regions, list)
         self.assertGreater(len(regions), 0)
 
-    @patch('utils.prompt_menu', return_value='back')
+    @patch('utils.prompt_menu', side_effect=utils.BackSignal)
     @patch('utils.get_default_regions', return_value=['us-east-1'])
     @patch('utils.detect_partition', return_value='aws')
     def test_back_returns_string(self, mock_partition, mock_defaults, mock_menu):
@@ -207,7 +205,7 @@ class TestPromptRegionSelection(unittest.TestCase):
         result = utils.prompt_region_selection()
         self.assertEqual(result, 'back')
 
-    @patch('utils.prompt_menu', return_value='exit')
+    @patch('utils.prompt_menu', side_effect=utils.QuitSignal)
     @patch('utils.get_default_regions', return_value=['us-east-1'])
     @patch('utils.detect_partition', return_value='aws')
     def test_exit_returns_string(self, mock_partition, mock_defaults, mock_menu):
@@ -258,12 +256,12 @@ class TestPromptRegionSelection(unittest.TestCase):
 class TestIntegration(unittest.TestCase):
     """Integration tests combining multiple utility functions."""
 
-    @patch('sslib.aws_client.get_boto3_client')
-    @patch('sslib.aws_client.get_account_name')
+    @patch('utils.get_boto3_client')
+    @patch('utils.get_account_name')
     def test_typical_script_flow(self, mock_get_name, mock_client):
         """Test typical script flow using all three utility functions."""
         # Clear cache
-        sslib.aws_client._account_info_cache = None
+        utils._account_info_cache = None
 
         mock_sts = MagicMock()
         mock_sts.get_caller_identity.return_value = {'Account': '123456789012'}

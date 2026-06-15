@@ -18,7 +18,6 @@ import datetime
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 # Add path to import utils module
 try:
@@ -42,6 +41,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Compute Optimizer recommendations to Excel")
 @utils.aws_error_handler("Getting available regions", default_return=[
     'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
     'ca-central-1', 'eu-west-1', 'eu-west-2', 'eu-central-1',
@@ -541,6 +541,8 @@ def main():
         # Check dependencies
         if not utils.ensure_dependencies('pandas', 'openpyxl'):
             sys.exit(1)
+        global pd
+        import pandas as pd
 
         # Print title and get account info
         utils.setup_logging("compute-optimizer-export")

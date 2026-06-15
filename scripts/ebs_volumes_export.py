@@ -53,6 +53,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export EBS volumes to Excel")
 def is_valid_aws_region(region_name):
     """
     Check if a region name is a valid AWS region.

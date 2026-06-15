@@ -26,15 +26,11 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon SES identities and configuration to Excel")
 
 # Setup logging
 logger = utils.setup_logging('ses-export')
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 def _scan_email_identities_region(region: str) -> List[Dict[str, Any]]:
     """Scan email identities in a single region."""
     regional_identities = []
@@ -385,6 +381,10 @@ def generate_summary(identities: List[Dict[str, Any]],
 
 def main():
     """Main execution function."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

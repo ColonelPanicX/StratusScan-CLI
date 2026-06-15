@@ -35,6 +35,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export IAM Roles Anywhere profiles and trust anchors to Excel")
 
 def format_tags(tags: List[Dict[str, str]]) -> str:
     """Format tags for display."""

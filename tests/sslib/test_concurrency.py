@@ -1,5 +1,7 @@
 """
-Unit tests for sslib.concurrency — concurrent region scanning and pagination.
+Unit tests for concurrency functions (folded into utils — Issue #177).
+
+Previously tested sslib.concurrency; now tests utils directly.
 """
 
 import sys
@@ -11,7 +13,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from sslib.concurrency import (
+from utils import (
     ConcurrentScanningError,
     _scan_regions_sequential,
     build_dataframe_in_batches,
@@ -85,7 +87,7 @@ class TestScanRegionsSequential:
 
 class TestScanRegionsConcurrent:
     def test_returns_results_for_all_regions(self):
-        with patch("sslib.concurrency.get_config", return_value=_noop_config()):
+        with patch("utils.get_config", return_value=_noop_config()):
             results = scan_regions_concurrent(
                 ["us-east-1", "us-west-2"],
                 lambda r: f"data-{r}",
@@ -97,10 +99,9 @@ class TestScanRegionsConcurrent:
 
     def test_disabled_config_falls_back_to_sequential(self):
         config_with_disabled = {"advanced_settings": {"concurrent_scanning": {"enabled": False}}}
-        called = []
 
-        with patch("sslib.concurrency.get_config", return_value=({}, config_with_disabled)):
-            with patch("sslib.concurrency._scan_regions_sequential", side_effect=lambda r, f, p: []) as mock_seq:
+        with patch("utils.get_config", return_value=({}, config_with_disabled)):
+            with patch("utils._scan_regions_sequential", side_effect=lambda r, f, p: []) as mock_seq:
                 scan_regions_concurrent(
                     ["us-east-1"],
                     lambda r: r,
@@ -113,7 +114,7 @@ class TestScanRegionsConcurrent:
         def always_fail(region):
             raise RuntimeError("boom")
 
-        with patch("sslib.concurrency.get_config", return_value=_noop_config()):
+        with patch("utils.get_config", return_value=_noop_config()):
             # With fallback enabled, no exception is raised
             results = scan_regions_concurrent(
                 ["r1", "r2", "r3", "r4"],
@@ -142,7 +143,7 @@ class TestPaginateWithProgress:
         mock_client = MagicMock()
         mock_client.get_paginator.return_value = mock_paginator
 
-        with patch("sslib.concurrency.get_config", return_value=_noop_config()):
+        with patch("utils.get_config", return_value=_noop_config()):
             pages = list(paginate_with_progress(mock_client, "list_items", "items"))
 
         assert pages == [page1, page2]
@@ -153,7 +154,7 @@ class TestPaginateWithProgress:
         mock_client = MagicMock()
         mock_client.get_paginator.return_value = mock_paginator
 
-        with patch("sslib.concurrency.get_config", return_value=_noop_config()):
+        with patch("utils.get_config", return_value=_noop_config()):
             list(paginate_with_progress(mock_client, "list_items", "items", Bucket="my-bucket"))
 
         mock_paginator.paginate.assert_called_once_with(Bucket="my-bucket")

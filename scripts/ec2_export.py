@@ -51,6 +51,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export EC2 instances to Excel")
 
 def get_os_info_from_ssm(instance_id, region):
     """
@@ -661,9 +662,11 @@ def _prompt_instance_filter():
     """Prompt user to choose an instance state filter.
 
     Returns:
-        tuple (instance_filter, filter_desc) on valid choice,
-        'back' if user pressed b,
-        'exit' if user pressed x.
+        tuple (instance_filter, filter_desc) on valid choice.
+
+    Raises:
+        utils.BackSignal: if the user enters 'b'.
+        utils.QuitSignal: if the user enters 'x' or presses Ctrl-C.
     """
     choice = utils.prompt_menu(
         "INSTANCE FILTER",
@@ -673,8 +676,6 @@ def _prompt_instance_filter():
             "Stopped instances only",
         ],
     )
-    if choice in ('back', 'exit'):
-        return choice
     filters = {
         1: (None, "all"),
         2: ("running", "running"),
@@ -771,11 +772,12 @@ def main():
                 step = 2
 
             elif step == 2:
-                result = _prompt_instance_filter()
-                if result == 'back':
+                try:
+                    result = _prompt_instance_filter()
+                except utils.BackSignal:
                     step = 1
                     continue
-                if result == 'exit':
+                except utils.QuitSignal:
                     sys.exit(11)
                 instance_filter, filter_desc = result
                 step = 3

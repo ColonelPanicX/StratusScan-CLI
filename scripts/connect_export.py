@@ -26,12 +26,8 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon Connect instances and resources to Excel")
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 def _scan_instances_region(region: str) -> List[Dict[str, Any]]:
     """Scan Connect instances in a single region."""
     regional_instances = []
@@ -215,6 +211,10 @@ def generate_summary(instances: List[Dict[str, Any]],
 
 def main():
     """Main execution function."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

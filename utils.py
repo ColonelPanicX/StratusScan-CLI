@@ -41,7 +41,13 @@ from contextlib import contextmanager
 from functools import wraps
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar
+from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar, TYPE_CHECKING
+
+import boto3
+import botocore
+from botocore.client import BaseClient
+from botocore.config import Config
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # openpyxl is imported lazily inside _adjust_column_widths to avoid a hard
 # import failure when the package is not installed (e.g. fresh clone before
@@ -53,11 +59,38 @@ logger = None
 # Tracks whether setup_logging() has been explicitly called
 _logging_configured = False
 
+# ---------------------------------------------------------------------------
+# Script args store — populated by parse_script_args() at script start
+# ---------------------------------------------------------------------------
+
+_SCRIPT_ARGS: Optional["argparse.Namespace"] = None
+
+
+def get_script_args() -> Optional["argparse.Namespace"]:
+    """Return the parsed script args namespace, or None if not yet parsed."""
+    return _SCRIPT_ARGS
+
+
+# ---------------------------------------------------------------------------
+# Navigation signals — raised by prompt_menu() for b / x input
+# ---------------------------------------------------------------------------
+
+class BackSignal(Exception):
+    """Raised when the user enters 'b' to return to the parent menu."""
+
+
+class ExitToMainSignal(Exception):
+    """Raised when the user enters 'x' to exit directly to the main menu."""
+
+
+class QuitSignal(Exception):
+    """Raised when the user enters 'q' to quit."""
+
 
 def get_version() -> str:
     """Return the installed package version, or 'dev' if not installed."""
     try:
-        return _pkg_version("stratusscan-cli")
+        return _pkg_version("stratusscancli-aws")
     except PackageNotFoundError:
         return "dev"
 
@@ -197,7 +230,7 @@ def prompt_menu(
     options: List[str],
     allow_back: bool = True,
     allow_exit: bool = True,
-) -> Union[int, str]:
+) -> int:
     """
     Display a bordered numbered menu and return the user's choice.
 
@@ -208,9 +241,12 @@ def prompt_menu(
         allow_exit: If True, show and accept 'x' to exit (default: True)
 
     Returns:
-        int 1..N if the user picks a numbered option,
-        'back' if the user enters 'b' (and allow_back is True),
-        'exit' if the user enters 'x' (and allow_exit is True).
+        int 1..N if the user picks a numbered option.
+
+    Raises:
+        BackSignal: if the user enters 'b' (and allow_back is True).
+        QuitSignal: if the user enters 'x' (and allow_exit is True) or
+            presses Ctrl-C.
     """
     if is_auto_run():
         return 1
@@ -241,14 +277,14 @@ def prompt_menu(
         except KeyboardInterrupt:
             print()
             if allow_exit:
-                return 'exit'
+                raise QuitSignal
             continue
 
         if choice in valid:
             if choice == 'b':
-                return 'back'
+                raise BackSignal
             if choice == 'x':
-                return 'exit'
+                raise QuitSignal
             return int(choice)
         print("Invalid choice. Please try again.")
 
@@ -275,6 +311,16 @@ def prompt_region_selection(
         _partition = detect_partition()
         return get_partition_regions(_partition, all_regions=True)
 
+    # CLI flag override — takes precedence over interactive prompts
+    if _SCRIPT_ARGS is not None:
+        if _SCRIPT_ARGS.region:
+            return [_SCRIPT_ARGS.region]
+        if _SCRIPT_ARGS.regions:
+            return [r.strip() for r in _SCRIPT_ARGS.regions.split(",") if r.strip()]
+        if _SCRIPT_ARGS.all_regions:
+            _partition = detect_partition()
+            return get_partition_regions(_partition, all_regions=True)
+
     partition = detect_partition()
     default_regions = get_default_regions()
     default_str = ", ".join(default_regions[:4])
@@ -291,10 +337,11 @@ def prompt_region_selection(
     ]
 
     while True:
-        choice = prompt_menu("REGION SELECTION", options)
-        if choice == 'back':
+        try:
+            choice = prompt_menu("REGION SELECTION", options)
+        except BackSignal:
             return 'back'
-        if choice == 'exit':
+        except QuitSignal:
             return 'exit'
 
         if choice == 1:
@@ -628,6 +675,10 @@ def prompt_for_confirmation(message: str = "Do you want to continue?", default: 
     if is_auto_run():
         return default
 
+    # CLI flag override — --yes / -y skips confirmation
+    if _SCRIPT_ARGS is not None and _SCRIPT_ARGS.yes:
+        return True
+
     # TODO: Issue #C — add b/x navigation support here
     default_prompt = " (Y/n): " if default else " (y/N): "
     response = input(f"{message}{default_prompt}").strip().lower()
@@ -766,18 +817,23 @@ def get_output_dir() -> Path:
     """
     Get the path to the output directory and create it if it doesn't exist.
 
+    Resolution order:
+      1. ``_SCRIPT_ARGS.output_dir`` set by ``parse_script_args()`` (absolute
+         path is used as-is; relative path is resolved from CWD)
+      2. ``output/`` subdirectory of the StratusScan project root
+
     Returns:
-        Path: Path to the output directory
+        Path: Path to the output directory (guaranteed to exist)
     """
-    # Get StratusScan root directory
-    root_dir = get_stratusscan_root()
+    if _SCRIPT_ARGS is not None and _SCRIPT_ARGS.output_dir != "output":
+        output_dir = Path(_SCRIPT_ARGS.output_dir)
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+    else:
+        root_dir = get_stratusscan_root()
+        output_dir = root_dir / "output"
 
-    # Define the output directory path
-    output_dir = root_dir / "output"
-
-    # Create the directory if it doesn't exist
-    output_dir.mkdir(exist_ok=True)
-
+    output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
 def get_output_filepath(filename: str) -> Path:
@@ -796,7 +852,8 @@ def create_export_filename(
     account_name: str,
     resource_type: str,
     suffix: str = "",
-    current_date: Optional[str] = None
+    current_date: Optional[str] = None,
+    fmt: Optional[str] = None
 ) -> str:
     """
     Create a standardized filename for exported data.
@@ -806,27 +863,34 @@ def create_export_filename(
         resource_type: Type of resource being exported (e.g., "ec2", "vpc")
         suffix: Optional suffix for the filename (e.g., "running", "all")
         current_date: Date to use in the filename (defaults to today)
+        fmt: Export format override ('xlsx' or 'csv'). Reads from config if None.
 
     Returns:
         str: Standardized filename with path
     """
+    # Resolve format: explicit arg > config > default
+    if fmt is None:
+        fmt = config_value("format", default="xlsx", section="output_settings")
+
+    ext = f".{fmt}"
+
     # Get current date if not provided
     if not current_date:
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
 
     # Build the base filename
     if suffix:
-        base_filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-{suffix}-export-{current_date}{ext}"
     else:
-        base_filename = f"{account_name}-{resource_type}-export-{current_date}.xlsx"
+        base_filename = f"{account_name}-{resource_type}-export-{current_date}{ext}"
 
     # Same-day overwrite protection: append -v2, -v3, etc. until the name is unique
     output_dir = get_output_dir()
     candidate = base_filename
     version = 2
     while (output_dir / candidate).exists():
-        stem = base_filename[: -len(".xlsx")]
-        candidate = f"{stem}-v{version}.xlsx"
+        stem = base_filename[: -len(ext)]
+        candidate = f"{stem}-v{version}{ext}"
         version += 1
 
     return candidate
@@ -842,32 +906,50 @@ def _adjust_column_widths(worksheet, df) -> None:
 
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_adjust_columns: bool = True, prepare: bool = False) -> Optional[str]:
     """
-    Save a pandas DataFrame to an Excel file in the output directory.
+    Save a pandas DataFrame to an Excel file (or CSV) in the output directory.
+
+    The output format is determined by the 'format' key in the 'output_settings'
+    config section ('xlsx' or 'csv'). Defaults to 'xlsx'.
 
     Args:
         df: pandas DataFrame to save
         filename: Name of the file to save
-        sheet_name: Name of the sheet in Excel
-        auto_adjust_columns: Whether to auto-adjust column widths
+        sheet_name: Name of the sheet in Excel (ignored for CSV)
+        auto_adjust_columns: Whether to auto-adjust column widths (xlsx only)
         prepare: If True, apply prepare_dataframe_for_export() before saving (default: False)
 
     Returns:
-        str: Full path to the saved file
+        str: Full path to the saved file, or None on error
     """
     try:
         # Import pandas here to avoid dependency issues
         import pandas as pd
 
+        # Resolve output format from config
+        fmt = config_value("format", default="xlsx", section="output_settings")
+
         # Prepare DataFrame if requested
         if prepare:
             df = prepare_dataframe_for_export(df)
 
-        # Get the full path
-        output_path = get_output_filepath(filename)
+        if fmt == "csv":
+            # Normalise filename: strip .xlsx if caller passed it, force .csv
+            if filename.endswith(".xlsx"):
+                filename = filename[:-5] + ".csv"
+            elif not filename.endswith(".csv"):
+                filename = filename + ".csv"
 
+            output_path = get_output_filepath(filename)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            df.to_csv(output_path, index=False)
+            logger.info(f"Data successfully exported to: {output_path}")
+            return str(output_path)
+
+        # --- xlsx path ---
         # Ensure the output directory exists
+        output_path = get_output_filepath(filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
+
         # Save to Excel
         if auto_adjust_columns:
             # Create Excel writer using context manager to ensure proper close/save
@@ -881,42 +963,43 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         else:
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
-        
+
         logger.info(f"Data successfully exported to: {output_path}")
-        
         return str(output_path)
-    
+
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}")
-        
-        # Try CSV as fallback
-        try:
-            csv_filename = filename.replace('.xlsx', '.csv')
-            csv_path = get_output_filepath(csv_filename)
-            
-            df.to_csv(csv_path, index=False)
-            logger.info(f"Saved as CSV instead: {csv_path}")
-            return str(csv_path)
-            
-        except Exception as csv_e:
-            logger.error(f"Error saving CSV file: {csv_e}")
-            return None
+        logger.error(f"Error saving file: {e}")
+        return None
 
 def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename: str, prepare: bool = False) -> Optional[str]:
     """
-    Save multiple pandas DataFrames to a single Excel file with multiple sheets.
+    Save multiple pandas DataFrames to a single Excel file with multiple sheets,
+    or to individual CSV files (one per sheet) when format is 'csv'.
+
+    The output format is determined by the 'format' key in the 'output_settings'
+    config section ('xlsx' or 'csv'). Defaults to 'xlsx'.
+
+    For CSV mode, each sheet is written as a separate file:
+        <base>-<sheet-slug>.csv
+    e.g. account-ec2-export-05.15.2026.xlsx + "EC2 Instances"
+         → account-ec2-export-05.15.2026-ec2-instances.csv
 
     Args:
         dataframes_dict: Dictionary of {sheet_name: dataframe}
-        filename: Name of the file to save
+        filename: Name of the base file to save
         prepare: If True, apply prepare_dataframe_for_export() to each DataFrame (default: False)
 
     Returns:
-        str: Full path to the saved file
+        str: Full path to the saved file (xlsx), or path of the first CSV written, or None on error
     """
+    import re as _re
+
     try:
         # Import pandas here to avoid dependency issues
         import pandas as pd
+
+        # Resolve output format from config
+        fmt = config_value("format", default="xlsx", section="output_settings")
 
         # Prepare DataFrames if requested
         if prepare:
@@ -925,11 +1008,47 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
                 for sheet_name, df in dataframes_dict.items()
             }
 
-        # Get the full path
+        output_dir = get_output_dir()
+        os.makedirs(output_dir, exist_ok=True)
+
+        if fmt == "csv":
+            # Strip any extension from the base filename to get a clean stem
+            base_stem = filename
+            for ext in (".xlsx", ".csv"):
+                if base_stem.endswith(ext):
+                    base_stem = base_stem[: -len(ext)]
+                    break
+
+            first_path: Optional[str] = None
+            for sheet_name, df in dataframes_dict.items():
+                slug = _re.sub(r'[^a-z0-9]+', '-', sheet_name.lower()).strip('-')
+                csv_filename = f"{base_stem}-{slug}.csv"
+                csv_path = output_dir / csv_filename
+                df.to_csv(csv_path, index=False)
+                logger.info(f"Data successfully exported to: {csv_path}")
+                if first_path is None:
+                    first_path = str(csv_path)
+
+            return first_path
+
+        # --- xlsx path ---
         output_path = get_output_filepath(filename)
 
-        # Ensure the output directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Sanitize sheet names for Excel (max 31 chars, no invalid chars, unique)
+        sanitized_dict: Dict[str, Any] = {}
+        for raw_name, df in dataframes_dict.items():
+            safe = raw_name
+            for ch in ('\\', '/', '*', '?', ':', '[', ']'):
+                safe = safe.replace(ch, '')
+            safe = safe[:31].strip()
+            if safe in sanitized_dict:
+                base = safe[:27]
+                n = 2
+                while f"{base} ({n})" in sanitized_dict:
+                    n += 1
+                safe = f"{base} ({n})"
+            sanitized_dict[safe] = df
+        dataframes_dict = sanitized_dict
 
         # Create Excel writer using context manager to ensure proper close/save
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
@@ -940,13 +1059,31 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
                 # Auto-adjust column widths (skip if DataFrame is empty)
                 if not df.empty:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
-        
+
         logger.info(f"Data successfully exported to: {output_path}")
         return str(output_path)
-    
+
     except Exception as e:
-        logger.error(f"Error saving Excel file: {e}")
+        logger.error(f"Error saving file: {e}")
         return None
+
+def detect_default_format() -> str:
+    """
+    Detect the default export format based on available dependencies.
+
+    Returns 'xlsx' when openpyxl is importable, 'csv' otherwise. Intended
+    for use by configure.py at wizard time to pre-populate a sensible default.
+    The actual runtime format is always read from config by save functions.
+
+    Returns:
+        str: 'xlsx' or 'csv'
+    """
+    try:
+        import openpyxl  # noqa: F401
+        return "xlsx"
+    except ImportError:
+        return "csv"
+
 
 def create_aws_arn(service: str, resource: str, region: Optional[str] = None, account_id: Optional[str] = None) -> str:
     """
@@ -1336,13 +1473,11 @@ def ensure_dependencies(*packages: str) -> bool:
     response = input("Would you like to install these packages now? (y/n): ").lower().strip()
 
     if response != 'y':
-        log_error("Cannot continue without required packages")
-        print("Exiting. Please install required packages manually with:")
-        print(f"  pip install {' '.join(missing)}")
+        log_error(f"Cannot continue without required packages. Run manually: pip install {' '.join(missing)}")
         return False
 
     # Install missing packages
-    print(f"Installing: {' '.join(missing)}")
+    log_warning(f"Installing: {' '.join(missing)}")
     try:
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install"] + missing
@@ -1903,62 +2038,2092 @@ def validate_export(
     return True, "Validation passed"
 
 # =============================================================================
-# Sprint 4 compatibility shims — remove once all callers updated
+# CONFIG — Configuration singleton and account-mapping utilities
+# (folded in from sslib/config.py — Issue #177)
 # =============================================================================
 
-from sslib.cost import (  # noqa: E402
-    _estimate_excel_size,
-    estimate_rds_monthly_cost,
-    estimate_s3_monthly_cost,
-    calculate_nat_gateway_monthly_cost,
-    generate_cost_optimization_recommendations,
+# ---------------------------------------------------------------------------
+# Module-level state (config singleton)
+# ---------------------------------------------------------------------------
+
+ACCOUNT_MAPPINGS: Dict[str, str] = {}
+CONFIG_DATA: Dict[str, Any] = {}
+_CONFIG_LOADED: bool = False
+_CONFIG_LOCK: threading.Lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# STS credential cache — keyed by (role_arn, region), stores (creds_dict, expiry)
+# ---------------------------------------------------------------------------
+
+_STS_CACHE: Dict[Tuple[str, Optional[str]], Tuple[Dict[str, str], datetime.datetime]] = {}
+_STS_CACHE_LOCK: threading.Lock = threading.Lock()
+_STS_CACHE_REFRESH_MARGIN: datetime.timedelta = datetime.timedelta(minutes=5)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _config_path() -> Path:
+    """Return the absolute path to config.json (sibling of utils.py)."""
+    return Path(__file__).parent / "config.json"
+
+
+# ---------------------------------------------------------------------------
+# Account ID validation
+# ---------------------------------------------------------------------------
+
+
+def is_valid_aws_account_id(account_id: Union[str, int]) -> bool:
+    """
+    Check if a string is a valid AWS account ID (12 digits).
+
+    Args:
+        account_id: The account ID to check
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    pattern = re.compile(r"^\d{12}$")
+    return bool(pattern.match(str(account_id)))
+
+
+# ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
+
+
+def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
+    """
+    Load configuration from config.json file.
+
+    Returns:
+        tuple: (ACCOUNT_MAPPINGS, CONFIG_DATA)
+    """
+    global ACCOUNT_MAPPINGS, CONFIG_DATA
+
+    try:
+        config_file = _config_path()
+
+        if config_file.exists():
+            with open(config_file, "r", encoding="utf-8") as f:
+                CONFIG_DATA = json.load(f)
+
+            if "account_mappings" in CONFIG_DATA:
+                ACCOUNT_MAPPINGS = CONFIG_DATA["account_mappings"]
+                logging.getLogger(__name__).debug(
+                    "Loaded %d account mappings from config.json", len(ACCOUNT_MAPPINGS)
+                )
+
+            logging.getLogger(__name__).debug("Configuration loaded successfully")
+        else:
+            logging.getLogger(__name__).warning(
+                "config.json not found. Using default AWS configuration."
+            )
+
+            default_config = {
+                "__comment": "StratusScan Configuration - Customize this file for your environment",
+                "account_mappings": {},
+                "organization_name": "YOUR-ORGANIZATION",
+                "default_regions": ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"],
+                "aws_environment": "production",
+                "resource_preferences": {
+                    "ec2": {
+                        "default_filter": "all",
+                        "include_stopped": True,
+                        "default_region": "us-east-1",
+                    },
+                    "vpc": {
+                        "default_export_type": "all",
+                        "default_region": "us-east-1",
+                    },
+                    "compute_optimizer": {
+                        "enabled": True,
+                        "note": "Available in commercial AWS",
+                    },
+                },
+                "enabled_services": {
+                    "trusted_advisor": {
+                        "enabled": True,
+                        "note": "Available in commercial AWS",
+                    },
+                    "cost_explorer": {
+                        "enabled": True,
+                        "note": "Available in commercial AWS",
+                    },
+                },
+            }
+
+            try:
+                with open(config_file, "w", encoding="utf-8") as f:
+                    json.dump(default_config, f, indent=2)
+
+                msg = (
+                    f"Created default config.json at {config_file}. "
+                    "Please run 'python configure.py' to set your account mappings and preferences."
+                )
+                logging.getLogger(__name__).info("[StratusScan] %s", msg)
+
+                CONFIG_DATA = default_config
+                ACCOUNT_MAPPINGS = {}
+            except Exception as e:
+                logging.getLogger(__name__).error("Failed to create default config.json: %s", e)
+
+    except Exception as e:
+        logging.getLogger(__name__).error("Error loading configuration: %s", e)
+
+    return ACCOUNT_MAPPINGS, CONFIG_DATA
+
+
+def get_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
+    """
+    Lazy-load configuration. First call loads from disk; subsequent calls return cached values.
+    Thread-safe: uses _CONFIG_LOCK to prevent concurrent initialization.
+
+    Returns:
+        tuple: (ACCOUNT_MAPPINGS, CONFIG_DATA)
+    """
+    global _CONFIG_LOADED, ACCOUNT_MAPPINGS, CONFIG_DATA
+    with _CONFIG_LOCK:
+        if not _CONFIG_LOADED:
+            ACCOUNT_MAPPINGS, CONFIG_DATA = load_config()
+            _CONFIG_LOADED = True
+    return ACCOUNT_MAPPINGS, CONFIG_DATA
+
+
+# ---------------------------------------------------------------------------
+# Config value accessors
+# ---------------------------------------------------------------------------
+
+
+def config_value(key: str, default: Any = None, section: Optional[str] = None) -> Any:
+    """
+    Get a value from the configuration.
+
+    Args:
+        key: Configuration key
+        default: Default value if key is not found
+        section: Optional section in the configuration
+
+    Returns:
+        The configuration value or default
+    """
+    _, cfg = get_config()
+    if not cfg:
+        return default
+
+    try:
+        if section:
+            if section in cfg and key in cfg[section]:
+                return cfg[section][key]
+        else:
+            if key in cfg:
+                return cfg[key]
+    except Exception as e:
+        logging.getLogger(__name__).warning("Error reading config value '%s': %s", key, e)
+
+    return default
+
+
+def get_resource_preference(resource_type: str, preference: str, default: Any = None) -> Any:
+    """
+    Get a resource-specific preference from the configuration.
+
+    Args:
+        resource_type: Type of resource (e.g., 'ec2', 'vpc')
+        preference: Preference name
+        default: Default value if preference is not found
+
+    Returns:
+        The preference value or default
+    """
+    _, cfg = get_config()
+    if "resource_preferences" in cfg:
+        resource_prefs = cfg["resource_preferences"]
+        if resource_type in resource_prefs and preference in resource_prefs[resource_type]:
+            return resource_prefs[resource_type][preference]
+
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Account mapping management
+# ---------------------------------------------------------------------------
+
+
+def add_account_mapping(account_id: str, account_name: str) -> bool:
+    """
+    Add a new account mapping to the configuration.
+
+    Args:
+        account_id: AWS account ID
+        account_name: Account name
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not is_valid_aws_account_id(account_id):
+        logging.getLogger(__name__).error("Invalid AWS account ID: %s", account_id)
+        return False
+
+    try:
+        # Trigger lazy load outside the lock to avoid re-entrant lock deadlock
+        get_config()
+
+        config_file = _config_path()
+
+        # Acquire lock only around file I/O to avoid deadlock with get_config()
+        with _CONFIG_LOCK:
+            if config_file.exists():
+                with open(config_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+
+                if "account_mappings" not in config:
+                    config["account_mappings"] = {}
+
+                config["account_mappings"][account_id] = account_name
+
+                # Atomic write: serialize to .tmp then os.replace for crash safety
+                tmp_path = config_file.with_suffix(".json.tmp")
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2)
+                os.replace(tmp_path, config_file)
+
+                # Update in-memory cache only after successful file write
+                ACCOUNT_MAPPINGS[account_id] = account_name
+
+                logging.getLogger(__name__).info(
+                    "Added account mapping: %s → %s", account_id, account_name
+                )
+                return True
+            else:
+                logging.getLogger(__name__).error("config.json not found")
+                return False
+
+    except Exception as e:
+        logging.getLogger(__name__).error("Failed to add account mapping: %s", e)
+        return False
+
+
+def get_account_name(account_id: str, default: str = "UNKNOWN-ACCOUNT") -> str:
+    """
+    Get account name from account ID using configured mappings.
+
+    Args:
+        account_id: The AWS account ID
+        default: Default value to return if account_id is not found in mappings
+
+    Returns:
+        str: The account name or default value
+    """
+    mappings, _ = get_config()
+    return mappings.get(account_id, default)
+
+
+def get_account_name_formatted(owner_id: str) -> str:
+    """
+    Get the formatted account name with ID from the owner ID.
+
+    Args:
+        owner_id: The AWS account owner ID
+
+    Returns:
+        str: Formatted as "ACCOUNT-NAME (ID)" if mapping exists, otherwise just the ID
+    """
+    mappings, _ = get_config()
+    if owner_id in mappings:
+        return f"{mappings[owner_id]} ({owner_id})"
+    return owner_id
+
+
+# ---------------------------------------------------------------------------
+# Cross-account role management
+# ---------------------------------------------------------------------------
+
+_ROLE_ARN_RE = re.compile(
+    r"^arn:(aws|aws-us-gov):iam::\d{12}:role/.+$"
 )
 
-from sslib.config import (  # noqa: E402
-    ACCOUNT_MAPPINGS,
-    CONFIG_DATA,
-    _CONFIG_LOADED,
-    _CONFIG_LOCK,
-    is_valid_aws_account_id,
-    load_config,
-    get_config,
-    config_value,
-    get_resource_preference,
-    add_account_mapping,
-    get_account_name,
-    get_account_name_formatted,
-)
 
-from sslib.concurrency import (  # noqa: E402
-    ConcurrentScanningError,
-    scan_regions_concurrent,
-    _scan_regions_sequential,
-    paginate_with_progress,
-    build_dataframe_in_batches,
-)
+def get_cross_account_roles() -> Dict[str, str]:
+    """
+    Return the cross_account_roles map from config (account_id → role_arn).
 
-from sslib.aws_client import (  # noqa: E402
-    _account_info_cache,
-    _account_info_lock,
-    detect_partition,
-    get_aws_session,
-    get_boto3_client,
-    build_arn,
-    is_service_available_in_partition,
-    is_service_enabled,
-    get_service_disability_reason,
-    get_partition_regions,
-    get_partition_default_region,
-    get_default_regions,
-    get_partition_default_regions,
-    is_aws_region,
-    validate_aws_region,
-    get_aws_regions,
-    is_aws_commercial_environment,
-    is_auto_run,
-    get_auto_regions,
-    validate_aws_credentials,
-    check_aws_region_access,
-    get_available_aws_regions,
-    get_cached_account_info,
-)
+    Returns:
+        Dict[str, str]: Mapping of account_id to role ARN. Empty dict if not configured.
+    """
+    _, cfg = get_config()
+    roles = cfg.get("cross_account_roles", {})
+    # Filter comment keys — only return valid 12-digit account IDs
+    return {k: v for k, v in roles.items() if is_valid_aws_account_id(k)}
+
+
+def add_cross_account_role(account_id: str, role_arn: str) -> bool:
+    """
+    Add or update a cross-account role mapping in config.json.
+
+    Mirrors add_account_mapping() — atomic write (tmp + os.replace) with
+    in-memory cache update after successful file write.
+
+    Args:
+        account_id: 12-digit AWS account ID of the target account.
+        role_arn: IAM role ARN to assume (must match arn:(aws|aws-us-gov):iam::...).
+
+    Returns:
+        bool: True on success, False on validation failure or I/O error.
+    """
+    log = logging.getLogger(__name__)
+
+    if not is_valid_aws_account_id(account_id):
+        log.error("Invalid AWS account ID: %s", account_id)
+        return False
+
+    if not _ROLE_ARN_RE.match(role_arn):
+        log.error(
+            "Invalid role ARN format: %s — expected arn:(aws|aws-us-gov):iam::<12-digit-id>:role/<name>",
+            role_arn,
+        )
+        return False
+
+    try:
+        # Ensure config is loaded before acquiring lock
+        get_config()
+
+        config_file = _config_path()
+
+        with _CONFIG_LOCK:
+            if not config_file.exists():
+                log.error("config.json not found — cannot add cross-account role")
+                return False
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            if "cross_account_roles" not in config:
+                config["cross_account_roles"] = {}
+
+            config["cross_account_roles"][account_id] = role_arn
+
+            tmp_path = config_file.with_suffix(".json.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            os.replace(tmp_path, config_file)
+
+            # Update in-memory cache after successful write
+            CONFIG_DATA.setdefault("cross_account_roles", {})[account_id] = role_arn
+
+        log.info("Added cross-account role: %s → %s", account_id, role_arn)
+        return True
+
+    except Exception as e:
+        log.error("Failed to add cross-account role: %s", e)
+        return False
+
+
+def remove_cross_account_role(account_id: str) -> bool:
+    """
+    Remove a cross-account role mapping from config.json.
+
+    Atomic write (tmp + os.replace) with in-memory cache update.
+
+    Args:
+        account_id: 12-digit AWS account ID whose role mapping to remove.
+
+    Returns:
+        bool: True on success, False if not found or on I/O error.
+    """
+    log = logging.getLogger(__name__)
+
+    if not is_valid_aws_account_id(account_id):
+        log.error("Invalid AWS account ID: %s", account_id)
+        return False
+
+    try:
+        get_config()
+
+        config_file = _config_path()
+
+        with _CONFIG_LOCK:
+            if not config_file.exists():
+                log.error("config.json not found — cannot remove cross-account role")
+                return False
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            roles = config.get("cross_account_roles", {})
+            if account_id not in roles:
+                log.warning("No cross-account role found for account %s", account_id)
+                return False
+
+            del roles[account_id]
+            config["cross_account_roles"] = roles
+
+            tmp_path = config_file.with_suffix(".json.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            os.replace(tmp_path, config_file)
+
+            # Update in-memory cache
+            CONFIG_DATA.get("cross_account_roles", {}).pop(account_id, None)
+
+        log.info("Removed cross-account role for account %s", account_id)
+        return True
+
+    except Exception as e:
+        log.error("Failed to remove cross-account role: %s", e)
+        return False
+
+
+# =============================================================================
+# CONCURRENCY — Concurrent region scanning and pagination utilities
+# (folded in from sslib/concurrency.py — Issue #177)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Exception
+# ---------------------------------------------------------------------------
+
+
+class ConcurrentScanningError(Exception):
+    """Raised when concurrent scanning encounters too many errors."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Multi-region scanning
+# ---------------------------------------------------------------------------
+
+
+def scan_regions_concurrent(
+    regions: List[str],
+    scan_function: Callable[[str], Any],
+    max_workers: Optional[int] = None,
+    show_progress: Optional[bool] = True,
+    fallback_on_error: Optional[bool] = None,
+) -> List[Any]:
+    """
+    Scan multiple AWS regions concurrently with automatic fallback to sequential.
+
+    This function dramatically improves performance for multi-region exports by
+    scanning regions in parallel instead of sequentially. It includes intelligent
+    error handling with automatic fallback to sequential scanning if too many errors
+    occur (typically due to API rate limiting).
+
+    Args:
+        regions: List of AWS regions to scan
+        scan_function: Function that takes a region and returns data.
+                      Function should handle its own AWS client creation.
+        max_workers: Maximum concurrent workers (default: from config or 4)
+        show_progress: Show progress as regions complete (default: True)
+        fallback_on_error: Fallback to sequential on errors (default: from config or True)
+
+    Returns:
+        list: List of results from all regions
+
+    Example:
+        >>> def collect_region_instances(region):
+        ...     ec2 = get_boto3_client('ec2', region_name=region)
+        ...     return ec2.describe_instances()['Reservations']
+        >>> results = scan_regions_concurrent(regions, collect_region_instances)
+
+    Note:
+        - Automatically loads settings from config.json (advanced_settings)
+        - Falls back to sequential scanning if concurrent scanning fails
+        - Each thread gets its own boto3 client (thread-safe)
+    """
+    # Load settings from config
+    _, config = get_config()
+    advanced = config.get("advanced_settings", {})
+    concurrent_config = advanced.get("concurrent_scanning", {})
+
+    if max_workers is None:
+        max_workers = concurrent_config.get("max_workers", 4)
+
+    if fallback_on_error is None:
+        fallback_on_error = concurrent_config.get("fallback_on_error", True)
+
+    if not concurrent_config.get("enabled", True):
+        logging.getLogger(__name__).info(
+            "Concurrent scanning disabled in config, using sequential scanning"
+        )
+        return _scan_regions_sequential(regions, scan_function, show_progress)
+
+    try:
+        logging.getLogger(__name__).info(
+            "Scanning %d region(s) concurrently (max_workers=%d)", len(regions), max_workers
+        )
+
+        results = []
+        completed = 0
+        total = len(regions)
+        error_count = 0
+
+        if show_progress:
+            logging.getLogger(__name__).info("Scanning %d region(s) concurrently...", total)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_region = {
+                executor.submit(scan_function, region): region for region in regions
+            }
+
+            for future in as_completed(future_to_region):
+                region = future_to_region[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    completed += 1
+
+                    if show_progress:
+                        logging.getLogger(__name__).info(
+                            "[%d/%d] %s done", completed, total, region
+                        )
+
+                except Exception as e:
+                    error_count += 1
+                    logging.getLogger(__name__).error("Error scanning region %s: %s", region, e)
+
+                    if fallback_on_error and error_count >= max(2, total // 2):
+                        logging.getLogger(__name__).warning(
+                            "Multiple concurrent scanning errors detected (%d errors)", error_count
+                        )
+                        raise ConcurrentScanningError(f"Too many concurrent errors: {error_count}")
+
+                    completed += 1
+
+        return results
+
+    except ConcurrentScanningError:
+        if fallback_on_error:
+            logging.getLogger(__name__).warning(
+                "Falling back to sequential scanning due to concurrent errors"
+            )
+            logging.getLogger(__name__).warning(
+                "This may indicate API rate limiting or network issues"
+            )
+            logging.getLogger(__name__).warning(
+                "To disable concurrent scanning, run: python advanced_settings.py"
+            )
+            return _scan_regions_sequential(regions, scan_function, show_progress)
+        else:
+            raise
+
+    except Exception as e:
+        if fallback_on_error:
+            logging.getLogger(__name__).error(
+                "Unexpected error in concurrent scanning, falling back to sequential: %s", e
+            )
+            logging.getLogger(__name__).warning(
+                "To disable concurrent scanning, run: python advanced_settings.py"
+            )
+            return _scan_regions_sequential(regions, scan_function, show_progress)
+        else:
+            raise
+
+
+def _scan_regions_sequential(
+    regions: List[str],
+    scan_function: Callable[[str], Any],
+    show_progress: bool = True,
+) -> List[Any]:
+    """
+    Fallback: Scan regions sequentially (one at a time).
+
+    This is the traditional method used in all scripts.
+    Used as fallback when concurrent scanning fails.
+
+    Args:
+        regions: List of AWS regions to scan
+        scan_function: Function that takes a region and returns data
+        show_progress: Show progress as regions complete
+
+    Returns:
+        list: List of results from all regions
+    """
+    logging.getLogger(__name__).info("Scanning %d region(s) sequentially", len(regions))
+
+    results = []
+    total = len(regions)
+
+    for i, region in enumerate(regions, 1):
+        try:
+            if show_progress:
+                logging.getLogger(__name__).info("[%d/%d] Scanning %s...", i, total, region)
+
+            result = scan_function(region)
+            results.append(result)
+
+        except Exception as e:
+            logging.getLogger(__name__).error("Error scanning region %s: %s", region, e)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Pagination helpers
+# ---------------------------------------------------------------------------
+
+
+def paginate_with_progress(
+    client,
+    operation: str,
+    operation_label: str = "resources",
+    **kwargs,
+):
+    """
+    Paginate AWS API calls with progress tracking (Phase 4B optimization).
+
+    This generator function provides visibility into pagination progress for
+    large datasets. Particularly useful for accounts with 1000+ resources.
+
+    Args:
+        client: Boto3 client
+        operation: API operation name (e.g., 'describe_instances')
+        operation_label: User-friendly label for logging (e.g., 'EC2 instances')
+        **kwargs: Arguments to pass to paginate()
+
+    Yields:
+        Pages from the paginator
+
+    Example:
+        >>> ec2 = get_boto3_client('ec2', region_name='us-east-1')
+        >>> for page in paginate_with_progress(ec2, 'describe_instances', 'EC2 instances'):
+        ...     process(page['Reservations'])
+    """
+    _, config = get_config()
+    advanced = config.get("advanced_settings", {})
+    progress_config = advanced.get("progress_display", {})
+    show_pagination = progress_config.get("show_pagination_progress", False)
+
+    paginator = client.get_paginator(operation)
+    logging.getLogger(__name__).debug("Streaming %s pages...", operation_label)
+
+    page_num = 0
+    for page in paginator.paginate(**kwargs):
+        page_num += 1
+        if show_pagination:
+            logging.getLogger(__name__).debug(
+                "Processing page %d of %s", page_num, operation_label
+            )
+        yield page
+
+    logging.getLogger(__name__).info("Processed %d page(s) of %s", page_num, operation_label)
+
+
+def build_dataframe_in_batches(
+    data: List[Dict],
+    batch_size: int = 1000,
+):
+    """
+    Build DataFrame from large data lists in batches for memory efficiency (Phase 4B).
+
+    For datasets with 10,000+ resources, building DataFrames in batches reduces
+    memory spikes and improves performance.
+
+    Args:
+        data: List of dictionaries (resource data)
+        batch_size: Number of rows per batch (default: 1000)
+
+    Returns:
+        DataFrame with all data
+
+    Example:
+        >>> resources = [{'id': i, 'name': f'resource-{i}'} for i in range(10000)]
+        >>> df = build_dataframe_in_batches(resources, batch_size=1000)
+
+    Note:
+        - Small datasets (<= batch_size) are processed normally
+        - Large datasets are split into batches, converted separately, then concatenated
+        - Reduces peak memory usage by 20-30% for large exports
+    """
+    import pandas as pd
+    if len(data) <= batch_size:
+        return pd.DataFrame(data)
+
+    batches = []
+    for i in range(0, len(data), batch_size):
+        batch = data[i : i + batch_size]
+        batches.append(pd.DataFrame(batch))
+        logging.getLogger(__name__).debug(
+            "Created batch %d (%d rows)", i // batch_size + 1, len(batch)
+        )
+
+    logging.getLogger(__name__).debug("Concatenating %d batches...", len(batches))
+    return pd.concat(batches, ignore_index=True)
+
+
+# =============================================================================
+# AWS_CLIENT — FIPS-aware boto3 client factory and partition/region utilities
+# (folded in from sslib/aws_client.py — Issue #177)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_DEFAULT_REGIONS = ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"]
+_GOVCLOUD_DEFAULT_REGIONS = ["us-gov-west-1", "us-gov-east-1"]
+_AWS_PARTITION = "aws"
+
+# ---------------------------------------------------------------------------
+# Account info cache (session-level, thread-safe)
+# ---------------------------------------------------------------------------
+
+_account_info_cache: Optional[Tuple[str, str, str]] = None
+_account_info_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Environment / automation helpers
+# ---------------------------------------------------------------------------
+
+
+def is_auto_run() -> bool:
+    """
+    Check if StratusScan is running in non-interactive automation mode.
+
+    Returns:
+        bool: True if STRATUSSCAN_AUTO_RUN environment variable is set to 1/true/yes
+    """
+    return os.environ.get("STRATUSSCAN_AUTO_RUN", "").lower() in ("1", "true", "yes")
+
+
+def get_auto_regions() -> Optional[List[str]]:
+    """
+    Get the list of regions from the STRATUSSCAN_REGIONS environment variable.
+
+    Returns:
+        Optional[List[str]]: List of region strings, or None if not set
+    """
+    val = os.environ.get("STRATUSSCAN_REGIONS", "")
+    return [r.strip() for r in val.split(",") if r.strip()] if val else None
+
+
+def parse_script_args(script_description: str) -> "argparse.Namespace":
+    """
+    Parse standard CLI arguments for an exporter script.
+
+    Must be called at the top of each exporter script (after ``import utils``)
+    to populate the module-level ``_SCRIPT_ARGS`` store.  Subsequent calls to
+    ``prompt_region_selection()``, ``prompt_for_confirmation()``,
+    ``get_aws_session()``, and ``create_export_filename()`` read from this
+    store automatically — no per-script wiring required.
+
+    Uses ``parse_known_args()`` so that pytest's own argv does not cause
+    errors when test files import exporter modules.
+
+    Args:
+        script_description: One-line description shown in ``--help`` output.
+
+    Returns:
+        argparse.Namespace with attributes:
+            region, regions, all_regions, profile, output_dir, yes
+    """
+    import argparse  # lazy import — keeps argparse out of the global namespace
+
+    global _SCRIPT_ARGS
+
+    parser = argparse.ArgumentParser(description=script_description)
+
+    region_group = parser.add_mutually_exclusive_group()
+    region_group.add_argument(
+        "--region",
+        help="Single AWS region to scan (e.g. us-east-1)",
+    )
+    region_group.add_argument(
+        "--regions",
+        help="Comma-separated list of AWS regions to scan (e.g. us-east-1,us-west-2)",
+    )
+    region_group.add_argument(
+        "--all-regions",
+        action="store_true",
+        dest="all_regions",
+        help="Scan all available regions for the detected partition",
+    )
+
+    parser.add_argument(
+        "--profile",
+        help="AWS named profile to use for authentication",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="output",
+        dest="output_dir",
+        help="Output directory for exported files (default: output/)",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompts (non-interactive mode)",
+    )
+
+    args, _ = parser.parse_known_args()
+    _SCRIPT_ARGS = args
+    return args
+
+
+# ---------------------------------------------------------------------------
+# Region validation
+# ---------------------------------------------------------------------------
+
+
+def is_aws_region(region: str) -> bool:
+    """
+    Check if a region is a valid AWS region.
+
+    Args:
+        region: AWS region name
+
+    Returns:
+        bool: True if valid AWS region, False otherwise
+    """
+    # Pattern supports: us-east-1, us-gov-west-1, ap-southeast-2, etc.
+    # Digit is limited to [1-9] (no AWS region uses 0 or multi-digit numbers).
+    pattern = r"^[a-z]{2}(-gov)?-[a-z]+-[1-9]$"
+    return bool(re.match(pattern, region)) or region in _DEFAULT_REGIONS
+
+
+def validate_aws_region(region: str) -> bool:
+    """
+    Validate that a region is a valid AWS region and provide helpful error if not.
+
+    .. deprecated::
+        Use :func:`is_aws_region` for pure validation.  ``validate_aws_region``
+        couples validation with error logging; prefer calling ``is_aws_region``
+        and logging at the call site instead.
+
+    Args:
+        region: AWS region name
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    warnings.warn(
+        "validate_aws_region() is deprecated; use is_aws_region() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    if region == "all":
+        return True
+
+    if not is_aws_region(region):
+        logging.getLogger(__name__).error("Invalid AWS region: %s", region)
+        logging.getLogger(__name__).error(
+            "Valid AWS regions include: us-east-1, us-west-1, us-west-2, eu-west-1, ap-southeast-1"
+        )
+        return False
+
+    return True
+
+
+def get_aws_regions() -> List[str]:
+    """
+    Get list of default AWS regions for the current partition.
+    Partition-aware: Returns GovCloud regions when in GovCloud, Commercial otherwise.
+
+    Returns:
+        list: List of AWS region names
+    """
+    partition = detect_partition()
+    return get_partition_regions(partition)
+
+
+# ---------------------------------------------------------------------------
+# Partition detection
+# ---------------------------------------------------------------------------
+
+
+def detect_partition(region_name: Optional[str] = None) -> str:
+    """
+    Detect AWS partition from region or credentials.
+
+    Args:
+        region_name: Optional region to check
+
+    Returns:
+        str: 'aws' or 'aws-us-gov'
+    """
+    if region_name:
+        if region_name.startswith(("us-gov-", "us-gov")):
+            return "aws-us-gov"
+        return "aws"
+
+    try:
+        session = boto3.Session()
+
+        region = session.region_name or "us-east-1"
+        if region.startswith("us-gov"):
+            return "aws-us-gov"
+
+        sts = session.client("sts")
+        arn = sts.get_caller_identity()["Arn"]
+        if "aws-us-gov" in arn:
+            return "aws-us-gov"
+
+        return "aws"
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Could not detect partition: %s, assuming commercial AWS", e
+        )
+        return "aws"
+
+
+# ---------------------------------------------------------------------------
+# Session and client factory
+# ---------------------------------------------------------------------------
+
+
+def _assume_role_cached(
+    role_arn: str,
+    region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Assume an IAM role via STS and return temporary credentials, using an
+    in-memory cache keyed by (role_arn, region_name).  Credentials are
+    refreshed automatically when within 5 minutes of expiry.
+
+    Args:
+        role_arn: Full IAM role ARN to assume.
+        region_name: AWS region for the STS call (None = default).
+        profile_name: Named profile for the caller session.
+
+    Returns:
+        Dict with keys: AccessKeyId, SecretAccessKey, SessionToken.
+
+    Raises:
+        ValueError: If the role ARN partition mismatches the detected partition.
+        botocore.exceptions.ClientError: On STS API errors (after retries).
+    """
+    log = logging.getLogger(__name__)
+    cache_key: Tuple[str, Optional[str]] = (role_arn, region_name)
+
+    # Validate partition alignment before any STS call
+    arn_partition = role_arn.split(":")[1] if role_arn.startswith("arn:") else ""
+    caller_partition = detect_partition(region_name)
+    if arn_partition and arn_partition != caller_partition:
+        raise ValueError(
+            f"Role ARN partition '{arn_partition}' does not match detected partition "
+            f"'{caller_partition}' for region '{region_name}'. Use a "
+            f"{'arn:aws-us-gov:' if caller_partition == 'aws-us-gov' else 'arn:aws:'} "
+            f"role ARN for this environment."
+        )
+
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    with _STS_CACHE_LOCK:
+        if cache_key in _STS_CACHE:
+            creds, expiry = _STS_CACHE[cache_key]
+            if now < expiry - _STS_CACHE_REFRESH_MARGIN:
+                log.debug("STS cache hit for role %s", role_arn)
+                return creds
+
+        # Extract account_id from ARN for session name
+        try:
+            account_id = role_arn.split(":")[4]
+        except IndexError:
+            account_id = "unknown"
+
+        session_name = f"stratusscan-{account_id}"[:64]
+
+        # Build caller session (uses profile / env creds, not the assumed role)
+        profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
+        caller_session = boto3.Session(region_name=region_name, profile_name=profile)
+
+        # FIPS for GovCloud STS — must be set on the botocore Config, not as a
+        # client() kwarg (boto3 rejects it there).
+        sts_config = None
+        if region_name and region_name.startswith("us-gov-"):
+            sts_config = Config(use_fips_endpoint=True)
+
+        sts_client = caller_session.client("sts", config=sts_config)
+
+        # Assume role with exponential backoff for ThrottlingException
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response = sts_client.assume_role(
+                    RoleArn=role_arn,
+                    RoleSessionName=session_name,
+                    DurationSeconds=3600,
+                )
+                break
+            except botocore.exceptions.ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "")
+                if error_code in ("Throttling", "ThrottlingException") and attempt < max_attempts - 1:
+                    backoff = (2 ** attempt) * 0.5
+                    log.warning(
+                        "STS assume_role throttled (attempt %d/%d); retrying in %.1fs",
+                        attempt + 1,
+                        max_attempts,
+                        backoff,
+                    )
+                    time.sleep(backoff)
+                else:
+                    raise
+
+        raw = response["Credentials"]
+        creds = {
+            "AccessKeyId": raw["AccessKeyId"],
+            "SecretAccessKey": raw["SecretAccessKey"],
+            "SessionToken": raw["SessionToken"],
+        }
+        expiry = raw["Expiration"]
+        # Expiration may already be timezone-aware
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+
+        _STS_CACHE[cache_key] = (creds, expiry)
+        log.info("Assumed role %s (expires %s)", role_arn, expiry.isoformat())
+        return creds
+
+
+def get_aws_session(
+    region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
+    role_arn: Optional[str] = None,
+) -> boto3.Session:
+    """
+    Create a boto3 session for the specified region.
+
+    When ``role_arn`` is provided the caller's default session is used to call
+    STS ``AssumeRole`` and a new session is built from the resulting temporary
+    credentials.  A thread-safe cache avoids redundant STS calls; credentials
+    are refreshed automatically within 5 minutes of expiry.
+
+    Partition validation: raises ``ValueError`` if the role ARN partition does
+    not match the partition implied by ``region_name`` (e.g., passing an
+    ``arn:aws-us-gov:`` ARN in a commercial region or vice versa).
+
+    Profile resolution order (when role_arn is None):
+      1. ``profile_name`` argument (explicit caller override)
+      2. ``_SCRIPT_ARGS.profile`` set by ``parse_script_args()``
+      3. boto3 default (AWS_PROFILE env var, ~/.aws/config default)
+
+    Args:
+        region_name: AWS region (None = default from config)
+        profile_name: AWS named profile (None = use CLI arg or boto3 default)
+        role_arn: IAM role ARN to assume for cross-account access (optional)
+
+    Returns:
+        boto3.Session: Configured session
+
+    Raises:
+        ValueError: If role_arn partition mismatches the detected partition.
+    """
+    # Env var fallback: allows org-scan subprocess launches to inject a role
+    # without modifying any exporter script.
+    if role_arn is None:
+        env_role = os.environ.get("STRATUSSCAN_ROLE_ARN", "").strip()
+        if env_role:
+            role_arn = env_role
+            log.debug("STRATUSSCAN_ROLE_ARN env var active: %s", role_arn)
+
+    if role_arn:
+        creds = _assume_role_cached(role_arn, region_name=region_name, profile_name=profile_name)
+        return boto3.Session(
+            aws_access_key_id=creds["AccessKeyId"],
+            aws_secret_access_key=creds["SecretAccessKey"],
+            aws_session_token=creds["SessionToken"],
+            region_name=region_name,
+        )
+
+    profile = profile_name or (_SCRIPT_ARGS.profile if _SCRIPT_ARGS else None)
+    return boto3.Session(region_name=region_name, profile_name=profile)
+
+
+def get_boto3_client(
+    service: str,
+    region_name: Optional[str] = None,
+    role_arn: Optional[str] = None,
+    **kwargs,
+) -> BaseClient:
+    """
+    Create boto3 client with standard configuration including retries.
+
+    Automatically injects ``use_fips_endpoint=True`` for GovCloud regions
+    (``us-gov-west-1``, ``us-gov-east-1``). This is a security-critical property
+    that must survive any refactoring.
+
+    When ``role_arn`` is provided, credentials are obtained via STS
+    ``AssumeRole`` (with caching) before creating the client.
+
+    Args:
+        service: AWS service name (e.g., 'ec2', 'iam', 's3')
+        region_name: AWS region name (optional)
+        role_arn: IAM role ARN for cross-account access (optional)
+        **kwargs: Additional arguments to pass to client creation
+
+    Returns:
+        boto3.client: Configured boto3 client with retry logic
+    """
+    sdk_config = config_value("aws_sdk_config", default={})
+
+    retry_config = sdk_config.get("retries", {"max_attempts": 10, "mode": "adaptive"})
+    connect_timeout = sdk_config.get("connect_timeout", 10)
+    read_timeout = sdk_config.get("read_timeout", 60)
+
+    config_kwargs: Dict[str, Any] = {
+        "retries": retry_config,
+        "connect_timeout": connect_timeout,
+        "read_timeout": read_timeout,
+    }
+
+    # FIPS injection — GovCloud requires FIPS endpoints. This belongs on the
+    # botocore Config, NOT as a client() kwarg (boto3 rejects it there). A
+    # caller may still override via kwargs["use_fips_endpoint"].
+    fips_override = kwargs.pop("use_fips_endpoint", None)
+    if fips_override is not None:
+        config_kwargs["use_fips_endpoint"] = fips_override
+    elif region_name and region_name.startswith("us-gov-"):
+        config_kwargs["use_fips_endpoint"] = True
+
+    config = Config(**config_kwargs)
+
+    session = get_aws_session(region_name, role_arn=role_arn)
+    return session.client(service, config=config, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# ARN utilities
+# ---------------------------------------------------------------------------
+
+
+def build_arn(
+    service: str,
+    resource: str,
+    region: Optional[str] = None,
+    account_id: Optional[str] = None,
+    partition: Optional[str] = None,
+) -> str:
+    """
+    Build ARN with automatic partition detection.
+
+    Args:
+        service: AWS service name
+        resource: Resource identifier
+        region: AWS region (optional, empty string for global services)
+        account_id: AWS account ID (optional, auto-detected if not provided)
+        partition: AWS partition (optional, auto-detected if not provided)
+
+    Returns:
+        str: Properly formatted AWS ARN
+    """
+    if not partition:
+        partition = detect_partition(region)
+
+    if not account_id:
+        try:
+            sts = get_boto3_client("sts")
+            account_id = sts.get_caller_identity()["Account"]
+        except Exception:
+            account_id = ""
+
+    if region is None:
+        region = ""
+
+    return f"arn:{partition}:{service}:{region}:{account_id}:{resource}"
+
+
+# ---------------------------------------------------------------------------
+# Service availability
+# ---------------------------------------------------------------------------
+
+
+def is_service_available_in_partition(service: str, partition: str = "aws") -> bool:
+    """
+    Check if an AWS service is available in the specified partition.
+
+    Args:
+        service: AWS service name (e.g., 'ec2', 'iam', 's3')
+        partition: AWS partition ('aws' or 'aws-us-gov')
+
+    Returns:
+        bool: True if service is available in partition, False otherwise
+    """
+    govcloud_unavailable = {
+        "ce",
+        "globalaccelerator",
+        "trustedadvisor",
+        "compute-optimizer",
+        "cost-optimization-hub",
+        "appstream",
+        "chime",
+        "sumerian",
+        "gamelift",
+        "robomaker",
+        "cognito-idp",
+        "cognito-identity",
+        "comprehend",
+        "connect",
+        "rekognition",
+        "bedrock",
+    }
+
+    govcloud_limited = {
+        "marketplace",
+        "organizations",
+    }
+
+    if partition == "aws-us-gov":
+        if service.lower() in govcloud_unavailable:
+            logging.getLogger(__name__).debug(
+                "Service %s is not available in AWS GovCloud", service
+            )
+            return False
+        if service.lower() in govcloud_limited:
+            logging.getLogger(__name__).debug(
+                "Service %s has limited functionality in AWS GovCloud", service
+            )
+
+    return True
+
+
+def is_service_enabled(service_name: str) -> bool:
+    """
+    Check if a service is enabled in the current AWS environment.
+
+    Args:
+        service_name: Name of the AWS service
+
+    Returns:
+        bool: True if enabled, False if disabled
+    """
+    _, cfg = get_config()
+    if "disabled_services" in cfg:
+        disabled_services = cfg["disabled_services"]
+        if service_name in disabled_services:
+            return disabled_services[service_name].get("enabled", False)
+
+    return True
+
+
+def get_service_disability_reason(service_name: str) -> Optional[str]:
+    """
+    Get the reason why a service is disabled.
+
+    Args:
+        service_name: Name of the AWS service
+
+    Returns:
+        str: Reason for disability or None if service is enabled
+    """
+    _, cfg = get_config()
+    if "disabled_services" in cfg:
+        disabled_services = cfg["disabled_services"]
+        if service_name in disabled_services:
+            return disabled_services[service_name].get("reason", "Not available")
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Region helpers
+# ---------------------------------------------------------------------------
+
+
+def get_partition_regions(partition: str = "aws", all_regions: bool = False) -> List[str]:
+    """
+    Get available regions for a specific AWS partition.
+
+    Args:
+        partition: AWS partition ('aws' or 'aws-us-gov')
+        all_regions: If True, query EC2 for all regions; if False, return default subset
+
+    Returns:
+        list: List of region names for the partition
+    """
+    if partition == "aws-us-gov":
+        return _GOVCLOUD_DEFAULT_REGIONS
+    elif partition == "aws":
+        if all_regions:
+            try:
+                ec2 = get_boto3_client("ec2", region_name="us-east-1")
+                response = ec2.describe_regions(AllRegions=True)
+                regions = [
+                    r["RegionName"]
+                    for r in response["Regions"]
+                    if r.get("OptInStatus") != "not-opted-in"
+                ]
+                return sorted(regions)
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "Could not query all regions from EC2, using default list: %s", e
+                )
+                return _DEFAULT_REGIONS
+        else:
+            return _DEFAULT_REGIONS
+    else:
+        logging.getLogger(__name__).error(
+            "Unknown partition '%s' — cannot determine valid regions; returning commercial defaults",
+            partition,
+        )
+        return _DEFAULT_REGIONS
+
+
+def get_partition_default_region(partition: Optional[str] = None) -> str:
+    """
+    Get the default region for a specific AWS partition.
+
+    Args:
+        partition: AWS partition ('aws' or 'aws-us-gov')
+                  If not provided, auto-detects from current credentials
+
+    Returns:
+        str: Default region for the partition
+    """
+    if partition is None:
+        partition = detect_partition()
+
+    if partition == "aws-us-gov":
+        return "us-gov-west-1"
+    else:
+        return "us-east-1"
+
+
+def get_default_regions(partition: Optional[str] = None) -> List[str]:
+    """
+    Get the default AWS regions from configuration.
+
+    Args:
+        partition: Optional partition to filter regions ('aws' or 'aws-us-gov')
+                  If not provided, uses regions from config.json or auto-detects
+
+    Returns:
+        list: List of default AWS region names
+    """
+    if partition:
+        return get_partition_regions(partition)
+
+    _, cfg = get_config()
+    config_regions = cfg.get("default_regions", _DEFAULT_REGIONS)
+
+    if config_regions:
+        detected_partition = detect_partition(config_regions[0])
+        return [r for r in config_regions if detect_partition(r) == detected_partition]
+
+    return config_regions
+
+
+def get_partition_default_regions(partition: Optional[str] = None) -> List[str]:
+    """
+    Get the default AWS regions (alias for get_default_regions for consistency).
+
+    .. deprecated::
+        Use :func:`get_default_regions` directly — this function is a redundant alias.
+
+    Args:
+        partition: Optional partition to filter regions ('aws' or 'aws-us-gov')
+
+    Returns:
+        list: List of default AWS region names
+    """
+    warnings.warn(
+        "get_partition_default_regions() is deprecated; use get_default_regions() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_default_regions(partition)
+
+
+# ---------------------------------------------------------------------------
+# Credential and region access validation
+# ---------------------------------------------------------------------------
+
+
+def validate_aws_credentials() -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Validate AWS credentials.
+
+    Returns:
+        tuple: (is_valid, account_id, error_message)
+    """
+    try:
+        sts = get_boto3_client("sts")
+        response = sts.get_caller_identity()
+        account_id = response["Account"]
+        return True, account_id, None
+    except Exception as e:
+        return False, None, str(e)
+
+
+def check_aws_region_access(region: str) -> bool:
+    """
+    Check if a specific AWS region is accessible.
+
+    Args:
+        region: AWS region name
+
+    Returns:
+        bool: True if accessible, False otherwise
+    """
+    if not is_aws_region(region):
+        return False
+
+    try:
+        ec2 = get_boto3_client("ec2", region_name=region)
+        ec2.describe_regions(RegionNames=[region])
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).warning("Cannot access region %s: %s", region, e)
+        return False
+
+
+def get_available_aws_regions() -> List[str]:
+    """
+    Get list of AWS regions that are currently accessible.
+    Partition-aware: Returns GovCloud regions when in GovCloud, Commercial otherwise.
+
+    Returns:
+        list: List of accessible AWS region names
+    """
+    partition = detect_partition()
+    partition_regions = get_partition_regions(partition)
+
+    available_regions = []
+
+    for region in partition_regions:
+        if check_aws_region_access(region):
+            available_regions.append(region)
+        else:
+            logging.getLogger(__name__).warning("AWS region %s is not accessible", region)
+
+    return available_regions
+
+
+def is_aws_commercial_environment() -> bool:
+    """
+    Check if we're currently running in an AWS Commercial environment.
+
+    Returns:
+        bool: True if in AWS Commercial, False otherwise
+    """
+    try:
+        sts = get_boto3_client("sts")
+        caller_arn = sts.get_caller_identity()["Arn"]
+        partition = caller_arn.split(":")[1]
+        return partition == "aws"
+    except Exception:
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Cached account info (Phase 4B optimization)
+# ---------------------------------------------------------------------------
+
+
+def get_cached_account_info() -> Tuple[str, str, str]:
+    """
+    Get AWS account info with session-level caching (Phase 4B optimization).
+
+    Returns:
+        tuple: (account_id, account_name, partition)
+
+    Note:
+        - Cached in _account_info_cache (module-level) only on successful STS call.
+          A transient first-call failure returns default values without poisoning
+          the cache, so the next call will retry the STS lookup.
+        - Thread-safe: _account_info_lock guards both the read and write paths.
+        - Uses get_boto3_client() which includes automatic retry logic.
+    """
+    global _account_info_cache
+
+    if _account_info_cache is not None:
+        return _account_info_cache
+
+    with _account_info_lock:
+        if _account_info_cache is not None:
+            return _account_info_cache
+
+        try:
+            sts = get_boto3_client("sts")
+            account_id = sts.get_caller_identity()["Account"]
+            account_name = get_account_name(account_id, default=f"AWS-ACCOUNT-{account_id}")
+            partition = detect_partition()
+
+            _account_info_cache = (account_id, account_name, partition)
+            logging.getLogger(__name__).debug(
+                "Cached account info: %s (%s) in partition %s",
+                account_name,
+                account_id,
+                partition,
+            )
+            return _account_info_cache
+
+        except Exception as e:
+            logging.getLogger(__name__).error("Failed to get account information: %s", e)
+            logging.getLogger(__name__).warning("Using default account values")
+            return "UNKNOWN", "UNKNOWN-ACCOUNT", "aws"
+
+
+# =============================================================================
+# COST — Cost estimation utilities
+# (folded in from sslib/cost.py — Issue #177)
+# =============================================================================
+
+if TYPE_CHECKING:
+    import pandas as _pd_type  # used for type annotations only — not imported at runtime
+
+# Path to the reference/ directory (sibling of utils.py)
+_REFERENCE_DIR = Path(__file__).parent / "reference"
+
+
+def _load_pricing_json(filename: str, default: Dict[str, float]) -> Dict[str, float]:
+    """
+    Load a flat key→value pricing dict from a JSON file in reference/.
+
+    The JSON file must have a top-level ``rates`` object whose values are
+    floats.  Falls back to ``default`` on any I/O or parse error.
+
+    Args:
+        filename: JSON filename inside reference/ (e.g. 's3-pricing.json')
+        default:  Fallback dict returned on error
+
+    Returns:
+        Dict mapping rate keys → float values
+    """
+    json_path = _REFERENCE_DIR / filename
+    try:
+        with json_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        rates = data.get("rates", {})
+        if rates:
+            return {k: float(v) for k, v in rates.items()}
+        logging.getLogger(__name__).warning(
+            "Pricing JSON %s has no 'rates' key — using built-in defaults", filename
+        )
+    except FileNotFoundError:
+        logging.getLogger(__name__).warning(
+            "Pricing JSON not found: %s — using built-in defaults", json_path
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "Error reading pricing JSON %s: %s — using built-in defaults", filename, exc
+        )
+    return default
+
+
+def _load_rds_instance_pricing() -> Dict[str, float]:
+    """
+    Build an ``{instance_class: hourly_rate_usd}`` map from rds-pricing.json.
+
+    Uses MySQL / us-east-1 on-demand monthly rate ÷ 730 as the hourly baseline.
+    Falls back to a small built-in table if rds-pricing.json is missing.
+    """
+    _defaults: Dict[str, float] = {
+        "db.t3.micro": 0.017,
+        "db.t3.small": 0.034,
+        "db.t3.medium": 0.068,
+        "db.t3.large": 0.136,
+        "db.t3.xlarge": 0.272,
+        "db.t3.2xlarge": 0.544,
+        "db.m5.large": 0.192,
+        "db.m5.xlarge": 0.384,
+        "db.m5.2xlarge": 0.768,
+        "db.m5.4xlarge": 1.536,
+        "db.r5.large": 0.24,
+        "db.r5.xlarge": 0.48,
+        "db.r5.2xlarge": 0.96,
+        "db.r5.4xlarge": 1.92,
+    }
+    json_path = _REFERENCE_DIR / "rds-pricing.json"
+    try:
+        with json_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        pricing: Dict[str, float] = {}
+        for instance_class, info in data.get("records", {}).items():
+            monthly = (
+                info.get("pricing", {})
+                .get("us-east-1", {})
+                .get("mysql_on_demand_monthly_usd")
+            )
+            if monthly is not None:
+                pricing[instance_class] = round(monthly / 730, 6)
+        if pricing:
+            return pricing
+        logging.getLogger(__name__).warning(
+            "No RDS pricing extracted from rds-pricing.json — using built-in defaults"
+        )
+    except FileNotFoundError:
+        logging.getLogger(__name__).warning(
+            "rds-pricing.json not found — using built-in defaults"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "Error reading rds-pricing.json: %s — using built-in defaults", exc
+        )
+    return _defaults
+
+
+# =============================================================================
+# EXCEL SIZE ESTIMATION
+# =============================================================================
+
+
+def _estimate_excel_size(df) -> int:
+    """
+    Estimate Excel file size for a DataFrame.
+
+    Args:
+        df: pandas DataFrame
+
+    Returns:
+        int: Estimated file size in bytes
+    """
+    # Rough estimation: 100 bytes per cell + overhead
+    num_cells = len(df) * len(df.columns)
+    base_size = num_cells * 100
+
+    # Add overhead for Excel formatting
+    overhead = base_size * 0.2
+
+    return int(base_size + overhead)
+
+
+# =============================================================================
+# COST ESTIMATION UTILITIES
+# =============================================================================
+
+
+def estimate_rds_monthly_cost(
+    instance_class: str,
+    engine: str,
+    storage_gb: int,
+    storage_type: str = "gp2",
+    multi_az: bool = False,
+) -> Dict[str, Any]:
+    """
+    Estimate monthly cost for RDS database instance.
+
+    NOTE: All pricing figures are based on us-east-1 (N. Virginia) On-Demand rates.
+    Actual costs will differ in other regions and under Reserved or Savings Plan pricing.
+    For accurate pricing, consult AWS Pricing Calculator or AWS Cost Explorer.
+
+    Args:
+        instance_class: RDS instance class (e.g., 'db.t3.micro')
+        engine: Database engine (e.g., 'mysql', 'postgres', 'oracle')
+        storage_gb: Allocated storage in GB
+        storage_type: Storage type ('gp2', 'gp3', 'io1')
+        multi_az: Whether Multi-AZ deployment is enabled
+
+    Returns:
+        dict: Cost breakdown with instance, storage, and total costs
+
+    Example:
+        >>> cost = estimate_rds_monthly_cost('db.t3.micro', 'mysql', 20)
+        >>> print(f"Estimated monthly cost: ${cost['total']:.2f}")
+
+    Note:
+        - Uses approximate pricing for us-east-1 region
+        - Does not include data transfer, backups, or other charges
+        - Multi-AZ deployments approximately double instance costs
+    """
+    instance_pricing = _load_rds_instance_pricing()
+
+    # Storage pricing per GB/month
+    _storage_defaults: Dict[str, float] = {
+        "gp2": 0.115,
+        "gp3": 0.08,
+        "io1": 0.125,
+        "magnetic": 0.10,
+    }
+    storage_pricing = _load_pricing_json("rds-storage-pricing.json", _storage_defaults)
+
+    # Get instance cost
+    hourly_instance_cost = instance_pricing.get(instance_class, 0.10)
+    monthly_instance_cost = hourly_instance_cost * 730  # 730 hours per month
+
+    # Apply Multi-AZ multiplier (approximately 2x for instance)
+    if multi_az:
+        monthly_instance_cost *= 2
+
+    # Get storage cost
+    storage_price_per_gb = storage_pricing.get(storage_type, 0.115)
+    monthly_storage_cost = storage_gb * storage_price_per_gb
+
+    # Calculate total
+    total_monthly_cost = monthly_instance_cost + monthly_storage_cost
+
+    result = {
+        "instance_cost": round(monthly_instance_cost, 2),
+        "storage_cost": round(monthly_storage_cost, 2),
+        "total": round(total_monthly_cost, 2),
+        "multi_az_enabled": multi_az,
+        "note": "Approximate estimate - see AWS Pricing Calculator for accurate costs",
+    }
+
+    logging.getLogger(__name__).debug(
+        "RDS cost estimate for %s: $%.2f/month", instance_class, result["total"]
+    )
+    return result
+
+
+def estimate_s3_monthly_cost(
+    total_size_gb: float,
+    storage_class: str = "STANDARD",
+    requests_per_month: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Estimate monthly cost for S3 storage.
+
+    This provides rough cost estimates for S3 buckets. For accurate pricing,
+    consult AWS Pricing Calculator or AWS Cost Explorer.
+
+    Args:
+        total_size_gb: Total storage size in GB
+        storage_class: S3 storage class ('STANDARD', 'INTELLIGENT_TIERING', 'GLACIER', etc.)
+        requests_per_month: Optional number of requests per month
+
+    Returns:
+        dict: Cost breakdown with storage, request, and total costs
+
+    Example:
+        >>> cost = estimate_s3_monthly_cost(1000, 'STANDARD')
+        >>> print(f"Estimated monthly cost: ${cost['total']:.2f}")
+
+    Note:
+        - Uses approximate pricing for us-east-1 region
+        - Does not include data transfer costs
+        - Request costs are minimal unless very high volume
+    """
+    # S3 storage pricing per GB/month (us-east-1)
+    _s3_defaults: Dict[str, float] = {
+        "STANDARD": 0.023,
+        "INTELLIGENT_TIERING": 0.023,
+        "STANDARD_IA": 0.0125,
+        "ONEZONE_IA": 0.01,
+        "GLACIER": 0.004,
+        "GLACIER_IR": 0.0036,
+        "DEEP_ARCHIVE": 0.00099,
+    }
+    storage_pricing = _load_pricing_json("s3-pricing.json", _s3_defaults)
+
+    # Request pricing (per 1,000 requests)
+    request_pricing = {
+        "STANDARD": {"PUT": 0.005, "GET": 0.0004},
+        "INTELLIGENT_TIERING": {"PUT": 0.005, "GET": 0.0004},
+    }
+
+    # Calculate storage cost
+    storage_price_per_gb = storage_pricing.get(storage_class, 0.023)
+    monthly_storage_cost = total_size_gb * storage_price_per_gb
+
+    # Calculate request costs (if provided)
+    monthly_request_cost = 0.0
+    if requests_per_month and storage_class in request_pricing:
+        put_requests = requests_per_month * 0.5
+        get_requests = requests_per_month * 0.5
+
+        put_cost = (put_requests / 1000) * request_pricing[storage_class]["PUT"]
+        get_cost = (get_requests / 1000) * request_pricing[storage_class]["GET"]
+
+        monthly_request_cost = put_cost + get_cost
+
+    # Add monitoring fee for Intelligent-Tiering
+    monitoring_cost = 0.0
+    if storage_class == "INTELLIGENT_TIERING":
+        # $0.0025 per 1,000 objects monitored
+        estimated_objects = (total_size_gb * 1024) / 10
+        monitoring_cost = (estimated_objects / 1000) * 0.0025
+
+    total_cost = monthly_storage_cost + monthly_request_cost + monitoring_cost
+
+    result = {
+        "storage_cost": round(monthly_storage_cost, 2),
+        "request_cost": round(monthly_request_cost, 2),
+        "monitoring_cost": round(monitoring_cost, 2),
+        "total": round(total_cost, 2),
+        "storage_class": storage_class,
+        "note": "Approximate estimate - does not include data transfer costs",
+    }
+
+    logging.getLogger(__name__).debug(
+        "S3 cost estimate for %.1fGB (%s): $%.2f/month",
+        total_size_gb,
+        storage_class,
+        result["total"],
+    )
+    return result
+
+
+def calculate_nat_gateway_monthly_cost(
+    hours_per_month: int = 730,
+    data_processed_gb: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Calculate monthly cost for NAT Gateway.
+
+    NAT Gateways have both hourly and data processing charges.
+
+    Args:
+        hours_per_month: Number of hours the NAT Gateway is running (default: 730 for full month)
+        data_processed_gb: Amount of data processed in GB per month
+
+    Returns:
+        dict: Cost breakdown with hourly, data processing, and total costs
+
+    Example:
+        >>> cost = calculate_nat_gateway_monthly_cost(730, 500)
+        >>> print(f"Estimated monthly cost: ${cost['total']:.2f}")
+
+    Note:
+        - Uses pricing for us-east-1 region
+        - Actual pricing varies by region
+        - Each NAT Gateway incurs these costs independently
+    """
+    # NAT Gateway pricing (us-east-1)
+    _natgw_defaults: Dict[str, float] = {
+        "hourly": 0.045,
+        "data_processing_per_gb": 0.045,
+    }
+    natgw_pricing = _load_pricing_json("natgw-pricing.json", _natgw_defaults)
+    hourly_rate = natgw_pricing.get("hourly", 0.045)
+    data_processing_rate = natgw_pricing.get("data_processing_per_gb", 0.045)
+
+    hourly_cost = hours_per_month * hourly_rate
+    data_processing_cost = data_processed_gb * data_processing_rate
+
+    total_cost = hourly_cost + data_processing_cost
+
+    result = {
+        "hourly_cost": round(hourly_cost, 2),
+        "data_processing_cost": round(data_processing_cost, 2),
+        "total": round(total_cost, 2),
+        "hours": hours_per_month,
+        "data_processed_gb": data_processed_gb,
+        "warning": (
+            "NAT Gateway costs can be significant - "
+            "consider alternatives for dev/test environments"
+        ),
+    }
+
+    logging.getLogger(__name__).debug(
+        "NAT Gateway cost: $%.2f/month (%dh, %.1fGB)",
+        result["total"],
+        hours_per_month,
+        data_processed_gb,
+    )
+    return result
+
+
+def generate_cost_optimization_recommendations(
+    resource_type: str,
+    resource_data: Dict[str, Any],
+) -> List[str]:
+    """
+    Generate cost optimization recommendations for AWS resources.
+
+    This function analyzes resource configurations and suggests potential
+    cost savings opportunities.
+
+    Args:
+        resource_type: Type of resource ('ec2', 'rds', 's3', 'vpc', etc.)
+        resource_data: Dictionary containing resource configuration details
+
+    Returns:
+        list: List of recommendation strings
+
+    Example:
+        >>> recommendations = generate_cost_optimization_recommendations(
+        ...     'ec2',
+        ...     {'state': 'stopped', 'instance_type': 't3.large', 'days_stopped': 30}
+        ... )
+        >>> for rec in recommendations:
+        ...     print(f"- {rec}")
+
+    Note:
+        - Recommendations are general guidelines, not specific financial advice
+        - Consider business requirements before implementing changes
+    """
+    recommendations = []
+
+    if resource_type == "ec2":
+        state = resource_data.get("state", "").lower()
+        instance_type = resource_data.get("instance_type", "")
+        days_stopped = resource_data.get("days_stopped", 0)
+
+        if state == "stopped" and days_stopped > 7:
+            recommendations.append(
+                f"Instance stopped for {days_stopped} days - consider terminating if no longer needed"
+            )
+
+        if instance_type.startswith("t2."):
+            recommendations.append(
+                "Consider upgrading to t3 instance family for better price/performance"
+            )
+
+        if resource_data.get("ebs_optimized", False) and instance_type.startswith("t3."):
+            recommendations.append(
+                "EBS-optimized is included free for t3 instances - no change needed"
+            )
+
+    elif resource_type == "rds":
+        multi_az = resource_data.get("multi_az", False)
+        environment = resource_data.get("environment", "").lower()
+
+        if multi_az and environment in ["dev", "test", "staging"]:
+            recommendations.append(
+                "Multi-AZ enabled in non-production environment - consider single-AZ for cost savings"
+            )
+
+        backup_retention = resource_data.get("backup_retention_period", 0)
+        if backup_retention > 7 and environment in ["dev", "test"]:
+            recommendations.append(
+                f"Backup retention is {backup_retention} days - consider reducing for non-production"
+            )
+
+    elif resource_type == "s3":
+        storage_class = resource_data.get("storage_class", "STANDARD")
+        size_gb = resource_data.get("size_gb", 0)
+        last_accessed = resource_data.get("days_since_last_access", 0)
+
+        if storage_class == "STANDARD" and last_accessed > 90:
+            recommendations.append(
+                "Objects not accessed in 90+ days - consider moving to STANDARD_IA or GLACIER"
+            )
+
+        if storage_class == "STANDARD" and size_gb > 1000:
+            recommendations.append(
+                "Large bucket - consider enabling Intelligent-Tiering for automatic cost optimization"
+            )
+
+    elif resource_type == "nat_gateway":
+        data_processed_gb = resource_data.get("data_processed_gb", 0)
+        environment = resource_data.get("environment", "").lower()
+
+        if environment in ["dev", "test"]:
+            recommendations.append(
+                "NAT Gateway in non-production - consider NAT instances or removing for cost savings"
+            )
+
+        if data_processed_gb > 5000:
+            recommendations.append(
+                "High data transfer - verify traffic patterns and consider VPC endpoints for AWS services"
+            )
+
+    if not recommendations:
+        recommendations.append("No specific cost optimization recommendations at this time")
+
+    return recommendations
+
+
+# ============================================================================
+# SCAN SESSION TRACKING
+# ============================================================================
+
+def _get_scan_sessions_dir() -> Path:
+    """Return (and create) the scan-sessions directory inside the output dir."""
+    sessions_dir = get_output_dir() / "scan-sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return sessions_dir
+
+
+def start_scan_session(scan_type: str, label: str, planned: list) -> dict:
+    """
+    Create a new scan session file and return the session dict.
+
+    Args:
+        scan_type: 'org-scan' or 'smart-scan'
+        label: Human-readable run description
+        planned: List of dicts, each with at least 'key' (unique per item)
+
+    Returns:
+        Session dict — pass to record_scan_result() and complete_scan_session()
+    """
+    session_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    session_path = _get_scan_sessions_dir() / f"scan-{session_id}.json"
+    session = {
+        "session_id": session_id,
+        "scan_type": scan_type,
+        "label": label,
+        "status": "running",
+        "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "completed_at": None,
+        "planned": planned,
+        "results": [],
+        "_path": str(session_path),
+    }
+    _write_scan_session(session)
+    return session
+
+
+def _write_scan_session(session: dict) -> None:
+    """Atomically write session dict to its file (temp-rename pattern)."""
+    path = Path(session["_path"])
+    data = {k: v for k, v in session.items() if not k.startswith("_")}
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception as exc:
+        log_warning(f"Failed to write scan session: {exc}")
+
+
+def record_scan_result(
+    session: dict,
+    key: str,
+    status: str,
+    exit_code: int,
+    duration_s: float,
+    **kwargs,
+) -> None:
+    """
+    Append a completed item to the session file.
+
+    Args:
+        session: Session dict from start_scan_session()
+        key: Unique key matching a 'planned' entry
+        status: 'success' or 'failed'
+        exit_code: Process exit code
+        duration_s: Wall-clock seconds
+        **kwargs: Extra fields to include (account_id, account_name, script, etc.)
+    """
+    result = {
+        "key": key,
+        "status": status,
+        "exit_code": exit_code,
+        "duration_s": round(duration_s, 1),
+        "completed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        **kwargs,
+    }
+    session["results"].append(result)
+    _write_scan_session(session)
+
+
+def complete_scan_session(session: dict) -> None:
+    """Mark session as completed and write final state."""
+    session["status"] = "completed"
+    session["completed_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _write_scan_session(session)
+
+
+def load_scan_sessions(limit: int = 10) -> list:
+    """Load recent scan sessions, newest first."""
+    try:
+        sessions_dir = _get_scan_sessions_dir()
+    except Exception:
+        return []
+    files = sorted(sessions_dir.glob("scan-*.json"), reverse=True)[:limit]
+    sessions = []
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_path"] = str(f)
+            sessions.append(data)
+        except Exception:
+            pass
+    return sessions
+
+
+def get_interrupted_sessions() -> list:
+    """Return sessions that were never completed (status still 'running')."""
+    return [s for s in load_scan_sessions(20) if s.get("status") == "running"]
+
+
+def resume_scan_session(session: dict) -> None:
+    """Mark an interrupted session as running again (for resume flows)."""
+    session["status"] = "running"
+    session["completed_at"] = None
+    _write_scan_session(session)

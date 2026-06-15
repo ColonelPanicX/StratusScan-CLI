@@ -3,8 +3,15 @@
   "account_mappings": {
     "__comment": "Add your own account mappings in the format 'account_id': 'friendly_name'"
   },
+  "cross_account_roles": {
+    "__comment": "Map of account_id to IAM role ARN for cross-account scanning"
+  },
   "agency_name": "YOUR-AGENCY",
   "default_regions": ["us-east-1", "us-west-2"],
+  "output_settings": {
+    "__comment": "Export format: xlsx (requires openpyxl) or csv. Set automatically by Config Wizard.",
+    "format": "xlsx"
+  },
   "resource_preferences": {
     "ec2": {
       "default_filter": "all", 

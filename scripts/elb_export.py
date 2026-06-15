@@ -21,7 +21,6 @@ import datetime
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 # Add path to import utils module
 try:
@@ -45,6 +44,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Elastic Load Balancers to Excel")
 
 def is_valid_aws_region(region_name):
     """
@@ -342,6 +342,8 @@ def main():
     # Check for required dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         sys.exit(1)
+    global pd
+    import pandas as pd
 
     regions = utils.prompt_region_selection()
     region_suffix = 'all'

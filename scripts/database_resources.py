@@ -25,6 +25,7 @@ try:
 except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
+args = utils.parse_script_args("Export all database resources (RDS, DynamoDB, etc.) to Excel")
 
 utils.setup_logging('database-resources')
 

@@ -18,8 +18,6 @@ import sys
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import utils
-import sslib.config
-import sslib.aws_client
 
 
 class TestMaskAccountId:
@@ -46,19 +44,19 @@ class TestAccountMapping:
 
     def test_get_account_name_with_mapping(self):
         """Test retrieval of account name when mapping exists."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {'123456789012': 'PROD-ACCOUNT'}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {'123456789012': 'PROD-ACCOUNT'}):
             result = utils.get_account_name('123456789012')
             assert result == 'PROD-ACCOUNT'
 
     def test_get_account_name_with_default(self):
         """Test fallback to default when no mapping exists."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             result = utils.get_account_name('999999999999', default='TEST-DEFAULT')
             assert result == 'TEST-DEFAULT'
 
     def test_get_account_name_default_fallback(self):
         """Test default fallback value is used."""
-        with patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             result = utils.get_account_name('999999999999')
             assert result == 'UNKNOWN-ACCOUNT'
 
@@ -135,7 +133,7 @@ class TestRegionValidation:
 class TestAccountInfo:
     """Test account information retrieval."""
 
-    @patch('sslib.aws_client.get_boto3_client')
+    @patch('utils.get_boto3_client')
     def test_get_account_info_success(self, mock_get_client):
         """Test successful account info retrieval."""
         mock_sts = Mock()
@@ -145,14 +143,14 @@ class TestAccountInfo:
         }
         mock_get_client.return_value = mock_sts
 
-        with patch.object(sslib.aws_client, '_account_info_cache', None), \
-             patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {'123456789012': 'TEST-ACCOUNT'}):
+        with patch.object(utils, '_account_info_cache', None), \
+             patch.object(utils, 'ACCOUNT_MAPPINGS', {'123456789012': 'TEST-ACCOUNT'}):
             account_id, account_name = utils.get_account_info()
             assert account_id == '123456789012'
             assert account_name == 'TEST-ACCOUNT'
             mock_sts.get_caller_identity.assert_called_once()
 
-    @patch('sslib.aws_client.get_boto3_client')
+    @patch('utils.get_boto3_client')
     def test_get_account_info_with_fallback(self, mock_get_client):
         """Test account info with fallback for unmapped account."""
         mock_sts = Mock()
@@ -162,8 +160,8 @@ class TestAccountInfo:
         }
         mock_get_client.return_value = mock_sts
 
-        with patch.object(sslib.aws_client, '_account_info_cache', None), \
-             patch.object(sslib.config, 'ACCOUNT_MAPPINGS', {}):
+        with patch.object(utils, '_account_info_cache', None), \
+             patch.object(utils, 'ACCOUNT_MAPPINGS', {}):
             account_id, account_name = utils.get_account_info()
             assert account_id == '999999999999'
             assert '999999999999' in account_name
@@ -172,7 +170,7 @@ class TestAccountInfo:
 class TestBoto3ClientCreation:
     """Test boto3 client creation with retry configuration."""
 
-    @patch('sslib.aws_client.boto3.Session')
+    @patch('utils.boto3.Session')
     def test_get_boto3_client_basic(self, mock_session):
         """Test basic client creation."""
         # Setup mock
@@ -194,7 +192,7 @@ class TestBoto3ClientCreation:
         # Check config was passed
         assert 'config' in call_args[1]
 
-    @patch('sslib.aws_client.boto3.Session')
+    @patch('utils.boto3.Session')
     def test_get_boto3_client_with_retries(self, mock_session):
         """Test client includes retry configuration."""
         # Setup mock
@@ -303,15 +301,15 @@ class TestPromptMenu:
             result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
         assert result == 1
 
-    def test_back_returns_string(self):
+    def test_back_raises_signal(self):
         with patch('builtins.input', return_value='b'):
-            result = utils.prompt_menu("TEST MENU", ["Option A"])
-        assert result == 'back'
+            with pytest.raises(utils.BackSignal):
+                utils.prompt_menu("TEST MENU", ["Option A"])
 
-    def test_exit_returns_string(self):
+    def test_exit_raises_signal(self):
         with patch('builtins.input', return_value='x'):
-            result = utils.prompt_menu("TEST MENU", ["Option A"])
-        assert result == 'exit'
+            with pytest.raises(utils.QuitSignal):
+                utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_invalid_then_valid(self):
         with patch('builtins.input', side_effect=['z', '2']):
@@ -348,7 +346,7 @@ class TestPromptRegionSelectionNew:
 
     def test_back_returns_string(self, monkeypatch):
         monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
-        with patch('utils.prompt_menu', return_value='back'), \
+        with patch('utils.prompt_menu', side_effect=utils.BackSignal), \
              patch('utils.get_default_regions', return_value=['us-east-1']), \
              patch('utils.detect_partition', return_value='aws'):
             result = utils.prompt_region_selection()
@@ -356,7 +354,7 @@ class TestPromptRegionSelectionNew:
 
     def test_exit_returns_string(self, monkeypatch):
         monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
-        with patch('utils.prompt_menu', return_value='exit'), \
+        with patch('utils.prompt_menu', side_effect=utils.QuitSignal), \
              patch('utils.get_default_regions', return_value=['us-east-1']), \
              patch('utils.detect_partition', return_value='aws'):
             result = utils.prompt_region_selection()
@@ -433,3 +431,101 @@ class TestPromptConfirmation:
         monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
         result = utils.prompt_confirmation("Ready to export?")
         assert result == 'confirm'
+
+
+class TestParseScriptArgs:
+    """Tests for parse_script_args() and the _SCRIPT_ARGS module store."""
+
+    def _parse(self, argv: list, monkeypatch) -> "utils.argparse.Namespace":
+        """Helper: patch sys.argv, reset _SCRIPT_ARGS, and call parse_script_args."""
+        monkeypatch.setattr(sys, "argv", ["script.py"] + argv)
+        # Reset the global store before each parse so tests are independent
+        utils._SCRIPT_ARGS = None
+        return utils.parse_script_args("Test script description")
+
+    def test_single_region(self, monkeypatch):
+        args = self._parse(["--region", "us-east-1"], monkeypatch)
+        assert args.region == "us-east-1"
+        assert args.regions is None
+        assert args.all_regions is False
+
+    def test_multiple_regions(self, monkeypatch):
+        args = self._parse(["--regions", "us-east-1,us-west-2"], monkeypatch)
+        assert args.regions == "us-east-1,us-west-2"
+        region_list = [r.strip() for r in args.regions.split(",")]
+        assert len(region_list) == 2
+        assert "us-east-1" in region_list
+        assert "us-west-2" in region_list
+
+    def test_all_regions_flag(self, monkeypatch):
+        args = self._parse(["--all-regions"], monkeypatch)
+        assert args.all_regions is True
+        assert args.region is None
+        assert args.regions is None
+
+    def test_region_and_all_regions_mutually_exclusive(self, monkeypatch):
+        """--region and --all-regions together must raise SystemExit."""
+        monkeypatch.setattr(sys, "argv", ["script.py", "--region", "us-east-1", "--all-regions"])
+        utils._SCRIPT_ARGS = None
+        with pytest.raises(SystemExit):
+            utils.parse_script_args("Test script description")
+
+    def test_yes_flag(self, monkeypatch):
+        args = self._parse(["--yes"], monkeypatch)
+        assert args.yes is True
+
+    def test_yes_short_flag(self, monkeypatch):
+        args = self._parse(["-y"], monkeypatch)
+        assert args.yes is True
+
+    def test_profile(self, monkeypatch):
+        args = self._parse(["--profile", "my-profile"], monkeypatch)
+        assert args.profile == "my-profile"
+
+    def test_output_dir(self, monkeypatch):
+        args = self._parse(["--output-dir", "/tmp/test"], monkeypatch)
+        assert args.output_dir == "/tmp/test"
+
+    def test_defaults_when_no_args(self, monkeypatch):
+        args = self._parse([], monkeypatch)
+        assert args.region is None
+        assert args.regions is None
+        assert args.all_regions is False
+        assert args.yes is False
+        assert args.profile is None
+        assert args.output_dir == "output"
+
+    def test_sets_module_global(self, monkeypatch):
+        """parse_script_args() must populate utils._SCRIPT_ARGS."""
+        utils._SCRIPT_ARGS = None
+        args = self._parse(["--region", "eu-west-1"], monkeypatch)
+        assert utils._SCRIPT_ARGS is not None
+        assert utils._SCRIPT_ARGS.region == "eu-west-1"
+        assert utils.get_script_args() is utils._SCRIPT_ARGS
+
+    def test_get_script_args_returns_none_before_parse(self):
+        """get_script_args() returns None when parse_script_args() has not run."""
+        utils._SCRIPT_ARGS = None
+        assert utils.get_script_args() is None
+
+    def test_prompt_region_selection_respects_region_flag(self, monkeypatch):
+        """prompt_region_selection() must return single-item list when --region set."""
+        args = self._parse(["--region", "ap-southeast-1"], monkeypatch)
+        result = utils.prompt_region_selection()
+        assert result == ["ap-southeast-1"]
+
+    def test_prompt_region_selection_respects_regions_flag(self, monkeypatch):
+        """prompt_region_selection() must return list when --regions set."""
+        args = self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
+        result = utils.prompt_region_selection()
+        assert result == ["us-east-1", "eu-west-1"]
+
+    def test_prompt_for_confirmation_respects_yes_flag(self, monkeypatch):
+        """prompt_for_confirmation() must return True when --yes set."""
+        self._parse(["--yes"], monkeypatch)
+        result = utils.prompt_for_confirmation("Continue?")
+        assert result is True
+
+    def teardown_method(self, method):
+        """Reset _SCRIPT_ARGS after each test to avoid cross-test contamination."""
+        utils._SCRIPT_ARGS = None

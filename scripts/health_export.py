@@ -26,8 +26,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -38,6 +36,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Health events and affected entities to Excel")
 
 @utils.aws_error_handler("Collecting Health events", default_return=[])
 def collect_health_events(region: str, time_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -306,6 +305,10 @@ def _run_export(account_id: str, account_name: str) -> None:
 def main():
     """Main function — 3-step state machine with b/x navigation."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         utils.setup_logging("health-export")
         account_id, account_name = utils.print_script_banner("AWS HEALTH EVENTS EXPORT")
 

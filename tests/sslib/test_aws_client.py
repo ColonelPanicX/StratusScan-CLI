@@ -1,5 +1,7 @@
 """
-Unit tests for sslib.aws_client — FIPS-aware client factory and partition/region utilities.
+Unit tests for aws_client functions (folded into utils — Issue #177).
+
+Previously tested sslib.aws_client; now tests utils directly.
 """
 
 import sys
@@ -9,8 +11,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-import sslib.aws_client as aws_mod
-from sslib.aws_client import (
+import utils as aws_mod
+from utils import (
     _DEFAULT_REGIONS,
     _GOVCLOUD_DEFAULT_REGIONS,
     build_arn,
@@ -100,7 +102,7 @@ class TestDetectPartition:
         assert detect_partition("eu-west-1") == "aws"
 
     def test_no_region_defaults_to_aws_on_error(self):
-        with patch("sslib.aws_client.boto3.Session", side_effect=Exception("no creds")):
+        with patch("utils.boto3.Session", side_effect=Exception("no creds")):
             result = detect_partition(None)
         assert result in ("aws", "aws-us-gov")
 
@@ -112,17 +114,25 @@ class TestDetectPartition:
 
 class TestGetBoto3ClientFips:
     def test_govcloud_injects_fips(self):
-        """GovCloud regions MUST use FIPS endpoints — security-critical property."""
+        """GovCloud regions MUST use FIPS endpoints — security-critical property.
+
+        FIPS must be set on the botocore Config, NOT passed as a client() kwarg
+        (boto3 rejects ``use_fips_endpoint`` as a client argument — see the
+        GovCloud regression fixed in fix/govcloud-fips-endpoint-kwarg).
+        """
         mock_session = MagicMock()
         mock_client = MagicMock()
         mock_session.client.return_value = mock_client
 
-        with patch("sslib.aws_client.boto3.Session", return_value=mock_session):
-            with patch("sslib.aws_client.config_value", return_value={}):
+        with patch("utils.boto3.Session", return_value=mock_session):
+            with patch("utils.config_value", return_value={}):
                 get_boto3_client("ec2", region_name="us-gov-west-1")
 
         call_kwargs = mock_session.client.call_args[1]
-        assert call_kwargs.get("use_fips_endpoint") is True, (
+        assert "use_fips_endpoint" not in call_kwargs, (
+            "use_fips_endpoint must NOT be a client() kwarg — boto3 rejects it"
+        )
+        assert call_kwargs["config"].use_fips_endpoint is True, (
             "FIPS endpoint must be injected for GovCloud region us-gov-west-1"
         )
 
@@ -131,31 +141,33 @@ class TestGetBoto3ClientFips:
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("sslib.aws_client.boto3.Session", return_value=mock_session):
-            with patch("sslib.aws_client.config_value", return_value={}):
+        with patch("utils.boto3.Session", return_value=mock_session):
+            with patch("utils.config_value", return_value={}):
                 get_boto3_client("s3", region_name="us-gov-east-1")
 
         call_kwargs = mock_session.client.call_args[1]
-        assert call_kwargs.get("use_fips_endpoint") is True
+        assert "use_fips_endpoint" not in call_kwargs
+        assert call_kwargs["config"].use_fips_endpoint is True
 
     def test_commercial_does_not_inject_fips(self):
         """Commercial regions must NOT have FIPS forced on."""
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("sslib.aws_client.boto3.Session", return_value=mock_session):
-            with patch("sslib.aws_client.config_value", return_value={}):
+        with patch("utils.boto3.Session", return_value=mock_session):
+            with patch("utils.config_value", return_value={}):
                 get_boto3_client("ec2", region_name="us-east-1")
 
         call_kwargs = mock_session.client.call_args[1]
         assert "use_fips_endpoint" not in call_kwargs
+        assert call_kwargs["config"].use_fips_endpoint is None
 
     def test_includes_retry_config(self):
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("sslib.aws_client.boto3.Session", return_value=mock_session):
-            with patch("sslib.aws_client.config_value", return_value={}):
+        with patch("utils.boto3.Session", return_value=mock_session):
+            with patch("utils.config_value", return_value={}):
                 get_boto3_client("iam")
 
         call_kwargs = mock_session.client.call_args[1]
@@ -213,7 +225,7 @@ class TestGetPartitionRegions:
     def test_unknown_partition_logs_error(self, caplog):
         """Unknown partition must log an ERROR (not just a warning)."""
         import logging
-        with caplog.at_level(logging.ERROR, logger="sslib.aws_client"):
+        with caplog.at_level(logging.ERROR, logger="utils"):
             get_partition_regions("aws-cn")
         assert any("aws-cn" in r.message for r in caplog.records if r.levelno == logging.ERROR)
 
@@ -241,7 +253,7 @@ class TestValidateAwsCredentials:
         mock_sts = Mock()
         mock_sts.get_caller_identity.return_value = {"Account": "123456789012"}
 
-        with patch("sslib.aws_client.get_boto3_client", return_value=mock_sts):
+        with patch("utils.get_boto3_client", return_value=mock_sts):
             valid, account_id, error = validate_aws_credentials()
 
         assert valid is True
@@ -249,7 +261,7 @@ class TestValidateAwsCredentials:
         assert error is None
 
     def test_failure(self):
-        with patch("sslib.aws_client.get_boto3_client", side_effect=Exception("no creds")):
+        with patch("utils.get_boto3_client", side_effect=Exception("no creds")):
             valid, account_id, error = validate_aws_credentials()
 
         assert valid is False
@@ -273,9 +285,9 @@ class TestGetCachedAccountInfo:
         mock_sts.get_caller_identity.return_value = {"Account": "999999999999"}
 
         with patch.object(aws_mod, "_account_info_cache", None):
-            with patch("sslib.aws_client.get_boto3_client", return_value=mock_sts):
-                with patch("sslib.aws_client.get_account_name", return_value="PROD"):
-                    with patch("sslib.aws_client.detect_partition", return_value="aws"):
+            with patch("utils.get_boto3_client", return_value=mock_sts):
+                with patch("utils.get_account_name", return_value="PROD"):
+                    with patch("utils.detect_partition", return_value="aws"):
                         account_id, account_name, partition = get_cached_account_info()
 
         assert account_id == "999999999999"
@@ -286,7 +298,7 @@ class TestGetCachedAccountInfo:
 
     def test_returns_defaults_on_failure(self):
         with patch.object(aws_mod, "_account_info_cache", None):
-            with patch("sslib.aws_client.get_boto3_client", side_effect=Exception("boom")):
+            with patch("utils.get_boto3_client", side_effect=Exception("boom")):
                 account_id, account_name, partition = get_cached_account_info()
 
         assert account_id == "UNKNOWN"

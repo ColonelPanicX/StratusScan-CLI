@@ -51,6 +51,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export RDS instances and clusters to Excel")
 
 # Dependency checking handled by utils.ensure_dependencies()
 def is_valid_aws_region(region_name):

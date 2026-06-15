@@ -32,6 +32,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export S3 access points to Excel")
 
 
 @utils.aws_error_handler("Collecting standard access points", default_return=[])

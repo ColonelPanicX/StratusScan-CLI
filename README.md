@@ -1,6 +1,6 @@
-# StratusScan-CLI
+# StratusScanCLI-AWS
 
-[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/ColonelPanicX/StratusScan-CLI/releases)
+[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -17,8 +17,8 @@ A Python CLI tool for exporting AWS resource inventories to Excel workbooks. Sup
 
 ```bash
 # Clone the repository
-git clone https://github.com/ColonelPanicX/StratusScan-CLI.git
-cd StratusScan-CLI
+git clone https://github.com/ColonelPanicX/StratusScanCLI-AWS.git
+cd StratusScanCLI-AWS
 
 # Install dependencies
 pip install boto3 pandas openpyxl
@@ -369,8 +369,8 @@ export AWS_ACCESS_KEY_ID="..." AWS_SECRET_ACCESS_KEY="..."
 
 ```bash
 # Fork, clone, and install dev deps
-git clone https://github.com/yourusername/StratusScan-CLI.git
-cd StratusScan-CLI
+git clone https://github.com/yourusername/StratusScanCLI-AWS.git
+cd StratusScanCLI-AWS
 pip install -e ".[dev]"
 
 # Run tests
@@ -390,7 +390,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the exporter script template and cont
 
 **Current version: 0.4.0-beta**
 
-StratusScan-CLI is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
+StratusScanCLI-AWS is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
 
 ### What's new in v0.4.0
 
@@ -417,7 +417,7 @@ StratusScan-CLI is in active beta development. The API and output format may cha
 
 ## Versioning
 
-StratusScan-CLI uses [Semantic Versioning](https://semver.org/).
+StratusScanCLI-AWS uses [Semantic Versioning](https://semver.org/).
 
 | Series | Status | Notes |
 |---|---|---|

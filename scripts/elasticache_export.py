@@ -43,6 +43,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export ElastiCache clusters and replication groups to Excel")
 
 
 def load_elasticache_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:

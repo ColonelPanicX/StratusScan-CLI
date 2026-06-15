@@ -26,8 +26,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import pandas as pd
-
 # Standard utils import pattern
 try:
     import utils
@@ -38,6 +36,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export Amazon SES and Pinpoint resources to Excel")
 
 utils.setup_logging('ses-pinpoint-export')
 
@@ -432,6 +431,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         account_id, account_name = utils.print_script_banner("AWS SES AND PINPOINT EXPORT")
 
         step = 1

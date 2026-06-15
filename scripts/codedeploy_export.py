@@ -24,12 +24,8 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export CodeDeploy applications and deployments to Excel")
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 @utils.aws_error_handler("Collecting CodeDeploy applications", default_return=[])
 def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
     """Collect CodeDeploy application information from AWS regions."""
@@ -387,6 +383,10 @@ def generate_summary(applications: List[Dict[str, Any]],
 
 def main():
     """Main execution function."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

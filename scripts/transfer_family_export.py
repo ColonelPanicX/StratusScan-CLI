@@ -39,6 +39,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Export AWS Transfer Family servers and users to Excel")
 
 def format_protocols(protocols: List[str]) -> str:
     """Format protocol list into a readable string."""

@@ -30,14 +30,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
-
-try:
-    import pandas as pd
-except ImportError:
-    utils.log_error("pandas library is required but not installed")
-    utils.log_error("Install with: pip install pandas")
-    sys.exit(1)
-
+args = utils.parse_script_args("Export AWS Glue and Athena resources to Excel")
 
 def _scan_glue_databases_region(region: str) -> List[Dict[str, Any]]:
     """Scan Glue databases in a single region."""
@@ -429,6 +422,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     utils.setup_logging("glue-athena-export")
 
     try:

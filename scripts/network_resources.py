@@ -32,6 +32,7 @@ try:
 except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
+args = utils.parse_script_args("Export all network resources (VPC, subnets, NACLs, etc.) to Excel")
 
 utils.setup_logging('network-resources')
 

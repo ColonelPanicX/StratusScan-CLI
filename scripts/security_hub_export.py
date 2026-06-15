@@ -46,6 +46,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export Security Hub findings and standards to Excel")
 
 # Setup logging
 logger = utils.setup_logging('security-hub-export')
@@ -114,6 +115,7 @@ def collect_security_hub_findings(region):
         list: List of finding information dictionaries
     """
     findings_data = []
+    cap_reached = False
 
     # Keep try-except for business logic: InvalidAccessException means Security Hub not enabled
     try:
@@ -127,73 +129,45 @@ def collect_security_hub_findings(region):
             error_code = e.response['Error']['Code']
             if error_code == 'InvalidAccessException':
                 utils.log_warning(f"Security Hub is not enabled in {region}. Skipping this region.")
-                return []
+                return [], False
             else:
                 utils.log_error(f"Error accessing Security Hub in {region}: {e}")
-                return []
+                return [], False
 
         # Get findings using pagination
         paginator = client.get_paginator('get_findings')
 
-        # Define filters to get active findings
+        # Exclude INFORMATIONAL — too noisy for audits; filter at API level
         filters = {
             'WorkflowStatus': [
-                {
-                    'Value': 'NEW',
-                    'Comparison': 'EQUALS'
-                },
-                {
-                    'Value': 'NOTIFIED',
-                    'Comparison': 'EQUALS'
-                }
+                {'Value': 'NEW', 'Comparison': 'EQUALS'},
+                {'Value': 'NOTIFIED', 'Comparison': 'EQUALS'},
             ],
             'RecordState': [
-                {
-                    'Value': 'ACTIVE',
-                    'Comparison': 'EQUALS'
-                }
-            ]
+                {'Value': 'ACTIVE', 'Comparison': 'EQUALS'},
+            ],
+            'SeverityLabel': [
+                {'Value': 'CRITICAL', 'Comparison': 'EQUALS'},
+                {'Value': 'HIGH', 'Comparison': 'EQUALS'},
+                {'Value': 'MEDIUM', 'Comparison': 'EQUALS'},
+                {'Value': 'LOW', 'Comparison': 'EQUALS'},
+            ],
         }
 
-        # Count total findings first for progress tracking
-        total_findings = 0
-        try:
-            for page in paginator.paginate(Filters=filters, MaxResults=100):
-                total_findings += len(page.get('Findings', []))
-        except Exception as e:
-            utils.log_warning(f"Could not count findings in {region}: {e}")
-
-        if total_findings > 0:
-            utils.log_info(f"Found {total_findings} active Security Hub findings in {region} to process")
-        else:
-            utils.log_info(f"No active Security Hub findings found in {region}")
-            return []
-
-        # Reset paginator and process findings
-        paginator = client.get_paginator('get_findings')
+        FINDINGS_CAP = 10_000
         processed = 0
 
         for page in paginator.paginate(Filters=filters, MaxResults=100):
-            findings = page.get('Findings', [])
+            for finding in page.get('Findings', []):
+                if processed >= FINDINGS_CAP:
+                    cap_reached = True
+                    break
 
-            for finding in findings:
-                processed += 1
-                progress = (processed / total_findings) * 100 if total_findings > 0 else 0
-
-                # Log progress every 50 findings or at completion to reduce verbosity
-                if processed % 50 == 0 or processed == total_findings:
-                    utils.log_info(f"[{progress:.1f}%] Processed {processed}/{total_findings} findings")
-
-                # Extract remediation information
                 remediation = extract_remediation_info(finding)
-
-                # Extract resource information
                 resources = extract_resource_info(finding)
-
-                # Extract compliance information
                 compliance = extract_compliance_info(finding)
 
-                finding_info = {
+                findings_data.append({
                     'Region': region,
                     'Finding ID': finding.get('Id', 'N/A'),
                     'Product ARN': finding.get('ProductArn', 'N/A'),
@@ -219,15 +193,24 @@ def collect_security_hub_findings(region):
                     'Last Observed': finding.get('LastObservedAt', 'N/A'),
                     'Created At': finding.get('CreatedAt', 'N/A'),
                     'Updated At': finding.get('UpdatedAt', 'N/A'),
-                    'Note': extract_note_info(finding)
-                }
+                    'Note': extract_note_info(finding),
+                })
 
-                findings_data.append(finding_info)
+                processed += 1
+                if processed % 500 == 0:
+                    utils.log_info(f"Processed {processed} findings in {region}...")
+
+            if cap_reached:
+                utils.log_warning(
+                    f"Finding cap of {FINDINGS_CAP:,} reached in {region} — export truncated. "
+                    "Re-run with a severity filter or split by region to get remaining findings."
+                )
+                break
 
     except Exception as e:
         utils.log_error(f"Error collecting Security Hub findings from {region}", e)
 
-    return findings_data
+    return findings_data, cap_reached
 
 def extract_product_name(product_arn):
     """Extract readable product name from product ARN."""
@@ -355,7 +338,7 @@ def extract_note_info(finding):
     except Exception:
         return 'N/A'
 
-def export_to_excel(all_findings_data, account_id, account_name):
+def export_to_excel(all_findings_data, account_id, account_name, truncated=False):
     """
     Export Security Hub findings data to Excel file with AWS naming convention.
 
@@ -423,34 +406,37 @@ def export_to_excel(all_findings_data, account_id, account_name):
                 data_frames['High & Critical Findings'] = high_critical_df
 
         # Create overall summary data
-        summary_data = {
-            'Metric': [
-                'Total Findings',
-                'Critical Findings',
-                'High Findings',
-                'Medium Findings',
-                'Low Findings',
-                'Informational Findings',
-                'Failed Compliance',
-                'Passed Compliance',
-                'Unique Products',
-                'Findings with Remediation'
-            ],
-            'Count': [
-                len(all_findings_data),
-                len([f for f in all_findings_data if f.get('Severity Label') == 'CRITICAL']),
-                len([f for f in all_findings_data if f.get('Severity Label') == 'HIGH']),
-                len([f for f in all_findings_data if f.get('Severity Label') == 'MEDIUM']),
-                len([f for f in all_findings_data if f.get('Severity Label') == 'LOW']),
-                len([f for f in all_findings_data if f.get('Severity Label') == 'INFORMATIONAL']),
-                len([f for f in all_findings_data if f.get('Compliance Status') == 'FAILED']),
-                len([f for f in all_findings_data if f.get('Compliance Status') == 'PASSED']),
-                len({f.get('Product Name') for f in all_findings_data if f.get('Product Name', 'N/A') != 'N/A'}),
-                len([f for f in all_findings_data if f.get('Remediation Available') == 'Yes'])
-            ]
-        }
+        metrics = [
+            'Total Findings (exported)',
+            'Critical Findings',
+            'High Findings',
+            'Medium Findings',
+            'Low Findings',
+            'Failed Compliance',
+            'Passed Compliance',
+            'Unique Products',
+            'Findings with Remediation',
+        ]
+        counts = [
+            len(all_findings_data),
+            len([f for f in all_findings_data if f.get('Severity Label') == 'CRITICAL']),
+            len([f for f in all_findings_data if f.get('Severity Label') == 'HIGH']),
+            len([f for f in all_findings_data if f.get('Severity Label') == 'MEDIUM']),
+            len([f for f in all_findings_data if f.get('Severity Label') == 'LOW']),
+            len([f for f in all_findings_data if f.get('Compliance Status') == 'FAILED']),
+            len([f for f in all_findings_data if f.get('Compliance Status') == 'PASSED']),
+            len({f.get('Product Name') for f in all_findings_data if f.get('Product Name', 'N/A') != 'N/A'}),
+            len([f for f in all_findings_data if f.get('Remediation Available') == 'Yes']),
+        ]
 
-        summary_df = pd.DataFrame(summary_data)
+        if truncated:
+            metrics.append('NOTICE')
+            counts.append(
+                'Export truncated at 10,000 findings. INFORMATIONAL severity excluded. '
+                'Re-run with a narrower region or severity filter to capture remaining findings.'
+            )
+
+        summary_df = pd.DataFrame({'Metric': metrics, 'Count': counts})
         data_frames['Overall Summary'] = summary_df
 
         # Save using utils function for multi-sheet Excel
@@ -519,7 +505,12 @@ def main():
         # Collect findings from all available regions using concurrent scanning
         print("\n=== COLLECTING SECURITY HUB FINDINGS ===")
         results = utils.scan_regions_concurrent(available_regions, collect_security_hub_findings)
-        all_findings_data = [finding for result in results for finding in result]
+        all_findings_data = []
+        any_truncated = False
+        for findings, cap_reached in results:
+            all_findings_data.extend(findings)
+            if cap_reached:
+                any_truncated = True
         utils.log_success(f"Total Security Hub findings collected: {len(all_findings_data)}")
 
         if not all_findings_data:
@@ -531,7 +522,7 @@ def main():
         print("====================================================================")
 
         # Export to Excel
-        filename = export_to_excel(all_findings_data, account_id, account_name)
+        filename = export_to_excel(all_findings_data, account_id, account_name, truncated=any_truncated)
 
         if filename:
             utils.log_info("Results exported with AWS compliance markers")

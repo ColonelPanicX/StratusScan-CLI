@@ -44,6 +44,7 @@ except ImportError:
     except ImportError:
         print("ERROR: Could not import the utils module. Make sure utils.py is in the StratusScan directory.")
         sys.exit(1)
+args = utils.parse_script_args("Export CloudTrail trails and event history to Excel")
 
 
 @utils.aws_error_handler("Collecting CloudTrail trails from region", default_return=[])

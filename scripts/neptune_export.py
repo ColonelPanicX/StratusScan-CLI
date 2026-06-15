@@ -29,14 +29,7 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
-
-try:
-    import pandas as pd
-except ImportError:
-    utils.log_error("pandas library is required but not installed")
-    utils.log_error("Install with: pip install pandas")
-    sys.exit(1)
-
+args = utils.parse_script_args("Export Amazon Neptune clusters to Excel")
 
 def load_neptune_pricing_data(region: str) -> Dict[str, float]:
     """Load Neptune on-demand monthly pricing for the given region's partition."""
@@ -644,6 +637,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
     try:
+        if not utils.ensure_dependencies('pandas', 'openpyxl'):
+            return
+        global pd
+        import pandas as pd
         utils.setup_logging('neptune-export')
         account_id, account_name = utils.print_script_banner("AWS NEPTUNE EXPORT")
 

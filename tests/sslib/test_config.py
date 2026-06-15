@@ -1,5 +1,7 @@
 """
-Unit tests for sslib.config — configuration singleton and account mapping.
+Unit tests for config functions (folded into utils — Issue #177).
+
+Previously tested sslib.config; now tests utils directly.
 """
 
 import json
@@ -11,8 +13,8 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-import sslib.config as cfg_mod
-from sslib.config import (
+import utils as cfg_mod
+from utils import (
     config_value,
     get_account_name,
     get_account_name_formatted,

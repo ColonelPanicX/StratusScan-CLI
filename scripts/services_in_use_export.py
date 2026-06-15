@@ -17,6 +17,8 @@ Features:
 Output: Multi-worksheet Excel file with services categorized by type
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import threading
@@ -37,15 +39,11 @@ except ImportError:
     else:
         sys.path.append(str(script_dir))
     import utils
+args = utils.parse_script_args("Discover AWS services in use and export inventory to Excel")
 
 # Setup logging
 logger = utils.setup_logging('services-in-use-export')
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: pandas is not installed. Please install it using 'pip install pandas'")
-    sys.exit(1)
 # Service detection configuration - maps to your export scripts
 SERVICE_CHECKS = {
     'Compute Resources': {
@@ -633,10 +631,12 @@ _DISCOVERY_CLIENT_CONFIG = BotocoreConfig(
 def _get_discovery_client(service: str, region: str):
     """Create a boto3 client configured for fast service discovery checks."""
     session = boto3.Session(region_name=region)
-    kwargs = {}
+    config = _DISCOVERY_CLIENT_CONFIG
+    # FIPS belongs on the botocore Config, not as a client() kwarg (boto3
+    # rejects it there). GovCloud requires FIPS endpoints.
     if region and region.startswith("us-gov-"):
-        kwargs["use_fips_endpoint"] = True
-    return session.client(service, config=_DISCOVERY_CLIENT_CONFIG, **kwargs)
+        config = config.merge(BotocoreConfig(use_fips_endpoint=True))
+    return session.client(service, config=config)
 
 
 def _is_not_in_use_error(exc: Exception) -> bool:
@@ -1063,6 +1063,10 @@ Examples:
 
     parser.parse_args()
 
+    if not utils.ensure_dependencies('pandas', 'openpyxl'):
+        return
+    global pd
+    import pandas as pd
     script_name = Path(__file__).stem
     utils.setup_logging(script_name)
     utils.log_script_start(script_name)

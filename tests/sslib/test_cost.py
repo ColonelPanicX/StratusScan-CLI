@@ -1,6 +1,7 @@
 """
-Unit tests for sslib.cost — cost estimation utilities.
+Unit tests for cost estimation functions (folded into utils — Issue #177).
 
+Previously tested sslib.cost; now tests utils directly.
 All functions are pure-computation with hardcoded pricing tables;
 no moto or AWS credentials required.
 """
@@ -11,7 +12,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from sslib.cost import (
+from utils import (
     _estimate_excel_size,
     calculate_nat_gateway_monthly_cost,
     estimate_rds_monthly_cost,
