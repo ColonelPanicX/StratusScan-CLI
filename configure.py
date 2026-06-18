@@ -427,8 +427,17 @@ def print_dashboard(config: dict, config_path: Path):
     config_status = get_config_status(config, config_path)
     print_status_line("Configuration", config_status, 70)
 
-    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
+    out_settings = config.get("output_settings", {})
+    output_fmt = out_settings.get("format", utils.detect_default_format())
     print_status_line("Export Format", output_fmt, 70)
+
+    destination = out_settings.get("destination", "local")
+    if destination == "s3":
+        bucket = (out_settings.get("s3", {}) or {}).get("bucket", "")
+        dest_str = f"S3: {bucket}" if bucket else "S3 (bucket not set!)"
+    else:
+        dest_str = "local (output/)"
+    print_status_line("Output Destination", dest_str, 70)
 
     print("╚" + "═" * 68 + "╝")
 
@@ -485,8 +494,11 @@ def print_dashboard(config: dict, config_path: Path):
     role_status = f"{role_count} configured" if role_count else "None configured"
     print(f"  [6] Cross-Account Roles                    {role_status}")
 
-    output_fmt = config.get("output_settings", {}).get("format", utils.detect_default_format())
-    print(f"  [7] Output Format                          {output_fmt}")
+    out_settings = config.get("output_settings", {})
+    output_fmt = out_settings.get("format", utils.detect_default_format())
+    out_dest = out_settings.get("destination", "local")
+    dest_label = "S3" if out_dest == "s3" else "local"
+    print(f"  [7] Output Settings                        {output_fmt} → {dest_label}")
 
     # Actions
     print("\nActions:")
@@ -495,30 +507,26 @@ def print_dashboard(config: dict, config_path: Path):
 
     print("\n" + "═" * 70)
 
-def configure_output_settings(config: dict):
-    """
-    Configure the export output format (xlsx or csv).
+def _ensure_output_settings(config: dict) -> dict:
+    """Return config['output_settings'], creating it (and the nested s3 block) if absent."""
+    out = config.setdefault("output_settings", {})
+    out.setdefault("s3", {})
+    return out
 
-    Reads current output_settings from config, shows the current value, and
-    prompts the user to change it. Updates config in place and sets the
-    _config_modified flag when a change is made.
 
-    Args:
-        config (dict): Configuration dictionary (mutated in place)
-    """
+def _set_output_format(config: dict):
+    """Prompt for and apply the export format (xlsx/csv)."""
     global _config_modified
 
-    current_settings = config.get("output_settings", {})
-    current_fmt = current_settings.get("format", utils.detect_default_format())
+    out = _ensure_output_settings(config)
+    current_fmt = out.get("format", utils.detect_default_format())
 
-    print("\n" + "═" * 70)
-    print("OUTPUT FORMAT SETTINGS")
-    print("═" * 70)
-    print(f"  Current format: {current_fmt}")
-    print()
+    print("\n" + "─" * 70)
+    print("EXPORT FORMAT")
+    print("─" * 70)
+    print(f"  Current: {current_fmt}")
     print("  [1] xlsx  — Excel workbook (requires openpyxl)")
     print("  [2] csv   — Universal CSV (stdlib only, multi-sheet exports split into files)")
-    print()
     choice = input("Select format (1/2, or Enter to keep current): ").strip()
 
     if choice == "1":
@@ -527,19 +535,185 @@ def configure_output_settings(config: dict):
         new_fmt = "csv"
     else:
         print("  No change made.")
-        input("\nPress Enter to return to menu...")
         return
 
     if new_fmt == current_fmt:
         print(f"  Format already set to '{new_fmt}'. No change.")
     else:
-        if "output_settings" not in config:
-            config["output_settings"] = {}
-        config["output_settings"]["format"] = new_fmt
+        out["format"] = new_fmt
         _config_modified = True
         print(f"  Export format set to '{new_fmt}'.")
 
-    input("\nPress Enter to return to menu...")
+
+def _set_output_destination(config: dict):
+    """Prompt for and apply the output destination (local/s3)."""
+    global _config_modified
+
+    out = _ensure_output_settings(config)
+    current_dest = out.get("destination", "local")
+
+    print("\n" + "─" * 70)
+    print("OUTPUT DESTINATION")
+    print("─" * 70)
+    print(f"  Current: {current_dest}")
+    print("  [1] local — save to output/ (default)")
+    print("  [2] s3    — upload to an S3 bucket, then delete the local copy on success")
+    choice = input("Select destination (1/2, or Enter to keep current): ").strip()
+
+    if choice == "1":
+        new_dest = "local"
+    elif choice == "2":
+        new_dest = "s3"
+    else:
+        print("  No change made.")
+        return
+
+    if new_dest == current_dest:
+        print(f"  Destination already set to '{new_dest}'. No change.")
+    else:
+        out["destination"] = new_dest
+        _config_modified = True
+        print(f"  Output destination set to '{new_dest}'.")
+
+    if new_dest == "s3" and not out.get("s3", {}).get("bucket"):
+        print("  ⚠️  No S3 bucket configured yet — set it with [3] before exporting.")
+
+
+def _set_s3_bucket(config: dict):
+    """Prompt for and apply the S3 bucket name."""
+    global _config_modified
+
+    out = _ensure_output_settings(config)
+    current = out["s3"].get("bucket", "")
+
+    print("\n" + "─" * 70)
+    print("S3 BUCKET")
+    print("─" * 70)
+    print(f"  Current: {current or '(not set)'}")
+    new_bucket = input("Enter S3 bucket name (Enter to keep current): ").strip()
+    if not new_bucket:
+        print("  No change made.")
+        return
+
+    out["s3"]["bucket"] = new_bucket
+    _config_modified = True
+    print(f"  S3 bucket set to '{new_bucket}'.")
+
+
+def _set_s3_prefix(config: dict):
+    """Prompt for and apply the S3 key prefix."""
+    global _config_modified
+
+    out = _ensure_output_settings(config)
+    current = out["s3"].get("prefix", "stratusscan/")
+
+    print("\n" + "─" * 70)
+    print("S3 PREFIX")
+    print("─" * 70)
+    print(f"  Current: {current}")
+    print("  Key prefix within the bucket (e.g. 'stratusscan/'). Enter '/' for no prefix.")
+    new_prefix = input("Enter S3 prefix (Enter to keep current): ").strip()
+    if not new_prefix:
+        print("  No change made.")
+        return
+
+    new_prefix = "" if new_prefix == "/" else new_prefix
+    out["s3"]["prefix"] = new_prefix
+    _config_modified = True
+    print(f"  S3 prefix set to '{new_prefix}'.")
+
+
+def _run_s3_connectivity_test(config: dict):
+    """Run the HeadBucket → PutObject → DeleteObject roundtrip and print results."""
+    out = _ensure_output_settings(config)
+    bucket = out["s3"].get("bucket", "")
+    prefix = out["s3"].get("prefix", "stratusscan/")
+
+    print("\n" + "─" * 70)
+    print("TEST S3 CONNECTION")
+    print("─" * 70)
+
+    if not bucket:
+        print("  ❌ No S3 bucket configured. Set one with [3] first.")
+        return
+
+    print(f"  Bucket: {bucket}")
+    print(f"  Prefix: {prefix}")
+    print("  Running HeadBucket → PutObject → DeleteObject ...\n")
+
+    result = utils.test_s3_connectivity(bucket, prefix)
+
+    if result.get("region"):
+        print(f"  Region: {result['region']}")
+    for step in result["steps"]:
+        if step["ok"]:
+            print(f"  ✅ {step['step']}")
+        else:
+            print(f"  ❌ {step['step']}")
+            print(f"       {step['error']}")
+
+    print()
+    if result["ok"]:
+        print("  ✅ S3 connectivity OK — exports will upload to this bucket.")
+    else:
+        failed = result.get("failed_step")
+        print(f"  ❌ S3 connectivity FAILED at step: {failed}")
+        print("     Common causes: wrong region, PutObject denied by bucket policy/KMS/VPC")
+        print("     endpoint condition, prefix-level permission mismatch, or Block Public")
+        print("     Access conflict. See policies/s3-upload-permissions.json for the")
+        print("     minimum IAM grant required.")
+
+
+def configure_output_settings(config: dict):
+    """
+    Configure export output settings: format, destination, and S3 details.
+
+    Submenu loop covering format (xlsx/csv), destination (local/s3), S3 bucket
+    and prefix, and an on-demand S3 connectivity test. Mutates config in place
+    and sets _config_modified when a change is made.
+
+    Args:
+        config (dict): Configuration dictionary (mutated in place)
+    """
+    while True:
+        out = _ensure_output_settings(config)
+        fmt = out.get("format", utils.detect_default_format())
+        dest = out.get("destination", "local")
+        bucket = out["s3"].get("bucket", "") or "(not set)"
+        prefix = out["s3"].get("prefix", "stratusscan/")
+
+        print("\n" + "═" * 70)
+        print("OUTPUT SETTINGS")
+        print("═" * 70)
+        print(f"  Format:      {fmt}")
+        print(f"  Destination: {dest}")
+        if dest == "s3":
+            print(f"  S3 bucket:   {bucket}")
+            print(f"  S3 prefix:   {prefix}")
+        print()
+        print("  [1] Change export format (xlsx/csv)")
+        print("  [2] Change destination (local/s3)")
+        print("  [3] Set S3 bucket")
+        print("  [4] Set S3 prefix")
+        print("  [5] Test S3 connection")
+        print("  [B] Back to main menu")
+
+        choice = input("\nSelect option: ").strip().upper()
+
+        if choice == "1":
+            _set_output_format(config)
+        elif choice == "2":
+            _set_output_destination(config)
+        elif choice == "3":
+            _set_s3_bucket(config)
+        elif choice == "4":
+            _set_s3_prefix(config)
+        elif choice == "5":
+            _run_s3_connectivity_test(config)
+        elif choice in ("B", ""):
+            return
+        else:
+            print("  ❌ Invalid choice.")
 
 
 def config_wizard(config: dict):
@@ -562,7 +736,8 @@ def config_wizard(config: dict):
     _clr()
     print("✅ Step 1/6 complete — Account Mappings\n")
     print("Step 2/6 — Export Format\n")
-    configure_output_settings(config)
+    _set_output_format(config)
+    input("\nPress Enter to continue...")
 
     _clr()
     print("✅ Step 2/6 complete — Export Format\n")
