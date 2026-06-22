@@ -1257,79 +1257,66 @@ def navigate_menus():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
-def _run_full_audit(regions_arg, output) -> None:
+def _safe_label(name) -> str:
+    """Sanitise an account name for use in a filename (alnum, dot, dash, underscore)."""
+    import re
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", (name or "").strip()).strip("-") or "account"
+
+
+def _resolve_audit_destination(output):
     """
-    Headless full-audit run: execute every exporter non-interactively, write a
-    per-run manifest, then build and deliver a spreadsheet run report.
-
-    This is the command the scheduled CodeBuild runner invokes:
-        stratusscan --run-all --output s3 --regions us-east-1,us-west-2
-
-    Args:
-        regions_arg: Comma-separated region string, or None for exporter defaults.
-        output: 'local', 's3', or None to honour the configured destination.
-
-    Exits the process: 1 on credential failure or zero successful exporters,
-    2 on an --output s3 request with no bucket, 0 otherwise.
+    Apply the --output flag (authoritative over config for this run and every
+    exporter subprocess), print the resolved destination, and return it.
+    Exits 2 if --output s3 was requested with no bucket configured.
     """
-    print("\nStratusScanCLI-AWS — full audit run")
-    print("=" * 60)
-
-    # 1. Credentials
-    ok, account_id, account_name = utils.validate_aws_credentials()
-    if not ok:
-        utils.log_error("Full audit: AWS credentials not found or invalid")
-        print("  [x] AWS credentials: not found or invalid")
-        sys.exit(1)
-    print(f"  Account: {account_name} ({account_id})")
-
-    # 2. Regions
-    regions = [r.strip() for r in regions_arg.split(",") if r.strip()] if regions_arg else None
-    print(f"  Regions: {', '.join(regions) if regions else 'exporter defaults'}")
-
-    # 3. Output destination — the flag is authoritative over config for this run
-    #    and for every exporter subprocess (inherited via os.environ).
     if output:
         os.environ["STRATUSSCAN_OUTPUT_DESTINATION"] = output
     destination = utils.resolve_s3_destination()
     if destination["enabled"]:
         print(f"  Output: s3://{destination['bucket']}/{destination['prefix']}")
     elif output == "s3":
-        utils.log_error("Full audit: --output s3 requested but no S3 bucket is configured")
+        utils.log_error("Audit: --output s3 requested but no S3 bucket is configured")
         print("  [x] --output s3 requires a bucket (config output_settings.s3.bucket")
         print("      or the STRATUSSCAN_S3_BUCKET env var).")
         sys.exit(2)
     else:
         print(f"  Output: local ({utils.get_output_dir()})")
+    return destination
 
-    # 4. Exporters — every *_export.py on disk
-    scripts_dir = utils.get_scripts_dir()
-    exporters = sorted(scripts_dir.glob("*_export.py"))
-    if not exporters:
-        utils.log_error("Full audit: no exporter scripts found")
-        print("  [x] No exporter scripts found.")
-        sys.exit(1)
-    total = len(exporters)
-    print(f"  Exporters: {total}")
-    print("=" * 60)
 
-    # 5. Fresh per-run manifest (children append; parent reads it afterward)
-    run_ts = utils.get_export_date()
-    manifest_path = utils.get_output_dir() / f"{account_name}-audit-run-manifest-{run_ts}.jsonl"
+def _audit_counts(report_df) -> dict:
+    """Tally per-status counts and total assets from a run-report DataFrame."""
+    counts = report_df["Status"].value_counts().to_dict() if not report_df.empty else {}
+    return {
+        "ok": counts.get(utils.RUN_STATUS_OK, 0),
+        "empty": counts.get(utils.RUN_STATUS_EMPTY, 0),
+        "no_output": counts.get(utils.RUN_STATUS_NO_OUTPUT, 0),
+        "failed": counts.get(utils.RUN_STATUS_FAILED, 0),
+        "total_assets": int(report_df["Assets"].sum()) if not report_df.empty else 0,
+    }
+
+
+def _run_exporters_for_account(exporters, account_id, account_name, regions, role_arn, manifest_path) -> list:
+    """
+    Run every exporter once for a single account, optionally via an assumed role.
+
+    Sequential by design: parallel subprocesses multiply API throttling and
+    interleave logs — both bad for evidence integrity. A failed exporter never
+    aborts the run; it lands in the report. Returns a list of per-exporter
+    result dicts (script, success, return_code, duration_seconds, error_message).
+    """
+    # Fresh manifest for this account (children append; parent reads it after).
     try:
         if manifest_path.exists():
             manifest_path.unlink()
     except OSError:
         pass
 
-    # 6. Run each exporter sequentially. Sequential is deliberate: parallel
-    #    subprocesses multiply API throttling and interleave logs — both bad for
-    #    evidence integrity. A failure never aborts the run; it lands in the report.
     results = []
-    run_start = time.monotonic()
+    total = len(exporters)
     for idx, script_path in enumerate(exporters, 1):
         name = script_path.name
-        print(f"\n[{idx}/{total}] {name}")
+        print(f"  [{idx}/{total}] {name}")
 
         child_env = os.environ.copy()
         child_env["STRATUSSCAN_AUTO_RUN"] = "1"
@@ -1339,6 +1326,8 @@ def _run_full_audit(regions_arg, output) -> None:
         child_env["STRATUSSCAN_ACCOUNT_NAME"] = account_name or ""
         if regions:
             child_env["STRATUSSCAN_REGIONS"] = ",".join(regions)
+        if role_arn:
+            child_env["STRATUSSCAN_ROLE_ARN"] = role_arn
 
         start = time.monotonic()
         return_code = 0
@@ -1348,10 +1337,10 @@ def _run_full_audit(regions_arg, output) -> None:
             return_code = proc.returncode
         except subprocess.TimeoutExpired:
             return_code, error_message = -1, "timed out (30 min)"
-            utils.log_error("Full audit: %s timed out", name)
+            utils.log_error(f"Audit: {name} timed out (account {account_id})")
         except Exception as exc:  # noqa: BLE001
             return_code, error_message = -1, str(exc)
-            utils.log_error("Full audit: %s error: %s", name, exc)
+            utils.log_error(f"Audit: {name} error (account {account_id})", exc)
 
         duration = time.monotonic() - start
         results.append({
@@ -1361,40 +1350,195 @@ def _run_full_audit(regions_arg, output) -> None:
             "duration_seconds": duration,
             "error_message": error_message,
         })
-        print(f"      {'done' if return_code == 0 else 'FAILED'} ({duration:.0f}s)")
+    return results
 
-    run_duration = time.monotonic() - run_start
 
-    # 7. Build + deliver the run report (delivers per destination; never empty,
-    #    so it is never suppressed). STRATUSSCAN_RUN_MANIFEST is intentionally
-    #    NOT set in this parent process, so the report does not record itself.
+def _build_and_deliver_report(results, manifest_path, account_label):
+    """Build the run report from results + manifest and deliver it. Returns
+    (report_df, report_location)."""
     manifest_records = utils.read_run_manifest(str(manifest_path))
     report_df = utils.build_run_report_dataframe(results, manifest_records)
-    report_filename = utils.create_export_filename(account_name, "audit-run-report")
+    report_filename = utils.create_export_filename(account_label, "audit-run-report")
     report_location = utils.save_dataframe_to_excel(report_df, report_filename, sheet_name="Run Report")
+    return report_df, report_location
 
-    # 8. Summary
-    counts = {}
-    if not report_df.empty:
-        counts = report_df["Status"].value_counts().to_dict()
-    n_ok = counts.get(utils.RUN_STATUS_OK, 0)
-    n_empty = counts.get(utils.RUN_STATUS_EMPTY, 0)
-    n_none = counts.get(utils.RUN_STATUS_NO_OUTPUT, 0)
-    n_failed = counts.get(utils.RUN_STATUS_FAILED, 0)
-    total_assets = int(report_df["Assets"].sum()) if not report_df.empty else 0
+
+def _run_full_audit(regions_arg, output) -> None:
+    """
+    Headless single-account full-audit run: execute every exporter
+    non-interactively, write a per-run manifest, then build and deliver a
+    spreadsheet run report.
+
+        stratusscan --run-all --output s3 --regions us-east-1,us-west-2
+
+    Exits: 1 on credential failure or zero successful exporters, 2 on
+    --output s3 with no bucket, 0 otherwise.
+    """
+    print("\nStratusScanCLI-AWS — full audit run")
+    print("=" * 60)
+
+    ok, account_id, account_name = utils.validate_aws_credentials()
+    if not ok:
+        utils.log_error("Full audit: AWS credentials not found or invalid")
+        print("  [x] AWS credentials: not found or invalid")
+        sys.exit(1)
+    print(f"  Account: {account_name} ({account_id})")
+
+    regions = [r.strip() for r in regions_arg.split(",") if r.strip()] if regions_arg else None
+    print(f"  Regions: {', '.join(regions) if regions else 'exporter defaults'}")
+
+    _resolve_audit_destination(output)
+
+    scripts_dir = utils.get_scripts_dir()
+    exporters = sorted(scripts_dir.glob("*_export.py"))
+    if not exporters:
+        utils.log_error("Full audit: no exporter scripts found")
+        print("  [x] No exporter scripts found.")
+        sys.exit(1)
+    print(f"  Exporters: {len(exporters)}")
+    print("=" * 60)
+
+    run_ts = utils.get_export_date()
+    label = _safe_label(account_name)
+    manifest_path = utils.get_output_dir() / f"{label}-audit-run-manifest-{run_ts}.jsonl"
+
+    run_start = time.monotonic()
+    results = _run_exporters_for_account(exporters, account_id, account_name, regions, None, manifest_path)
+    run_duration = time.monotonic() - run_start
+
+    report_df, report_location = _build_and_deliver_report(results, manifest_path, label)
+    c = _audit_counts(report_df)
 
     print("\n" + "=" * 60)
     print("FULL AUDIT COMPLETE")
     print("=" * 60)
-    print(f"  Exporters run : {total}  ({int(run_duration)}s total)")
-    print(f"  With data     : {n_ok}  ({total_assets} assets)")
-    print(f"  Empty (0)     : {n_empty}")
-    print(f"  No output     : {n_none}")
-    print(f"  Failed        : {n_failed}")
+    print(f"  Exporters run : {len(exporters)}  ({int(run_duration)}s total)")
+    print(f"  With data     : {c['ok']}  ({c['total_assets']} assets)")
+    print(f"  Empty (0)     : {c['empty']}")
+    print(f"  No output     : {c['no_output']}")
+    print(f"  Failed        : {c['failed']}")
     print(f"  Run report    : {report_location}")
     print("=" * 60)
 
-    sys.exit(0 if results and n_ok > 0 else 1)
+    sys.exit(0 if results and c["ok"] > 0 else 1)
+
+
+def _run_org_audit(regions_arg, output, scan_role, exclude_arg) -> None:
+    """
+    Headless organization-wide audit: from the audit account, enumerate every
+    active org account, assume the uniformly-named read-only scan role in each,
+    run the full exporter set, deliver a per-account run report, then deliver an
+    org-level summary rolling up every account.
+
+        stratusscan --org-scan --scan-role StratusScanReadOnly --output s3 --regions us-east-1
+
+    Accounts whose scan role cannot be assumed are skipped and recorded as
+    ROLE FAILED in the summary (the StackSet may still be rolling out) — the run
+    is not aborted. Exits: 1 on credential / enumeration failure or zero
+    accounts scanned, 2 on --output s3 with no bucket, 0 otherwise.
+    """
+    print("\nStratusScanCLI-AWS — organization audit run")
+    print("=" * 60)
+
+    ok, account_id, account_name = utils.validate_aws_credentials()
+    if not ok:
+        utils.log_error("Org audit: AWS credentials not found or invalid")
+        print("  [x] AWS credentials: not found or invalid")
+        sys.exit(1)
+    print(f"  Audit account: {account_name} ({account_id})")
+
+    regions = [r.strip() for r in regions_arg.split(",") if r.strip()] if regions_arg else None
+    print(f"  Regions: {', '.join(regions) if regions else 'exporter defaults'}")
+    print(f"  Scan role: {scan_role}")
+
+    _resolve_audit_destination(output)
+    partition = utils.detect_partition()
+
+    scripts_dir = utils.get_scripts_dir()
+    exporters = sorted(scripts_dir.glob("*_export.py"))
+    if not exporters:
+        utils.log_error("Org audit: no exporter scripts found")
+        print("  [x] No exporter scripts found.")
+        sys.exit(1)
+
+    # Enumerate the organization from the audit account.
+    try:
+        accounts = utils.list_organization_accounts(active_only=True)
+    except Exception as exc:  # noqa: BLE001
+        utils.log_error("Org audit: organizations:ListAccounts failed", exc)
+        print(f"  [x] Could not list organization accounts: {exc}")
+        print("      The audit account needs Organizations read access (management or")
+        print("      delegated administrator).")
+        sys.exit(1)
+
+    exclude = {a.strip() for a in exclude_arg.split(",") if a.strip()} if exclude_arg else set()
+    accounts = [a for a in accounts if a["id"] not in exclude]
+    if not accounts:
+        print("  [x] No active accounts to scan.")
+        sys.exit(1)
+    print(f"  Accounts: {len(accounts)} active" + (f"  ({len(exclude)} excluded)" if exclude else ""))
+    print(f"  Exporters: {len(exporters)} per account")
+    print("=" * 60)
+
+    run_ts = utils.get_export_date()
+    summaries = []
+    n_scanned = 0
+    org_start = time.monotonic()
+
+    for i, acct in enumerate(accounts, 1):
+        aid = acct["id"]
+        aname = acct["name"] or aid
+        print(f"\n[account {i}/{len(accounts)}] {aname} ({aid})")
+
+        role_arn = utils.build_arn("iam", f"role/{scan_role}", region="", account_id=aid, partition=partition)
+        assumable, err = utils.verify_assume_role(role_arn, regions[0] if regions else None)
+        if not assumable:
+            print(f"  [skip] cannot assume {role_arn}")
+            print(f"         {err}")
+            utils.log_error(f"Org audit: assume-role failed for {aid}: {err}")
+            summaries.append({
+                "account_id": aid, "account_name": aname,
+                "status": utils.ACCOUNT_STATUS_ROLE_FAILED,
+                "exporters": 0, "ok": 0, "empty": 0, "no_output": 0, "failed": 0,
+                "total_assets": 0, "report": "", "detail": (err or "")[:300],
+            })
+            continue
+
+        label = f"{_safe_label(aname)}-{aid}"
+        manifest_path = utils.get_output_dir() / f"{label}-audit-run-manifest-{run_ts}.jsonl"
+        results = _run_exporters_for_account(exporters, aid, aname, regions, role_arn, manifest_path)
+        report_df, report_loc = _build_and_deliver_report(results, manifest_path, label)
+        c = _audit_counts(report_df)
+        n_scanned += 1
+        summaries.append({
+            "account_id": aid, "account_name": aname,
+            "status": utils.ACCOUNT_STATUS_SCANNED,
+            "exporters": len(results), "ok": c["ok"], "empty": c["empty"],
+            "no_output": c["no_output"], "failed": c["failed"],
+            "total_assets": c["total_assets"], "report": report_loc or "", "detail": "",
+        })
+        print(f"  done — {c['ok']} with data, {c['total_assets']} assets, {c['failed']} failed")
+
+    org_duration = time.monotonic() - org_start
+
+    # Org-level summary roll-up — the top-level index over per-account reports.
+    summary_df = utils.build_org_summary_dataframe(summaries)
+    summary_filename = utils.create_export_filename(f"{_safe_label(account_name)}-ORG", "org-audit-summary")
+    summary_loc = utils.save_dataframe_to_excel(summary_df, summary_filename, sheet_name="Org Summary")
+
+    n_role_failed = sum(1 for s in summaries if s["status"] == utils.ACCOUNT_STATUS_ROLE_FAILED)
+    total_assets = sum(s["total_assets"] for s in summaries)
+
+    print("\n" + "=" * 60)
+    print("ORGANIZATION AUDIT COMPLETE")
+    print("=" * 60)
+    print(f"  Accounts        : {len(accounts)}  ({int(org_duration)}s total)")
+    print(f"  Scanned         : {n_scanned}  ({total_assets} assets)")
+    print(f"  Role failed     : {n_role_failed}")
+    print(f"  Org summary     : {summary_loc}")
+    print("=" * 60)
+
+    sys.exit(0 if n_scanned > 0 else 1)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1431,6 +1575,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--regions",
         default=None,
         help="comma-separated regions for --run-all (e.g. us-east-1,us-west-2)",
+    )
+    parser.add_argument(
+        "--org-scan",
+        action="store_true",
+        help="run the full audit across every active account in the AWS Organization (requires --scan-role)",
+    )
+    parser.add_argument(
+        "--scan-role",
+        default=None,
+        metavar="NAME",
+        help="name of the read-only role to assume in each org account (with --org-scan)",
+    )
+    parser.add_argument(
+        "--exclude-accounts",
+        default=None,
+        metavar="IDS",
+        help="comma-separated account IDs to skip during --org-scan",
     )
     return parser
 
@@ -1485,6 +1646,13 @@ def main():
     if args.dry_run:
         _run_dry_run()
         return  # sys.exit(0) called inside, but be explicit
+
+    if args.org_scan:
+        if not args.scan_role:
+            print("--org-scan requires --scan-role <name> (the role to assume in each account)")
+            sys.exit(2)
+        _run_org_audit(args.regions, args.output, args.scan_role, args.exclude_accounts)
+        return  # sys.exit() called inside
 
     if args.run_all:
         _run_full_audit(args.regions, args.output)
