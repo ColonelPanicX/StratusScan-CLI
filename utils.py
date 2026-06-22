@@ -1129,10 +1129,14 @@ def resolve_s3_destination() -> dict[str, Any]:
     """
     Resolve the effective output destination from config + environment.
 
-    The ``STRATUSSCAN_S3_BUCKET`` env var is the headless/CI hook: when set it
-    forces S3 delivery regardless of the config ``destination`` value, so a
-    scheduled runner can route output to S3 without a committed config.json.
-    ``STRATUSSCAN_S3_PREFIX`` optionally overrides the prefix the same way.
+    Resolution priority for the destination:
+      1. ``STRATUSSCAN_OUTPUT_DESTINATION`` env (``local``/``s3``) — authoritative;
+         this is how the ``--output`` flag forces a destination for the headless
+         orchestrator and every exporter subprocess it launches. ``local`` here
+         wins even if a bucket is configured.
+      2. ``STRATUSSCAN_S3_BUCKET`` env set — implies S3 (CI hook; no config.json
+         needed). ``STRATUSSCAN_S3_PREFIX`` optionally overrides the prefix.
+      3. config ``output_settings.destination``.
 
     Returns:
         dict: ``{"enabled": bool, "bucket": str, "prefix": str}``.
@@ -1140,16 +1144,21 @@ def resolve_s3_destination() -> dict[str, Any]:
               is known.
     """
     settings = config_value("s3", default={}, section="output_settings") or {}
-    destination = config_value("destination", default="local", section="output_settings")
+    config_destination = str(config_value("destination", default="local", section="output_settings")).lower()
 
+    env_dest = os.environ.get("STRATUSSCAN_OUTPUT_DESTINATION", "").strip().lower()
     env_bucket = os.environ.get("STRATUSSCAN_S3_BUCKET", "").strip()
     env_prefix = os.environ.get("STRATUSSCAN_S3_PREFIX", "").strip()
 
     bucket = env_bucket or (settings.get("bucket", "") or "").strip()
     prefix = env_prefix or settings.get("prefix", "stratusscan/")
 
-    # S3 is active if the env var forced it OR config selected it.
-    selected = bool(env_bucket) or str(destination).lower() == "s3"
+    if env_dest in ("local", "s3"):
+        # Explicit flag override wins over everything (including a set bucket).
+        selected = env_dest == "s3"
+    else:
+        # Otherwise a set bucket env, or config, selects S3.
+        selected = bool(env_bucket) or config_destination == "s3"
 
     return {
         "enabled": bool(selected and bucket),
@@ -1497,6 +1506,103 @@ def read_run_manifest(manifest_path: str) -> list[dict[str, Any]]:
     except OSError as e:
         logging.getLogger("stratusscan").warning("Could not read run manifest %s: %s", manifest_path, e)
     return records
+
+
+# Run-report status vocabulary (one per exporter attempted in a --run-all run).
+RUN_STATUS_OK = "OK"                # exited clean, wrote at least one populated export
+RUN_STATUS_EMPTY = "EMPTY"          # exited clean, ran, found 0 assets (no file written)
+RUN_STATUS_NO_OUTPUT = "NO OUTPUT"  # exited clean but saved nothing (e.g. service N/A in partition)
+RUN_STATUS_FAILED = "FAILED"        # non-zero exit / crash / timeout
+
+
+def _format_sheets(sheets: Optional[dict[str, int]]) -> str:
+    """Render per-sheet counts as 'Sheet:rows, ...' for the report."""
+    if not sheets:
+        return ""
+    return ", ".join(f"{name}:{count}" for name, count in sheets.items())
+
+
+def build_run_report_dataframe(
+    executor_results: list[dict[str, Any]],
+    manifest_records: list[dict[str, Any]],
+):
+    """
+    Merge per-script execution results with per-save manifest records into a
+    single run-report DataFrame — the authoritative "what ran / what was found"
+    artifact for an unattended audit.
+
+    Each row is one exporter attempted, with a status that distinguishes the
+    four outcomes auditors care about: OK (data found), EMPTY (ran, 0 assets),
+    NO OUTPUT (ran clean but nothing to export — e.g. service not in partition),
+    and FAILED. The asset count is recorded even when no spreadsheet exists,
+    which is precisely what kills the "no EC2 file, did it run?" false positive.
+
+    Args:
+        executor_results: list of dicts with at least ``script``, ``success``,
+            ``return_code``, ``duration_seconds`` (ExecutionResult flattened).
+        manifest_records: records from :func:`read_run_manifest`.
+
+    Returns:
+        pandas.DataFrame sorted by exporter name.
+    """
+    import pandas as pd
+
+    # Index manifest records by exporter filename.
+    by_exporter: dict[str, list[dict[str, Any]]] = {}
+    for rec in manifest_records:
+        key = rec.get("exporter") or rec.get("resource") or ""
+        by_exporter.setdefault(key, []).append(rec)
+
+    rows: list[dict[str, Any]] = []
+    for res in executor_results:
+        exporter = res.get("script", "")
+        recs = by_exporter.get(exporter, [])
+        written = [r for r in recs if r.get("status") == "written"]
+        assets = sum(int(r.get("rows") or 0) for r in recs)
+
+        if not res.get("success", False):
+            status = RUN_STATUS_FAILED
+        elif written:
+            status = RUN_STATUS_OK
+        elif recs:  # only empty records
+            status = RUN_STATUS_EMPTY
+        else:
+            status = RUN_STATUS_NO_OUTPUT
+
+        file_loc = ""
+        if written:
+            file_loc = written[0].get("file") or ""
+
+        sheets_str = ""
+        for r in recs:
+            if r.get("sheets"):
+                sheets_str = _format_sheets(r.get("sheets"))
+                break
+
+        regions = ""
+        if recs and recs[0].get("regions"):
+            regions = recs[0]["regions"]
+
+        detail = ""
+        if status == RUN_STATUS_FAILED:
+            detail = (res.get("error_message") or f"exit code {res.get('return_code')}").strip()
+
+        rows.append({
+            "Exporter": exporter,
+            "Status": status,
+            "Assets": assets,
+            "Output File": file_loc,
+            "Sheets": sheets_str,
+            "Regions": regions,
+            "Duration (s)": round(float(res.get("duration_seconds") or 0), 1),
+            "Detail": detail,
+        })
+
+    columns = ["Exporter", "Status", "Assets", "Output File", "Sheets", "Regions", "Duration (s)", "Detail"]
+    df = pd.DataFrame(rows, columns=columns)
+    if not df.empty:
+        df = df.sort_values("Exporter").reset_index(drop=True)
+    return df
 
 
 def detect_default_format() -> str:
