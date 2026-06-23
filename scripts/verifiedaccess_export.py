@@ -49,7 +49,9 @@ def collect_verified_access_instances(region: str) -> List[Dict[str, Any]]:
     """Collect Verified Access Instances in a region."""
     utils.log_info(f"Collecting Verified Access Instances in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    # Verified Access APIs are part of EC2 — there is no 'verifiedaccess' boto3
+    # client (issue #208). All describe_verified_access_* operations are EC2.
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     instances = []
 
     try:
@@ -86,7 +88,7 @@ def collect_trust_providers(region: str) -> List[Dict[str, Any]]:
     """Collect Verified Access Trust Providers in a region."""
     utils.log_info(f"Collecting Trust Providers in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     trust_providers = []
 
     try:
@@ -144,7 +146,7 @@ def collect_verified_access_groups(region: str) -> List[Dict[str, Any]]:
     """Collect Verified Access Groups in a region."""
     utils.log_info(f"Collecting Verified Access Groups in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     groups = []
 
     try:
@@ -201,7 +203,7 @@ def collect_verified_access_endpoints(region: str) -> List[Dict[str, Any]]:
     """Collect Verified Access Endpoints in a region."""
     utils.log_info(f"Collecting Verified Access Endpoints in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     endpoints = []
 
     try:
@@ -286,7 +288,7 @@ def collect_access_logs_config(region: str, instances: List[Dict]) -> List[Dict[
     """Collect Access Logs configuration for Verified Access instances."""
     utils.log_info(f"Collecting Access Logs configurations in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     logs_configs = []
 
     for instance in instances:
