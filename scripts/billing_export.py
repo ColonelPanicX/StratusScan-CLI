@@ -217,6 +217,13 @@ def get_billing_data(start_date, end_date):
             print("   - Go to AWS Cost Management > Cost & Usage Reports")
             print("   - Set up a report to be delivered to an S3 bucket")
             sys.exit(1)
+        elif error_code in ('AccessDeniedException', 'AccessDenied', 'UnauthorizedOperation'):
+            # Billing runs as a mandatory script, so a missing-permission case
+            # must not fail the whole audit run. Explain it and skip cleanly.
+            print("\nSkipping billing export: this identity lacks Cost Explorer permissions.")
+            print(f"  Reason: {error_message}")
+            print("  Grant 'ce:GetCostAndUsage' (read-only) to include billing in the audit.")
+            sys.exit(0)
         else:
             print(f"\nError accessing Cost Explorer: {error_message}")
             sys.exit(1)

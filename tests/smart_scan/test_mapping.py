@@ -7,6 +7,7 @@ Tests service-to-script mapping, aliases, and categorization.
 import sys
 import os
 import pytest
+from pathlib import Path
 
 # Add scripts directory to path
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "scripts"))
@@ -233,7 +234,11 @@ class TestMappingStatistics:
 
     def test_always_run_count(self):
         """Verify we have expected number of always-run scripts."""
-        assert len(ALWAYS_RUN_SCRIPTS) == 10
+        assert len(ALWAYS_RUN_SCRIPTS) == 11
+
+    def test_billing_is_mandatory(self):
+        """Billing must be an always-run script (every account has a bill)."""
+        assert "billing_export.py" in ALWAYS_RUN_SCRIPTS
 
     def test_no_duplicate_scripts_in_service_map(self):
         """Verify no service lists the same script twice."""
@@ -360,6 +365,104 @@ class TestDiscoveryCatalogResolves:
             "These services are in KNOWN_NO_EXPORTER but no longer exist in the "
             f"discovery catalog — remove them: {stale}"
         )
+
+
+class TestExporterReachability:
+    """
+    The inverse of TestDiscoveryCatalogResolves: every exporter that exists on
+    disk must be reachable through a Deep Scan — either the discovery catalog
+    detects its service, or it is in the always-run baseline. An exporter that
+    is neither can never run via smart scan, so its data silently never gets
+    collected. This is the broader version of the original RDS bug.
+    """
+
+    # Scripts that intentionally do NOT participate in discovery-driven runs:
+    #   - the discovery script itself (it produces the catalog; it must not
+    #     recommend running itself)
+    #   - legacy aggregate helpers kept for direct/manual invocation
+    NON_DISCOVERABLE = {
+        "services_in_use_export.py",
+        "compute_resources.py",
+        "network_resources.py",
+        "storage_resources.py",
+    }
+
+    @staticmethod
+    def _scripts_dir():
+        return Path(scripts_dir)
+
+    @staticmethod
+    def _reachable_scripts():
+        """Scripts a Deep Scan can run: catalog-detected services + always-run."""
+        import services_in_use_export
+
+        catalog = set()
+        for services in services_in_use_export.SERVICE_CHECKS.values():
+            catalog.update(services.keys())
+
+        reachable = set(ALWAYS_RUN_SCRIPTS)
+        for name in catalog:
+            reachable.update(get_scripts_for_service(name))
+        return reachable
+
+    def test_every_exporter_is_reachable(self):
+        """Every *_export.py on disk must be reachable via discovery or always-run."""
+        disk = {p.name for p in self._scripts_dir().glob("*_export.py")}
+        unreachable = sorted(
+            disk - self._reachable_scripts() - self.NON_DISCOVERABLE
+        )
+        assert not unreachable, (
+            "Exporters on disk that a Deep Scan can never run (no catalog "
+            f"detector and not always-run): {unreachable}. Add a detector to "
+            "SERVICE_CHECKS, add the script to ALWAYS_RUN_SCRIPTS, or list it in "
+            "NON_DISCOVERABLE if it is intentionally manual-only."
+        )
+
+    def test_non_discoverable_entries_exist(self):
+        """NON_DISCOVERABLE must only name scripts that actually exist on disk."""
+        missing = sorted(
+            s for s in self.NON_DISCOVERABLE if not (self._scripts_dir() / s).exists()
+        )
+        assert not missing, f"NON_DISCOVERABLE names nonexistent scripts: {missing}"
+
+
+class TestServiceCheckStructure:
+    """Validate every discovery-catalog detector is structurally well-formed."""
+
+    @staticmethod
+    def _all_configs():
+        import services_in_use_export
+
+        for category, services in services_in_use_export.SERVICE_CHECKS.items():
+            for name, config in services.items():
+                yield category, name, config
+
+    def test_required_keys_present(self):
+        """Every detector needs client, check (callable), unit, and regional flag."""
+        for _category, name, config in self._all_configs():
+            assert "client" in config, f"{name}: missing 'client'"
+            assert callable(config.get("check")), f"{name}: 'check' must be callable"
+            assert "unit" in config, f"{name}: missing 'unit'"
+            assert isinstance(config.get("regional"), bool), f"{name}: 'regional' must be bool"
+
+    def test_global_region_not_also_regional(self):
+        """A global_region service is account-global; it cannot also be regional."""
+        for _category, name, config in self._all_configs():
+            if config.get("global_region"):
+                assert config["regional"] is False, (
+                    f"{name}: global_region services must have regional=False"
+                )
+
+    def test_client_strings_are_valid_boto3_services(self):
+        """Every detector's client must be a real botocore service (offline check)."""
+        import botocore.session
+
+        session = botocore.session.get_session()
+        valid = set(session.get_available_services())
+        for _category, name, config in self._all_configs():
+            assert config["client"] in valid, (
+                f"{name}: '{config['client']}' is not a valid boto3 service"
+            )
 
 
 if __name__ == "__main__":

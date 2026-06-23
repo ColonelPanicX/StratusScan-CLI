@@ -23,6 +23,11 @@ ALWAYS_RUN_SCRIPTS = [
     "route_tables_export.py",
     "trusted_advisor_cost_optimization_export.py",
     "budgets_export.py",
+    # Every commercial account has a bill, so billing is always worth pulling —
+    # it doubles as a ground-truth cross-check on what is actually running.
+    # The script skips itself cleanly in GovCloud (no Cost Explorer) and on
+    # missing Cost Explorer permissions, so making it mandatory is safe.
+    "billing_export.py",
 ]
 
 # Service name aliases and variations
