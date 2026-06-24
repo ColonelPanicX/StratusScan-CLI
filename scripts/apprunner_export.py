@@ -315,9 +315,16 @@ def collect_custom_domains(regions: List[str], services: List[Dict[str, Any]]) -
             service_name = service['Service Name']
 
             try:
-                paginator = apprunner_client.get_paginator('list_custom_domains')
-                for page in paginator.paginate(ServiceArn=service_arn):
-                    custom_domains = page.get('CustomDomains', [])
+                # describe_custom_domains is the real App Runner op (there is no
+                # list_custom_domains) and it is not paginatable — page manually
+                # via NextToken.
+                next_token = None
+                while True:
+                    kwargs = {'ServiceArn': service_arn}
+                    if next_token:
+                        kwargs['NextToken'] = next_token
+                    response = apprunner_client.describe_custom_domains(**kwargs)
+                    custom_domains = response.get('CustomDomains', [])
 
                     for domain in custom_domains:
                         domain_name = domain.get('DomainName', 'N/A')
@@ -341,6 +348,10 @@ def collect_custom_domains(regions: List[str], services: List[Dict[str, Any]]) -
                             'Status': status,
                             'Certificate Validation': cert_records_str,
                         })
+
+                    next_token = response.get('NextToken')
+                    if not next_token:
+                        break
 
             except Exception as e:
                 utils.log_warning(f"Could not get custom domains for service {service_name}: {str(e)}")

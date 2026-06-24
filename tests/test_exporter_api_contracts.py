@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""
+Static API-contract checks across every exporter in scripts/.
+
+The import-only smoke test (test_smoke.py) never exercises an exporter's AWS
+calls, so runtime-only mistakes hide — e.g. issue #208, where a client was
+built with the non-existent boto3 service 'verifiedaccess' and the error was
+swallowed into an empty export.
+
+These tests parse each exporter's AST (no AWS credentials / moto needed) and
+guard the runtime-fatal mistakes this codebase has actually shipped:
+
+  1. get_boto3_client('<svc>') must name a real boto3 service       (issue #208)
+  2. <client>.get_paginator('<op>') must name an operation that
+     exists on that client's service                                (issues #208, #212)
+  3. <client>.get_paginator('<op>') must not be used on a known
+     non-paginatable operation — ratcheted against a baseline so the
+     existing backlog can't grow                                    (issue #214)
+
+Version coupling: validity is checked against the *installed* botocore. Real
+services/operations newer than the installed SDK are allowlisted below
+(issue #213) so the test is deterministic.
+"""
+
+import ast
+from pathlib import Path
+
+import boto3
+import botocore.session
+import pytest
+from botocore import xform_name
+
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+
+_session = botocore.session.get_session()
+_VALID_SERVICES = set(_session.get_available_services())
+
+# Real AWS services newer than the installed botocore floor (issue #213).
+SERVICES_REQUIRING_NEWER_BOTO3 = {
+    "controlcatalog",  # ~boto3 1.34.74 — controltower_export.py
+}
+
+# (service, op) pairs whose operation is valid only in newer boto3 (issue #213).
+PAGINATORS_REQUIRING_NEWER_BOTO3 = {
+    ("bedrock", "list_guardrails"),  # ~boto3 1.34.140 — bedrock_export.py
+}
+
+# (service, op) pairs that name an operation which does not exist in any SDK
+# version — genuinely broken, tracked separately (issue #212).
+KNOWN_BROKEN_PAGINATORS = {
+    ("acm-pca", "list_certificates"),  # no such ACM PCA API
+}
+
+# Baseline of get_paginator() calls on operations that EXIST but are NOT
+# paginatable (issue #214). The ratchet test blocks any NEW such call; entries
+# here should be removed as #214 is burned down. Keyed "<file>::<svc>.<op>".
+KNOWN_NONPAGINATABLE = {
+    "apprunner_export.py::apprunner.list_auto_scaling_configurations",
+    "apprunner_export.py::apprunner.list_services",
+    "apprunner_export.py::apprunner.list_vpc_connectors",
+    "bedrock_export.py::bedrock.list_foundation_models",
+    "cloudtrail_export.py::cloudtrail.list_event_data_stores",
+    "compute_optimizer_export.py::compute-optimizer.get_auto_scaling_group_recommendations",
+    "compute_optimizer_export.py::compute-optimizer.get_ebs_volume_recommendations",
+    "compute_optimizer_export.py::compute-optimizer.get_ec2_instance_recommendations",
+    "compute_optimizer_export.py::compute-optimizer.get_ecs_service_recommendations",
+    "detective_export.py::detective.list_members",
+    "elasticbeanstalk_export.py::elasticbeanstalk.describe_applications",
+    "eventbridge_export.py::events.list_event_buses",
+    "glue_athena_export.py::athena.list_work_groups",
+    "image_builder_export.py::imagebuilder.list_components",
+    "image_builder_export.py::imagebuilder.list_image_pipelines",
+    "image_builder_export.py::imagebuilder.list_image_recipes",
+    "image_builder_export.py::imagebuilder.list_infrastructure_configurations",
+    "lakeformation_export.py::lakeformation.list_permissions",
+    "lakeformation_export.py::lakeformation.list_resources",
+    "license_manager_export.py::license-manager.list_distributed_grants",
+    "license_manager_export.py::license-manager.list_licenses",
+    "license_manager_export.py::license-manager.list_received_grants",
+    "marketplace_export.py::marketplace-agreement.get_agreement_terms",
+    "marketplace_export.py::marketplace-agreement.search_agreements",
+    "savings_plans_export.py::savingsplans.describe_savings_plans",
+    "ses_export.py::sesv2.list_configuration_sets",
+    "ses_export.py::sesv2.list_email_identities",
+    "ses_export.py::sesv2.list_email_templates",
+    "ses_pinpoint_export.py::sesv2.list_configuration_sets",
+    "ses_pinpoint_export.py::sesv2.list_email_identities",
+    "ses_pinpoint_export.py::sesv2.list_email_templates",
+    "shield_export.py::shield.list_protection_groups",
+    "waf_export.py::wafv2.list_ip_sets",
+    "waf_export.py::wafv2.list_rule_groups",
+    "waf_export.py::wafv2.list_web_acls",
+}
+
+_ops_cache: dict = {}
+_paginatable_cache: dict = {}
+
+
+def _operations(service):
+    """snake_case operation names for a service, or None if service unknown here."""
+    if service not in _ops_cache:
+        if service not in _VALID_SERVICES:
+            _ops_cache[service] = None
+        else:
+            model = _session.get_service_model(service)
+            _ops_cache[service] = {xform_name(o) for o in model.operation_names}
+    return _ops_cache[service]
+
+
+def _paginatable(service):
+    """snake_case paginatable operation names for a service, or None if unknown."""
+    if service not in _paginatable_cache:
+        if service not in _VALID_SERVICES:
+            _paginatable_cache[service] = None
+        else:
+            client = boto3.client(
+                service,
+                region_name="us-east-1",
+                aws_access_key_id="testing",
+                aws_secret_access_key="testing",
+            )
+            _paginatable_cache[service] = {
+                op for op in _operations(service) if client.can_paginate(op)
+            }
+    return _paginatable_cache[service]
+
+
+def _exporter_files():
+    return sorted(p for p in SCRIPTS_DIR.glob("*.py") if p.name != "__init__.py")
+
+
+def _client_service_literals(tree):
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else None)
+            if name == "get_boto3_client" and node.args:
+                arg = node.args[0]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    out.append((node.lineno, arg.value))
+    return out
+
+
+def _paginator_calls(tree):
+    """Resolve <var>.get_paginator('<op>') to (lineno, service, op) using
+    get_boto3_client('<svc>') assignments in the same scope."""
+    results = set()
+    scopes = [tree] + [
+        n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    for scope in scopes:
+        var_service = {}
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                f = node.value.func
+                name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else None)
+                if name == "get_boto3_client" and node.value.args:
+                    arg = node.value.args[0]
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        for tgt in node.targets:
+                            if isinstance(tgt, ast.Name):
+                                var_service[tgt.id] = arg.value
+        for node in ast.walk(scope):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get_paginator"
+                and isinstance(node.func.value, ast.Name)
+                and node.args
+            ):
+                arg = node.args[0]
+                svc = var_service.get(node.func.value.id)
+                if svc and isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    results.add((node.lineno, svc, arg.value))
+    return results
+
+
+@pytest.mark.parametrize("path", _exporter_files(), ids=lambda p: p.name)
+def test_get_boto3_client_uses_valid_service(path):
+    """Every get_boto3_client('<svc>') must name a real boto3 service (issue #208)."""
+    tree = ast.parse(path.read_text(), str(path))
+    invalid = [
+        (lineno, svc)
+        for lineno, svc in _client_service_literals(tree)
+        if svc not in _VALID_SERVICES and svc not in SERVICES_REQUIRING_NEWER_BOTO3
+    ]
+    assert not invalid, (
+        f"{path.name} calls get_boto3_client with invalid boto3 service(s): "
+        + ", ".join(f"'{s}' (line {ln})" for ln, s in invalid)
+    )
+
+
+@pytest.mark.parametrize("path", _exporter_files(), ids=lambda p: p.name)
+def test_get_paginator_operation_exists(path):
+    """Every get_paginator('<op>') must name an operation on that service (#208/#212)."""
+    tree = ast.parse(path.read_text(), str(path))
+    bad = []
+    for lineno, svc, op in _paginator_calls(tree):
+        if (svc, op) in PAGINATORS_REQUIRING_NEWER_BOTO3 or (svc, op) in KNOWN_BROKEN_PAGINATORS:
+            continue
+        ops = _operations(svc)
+        if ops is None:
+            continue  # service unknown to this botocore — covered elsewhere
+        if op not in ops:
+            bad.append((lineno, svc, op))
+    assert not bad, (
+        f"{path.name} calls get_paginator with non-existent operation(s): "
+        + ", ".join(f"{svc}.{op} (line {ln})" for ln, svc, op in bad)
+    )
+
+
+def test_no_new_nonpaginatable_get_paginator():
+    """Ratchet (issue #214): no NEW get_paginator() on a non-paginatable op.
+
+    Existing offenders are baselined in KNOWN_NONPAGINATABLE; remove entries as
+    they are fixed. A new offender anywhere fails this test.
+    """
+    found = set()
+    for path in _exporter_files():
+        tree = ast.parse(path.read_text(), str(path))
+        for _lineno, svc, op in _paginator_calls(tree):
+            ops = _operations(svc)
+            paginatable = _paginatable(svc)
+            if ops is None or paginatable is None:
+                continue
+            if op in ops and op not in paginatable:
+                found.add(f"{path.name}::{svc}.{op}")
+
+    new_offenders = sorted(found - KNOWN_NONPAGINATABLE)
+    assert not new_offenders, (
+        "New get_paginator() call(s) on non-paginatable operations (issue #214). "
+        "Use a manual NextToken/Marker loop instead of get_paginator: "
+        + ", ".join(new_offenders)
+    )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

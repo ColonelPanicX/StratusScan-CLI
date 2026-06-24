@@ -106,7 +106,10 @@ def get_user_groups(iam_client, username):
         str: Comma-separated list of group names or descriptive string
     """
     groups = []
-    paginator = iam_client.get_paginator('get_groups_for_user')
+    # IAM's operation is ListGroupsForUser — there is no get_groups_for_user
+    # (issue #208 class). The wrong name made every user's groups export as the
+    # error-handler default instead of real data.
+    paginator = iam_client.get_paginator('list_groups_for_user')
     for page in paginator.paginate(UserName=username):
         groups.extend([group['GroupName'] for group in page.get('Groups', [])])
     return ", ".join(groups) if groups else "None"
