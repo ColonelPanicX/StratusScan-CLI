@@ -34,10 +34,8 @@ SERVICE_ALIASES: Dict[str, str] = {
     "elastic compute cloud": "Amazon Elastic Compute Cloud",
     "lambda": "AWS Lambda",
     "eks": "Amazon Elastic Kubernetes Service",
-    "Amazon EKS": "Amazon Elastic Kubernetes Service",
     "kubernetes": "Amazon Elastic Kubernetes Service",
     "ecs": "Amazon Elastic Container Service",
-    "Amazon ECS": "Amazon Elastic Container Service",
     "fargate": "AWS Fargate",
     "app runner": "AWS App Runner",
     "apprunner": "AWS App Runner",
@@ -147,6 +145,28 @@ SERVICE_ALIASES: Dict[str, str] = {
     "elastic container registry": "Amazon Elastic Container Registry",
     "elastic container service": "Amazon Elastic Container Service",
     "elastic kubernetes service": "Amazon Elastic Kubernetes Service",
+
+    # Short "marketing" names emitted by the service-discovery catalog in
+    # services_in_use_export.py. The catalog keys on friendly names (e.g.
+    # "Amazon RDS") for human-readable reports, while SERVICE_SCRIPT_MAP keys
+    # on full canonical names. Alias lookup is case-insensitive (input is
+    # lowercased), so these MUST be lowercase. Without them, discovered
+    # services map to zero scripts and are silently dropped from Deep Scan.
+    # The test_discovery_catalog_resolves guard keeps this list in sync.
+    "amazon rds": "Amazon Relational Database Service",
+    "amazon ecs": "Amazon Elastic Container Service",
+    "amazon eks": "Amazon Elastic Kubernetes Service",
+    "amazon ebs": "Amazon Elastic Block Store",
+    "amazon efs": "Amazon Elastic File System",
+    "amazon glacier": "Amazon S3 Glacier",
+    "amazon vpc": "Amazon Virtual Private Cloud",
+    "aws vpn": "AWS Virtual Private Network",
+    "aws iam": "AWS Identity and Access Management",
+    "aws kms": "AWS Key Management Service",
+    "amazon opensearch": "Amazon OpenSearch Service",
+    "amazon sns": "Amazon Simple Notification Service",
+    "amazon sqs": "Amazon Simple Queue Service",
+    "amazon appsync": "AWS AppSync",
 }
 
 # Primary mapping: Service name → list of export scripts

@@ -286,5 +286,81 @@ class TestGetCategoryForScript:
         assert get_category_for_script("nonexistent_script.py") == "Other"
 
 
+class TestDiscoveryCatalogResolves:
+    """
+    Guard against silent drift between the service-discovery catalog
+    (SERVICE_CHECKS in services_in_use_export.py) and the script mapping
+    (SERVICE_SCRIPT_MAP / SERVICE_ALIASES).
+
+    The discovery catalog keys on friendly names ("Amazon RDS") while the
+    mapping keys on canonical names ("Amazon Relational Database Service").
+    If a discovered service does not resolve to at least one script, it is
+    silently dropped from Deep Scan execution — meaning the audit reports a
+    service as present but never collects its resources. That is the exact
+    failure this test exists to prevent.
+    """
+
+    # Services that the discovery catalog can detect but for which no exporter
+    # script exists yet. These are KNOWN coverage gaps, not naming bugs. Adding
+    # an exporter for any of these should also remove it from this allowlist.
+    KNOWN_NO_EXPORTER = {
+        "Amazon Lightsail",
+        "AWS Batch",
+        "Amazon Timestream",
+        "Amazon EMR",
+        "Amazon Kinesis",
+        "Amazon CloudWatch Logs",
+        "AWS Amplify",
+    }
+
+    @staticmethod
+    def _catalog_service_names():
+        """Flatten SERVICE_CHECKS (category -> {service: config}) to service names."""
+        import services_in_use_export
+
+        names = set()
+        for services in services_in_use_export.SERVICE_CHECKS.values():
+            names.update(services.keys())
+        return names
+
+    def test_every_discovered_service_resolves_to_a_script(self):
+        """Every discovery-catalog service must map to >=1 script (or be a known gap)."""
+        unresolved = sorted(
+            name
+            for name in self._catalog_service_names()
+            if not get_scripts_for_service(name)
+            and name not in self.KNOWN_NO_EXPORTER
+        )
+        assert not unresolved, (
+            "Discovery catalog services that resolve to NO export script "
+            "(they would be silently dropped from Deep Scan): "
+            f"{unresolved}. Add an alias in SERVICE_ALIASES mapping each to its "
+            "canonical name, or add it to KNOWN_NO_EXPORTER if no exporter exists yet."
+        )
+
+    def test_rds_specifically_resolves(self):
+        """Regression: 'Amazon RDS' must resolve to rds_export.py (the original bug)."""
+        assert "rds_export.py" in get_scripts_for_service("Amazon RDS")
+
+    def test_known_no_exporter_list_is_accurate(self):
+        """KNOWN_NO_EXPORTER must not list services that actually DO have a script."""
+        wrongly_listed = sorted(
+            name for name in self.KNOWN_NO_EXPORTER if get_scripts_for_service(name)
+        )
+        assert not wrongly_listed, (
+            "These services are in KNOWN_NO_EXPORTER but now resolve to a script "
+            f"— remove them from the allowlist: {wrongly_listed}"
+        )
+
+    def test_known_no_exporter_entries_are_in_catalog(self):
+        """KNOWN_NO_EXPORTER must only list services the catalog can actually detect."""
+        catalog = self._catalog_service_names()
+        stale = sorted(name for name in self.KNOWN_NO_EXPORTER if name not in catalog)
+        assert not stale, (
+            "These services are in KNOWN_NO_EXPORTER but no longer exist in the "
+            f"discovery catalog — remove them: {stale}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
