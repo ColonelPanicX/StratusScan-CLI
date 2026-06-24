@@ -171,6 +171,7 @@ def _write_markdown_report(
     account_id: str,
     regions: List[str],
     mode: str,
+    crosscheck: Optional[Dict[str, Any]] = None,
 ) -> Optional[Path]:
     """
     Write discovery report as Markdown to reports/ directory.
@@ -275,6 +276,8 @@ def _write_markdown_report(
             lines.append(f"- `{script}`")
         lines.append("")
 
+    lines += _crosscheck_markdown_lines(crosscheck)
+
     try:
         filepath.write_text('\n'.join(lines), encoding='utf-8')
         return filepath
@@ -364,6 +367,123 @@ def _resume_from_session(session_path: str) -> None:
     )
 
 
+def _run_bill_crosscheck(
+    services: Dict[str, Any], regions: List[str]
+) -> Optional[Dict[str, Any]]:
+    """Run the Cost Explorer ground-truth cross-check unless opted out.
+
+    Never raises — returns the cross-check result, a skip status dict, or None
+    when disabled/unavailable so callers can always proceed.
+    """
+    if os.environ.get("STRATUSSCAN_SKIP_BILL_CROSSCHECK") == "1":
+        utils.log_info("Bill cross-check disabled (STRATUSSCAN_SKIP_BILL_CROSSCHECK=1)")
+        return None
+    try:
+        from smart_scan.bill_crosscheck import run_crosscheck
+    except ImportError as exc:
+        utils.log_warning(f"Bill cross-check unavailable: {exc}")
+        return None
+    partition = utils.detect_partition(regions[0]) if regions else None
+    return run_crosscheck(set(services.keys()), partition=partition)
+
+
+# (result bucket, human label) in audit-priority order.
+_CROSSCHECK_STATUS_ORDER = [
+    ('not_collected', 'SPEND, NOT COLLECTED'),
+    ('confirmed', 'CONFIRMED'),
+    ('unmapped', 'SPEND, UNMAPPED'),
+    ('ignored', 'IGNORED (billing line item)'),
+]
+
+
+def _crosscheck_dataframe(result: Dict[str, Any]) -> "pd.DataFrame":
+    """Flatten a cross-check result into a single status-tagged DataFrame."""
+    rows = []
+    for bucket, label in _CROSSCHECK_STATUS_ORDER:
+        for r in result.get(bucket, []):
+            rows.append({
+                'Status': label,
+                'Billed Service (Cost Explorer)': r['ce_service'],
+                'Mapped Service': r.get('service', ''),
+                'Monthly Cost (USD)': r['monthly_cost'],
+                'Exporters': ', '.join(r.get('exporters', [])),
+            })
+    return pd.DataFrame(rows)
+
+
+def _crosscheck_markdown_lines(result: Optional[Dict[str, Any]]) -> List[str]:
+    """Render the cross-check as a Markdown report section."""
+    if not result:
+        return []
+    lines = ["---", "", "## Bill Cross-Check", ""]
+    if result.get('status') != 'ok':
+        return lines + [f"_Skipped: {result.get('reason', 'unavailable')}_", ""]
+
+    p = result['period']
+    lines += [
+        f"Cost Explorer spend for {p['start']} to {p['end']} "
+        f"({result['total_services_billed']} billed services), reconciled against discovery.",
+        "",
+    ]
+    not_collected = result.get('not_collected', [])
+    if not_collected:
+        lines += [
+            "### ⚠ Spend detected but NOT collected",
+            "",
+            "| Billed Service | Mapped Service | Monthly Cost (USD) | Exporter(s) |",
+            "|---|---|---|---|",
+        ]
+        for r in not_collected:
+            lines.append(
+                f"| {r['ce_service']} | {r['service']} | {r['monthly_cost']:,.2f} "
+                f"| {', '.join(r['exporters'])} |"
+            )
+        lines.append("")
+    else:
+        lines += ["Every billed service was discovered. ✅", ""]
+
+    unmapped = result.get('unmapped', [])
+    if unmapped:
+        lines += [
+            "### Billed but unmapped (no known service)",
+            "",
+            "| Billed Service | Monthly Cost (USD) |",
+            "|---|---|",
+        ]
+        for r in unmapped:
+            lines.append(f"| {r['ce_service']} | {r['monthly_cost']:,.2f} |")
+        lines.append("")
+    return lines
+
+
+def _print_crosscheck_summary(result: Optional[Dict[str, Any]]) -> None:
+    """Print a concise cross-check summary to the console."""
+    if not result:
+        return
+    if result.get('status') != 'ok':
+        print(f"\n  Bill cross-check skipped: {result.get('reason', 'unavailable')}")
+        return
+    not_collected = result.get('not_collected', [])
+    unmapped = result.get('unmapped', [])
+    print()
+    print("  ─── BILL CROSS-CHECK ────────────────────────────────────────")
+    print(
+        f"  Period {result['period']['start']} → {result['period']['end']}  "
+        f"({result['total_services_billed']} billed services)"
+    )
+    if not_collected:
+        print(f"  ⚠ {len(not_collected)} service(s) with spend NOT collected by discovery:")
+        for r in not_collected[:10]:
+            print(f"      ${r['monthly_cost']:>12,.2f}  {r['service']}")
+        if len(not_collected) > 10:
+            print(f"      ... and {len(not_collected) - 10} more (see report)")
+    else:
+        print("  ✓ Every billed service was discovered.")
+    if unmapped:
+        print(f"  • {len(unmapped)} billed service(s) could not be mapped (see report).")
+    print("  ─────────────────────────────────────────────────────────────")
+
+
 def main() -> None:
     """Main Smart Scan workflow."""
     utils.log_script_start('smart-scan')
@@ -417,10 +537,16 @@ def main() -> None:
         f"  ({n_baseline} security baseline + {n_service} service-specific)"
     )
 
+    # Bill cross-check (Cost Explorer ground truth). Opt out with
+    # STRATUSSCAN_SKIP_BILL_CROSSCHECK=1; skips cleanly in GovCloud / without perms.
+    crosscheck = _run_bill_crosscheck(services, regions)
+    _print_crosscheck_summary(crosscheck)
+
     # Quick Scan: write lightweight reports and exit
     if scan_mode == 'quick':
         md_path = _write_markdown_report(
-            services, recommendations, account_name, account_id, regions, scan_mode
+            services, recommendations, account_name, account_id, regions, scan_mode,
+            crosscheck=crosscheck,
         )
         if md_path:
             utils.log_success(f"  Report saved: {md_path}")
@@ -440,7 +566,8 @@ def main() -> None:
 
     # Write Markdown report
     md_path = _write_markdown_report(
-        services, recommendations, account_name, account_id, regions, scan_mode
+        services, recommendations, account_name, account_id, regions, scan_mode,
+        crosscheck=crosscheck,
     )
     if md_path:
         utils.log_success(f"  Report saved: {md_path}")
@@ -467,6 +594,11 @@ def main() -> None:
         for category, df in category_sheets.items():
             sheet_name = category.replace(' Resources', '').replace('&', 'and')[:31]
             dataframes[sheet_name] = utils.prepare_dataframe_for_export(df)
+
+        if crosscheck and crosscheck.get('status') == 'ok':
+            df_cc = _crosscheck_dataframe(crosscheck)
+            if not df_cc.empty:
+                dataframes['Bill Cross-Check'] = utils.prepare_dataframe_for_export(df_cc)
 
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'services-in-use', region_suffix)
