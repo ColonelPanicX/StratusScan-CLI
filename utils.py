@@ -3119,7 +3119,9 @@ def get_aws_session(
         env_role = os.environ.get("STRATUSSCAN_ROLE_ARN", "").strip()
         if env_role:
             role_arn = env_role
-            log.debug("STRATUSSCAN_ROLE_ARN env var active: %s", role_arn)
+            logging.getLogger(__name__).debug(
+                "STRATUSSCAN_ROLE_ARN env var active: %s", role_arn
+            )
 
     if role_arn:
         creds = _assume_role_cached(role_arn, region_name=region_name, profile_name=profile_name)

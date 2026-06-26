@@ -212,6 +212,36 @@ class TestBoto3ClientCreation:
         assert hasattr(config, 'retries')
 
 
+class TestCrossAccountSession:
+    """Test the STRATUSSCAN_ROLE_ARN env-var injection path in get_aws_session."""
+
+    @patch('utils._assume_role_cached')
+    @patch('utils.boto3.Session')
+    def test_role_arn_env_var_does_not_raise(self, mock_session, mock_assume, monkeypatch):
+        """
+        Regression: get_aws_session() must not NameError on the
+        STRATUSSCAN_ROLE_ARN branch (org-scan / cross-account subprocess path).
+
+        Exporters call get_boto3_client() without role_arn, so role_arn arrives
+        as None; org-scan injects the role via the env var. The debug-log line
+        on that branch previously referenced an undefined ``log`` symbol.
+        """
+        role = "arn:aws:iam::123456789012:role/CrossAccountAudit"
+        monkeypatch.setenv("STRATUSSCAN_ROLE_ARN", role)
+
+        mock_assume.return_value = {
+            "AccessKeyId": "AKIA_TEST",
+            "SecretAccessKey": "secret",
+            "SessionToken": "token",
+        }
+
+        # Should complete without NameError and assume the env-supplied role.
+        utils.get_aws_session(region_name="us-east-1")
+
+        mock_assume.assert_called_once()
+        assert mock_assume.call_args[0][0] == role
+
+
 class TestLogging:
     """Test logging functions."""
 
