@@ -25,7 +25,7 @@ Note: Requires ec2:DescribeHosts and ec2:DescribeHostReservations permissions
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -42,14 +42,14 @@ args = utils.parse_script_args("Export EC2 Dedicated Hosts to Excel")
 utils.setup_logging('ec2-dedicated-hosts-export')
 
 
-def _load_dedicated_host_pricing() -> Dict[str, Dict[str, float]]:
+def _load_dedicated_host_pricing() -> dict[str, dict[str, float]]:
     """Load per-family dedicated host on-demand rates (us-east-1).
 
     Returns dict: {family: {'hourly': float, 'monthly': float}}
     """
     pricing_file = Path(__file__).parent.parent / 'reference' / 'dedicated-host-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         rates = data.get('rates', {})
         return {
@@ -64,7 +64,7 @@ def _load_dedicated_host_pricing() -> Dict[str, Dict[str, float]]:
 
 
 @utils.aws_error_handler("Collecting dedicated hosts", default_return=[])
-def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
+def collect_dedicated_hosts(region: str) -> list[dict[str, Any]]:
     """Collect all EC2 Dedicated Hosts in a region."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     hosts = []
@@ -153,7 +153,7 @@ def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting host reservations", default_return=[])
-def collect_host_reservations(region: str) -> List[Dict[str, Any]]:
+def collect_host_reservations(region: str) -> list[dict[str, Any]]:
     """Collect Dedicated Host Reservations in a region."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reservations = []
@@ -195,7 +195,7 @@ def collect_host_reservations(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting host instances", default_return=[])
-def collect_host_instances(region: str, hosts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_host_instances(region: str, hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Extract instance-to-host mappings from hosts data."""
     host_instances = []
 
@@ -219,7 +219,7 @@ def collect_host_instances(region: str, hosts: List[Dict[str, Any]]) -> List[Dic
     return host_instances
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect EC2 Dedicated Host data and write the Excel export."""
     utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Dedicated Hosts...")
 

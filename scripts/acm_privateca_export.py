@@ -14,7 +14,7 @@ Output: Multi-worksheet Excel file with ACM Private CA resources
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export ACM Private Certificate Authority resources to Excel")
 
-def _scan_private_cas_region(region: str) -> List[Dict[str, Any]]:
+def _scan_private_cas_region(region: str) -> list[dict[str, Any]]:
     """Scan Private CAs in a single region."""
     regional_cas = []
     acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
@@ -161,7 +161,7 @@ def _scan_private_cas_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Private Certificate Authorities", default_return=[])
-def collect_private_cas(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_private_cas(regions: list[str]) -> list[dict[str, Any]]:
     """Collect ACM Private CA certificate authority information from AWS regions."""
     print("\n=== COLLECTING PRIVATE CERTIFICATE AUTHORITIES ===")
     results = utils.scan_regions_concurrent(regions, _scan_private_cas_region)
@@ -170,7 +170,7 @@ def collect_private_cas(regions: List[str]) -> List[Dict[str, Any]]:
     return all_cas
 
 
-def _scan_issued_certificates_region(region: str) -> List[Dict[str, Any]]:
+def _scan_issued_certificates_region(region: str) -> list[dict[str, Any]]:
     """Scan issued certificates in a single region."""
     regional_certificates = []
     acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
@@ -257,7 +257,7 @@ def _scan_issued_certificates_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting issued certificates", default_return=[])
-def collect_issued_certificates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_issued_certificates(regions: list[str]) -> list[dict[str, Any]]:
     """Collect issued certificates from Private CAs (limited sample)."""
     print("\n=== COLLECTING ISSUED CERTIFICATES ===")
     results = utils.scan_regions_concurrent(regions, _scan_issued_certificates_region)
@@ -267,7 +267,7 @@ def collect_issued_certificates(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 
-def _scan_ca_permissions_region(region: str) -> List[Dict[str, Any]]:
+def _scan_ca_permissions_region(region: str) -> list[dict[str, Any]]:
     """Scan CA permissions in a single region."""
     regional_permissions = []
     acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
@@ -347,7 +347,7 @@ def _scan_ca_permissions_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CA permissions", default_return=[])
-def collect_ca_permissions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ca_permissions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect permission policies for Private CAs."""
     print("\n=== COLLECTING CA PERMISSIONS ===")
     results = utils.scan_regions_concurrent(regions, _scan_ca_permissions_region)
@@ -356,9 +356,9 @@ def collect_ca_permissions(regions: List[str]) -> List[Dict[str, Any]]:
     return all_permissions
 
 
-def generate_summary(cas: List[Dict[str, Any]],
-                     certificates: List[Dict[str, Any]],
-                     permissions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(cas: list[dict[str, Any]],
+                     certificates: list[dict[str, Any]],
+                     permissions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for ACM Private CA resources."""
     utils.log_info("Generating summary statistics...")
 

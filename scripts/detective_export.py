@@ -30,7 +30,7 @@ Prerequisites:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -48,7 +48,7 @@ args = utils.parse_script_args("Export Amazon Detective graphs and findings to E
 
 
 @utils.aws_error_handler("Collecting Detective graphs", default_return=[])
-def collect_graphs(region: str) -> List[Dict[str, Any]]:
+def collect_graphs(region: str) -> list[dict[str, Any]]:
     """
     Collect Detective graphs from a specific region.
 
@@ -105,7 +105,7 @@ def collect_graphs(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Detective members", default_return=[])
-def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
+def collect_members(region: str, graph_arn: str) -> list[dict[str, Any]]:
     """
     Collect member accounts for a Detective graph.
 
@@ -151,7 +151,7 @@ def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Detective invitations", default_return=[])
-def collect_invitations(region: str) -> List[Dict[str, Any]]:
+def collect_invitations(region: str) -> list[dict[str, Any]]:
     """
     Collect pending invitations in the account.
 
@@ -202,7 +202,7 @@ def collect_invitations(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting organization configuration", default_return={})
-def collect_organization_config(region: str, graph_arn: str) -> Dict[str, Any]:
+def collect_organization_config(region: str, graph_arn: str) -> dict[str, Any]:
     """
     Collect organization configuration for a Detective graph.
 
@@ -270,7 +270,7 @@ def format_tags(resource_arn: str, client) -> str:
         return 'N/A'
 
 
-def collect_all_graphs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_graphs(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Detective graphs using concurrent scanning.
 
@@ -298,7 +298,7 @@ def collect_all_graphs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_graphs
 
 
-def collect_all_invitations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_invitations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Detective invitations using concurrent scanning.
 
@@ -327,9 +327,9 @@ def collect_all_invitations(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 def export_to_excel(
-    graphs_data: List[Dict[str, Any]],
-    members_data: List[Dict[str, Any]],
-    invitations_data: List[Dict[str, Any]],
+    graphs_data: list[dict[str, Any]],
+    members_data: list[dict[str, Any]],
+    invitations_data: list[dict[str, Any]],
     account_name: str
 ) -> str:
     """

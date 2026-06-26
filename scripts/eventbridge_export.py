@@ -22,7 +22,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -43,7 +43,7 @@ except ImportError:
 args = utils.parse_script_args("Export EventBridge event buses and rules to Excel")
 
 
-def _scan_event_buses_region(region: str) -> List[Dict[str, Any]]:
+def _scan_event_buses_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for EventBridge event buses."""
     buses_data = []
     if not utils.is_aws_region(region):
@@ -68,7 +68,7 @@ def _scan_event_buses_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting event buses", default_return=[])
-def collect_event_buses(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_buses(regions: list[str]) -> list[dict[str, Any]]:
     """Collect EventBridge event bus information from AWS regions."""
     print("\n=== COLLECTING EVENT BUSES ===")
     results = utils.scan_regions_concurrent(regions, _scan_event_buses_region)
@@ -77,7 +77,7 @@ def collect_event_buses(regions: List[str]) -> List[Dict[str, Any]]:
     return all_buses
 
 
-def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
+def _scan_event_rules_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for EventBridge rules."""
     rules_data = []
     if not utils.is_aws_region(region):
@@ -122,7 +122,7 @@ def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting event rules", default_return=[])
-def collect_event_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_rules(regions: list[str]) -> list[dict[str, Any]]:
     """Collect EventBridge rule information from AWS regions."""
     print("\n=== COLLECTING EVENT RULES ===")
     results = utils.scan_regions_concurrent(regions, _scan_event_rules_region)
@@ -131,7 +131,7 @@ def collect_event_rules(regions: List[str]) -> List[Dict[str, Any]]:
     return all_rules
 
 
-def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
+def _scan_rule_targets_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for EventBridge rule targets."""
     targets_data = []
     if not utils.is_aws_region(region):
@@ -198,7 +198,7 @@ def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting rule targets", default_return=[])
-def collect_rule_targets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_rule_targets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect EventBridge rule target information from AWS regions."""
     print("\n=== COLLECTING RULE TARGETS ===")
     results = utils.scan_regions_concurrent(regions, _scan_rule_targets_region)

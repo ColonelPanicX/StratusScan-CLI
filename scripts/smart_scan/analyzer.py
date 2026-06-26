@@ -7,7 +7,7 @@ to relevant export scripts. Core intelligence engine for Smart Scan.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 try:
     import pandas as pd
@@ -43,8 +43,8 @@ class ServiceAnalyzer:
                           If not provided, will search for latest export
         """
         self.services_file = services_file
-        self.discovered_services: Set[str] = set()
-        self.recommended_scripts: Dict[str, List[str]] = {}
+        self.discovered_services: set[str] = set()
+        self.recommended_scripts: dict[str, list[str]] = {}
         self.services_data: Optional[pd.DataFrame] = None
 
     def find_latest_services_export(self, search_dir: Optional[str] = None) -> Optional[str]:
@@ -84,7 +84,7 @@ class ServiceAnalyzer:
             utils.log_error("Error finding latest services export", e)
             return None
 
-    def parse_services_from_excel(self, file_path: str) -> Set[str]:
+    def parse_services_from_excel(self, file_path: str) -> set[str]:
         """
         Extract service names from services-in-use export Excel file.
 
@@ -139,8 +139,8 @@ class ServiceAnalyzer:
             return set()
 
     def map_services_to_scripts(
-        self, services: Optional[Set[str]] = None
-    ) -> Dict[str, List[str]]:
+        self, services: Optional[set[str]] = None
+    ) -> dict[str, list[str]]:
         """
         Map discovered services to their corresponding export scripts.
 
@@ -179,7 +179,7 @@ class ServiceAnalyzer:
 
     def generate_recommendations(
         self, include_always_run: bool = True
-    ) -> Dict[str, any]:
+    ) -> dict[str, any]:
         """
         Generate comprehensive script recommendations with categorization.
 
@@ -276,7 +276,7 @@ class ServiceAnalyzer:
 
     def analyze(
         self, services_file: Optional[str] = None, include_always_run: bool = True
-    ) -> Dict[str, any]:
+    ) -> dict[str, any]:
         """
         Complete analysis workflow: find, parse, map, and recommend.
 
@@ -346,7 +346,7 @@ def find_latest_services_export(search_dir: str = ".") -> Optional[str]:
     return analyzer.find_latest_services_export(search_dir)
 
 
-def parse_services_from_excel(file_path: str) -> Set[str]:
+def parse_services_from_excel(file_path: str) -> set[str]:
     """
     Extract service names from services-in-use export Excel file.
 
@@ -360,7 +360,7 @@ def parse_services_from_excel(file_path: str) -> Set[str]:
     return analyzer.parse_services_from_excel(file_path)
 
 
-def map_services_to_scripts(services: Set[str]) -> Dict[str, List[str]]:
+def map_services_to_scripts(services: set[str]) -> dict[str, list[str]]:
     """
     Map discovered services to their corresponding export scripts.
 
@@ -375,8 +375,8 @@ def map_services_to_scripts(services: Set[str]) -> Dict[str, List[str]]:
 
 
 def generate_recommendations(
-    service_script_mapping: Dict[str, List[str]], include_always_run: bool = True
-) -> Dict[str, any]:
+    service_script_mapping: dict[str, list[str]], include_always_run: bool = True
+) -> dict[str, any]:
     """
     Generate comprehensive script recommendations with categorization.
 
@@ -394,7 +394,7 @@ def generate_recommendations(
 
 def analyze_services(
     services_file: Optional[str] = None, include_always_run: bool = True
-) -> Dict[str, any]:
+) -> dict[str, any]:
     """
     Complete analysis: find latest export, parse services, and generate recommendations.
 
@@ -410,10 +410,10 @@ def analyze_services(
 
 
 def analyze_services_from_dict(
-    services: Dict[str, Any],
+    services: dict[str, Any],
     include_always_run: bool = True,
     scripts_dir: Optional[Path] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate script recommendations from an in-memory service dict.
 
@@ -462,7 +462,7 @@ def analyze_services_from_dict(
     }
 
     # Recompute by_category with filtered scripts
-    category_map: Dict[str, List[str]] = {}
+    category_map: dict[str, list[str]] = {}
     for script in existing:
         category = get_category_for_script(script)
         category_map.setdefault(category, []).append(script)

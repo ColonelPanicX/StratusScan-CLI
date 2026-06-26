@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,11 +31,11 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Neptune clusters to Excel")
 
-def load_neptune_pricing_data(region: str) -> Dict[str, float]:
+def load_neptune_pricing_data(region: str) -> dict[str, float]:
     """Load Neptune on-demand monthly pricing for the given region's partition."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'neptune-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)
@@ -50,7 +50,7 @@ def load_neptune_pricing_data(region: str) -> Dict[str, float]:
         return {}
 
 
-def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: Dict[str, float]):
+def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: dict[str, float]):
     """Return monthly on-demand cost for a single Neptune instance, or 'N/A'."""
     monthly = pricing_data.get(instance_class)
     if monthly is None:
@@ -59,7 +59,7 @@ def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: D
 
 
 @utils.aws_error_handler("Collecting Neptune clusters", default_return=[])
-def collect_neptune_clusters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_clusters(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune cluster information from AWS regions."""
     all_clusters = []
 
@@ -182,7 +182,7 @@ def collect_neptune_clusters(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Neptune instances", default_return=[])
-def collect_neptune_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune instance information from AWS regions."""
     all_instances = []
     pricing_data = load_neptune_pricing_data(regions[0]) if regions else {}
@@ -276,7 +276,7 @@ def collect_neptune_instances(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Neptune snapshots", default_return=[])
-def collect_neptune_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_snapshots(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune cluster snapshot information from AWS regions."""
     all_snapshots = []
 
@@ -355,7 +355,7 @@ def collect_neptune_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Neptune cluster endpoints", default_return=[])
-def collect_neptune_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune cluster custom endpoint information from AWS regions."""
     all_endpoints = []
 
@@ -416,10 +416,10 @@ def collect_neptune_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
     return all_endpoints
 
 
-def generate_summary(clusters: List[Dict[str, Any]],
-                     instances: List[Dict[str, Any]],
-                     snapshots: List[Dict[str, Any]],
-                     endpoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(clusters: list[dict[str, Any]],
+                     instances: list[dict[str, Any]],
+                     snapshots: list[dict[str, Any]],
+                     endpoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Neptune resources."""
     summary = []
 
@@ -539,7 +539,7 @@ def generate_summary(clusters: List[Dict[str, Any]],
 
 
 @utils.aws_error_handler("Collecting Neptune Analytics graphs", default_return=[])
-def collect_neptune_graphs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_graphs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune Analytics (neptune-graph) graph information from AWS regions."""
     all_graphs = []
 
@@ -583,7 +583,7 @@ def collect_neptune_graphs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_graphs
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Neptune data and write the Excel export."""
     print("\n=== Collecting Neptune Data ===")
     clusters = collect_neptune_clusters(regions)

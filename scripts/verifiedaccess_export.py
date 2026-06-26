@@ -23,7 +23,7 @@ Note: AWS Verified Access is a regional service. This script scans all configure
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -37,7 +37,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Verified Access instances and groups to Excel")
 
-def format_tags(tags: List[Dict[str, str]]) -> str:
+def format_tags(tags: list[dict[str, str]]) -> str:
     """Format tags for display."""
     if not tags:
         return "None"
@@ -45,7 +45,7 @@ def format_tags(tags: List[Dict[str, str]]) -> str:
     return ", ".join(tag_strings)
 
 @utils.aws_error_handler("Collecting Verified Access Instances", default_return=[])
-def collect_verified_access_instances(region: str) -> List[Dict[str, Any]]:
+def collect_verified_access_instances(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Instances in a region."""
     utils.log_info(f"Collecting Verified Access Instances in {region}...")
 
@@ -84,7 +84,7 @@ def collect_verified_access_instances(region: str) -> List[Dict[str, Any]]:
     return instances
 
 @utils.aws_error_handler("Collecting Trust Providers", default_return=[])
-def collect_trust_providers(region: str) -> List[Dict[str, Any]]:
+def collect_trust_providers(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Trust Providers in a region."""
     utils.log_info(f"Collecting Trust Providers in {region}...")
 
@@ -142,7 +142,7 @@ def collect_trust_providers(region: str) -> List[Dict[str, Any]]:
     return trust_providers
 
 @utils.aws_error_handler("Collecting Verified Access Groups", default_return=[])
-def collect_verified_access_groups(region: str) -> List[Dict[str, Any]]:
+def collect_verified_access_groups(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Groups in a region."""
     utils.log_info(f"Collecting Verified Access Groups in {region}...")
 
@@ -199,7 +199,7 @@ def collect_verified_access_groups(region: str) -> List[Dict[str, Any]]:
     return groups
 
 @utils.aws_error_handler("Collecting Verified Access Endpoints", default_return=[])
-def collect_verified_access_endpoints(region: str) -> List[Dict[str, Any]]:
+def collect_verified_access_endpoints(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Endpoints in a region."""
     utils.log_info(f"Collecting Verified Access Endpoints in {region}...")
 
@@ -284,7 +284,7 @@ def collect_verified_access_endpoints(region: str) -> List[Dict[str, Any]]:
     return endpoints
 
 @utils.aws_error_handler("Collecting Access Logs Configuration", default_return=[])
-def collect_access_logs_config(region: str, instances: List[Dict]) -> List[Dict[str, Any]]:
+def collect_access_logs_config(region: str, instances: list[dict]) -> list[dict[str, Any]]:
     """Collect Access Logs configuration for Verified Access instances."""
     utils.log_info(f"Collecting Access Logs configurations in {region}...")
 
@@ -346,8 +346,8 @@ def collect_access_logs_config(region: str, instances: List[Dict]) -> List[Dict[
 
     return logs_configs
 
-def create_summary(instances: List[Dict], trust_providers: List[Dict], groups: List[Dict],
-                  endpoints: List[Dict], logs_configs: List[Dict]) -> Dict[str, Any]:
+def create_summary(instances: list[dict], trust_providers: list[dict], groups: list[dict],
+                  endpoints: list[dict], logs_configs: list[dict]) -> dict[str, Any]:
     """Create summary statistics for Verified Access."""
     summary = {
         'Category': [
@@ -406,7 +406,7 @@ def create_summary(instances: List[Dict], trust_providers: List[Dict], groups: L
 
     return summary
 
-def export_to_excel(all_data: Dict[str, List[Dict]], account_id: str, account_name: str) -> str:
+def export_to_excel(all_data: dict[str, list[dict]], account_id: str, account_name: str) -> str:
     """Export Verified Access data to Excel with multiple sheets."""
     try:
         import pandas as pd

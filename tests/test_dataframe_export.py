@@ -8,9 +8,8 @@ functions added to utils.py as part of Improvement #6.
 
 import sys
 import unittest
-from pathlib import Path
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 # Import utils
 try:
@@ -21,8 +20,8 @@ except ImportError:
 
 # Import required libraries (will be checked at runtime)
 try:
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False

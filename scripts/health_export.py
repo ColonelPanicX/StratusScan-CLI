@@ -24,7 +24,7 @@ Note: Requires health:Describe* permissions
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -39,7 +39,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Health events and affected entities to Excel")
 
 @utils.aws_error_handler("Collecting Health events", default_return=[])
-def collect_health_events(region: str, time_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
+def collect_health_events(region: str, time_filter: dict[str, Any]) -> list[dict[str, Any]]:
     """Collect AWS Health events for the account."""
     health = utils.get_boto3_client('health', region_name=region)
     events = []
@@ -70,7 +70,7 @@ def collect_health_events(region: str, time_filter: Dict[str, Any]) -> List[Dict
 
 
 @utils.aws_error_handler("Collecting event details", default_return={})
-def get_event_details(region: str, event_arn: str) -> Dict[str, Any]:
+def get_event_details(region: str, event_arn: str) -> dict[str, Any]:
     """Get detailed information for a specific event."""
     health = utils.get_boto3_client('health', region_name=region)
 
@@ -92,7 +92,7 @@ def get_event_details(region: str, event_arn: str) -> Dict[str, Any]:
 
 
 @utils.aws_error_handler("Collecting affected entities", default_return=[])
-def collect_affected_entities(region: str, event_arn: str) -> List[Dict[str, Any]]:
+def collect_affected_entities(region: str, event_arn: str) -> list[dict[str, Any]]:
     """Collect entities affected by a specific health event."""
     health = utils.get_boto3_client('health', region_name=region)
     entities = []
@@ -118,7 +118,7 @@ def collect_affected_entities(region: str, event_arn: str) -> List[Dict[str, Any
 
 
 @utils.aws_error_handler("Collecting organizational events", default_return=[])
-def collect_organizational_events(region: str, time_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
+def collect_organizational_events(region: str, time_filter: dict[str, Any]) -> list[dict[str, Any]]:
     """Collect organizational health events (requires AWS Organizations)."""
     health = utils.get_boto3_client('health', region_name=region)
     org_events = []

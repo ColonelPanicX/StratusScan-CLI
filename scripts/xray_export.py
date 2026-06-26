@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with X-Ray resources
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -28,7 +28,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS X-Ray groups and sampling rules to Excel")
 
-def _scan_sampling_rules_region(region: str) -> List[Dict[str, Any]]:
+def _scan_sampling_rules_region(region: str) -> list[dict[str, Any]]:
     """Scan X-Ray sampling rules in a single region."""
     regional_rules = []
     xray_client = utils.get_boto3_client('xray', region_name=region)
@@ -98,7 +98,7 @@ def _scan_sampling_rules_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting X-Ray sampling rules", default_return=[])
-def collect_sampling_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sampling_rules(regions: list[str]) -> list[dict[str, Any]]:
     """Collect X-Ray sampling rule information from AWS regions."""
     print("\n=== COLLECTING X-RAY SAMPLING RULES ===")
     results = utils.scan_regions_concurrent(regions, _scan_sampling_rules_region)
@@ -107,7 +107,7 @@ def collect_sampling_rules(regions: List[str]) -> List[Dict[str, Any]]:
     return all_rules
 
 
-def _scan_groups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_groups_region(region: str) -> list[dict[str, Any]]:
     """Scan X-Ray groups in a single region."""
     regional_groups = []
     xray_client = utils.get_boto3_client('xray', region_name=region)
@@ -142,7 +142,7 @@ def _scan_groups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting X-Ray groups", default_return=[])
-def collect_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect X-Ray group information from AWS regions."""
     print("\n=== COLLECTING X-RAY GROUPS ===")
     results = utils.scan_regions_concurrent(regions, _scan_groups_region)
@@ -152,7 +152,7 @@ def collect_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting encryption configuration", default_return=[])
-def collect_encryption_config(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_encryption_config(regions: list[str]) -> list[dict[str, Any]]:
     """Collect X-Ray encryption configuration from AWS regions."""
     print("\n=== COLLECTING ENCRYPTION CONFIGURATION ===")
     all_configs = []
@@ -184,9 +184,9 @@ def collect_encryption_config(regions: List[str]) -> List[Dict[str, Any]]:
     return all_configs
 
 
-def generate_summary(sampling_rules: List[Dict[str, Any]],
-                     groups: List[Dict[str, Any]],
-                     encryption_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(sampling_rules: list[dict[str, Any]],
+                     groups: list[dict[str, Any]],
+                     encryption_configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for X-Ray resources."""
     utils.log_info("Generating summary statistics...")
 

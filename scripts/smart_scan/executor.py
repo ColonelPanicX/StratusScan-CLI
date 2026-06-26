@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 try:
     import utils
@@ -56,10 +56,10 @@ class ScriptExecutor:
 
     def __init__(
         self,
-        scripts: Set[str],
+        scripts: set[str],
         scripts_dir: Optional[str] = None,
         python_executable: str = "python3",
-        regions: Optional[List[str]] = None,
+        regions: Optional[list[str]] = None,
         show_output: bool = True,
     ):
         """
@@ -86,7 +86,7 @@ class ScriptExecutor:
         self.python_executable = python_executable
         self.regions = regions
         self.show_output = show_output
-        self.results: List[ExecutionResult] = []
+        self.results: list[ExecutionResult] = []
         self.total_scripts = len(self.scripts)
         self.current_index = 0
 
@@ -144,10 +144,10 @@ class ScriptExecutor:
         if self.regions:
             env["STRATUSSCAN_REGIONS"] = ",".join(self.regions)
 
-        stdout_lines: List[str] = []
-        stderr_lines: List[str] = []
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
 
-        def _drain(stream, lines: List[str], show: bool = False) -> None:
+        def _drain(stream, lines: list[str], show: bool = False) -> None:
             """Drain a stream into lines, optionally printing each line."""
             for line in stream:
                 line = line.rstrip("\n")
@@ -445,8 +445,8 @@ class ScriptExecutor:
         self,
         show_progress: bool = True,
         session: Optional[dict] = None,
-        skip_scripts: Optional[Set[str]] = None,
-    ) -> Dict[str, Any]:
+        skip_scripts: Optional[set[str]] = None,
+    ) -> dict[str, Any]:
         """
         Execute all scripts in sequence.
 
@@ -477,7 +477,7 @@ class ScriptExecutor:
             if skip_scripts and script_name in skip_scripts:
                 if show_progress:
                     self._show_progress(script_name)
-                    print(f"⏭  Skipped (already completed in prior session)")
+                    print("⏭  Skipped (already completed in prior session)")
                     print()
                 continue
 
@@ -618,14 +618,14 @@ class ScriptExecutor:
 
 
 def execute_scripts(
-    scripts: Set[str],
+    scripts: set[str],
     show_progress: bool = True,
     save_log: bool = False,
-    regions: Optional[List[str]] = None,
+    regions: Optional[list[str]] = None,
     show_output: bool = True,
     session: Optional[dict] = None,
-    skip_scripts: Optional[Set[str]] = None,
-) -> Dict[str, Any]:
+    skip_scripts: Optional[set[str]] = None,
+) -> dict[str, Any]:
     """
     Execute multiple scripts in batch.
 

@@ -23,7 +23,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -44,7 +44,7 @@ except ImportError:
 args = utils.parse_script_args("Export SQS queues and SNS topics to Excel")
 
 
-def _scan_sqs_queues_region(region: str) -> List[Dict[str, Any]]:
+def _scan_sqs_queues_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SQS queues."""
     queues_data = []
     if not utils.is_aws_region(region):
@@ -104,7 +104,7 @@ def _scan_sqs_queues_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SQS queues", default_return=[])
-def collect_sqs_queues(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sqs_queues(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SQS queue information from AWS regions."""
     print("\n=== COLLECTING SQS QUEUES ===")
     results = utils.scan_regions_concurrent(regions, _scan_sqs_queues_region)
@@ -113,7 +113,7 @@ def collect_sqs_queues(regions: List[str]) -> List[Dict[str, Any]]:
     return all_queues
 
 
-def _scan_sns_topics_region(region: str) -> List[Dict[str, Any]]:
+def _scan_sns_topics_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SNS topics."""
     topics_data = []
     if not utils.is_aws_region(region):
@@ -159,7 +159,7 @@ def _scan_sns_topics_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SNS topics", default_return=[])
-def collect_sns_topics(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sns_topics(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SNS topic information from AWS regions."""
     print("\n=== COLLECTING SNS TOPICS ===")
     results = utils.scan_regions_concurrent(regions, _scan_sns_topics_region)
@@ -168,7 +168,7 @@ def collect_sns_topics(regions: List[str]) -> List[Dict[str, Any]]:
     return all_topics
 
 
-def _scan_sns_subscriptions_region(region: str) -> List[Dict[str, Any]]:
+def _scan_sns_subscriptions_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SNS subscriptions."""
     subs_data = []
     if not utils.is_aws_region(region):
@@ -202,7 +202,7 @@ def _scan_sns_subscriptions_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SNS subscriptions", default_return=[])
-def collect_sns_subscriptions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sns_subscriptions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SNS subscription information from AWS regions."""
     print("\n=== COLLECTING SNS SUBSCRIPTIONS ===")
     results = utils.scan_regions_concurrent(regions, _scan_sns_subscriptions_region)

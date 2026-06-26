@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodeDeploy resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
 args = utils.parse_script_args("Export CodeDeploy applications and deployments to Excel")
 
 @utils.aws_error_handler("Collecting CodeDeploy applications", default_return=[])
-def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_applications(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeDeploy application information from AWS regions."""
     all_applications = []
 
@@ -78,7 +78,7 @@ def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting deployment groups", default_return=[])
-def collect_deployment_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_deployment_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeDeploy deployment group information."""
     all_deployment_groups = []
 
@@ -189,7 +189,7 @@ def collect_deployment_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting deployments", default_return=[])
-def collect_deployments(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_deployments(regions: list[str]) -> list[dict[str, Any]]:
     """Collect recent deployment information (limited to 30 most recent per region)."""
     all_deployments = []
 
@@ -312,9 +312,9 @@ def collect_deployments(regions: List[str]) -> List[Dict[str, Any]]:
     return all_deployments
 
 
-def generate_summary(applications: List[Dict[str, Any]],
-                     deployment_groups: List[Dict[str, Any]],
-                     deployments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(applications: list[dict[str, Any]],
+                     deployment_groups: list[dict[str, Any]],
+                     deployments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodeDeploy resources."""
     utils.log_info("Generating summary statistics...")
 

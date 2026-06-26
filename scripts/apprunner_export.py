@@ -17,7 +17,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -30,7 +30,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS App Runner services to Excel")
 
-def _scan_apprunner_services_region(region: str) -> List[Dict[str, Any]]:
+def _scan_apprunner_services_region(region: str) -> list[dict[str, Any]]:
     """Scan App Runner services in a single region."""
     regional_services = []
 
@@ -156,7 +156,7 @@ def _scan_apprunner_services_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting App Runner services", default_return=[])
-def collect_apprunner_services(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_apprunner_services(regions: list[str]) -> list[dict[str, Any]]:
     """Collect App Runner service information from AWS regions."""
     print("\n=== COLLECTING APP RUNNER SERVICES ===")
     results = utils.scan_regions_concurrent(regions, _scan_apprunner_services_region)
@@ -165,7 +165,7 @@ def collect_apprunner_services(regions: List[str]) -> List[Dict[str, Any]]:
     return all_services
 
 
-def _scan_auto_scaling_configs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_auto_scaling_configs_region(region: str) -> list[dict[str, Any]]:
     """Scan App Runner auto scaling configs in a single region."""
     regional_configs = []
 
@@ -222,7 +222,7 @@ def _scan_auto_scaling_configs_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting App Runner auto scaling configs", default_return=[])
-def collect_auto_scaling_configs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_auto_scaling_configs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect App Runner auto scaling configuration information from AWS regions."""
     print("\n=== COLLECTING APP RUNNER AUTO SCALING CONFIGS ===")
     results = utils.scan_regions_concurrent(regions, _scan_auto_scaling_configs_region)
@@ -231,7 +231,7 @@ def collect_auto_scaling_configs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_configs
 
 
-def _scan_vpc_connectors_region(region: str) -> List[Dict[str, Any]]:
+def _scan_vpc_connectors_region(region: str) -> list[dict[str, Any]]:
     """Scan App Runner VPC connectors in a single region."""
     regional_connectors = []
 
@@ -289,7 +289,7 @@ def _scan_vpc_connectors_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting App Runner VPC connectors", default_return=[])
-def collect_vpc_connectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_vpc_connectors(regions: list[str]) -> list[dict[str, Any]]:
     """Collect App Runner VPC connector information from AWS regions."""
     print("\n=== COLLECTING APP RUNNER VPC CONNECTORS ===")
     results = utils.scan_regions_concurrent(regions, _scan_vpc_connectors_region)
@@ -299,7 +299,7 @@ def collect_vpc_connectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting App Runner custom domains", default_return=[])
-def collect_custom_domains(regions: List[str], services: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_custom_domains(regions: list[str], services: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect App Runner custom domain associations from AWS regions."""
     all_domains = []
 
@@ -362,10 +362,10 @@ def collect_custom_domains(regions: List[str], services: List[Dict[str, Any]]) -
     return all_domains
 
 
-def generate_summary(services: List[Dict[str, Any]],
-                     auto_scaling_configs: List[Dict[str, Any]],
-                     vpc_connectors: List[Dict[str, Any]],
-                     custom_domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(services: list[dict[str, Any]],
+                     auto_scaling_configs: list[dict[str, Any]],
+                     vpc_connectors: list[dict[str, Any]],
+                     custom_domains: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for App Runner resources."""
     summary = []
 
@@ -443,7 +443,7 @@ def generate_summary(services: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect App Runner data and write the Excel export."""
     # Collect data
     print("\n=== Collecting App Runner Data ===")

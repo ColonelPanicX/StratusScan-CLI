@@ -27,7 +27,7 @@ import datetime
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -41,7 +41,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Transfer Family servers and users to Excel")
 
-def format_protocols(protocols: List[str]) -> str:
+def format_protocols(protocols: list[str]) -> str:
     """Format protocol list into a readable string."""
     if not protocols:
         return "None"
@@ -70,7 +70,7 @@ def format_json_field(field_value: Any, max_length: int = 200) -> str:
 
 
 @utils.aws_error_handler("Collecting Transfer Family servers", default_return=[])
-def collect_transfer_servers(region: str) -> List[Dict[str, Any]]:
+def collect_transfer_servers(region: str) -> list[dict[str, Any]]:
     """
     Collect Transfer Family server information from a specific region.
 
@@ -160,7 +160,7 @@ def collect_transfer_servers(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transfer Family users", default_return=[])
-def collect_transfer_users(region: str, server_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_transfer_users(region: str, server_ids: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transfer Family user information for all servers in a region.
 
@@ -240,7 +240,7 @@ def collect_transfer_users(region: str, server_ids: List[str]) -> List[Dict[str,
 
 
 @utils.aws_error_handler("Collecting Transfer Family connectors", default_return=[])
-def collect_transfer_connectors(region: str) -> List[Dict[str, Any]]:
+def collect_transfer_connectors(region: str) -> list[dict[str, Any]]:
     """
     Collect Transfer Family connector information from a specific region.
 
@@ -326,7 +326,7 @@ def collect_transfer_connectors(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transfer Family workflows", default_return=[])
-def collect_transfer_workflows(region: str) -> List[Dict[str, Any]]:
+def collect_transfer_workflows(region: str) -> list[dict[str, Any]]:
     """
     Collect Transfer Family workflow information from a specific region.
 
@@ -407,7 +407,7 @@ def collect_transfer_workflows(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transfer Family certificates", default_return=[])
-def collect_transfer_certificates(region: str) -> List[Dict[str, Any]]:
+def collect_transfer_certificates(region: str) -> list[dict[str, Any]]:
     """
     Collect Transfer Family certificate information from a specific region.
 
@@ -483,7 +483,7 @@ def collect_transfer_certificates(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transfer Family agreements", default_return=[])
-def collect_transfer_agreements(region: str, server_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_transfer_agreements(region: str, server_ids: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transfer Family agreement information for all servers in a region.
 
@@ -555,12 +555,12 @@ def collect_transfer_agreements(region: str, server_ids: List[str]) -> List[Dict
 
 
 def export_to_excel(
-    servers_data: List[Dict[str, Any]],
-    users_data: List[Dict[str, Any]],
-    connectors_data: List[Dict[str, Any]],
-    workflows_data: List[Dict[str, Any]],
-    certificates_data: List[Dict[str, Any]],
-    agreements_data: List[Dict[str, Any]],
+    servers_data: list[dict[str, Any]],
+    users_data: list[dict[str, Any]],
+    connectors_data: list[dict[str, Any]],
+    workflows_data: list[dict[str, Any]],
+    certificates_data: list[dict[str, Any]],
+    agreements_data: list[dict[str, Any]],
     account_name: str
 ) -> str:
     """

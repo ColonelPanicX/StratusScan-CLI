@@ -12,8 +12,8 @@ These functions eliminate 200-300 lines of duplicate code across StratusScan scr
 
 import sys
 import unittest
-from unittest.mock import patch, MagicMock, call
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add path to import utils module
 try:

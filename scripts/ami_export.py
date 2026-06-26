@@ -31,7 +31,7 @@ Phase 4B Update:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -53,7 +53,7 @@ args = utils.parse_script_args("Export Amazon Machine Images (AMIs) to Excel")
 
 
 @utils.aws_error_handler("Collecting AMIs from region", default_return=[])
-def collect_amis_in_region(region: str, account_id: str) -> List[Dict[str, Any]]:
+def collect_amis_in_region(region: str, account_id: str) -> list[dict[str, Any]]:
     """
     Collect account-owned AMI information from a single AWS region.
 

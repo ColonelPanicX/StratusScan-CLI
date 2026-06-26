@@ -22,7 +22,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -43,7 +43,7 @@ except ImportError:
 args = utils.parse_script_args("Export CloudWatch alarms and dashboards to Excel")
 
 
-def _scan_cloudwatch_alarms_region(region: str) -> List[Dict[str, Any]]:
+def _scan_cloudwatch_alarms_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch alarms."""
     alarms_data = []
 
@@ -124,7 +124,7 @@ def _scan_cloudwatch_alarms_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch alarms", default_return=[])
-def collect_cloudwatch_alarms(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_cloudwatch_alarms(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch alarm information from AWS regions.
 
@@ -144,7 +144,7 @@ def collect_cloudwatch_alarms(regions: List[str]) -> List[Dict[str, Any]]:
     return all_alarms
 
 
-def _scan_log_groups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_log_groups_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch log groups."""
     log_groups_data = []
 
@@ -194,7 +194,7 @@ def _scan_log_groups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch log groups", default_return=[])
-def collect_log_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_log_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch log group information from AWS regions.
 
@@ -214,7 +214,7 @@ def collect_log_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_log_groups
 
 
-def _scan_dashboards_region(region: str) -> List[Dict[str, Any]]:
+def _scan_dashboards_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch dashboards."""
     dashboards_data = []
 
@@ -241,7 +241,7 @@ def _scan_dashboards_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch dashboards", default_return=[])
-def collect_dashboards(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_dashboards(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch dashboard information from AWS regions.
 
@@ -260,7 +260,7 @@ def collect_dashboards(regions: List[str]) -> List[Dict[str, Any]]:
     return all_dashboards
 
 
-def _scan_metric_filters_region(region: str) -> List[Dict[str, Any]]:
+def _scan_metric_filters_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch Logs metric filters."""
     filters_data = []
 
@@ -295,7 +295,7 @@ def _scan_metric_filters_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch metric filters", default_return=[])
-def collect_metric_filters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_metric_filters(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch Logs metric filter information from AWS regions.
 

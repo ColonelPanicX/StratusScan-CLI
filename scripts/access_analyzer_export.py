@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,7 +46,7 @@ args = utils.parse_script_args("Export IAM Access Analyzer findings and analyzer
 
 
 @utils.aws_error_handler("Collecting Access Analyzers from region", default_return=[])
-def collect_analyzers_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_analyzers_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect IAM Access Analyzer information from a single AWS region.
 
@@ -119,7 +119,7 @@ def collect_analyzers_from_region(region: str) -> List[Dict[str, Any]]:
     return analyzers_data
 
 
-def collect_analyzers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_analyzers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect IAM Access Analyzer information using concurrent scanning."""
     print("\n=== COLLECTING ACCESS ANALYZERS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Access Analyzers...")
@@ -140,7 +140,7 @@ def collect_analyzers(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting active findings from region", default_return=[])
-def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_active_findings_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect active Access Analyzer findings from a single AWS region.
 
@@ -256,7 +256,7 @@ def collect_active_findings_from_region(region: str) -> List[Dict[str, Any]]:
     return findings_data
 
 
-def collect_active_findings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_active_findings(regions: list[str]) -> list[dict[str, Any]]:
     """Collect active Access Analyzer findings using concurrent scanning."""
     print("\n=== COLLECTING ACTIVE FINDINGS ===")
     utils.log_info(f"Scanning {len(regions)} regions for active findings...")
@@ -277,7 +277,7 @@ def collect_active_findings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting archived findings from region", default_return=[])
-def collect_archived_findings_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_archived_findings_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect archived Access Analyzer findings from a single AWS region.
 
@@ -354,7 +354,7 @@ def collect_archived_findings_from_region(region: str) -> List[Dict[str, Any]]:
     return findings_data
 
 
-def collect_archived_findings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_archived_findings(regions: list[str]) -> list[dict[str, Any]]:
     """Collect archived Access Analyzer findings using concurrent scanning."""
     print("\n=== COLLECTING ARCHIVED FINDINGS ===")
     utils.log_info(f"Scanning {len(regions)} regions for archived findings...")
@@ -375,7 +375,7 @@ def collect_archived_findings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting archive rules from region", default_return=[])
-def collect_archive_rules_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_archive_rules_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Access Analyzer archive rules from a single AWS region.
 
@@ -441,7 +441,7 @@ def collect_archive_rules_from_region(region: str) -> List[Dict[str, Any]]:
     return rules_data
 
 
-def collect_archive_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_archive_rules(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Access Analyzer archive rules using concurrent scanning."""
     print("\n=== COLLECTING ARCHIVE RULES ===")
     utils.log_info(f"Scanning {len(regions)} regions for archive rules...")

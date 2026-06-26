@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with IAM identity provider resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
 args = utils.parse_script_args("Export IAM identity providers to Excel")
 
 @utils.aws_error_handler("Collecting SAML providers", default_return=[])
-def collect_saml_providers() -> List[Dict[str, Any]]:
+def collect_saml_providers() -> list[dict[str, Any]]:
     """Collect IAM SAML provider information."""
     utils.log_info("Collecting SAML providers...")
     all_saml_providers = []
@@ -124,7 +124,7 @@ def collect_saml_providers() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting OIDC providers", default_return=[])
-def collect_oidc_providers() -> List[Dict[str, Any]]:
+def collect_oidc_providers() -> list[dict[str, Any]]:
     """Collect IAM OIDC (OpenID Connect) provider information."""
     utils.log_info("Collecting OIDC providers...")
     all_oidc_providers = []
@@ -238,8 +238,8 @@ def collect_oidc_providers() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting roles using identity providers", default_return=[])
-def collect_roles_using_providers(saml_providers: List[Dict[str, Any]],
-                                   oidc_providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_roles_using_providers(saml_providers: list[dict[str, Any]],
+                                   oidc_providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect IAM roles that trust identity providers."""
     utils.log_info("Collecting roles using identity providers...")
     roles_with_providers = []
@@ -347,9 +347,9 @@ def collect_roles_using_providers(saml_providers: List[Dict[str, Any]],
     return roles_with_providers
 
 
-def generate_summary(saml_providers: List[Dict[str, Any]],
-                     oidc_providers: List[Dict[str, Any]],
-                     roles_with_providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(saml_providers: list[dict[str, Any]],
+                     oidc_providers: list[dict[str, Any]],
+                     roles_with_providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for IAM identity providers."""
     utils.log_info("Generating summary statistics...")
 

@@ -26,7 +26,7 @@ import datetime
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,7 +47,7 @@ except ImportError:
 args = utils.parse_script_args("Export Elastic File System volumes to Excel")
 
 
-def load_efs_pricing_data() -> Dict[str, float]:
+def load_efs_pricing_data() -> dict[str, float]:
     """Load EFS storage tier rates from pricing JSON."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'efs-pricing.json'
     defaults = {
@@ -57,7 +57,7 @@ def load_efs_pricing_data() -> Dict[str, float]:
         'one_zone_ia_per_gb_month': 0.01,
     }
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         rates = data.get('rates', {})
         if rates:
@@ -71,7 +71,7 @@ def calculate_efs_monthly_cost(
     size_standard_bytes: int,
     size_ia_bytes: int,
     availability_zone: str,
-    pricing: Dict[str, float],
+    pricing: dict[str, float],
 ) -> float:
     """Return estimated monthly cost for an EFS file system based on storage tiers."""
     is_one_zone = availability_zone not in ('Regional', 'N/A', '')
@@ -87,7 +87,7 @@ def calculate_efs_monthly_cost(
     return round(standard_gb * standard_rate + ia_gb * ia_rate, 4)
 
 
-def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_efs_file_systems_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan EFS file systems in a single region.
 
@@ -190,7 +190,7 @@ def scan_efs_file_systems_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting EFS file systems", default_return=[])
-def collect_efs_file_systems(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_efs_file_systems(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect EFS file system information from AWS regions using concurrent scanning.
 
@@ -216,7 +216,7 @@ def collect_efs_file_systems(regions: List[str]) -> List[Dict[str, Any]]:
     return all_file_systems
 
 
-def scan_mount_targets_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_mount_targets_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan EFS mount targets in a single region.
 
@@ -278,7 +278,7 @@ def scan_mount_targets_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting mount targets", default_return=[])
-def collect_mount_targets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_mount_targets(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect EFS mount target information from AWS regions using concurrent scanning.
 
@@ -304,7 +304,7 @@ def collect_mount_targets(regions: List[str]) -> List[Dict[str, Any]]:
     return all_mount_targets
 
 
-def scan_access_points_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_access_points_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan EFS access points in a single region.
 
@@ -368,7 +368,7 @@ def scan_access_points_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting access points", default_return=[])
-def collect_access_points(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_access_points(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect EFS access point information from AWS regions using concurrent scanning.
 

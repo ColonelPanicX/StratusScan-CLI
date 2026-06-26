@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with SES resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,7 +31,7 @@ args = utils.parse_script_args("Export Amazon SES identities and configuration t
 # Setup logging
 logger = utils.setup_logging('ses-export')
 
-def _scan_email_identities_region(region: str) -> List[Dict[str, Any]]:
+def _scan_email_identities_region(region: str) -> list[dict[str, Any]]:
     """Scan email identities in a single region."""
     regional_identities = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
@@ -109,7 +109,7 @@ def _scan_email_identities_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting email identities", default_return=[])
-def collect_email_identities(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_email_identities(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES email identity information from AWS regions."""
     print("\n=== COLLECTING EMAIL IDENTITIES ===")
     results = utils.scan_regions_concurrent(regions, _scan_email_identities_region)
@@ -118,7 +118,7 @@ def collect_email_identities(regions: List[str]) -> List[Dict[str, Any]]:
     return all_identities
 
 
-def _scan_configuration_sets_region(region: str) -> List[Dict[str, Any]]:
+def _scan_configuration_sets_region(region: str) -> list[dict[str, Any]]:
     """Scan configuration sets in a single region."""
     regional_config_sets = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
@@ -197,7 +197,7 @@ def _scan_configuration_sets_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting configuration sets", default_return=[])
-def collect_configuration_sets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_configuration_sets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES configuration set information from AWS regions."""
     print("\n=== COLLECTING CONFIGURATION SETS ===")
     results = utils.scan_regions_concurrent(regions, _scan_configuration_sets_region)
@@ -206,7 +206,7 @@ def collect_configuration_sets(regions: List[str]) -> List[Dict[str, Any]]:
     return all_config_sets
 
 
-def _scan_email_templates_region(region: str) -> List[Dict[str, Any]]:
+def _scan_email_templates_region(region: str) -> list[dict[str, Any]]:
     """Scan email templates in a single region."""
     regional_templates = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
@@ -259,7 +259,7 @@ def _scan_email_templates_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting email templates", default_return=[])
-def collect_email_templates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_email_templates(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES email template information from AWS regions."""
     print("\n=== COLLECTING EMAIL TEMPLATES ===")
     results = utils.scan_regions_concurrent(regions, _scan_email_templates_region)
@@ -269,7 +269,7 @@ def collect_email_templates(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting sending quotas", default_return=[])
-def collect_sending_quotas(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sending_quotas(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES sending quota information from AWS regions."""
     print("\n=== COLLECTING SENDING QUOTAS ===")
     all_quotas = []
@@ -316,10 +316,10 @@ def collect_sending_quotas(regions: List[str]) -> List[Dict[str, Any]]:
     return all_quotas
 
 
-def generate_summary(identities: List[Dict[str, Any]],
-                     config_sets: List[Dict[str, Any]],
-                     templates: List[Dict[str, Any]],
-                     quotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(identities: list[dict[str, Any]],
+                     config_sets: list[dict[str, Any]],
+                     templates: list[dict[str, Any]],
+                     quotas: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for SES resources."""
     utils.log_info("Generating summary statistics...")
 

@@ -19,7 +19,7 @@ Output: Excel file with 7 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -32,7 +32,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Glue and Athena resources to Excel")
 
-def _scan_glue_databases_region(region: str) -> List[Dict[str, Any]]:
+def _scan_glue_databases_region(region: str) -> list[dict[str, Any]]:
     """Scan Glue databases in a single region."""
     regional_databases = []
 
@@ -73,7 +73,7 @@ def _scan_glue_databases_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Glue databases", default_return=[])
-def collect_glue_databases(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_glue_databases(regions: list[str]) -> list[dict[str, Any]]:
     """Collect AWS Glue database information from AWS regions."""
     print("\n=== COLLECTING GLUE DATABASES ===")
     results = utils.scan_regions_concurrent(regions, _scan_glue_databases_region)
@@ -83,7 +83,7 @@ def collect_glue_databases(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 
-def _scan_glue_tables_region(region: str) -> List[Dict[str, Any]]:
+def _scan_glue_tables_region(region: str) -> list[dict[str, Any]]:
     """Scan Glue tables in a single region."""
     regional_tables = []
     try:
@@ -130,7 +130,7 @@ def _scan_glue_tables_region(region: str) -> List[Dict[str, Any]]:
     return regional_tables
 
 
-def _scan_glue_crawlers_region(region: str) -> List[Dict[str, Any]]:
+def _scan_glue_crawlers_region(region: str) -> list[dict[str, Any]]:
     """Scan Glue crawlers in a single region."""
     regional_crawlers = []
     try:
@@ -159,7 +159,7 @@ def _scan_glue_crawlers_region(region: str) -> List[Dict[str, Any]]:
     return regional_crawlers
 
 
-def _scan_glue_jobs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_glue_jobs_region(region: str) -> list[dict[str, Any]]:
     """Scan Glue jobs in a single region."""
     regional_jobs = []
     try:
@@ -181,7 +181,7 @@ def _scan_glue_jobs_region(region: str) -> List[Dict[str, Any]]:
     return regional_jobs
 
 
-def _scan_athena_workgroups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_athena_workgroups_region(region: str) -> list[dict[str, Any]]:
     """Scan Athena workgroups in a single region."""
     regional_workgroups = []
     try:
@@ -207,7 +207,7 @@ def _scan_athena_workgroups_region(region: str) -> List[Dict[str, Any]]:
     return regional_workgroups
 
 
-def _scan_athena_data_catalogs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_athena_data_catalogs_region(region: str) -> list[dict[str, Any]]:
     """Scan Athena data catalogs in a single region."""
     regional_catalogs = []
     try:
@@ -228,7 +228,7 @@ def _scan_athena_data_catalogs_region(region: str) -> List[Dict[str, Any]]:
     return regional_catalogs
 
 @utils.aws_error_handler("Collecting Glue tables", default_return=[])
-def collect_glue_tables(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_glue_tables(regions: list[str]) -> list[dict[str, Any]]:
     """Collect AWS Glue table information from AWS regions."""
     print("\n=== COLLECTING GLUE TABLES ===")
     results = utils.scan_regions_concurrent(regions, _scan_glue_tables_region)
@@ -236,7 +236,7 @@ def collect_glue_tables(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_success(f"Total Glue tables collected: {len(all_tables)}")
     return all_tables
 @utils.aws_error_handler("Collecting Glue crawlers", default_return=[])
-def collect_glue_crawlers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_glue_crawlers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect AWS Glue crawler information from AWS regions."""
     print("\n=== COLLECTING GLUE CRAWLERS ===")
     results = utils.scan_regions_concurrent(regions, _scan_glue_crawlers_region)
@@ -246,7 +246,7 @@ def collect_glue_crawlers(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Glue jobs", default_return=[])
-def collect_glue_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_glue_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect AWS Glue job information from AWS regions."""
     print("\n=== COLLECTING GLUE JOBS ===")
     results = utils.scan_regions_concurrent(regions, _scan_glue_jobs_region)
@@ -256,7 +256,7 @@ def collect_glue_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Athena workgroups", default_return=[])
-def collect_athena_workgroups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_athena_workgroups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Athena workgroup information from AWS regions."""
     print("\n=== COLLECTING ATHENA WORKGROUPS ===")
     results = utils.scan_regions_concurrent(regions, _scan_athena_workgroups_region)
@@ -266,7 +266,7 @@ def collect_athena_workgroups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Athena data catalogs", default_return=[])
-def collect_athena_data_catalogs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_athena_data_catalogs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Athena data catalog information from AWS regions."""
     print("\n=== COLLECTING ATHENA DATA CATALOGS ===")
     results = utils.scan_regions_concurrent(regions, _scan_athena_data_catalogs_region)
@@ -276,12 +276,12 @@ def collect_athena_data_catalogs(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 
-def generate_summary(databases: List[Dict[str, Any]],
-                     tables: List[Dict[str, Any]],
-                     crawlers: List[Dict[str, Any]],
-                     jobs: List[Dict[str, Any]],
-                     workgroups: List[Dict[str, Any]],
-                     catalogs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(databases: list[dict[str, Any]],
+                     tables: list[dict[str, Any]],
+                     crawlers: list[dict[str, Any]],
+                     jobs: list[dict[str, Any]],
+                     workgroups: list[dict[str, Any]],
+                     catalogs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Glue and Athena resources."""
     summary = []
 
@@ -362,7 +362,7 @@ def generate_summary(databases: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Glue and Athena data and write the Excel export."""
     # Collect data
     print("\n=== Collecting Glue & Athena Data ===")

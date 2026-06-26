@@ -19,7 +19,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -33,7 +33,7 @@ except ImportError:
 args = utils.parse_script_args("Export Elastic Beanstalk applications and environments to Excel")
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk applications from region", default_return=[])
-def collect_applications_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_applications_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk application information from a single AWS region."""
     applications = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
@@ -97,7 +97,7 @@ def collect_applications_from_region(region: str) -> List[Dict[str, Any]]:
     return applications
 
 
-def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_applications(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk application information using concurrent scanning."""
     print("\n=== COLLECTING ELASTIC BEANSTALK APPLICATIONS ===")
     utils.log_info(f"Scanning {len(regions)} regions...")
@@ -117,7 +117,7 @@ def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk environments from region", default_return=[])
-def collect_environments_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_environments_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk environment information from a single AWS region."""
     environments = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
@@ -216,7 +216,7 @@ def collect_environments_from_region(region: str) -> List[Dict[str, Any]]:
     return environments
 
 
-def collect_environments(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_environments(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk environment information using concurrent scanning."""
     print("\n=== COLLECTING ELASTIC BEANSTALK ENVIRONMENTS ===")
     utils.log_info(f"Scanning {len(regions)} regions...")
@@ -236,7 +236,7 @@ def collect_environments(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk application versions from region", default_return=[])
-def collect_application_versions_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_application_versions_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk application version information from a single AWS region."""
     versions = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
@@ -304,7 +304,7 @@ def collect_application_versions_from_region(region: str) -> List[Dict[str, Any]
     return versions
 
 
-def collect_application_versions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_application_versions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk application version information using concurrent scanning."""
     print("\n=== COLLECTING ELASTIC BEANSTALK APPLICATION VERSIONS ===")
     utils.log_info(f"Scanning {len(regions)} regions...")
@@ -324,7 +324,7 @@ def collect_application_versions(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk configuration templates from region", default_return=[])
-def collect_configuration_templates_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_configuration_templates_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk configuration template information from a single AWS region."""
     templates = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
@@ -390,7 +390,7 @@ def collect_configuration_templates_from_region(region: str) -> List[Dict[str, A
     return templates
 
 
-def collect_configuration_templates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_configuration_templates(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Elastic Beanstalk configuration template information using concurrent scanning."""
     print("\n=== COLLECTING ELASTIC BEANSTALK CONFIGURATION TEMPLATES ===")
     utils.log_info(f"Scanning {len(regions)} regions...")
@@ -409,10 +409,10 @@ def collect_configuration_templates(regions: List[str]) -> List[Dict[str, Any]]:
     return all_templates
 
 
-def generate_summary(applications: List[Dict[str, Any]],
-                     environments: List[Dict[str, Any]],
-                     versions: List[Dict[str, Any]],
-                     templates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(applications: list[dict[str, Any]],
+                     environments: list[dict[str, Any]],
+                     versions: list[dict[str, Any]],
+                     templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Elastic Beanstalk resources."""
     summary = []
 
@@ -506,7 +506,7 @@ def generate_summary(applications: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Elastic Beanstalk data and write the Excel export."""
     # Collect data
     print("\n=== Collecting Elastic Beanstalk Data ===")

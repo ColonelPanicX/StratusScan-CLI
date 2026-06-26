@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with Rekognition resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
 args = utils.parse_script_args("Export Amazon Rekognition collections to Excel")
 
 @utils.aws_error_handler("Collecting Rekognition projects", default_return=[])
-def collect_projects(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_projects(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Rekognition custom model projects from AWS regions."""
     all_projects = []
 
@@ -73,7 +73,7 @@ def collect_projects(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Rekognition project versions", default_return=[])
-def collect_project_versions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_project_versions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Rekognition project versions (trained models)."""
     all_versions = []
 
@@ -158,7 +158,7 @@ def collect_project_versions(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Rekognition collections", default_return=[])
-def collect_collections(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_collections(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Rekognition face collections."""
     all_collections = []
 
@@ -218,7 +218,7 @@ def collect_collections(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Rekognition stream processors", default_return=[])
-def collect_stream_processors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_stream_processors(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Rekognition stream processors for video analysis."""
     all_processors = []
 
@@ -308,10 +308,10 @@ def collect_stream_processors(regions: List[str]) -> List[Dict[str, Any]]:
     return all_processors
 
 
-def generate_summary(projects: List[Dict[str, Any]],
-                     versions: List[Dict[str, Any]],
-                     collections: List[Dict[str, Any]],
-                     stream_processors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(projects: list[dict[str, Any]],
+                     versions: list[dict[str, Any]],
+                     collections: list[dict[str, Any]],
+                     stream_processors: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Rekognition resources."""
     utils.log_info("Generating summary statistics...")
 

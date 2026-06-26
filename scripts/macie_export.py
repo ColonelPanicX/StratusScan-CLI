@@ -22,7 +22,7 @@ Output: Excel file with 6 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -46,7 +46,7 @@ utils.setup_logging("macie-export")
 
 
 @utils.aws_error_handler("Collecting Macie status from region", default_return=[])
-def collect_macie_status_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_macie_status_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie account status from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -105,7 +105,7 @@ def collect_macie_status_from_region(region: str) -> List[Dict[str, Any]]:
     return status_data
 
 
-def collect_macie_status(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_macie_status(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie account status using concurrent scanning."""
     print("\n=== COLLECTING MACIE STATUS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie status...")
@@ -126,7 +126,7 @@ def collect_macie_status(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie classification jobs from region", default_return=[])
-def collect_classification_jobs_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_classification_jobs_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie classification job information from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -205,7 +205,7 @@ def collect_classification_jobs_from_region(region: str) -> List[Dict[str, Any]]
     return jobs_data
 
 
-def collect_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_classification_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie classification job information using concurrent scanning."""
     print("\n=== COLLECTING CLASSIFICATION JOBS ===")
     utils.log_info(f"Scanning {len(regions)} regions for classification jobs...")
@@ -226,7 +226,7 @@ def collect_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie findings from region", default_return=[])
-def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_findings_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie finding information from a single AWS region (recent findings only)."""
     if not utils.is_aws_region(region):
         return []
@@ -300,7 +300,7 @@ def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
     return findings_data
 
 
-def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_findings(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie finding information using concurrent scanning."""
     print("\n=== COLLECTING FINDINGS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie findings...")
@@ -321,7 +321,7 @@ def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie S3 buckets from region", default_return=[])
-def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_s3_buckets_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie S3 bucket inventory from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -381,7 +381,7 @@ def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
     return buckets_data
 
 
-def collect_s3_buckets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_s3_buckets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie S3 bucket inventory using concurrent scanning."""
     print("\n=== COLLECTING S3 BUCKETS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie S3 buckets...")
@@ -402,7 +402,7 @@ def collect_s3_buckets(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie custom data identifiers from region", default_return=[])
-def collect_custom_data_identifiers_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_custom_data_identifiers_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie custom data identifier information from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -465,7 +465,7 @@ def collect_custom_data_identifiers_from_region(region: str) -> List[Dict[str, A
     return identifiers_data
 
 
-def collect_custom_data_identifiers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_custom_data_identifiers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie custom data identifier information using concurrent scanning."""
     print("\n=== COLLECTING CUSTOM DATA IDENTIFIERS ===")
     utils.log_info(f"Scanning {len(regions)} regions for custom data identifiers...")
@@ -485,11 +485,11 @@ def collect_custom_data_identifiers(regions: List[str]) -> List[Dict[str, Any]]:
     return all_identifiers
 
 
-def generate_summary(status: List[Dict[str, Any]],
-                     jobs: List[Dict[str, Any]],
-                     findings: List[Dict[str, Any]],
-                     buckets: List[Dict[str, Any]],
-                     identifiers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(status: list[dict[str, Any]],
+                     jobs: list[dict[str, Any]],
+                     findings: list[dict[str, Any]],
+                     buckets: list[dict[str, Any]],
+                     identifiers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Macie resources."""
     summary = []
 
@@ -560,7 +560,7 @@ def generate_summary(status: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Macie data and write the Excel export."""
     # Check dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):

@@ -24,7 +24,7 @@ Note: SES is regional, Pinpoint applications are regional
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -42,7 +42,7 @@ utils.setup_logging('ses-pinpoint-export')
 
 
 @utils.aws_error_handler("Collecting SES identities", default_return=[])
-def collect_ses_identities(region: str) -> List[Dict[str, Any]]:
+def collect_ses_identities(region: str) -> list[dict[str, Any]]:
     """Collect SES email identities (v2 API)."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     identities = []
@@ -96,7 +96,7 @@ def collect_ses_identities(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SES configuration sets", default_return=[])
-def collect_ses_config_sets(region: str) -> List[Dict[str, Any]]:
+def collect_ses_config_sets(region: str) -> list[dict[str, Any]]:
     """Collect SES configuration sets."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     config_sets = []
@@ -145,7 +145,7 @@ def collect_ses_config_sets(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SES account sending quota", default_return={})
-def collect_ses_account_info(region: str) -> Dict[str, Any]:
+def collect_ses_account_info(region: str) -> dict[str, Any]:
     """Collect SES account sending quota and statistics."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
 
@@ -177,7 +177,7 @@ def collect_ses_account_info(region: str) -> Dict[str, Any]:
 
 
 @utils.aws_error_handler("Collecting SES email templates", default_return=[])
-def collect_ses_templates(region: str) -> List[Dict[str, Any]]:
+def collect_ses_templates(region: str) -> list[dict[str, Any]]:
     """Collect SES email templates."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     templates = []
@@ -200,7 +200,7 @@ def collect_ses_templates(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Pinpoint applications", default_return=[])
-def collect_pinpoint_apps(region: str) -> List[Dict[str, Any]]:
+def collect_pinpoint_apps(region: str) -> list[dict[str, Any]]:
     """Collect Pinpoint applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     apps = []
@@ -242,7 +242,7 @@ def collect_pinpoint_apps(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Pinpoint campaigns", default_return=[])
-def collect_pinpoint_campaigns(region: str, app_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_pinpoint_campaigns(region: str, app_ids: list[str]) -> list[dict[str, Any]]:
     """Collect Pinpoint campaigns for all applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     campaigns = []
@@ -276,7 +276,7 @@ def collect_pinpoint_campaigns(region: str, app_ids: List[str]) -> List[Dict[str
 
 
 @utils.aws_error_handler("Collecting Pinpoint segments", default_return=[])
-def collect_pinpoint_segments(region: str, app_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_pinpoint_segments(region: str, app_ids: list[str]) -> list[dict[str, Any]]:
     """Collect Pinpoint segments for all applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     segments = []
@@ -301,7 +301,7 @@ def collect_pinpoint_segments(region: str, app_ids: List[str]) -> List[Dict[str,
     return segments
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect SES and Pinpoint data and write the Excel export."""
     # Collect all resources
     all_ses_identities = []

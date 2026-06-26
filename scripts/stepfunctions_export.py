@@ -17,7 +17,7 @@ Output: Excel file with 4 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -30,7 +30,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Step Functions state machines to Excel")
 
-def _scan_state_machines_region(region: str) -> List[Dict[str, Any]]:
+def _scan_state_machines_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for Step Functions state machines."""
     state_machines_data = []
 
@@ -102,7 +102,7 @@ def _scan_state_machines_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Step Functions state machines", default_return=[])
-def collect_state_machines(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_state_machines(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Step Functions state machine information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_state_machines_region)
     all_state_machines = [sm for result in results for sm in result]
@@ -111,7 +111,7 @@ def collect_state_machines(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Step Functions executions", default_return=[])
-def collect_executions(regions: List[str], state_machines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_executions(regions: list[str], state_machines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect recent Step Functions execution information from AWS regions."""
     all_executions = []
 
@@ -187,7 +187,7 @@ def collect_executions(regions: List[str], state_machines: List[Dict[str, Any]])
     return all_executions
 
 
-def _scan_activities_region(region: str) -> List[Dict[str, Any]]:
+def _scan_activities_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for Step Functions activities."""
     activities_data = []
 
@@ -211,7 +211,7 @@ def _scan_activities_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Step Functions activities", default_return=[])
-def collect_activities(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_activities(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Step Functions activity information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_activities_region)
     all_activities = [a for result in results for a in result]
@@ -219,9 +219,9 @@ def collect_activities(regions: List[str]) -> List[Dict[str, Any]]:
     return all_activities
 
 
-def generate_summary(state_machines: List[Dict[str, Any]],
-                     executions: List[Dict[str, Any]],
-                     activities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(state_machines: list[dict[str, Any]],
+                     executions: list[dict[str, Any]],
+                     activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Step Functions resources."""
     summary = []
 
@@ -319,7 +319,7 @@ def generate_summary(state_machines: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Step Functions data and write the Excel export."""
     # Collect data
     print("\n=== Collecting Step Functions Data ===")

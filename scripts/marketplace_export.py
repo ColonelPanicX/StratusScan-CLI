@@ -12,7 +12,7 @@ Output: Multi-worksheet Excel file with Marketplace resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -26,7 +26,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Marketplace subscriptions to Excel")
 
 @utils.aws_error_handler("Collecting Marketplace agreements", default_return=[])
-def collect_agreements() -> List[Dict[str, Any]]:
+def collect_agreements() -> list[dict[str, Any]]:
     """Collect AWS Marketplace agreement information (global service)."""
     print("\n=== COLLECTING MARKETPLACE AGREEMENTS ===")
     all_agreements = []
@@ -101,7 +101,7 @@ def collect_agreements() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting agreement terms", default_return=[])
-def collect_agreement_terms(agreements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_agreement_terms(agreements: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect detailed terms for each agreement."""
     print("\n=== COLLECTING AGREEMENT TERMS ===")
     all_terms = []
@@ -172,8 +172,8 @@ def collect_agreement_terms(agreements: List[Dict[str, Any]]) -> List[Dict[str, 
     return all_terms
 
 
-def generate_summary(agreements: List[Dict[str, Any]],
-                     terms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(agreements: list[dict[str, Any]],
+                     terms: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Marketplace resources."""
     utils.log_info("Generating summary statistics...")
 

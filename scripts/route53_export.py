@@ -29,7 +29,7 @@ Notes:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -51,7 +51,7 @@ args = utils.parse_script_args("Export Route 53 hosted zones and records to Exce
 
 
 @utils.aws_error_handler("Collecting Route 53 hosted zones", default_return=[])
-def collect_hosted_zones() -> List[Dict[str, Any]]:
+def collect_hosted_zones() -> list[dict[str, Any]]:
     """
     Collect Route 53 hosted zone information.
 
@@ -160,7 +160,7 @@ def collect_hosted_zones() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DNS records", default_return=[])
-def collect_dns_records() -> List[Dict[str, Any]]:
+def collect_dns_records() -> list[dict[str, Any]]:
     """
     Collect DNS record information from all hosted zones.
 
@@ -259,7 +259,7 @@ def collect_dns_records() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Route 53 health checks", default_return=[])
-def collect_health_checks() -> List[Dict[str, Any]]:
+def collect_health_checks() -> list[dict[str, Any]]:
     """
     Collect Route 53 health check information.
 
@@ -353,7 +353,7 @@ def collect_health_checks() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Route 53 Resolver endpoints", default_return=[])
-def collect_resolver_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_resolver_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Route 53 Resolver endpoint information across regions.
 
@@ -427,7 +427,7 @@ def collect_resolver_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Route 53 Resolver rules", default_return=[])
-def collect_resolver_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_resolver_rules(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Route 53 Resolver rule information across regions.
 
@@ -504,7 +504,7 @@ def collect_resolver_rules(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting query logging configs", default_return=[])
-def collect_query_logging_configs() -> List[Dict[str, Any]]:
+def collect_query_logging_configs() -> list[dict[str, Any]]:
     """
     Collect Route 53 query logging configuration information.
 
@@ -559,8 +559,8 @@ def collect_query_logging_configs() -> List[Dict[str, Any]]:
     return configs
 
 
-def generate_summary(zones: List[Dict], records: List[Dict], health_checks: List[Dict],
-                     endpoints: List[Dict], rules: List[Dict], query_configs: List[Dict]) -> List[Dict[str, Any]]:
+def generate_summary(zones: list[dict], records: list[dict], health_checks: list[dict],
+                     endpoints: list[dict], rules: list[dict], query_configs: list[dict]) -> list[dict[str, Any]]:
     """
     Generate summary statistics for Route 53 resources.
 
@@ -662,7 +662,7 @@ def generate_summary(zones: List[Dict], records: List[Dict], health_checks: List
     return summary
 
 
-def export_route53_data(account_id: str, account_name: str, regions: List[str]):
+def export_route53_data(account_id: str, account_name: str, regions: list[str]):
     """
     Export Route 53 DNS service information to an Excel file.
 

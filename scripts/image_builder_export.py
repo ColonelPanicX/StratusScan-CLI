@@ -25,7 +25,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,7 +47,7 @@ args = utils.parse_script_args("Export EC2 Image Builder pipelines and recipes t
 
 
 @utils.aws_error_handler("Collecting Image Builder pipelines", default_return=[])
-def collect_image_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_image_pipelines(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Image Builder pipeline information from AWS regions.
 
@@ -151,7 +151,7 @@ def collect_image_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting image recipes", default_return=[])
-def collect_image_recipes(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_image_recipes(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Image Builder image recipe information from AWS regions.
 
@@ -237,7 +237,7 @@ def collect_image_recipes(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting components", default_return=[])
-def collect_components(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_components(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Image Builder component information from AWS regions.
 
@@ -316,7 +316,7 @@ def collect_components(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting infrastructure configurations", default_return=[])
-def collect_infrastructure_configurations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_infrastructure_configurations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Image Builder infrastructure configuration information from AWS regions.
 

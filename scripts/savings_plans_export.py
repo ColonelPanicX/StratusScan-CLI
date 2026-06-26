@@ -25,7 +25,7 @@ import datetime
 import sys
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,7 +47,7 @@ args = utils.parse_script_args("Export AWS Savings Plans to Excel")
 
 
 @utils.aws_error_handler("Collecting Savings Plans", default_return=[])
-def collect_savings_plans(states: List[str]) -> List[Dict[str, Any]]:
+def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
     """
     Collect Savings Plans information.
 

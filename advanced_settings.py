@@ -251,10 +251,10 @@ def configure_performance():
     current = get_current_settings()['performance']
 
     # Batch DataFrame size
-    print(f"\n1. Batch DataFrame Size")
-    print(f"   Controls memory usage when processing large datasets (10,000+ resources).")
-    print(f"   Higher values = faster but more memory usage")
-    print(f"   Lower values = slower but less memory usage")
+    print("\n1. Batch DataFrame Size")
+    print("   Controls memory usage when processing large datasets (10,000+ resources).")
+    print("   Higher values = faster but more memory usage")
+    print("   Lower values = slower but less memory usage")
 
     while True:
         batch_input = input(f"   Batch size (500-5000) [Current: {current['batch_dataframe_size']}]: ").strip()
@@ -270,9 +270,9 @@ def configure_performance():
             print("   ERROR: Please enter a valid number.")
 
     # API retry attempts
-    print(f"\n2. API Retry Attempts")
-    print(f"   Number of times to retry failed AWS API calls.")
-    print(f"   Higher values = more resilient but slower on persistent failures")
+    print("\n2. API Retry Attempts")
+    print("   Number of times to retry failed AWS API calls.")
+    print("   Higher values = more resilient but slower on persistent failures")
 
     while True:
         retry_input = input(f"   Retry attempts (1-10) [Current: {current['api_retry_attempts']}]: ").strip()
@@ -288,9 +288,9 @@ def configure_performance():
             print("   ERROR: Please enter a valid number.")
 
     # API retry delay
-    print(f"\n3. API Retry Delay (seconds)")
-    print(f"   Initial delay before retrying failed API calls (exponential backoff).")
-    print(f"   Higher values = less likely to hit rate limits but slower retries")
+    print("\n3. API Retry Delay (seconds)")
+    print("   Initial delay before retrying failed API calls (exponential backoff).")
+    print("   Higher values = less likely to hit rate limits but slower retries")
 
     while True:
         delay_input = input(f"   Retry delay (1-10 seconds) [Current: {current['api_retry_delay_seconds']}]: ").strip()

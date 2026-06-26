@@ -27,7 +27,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -49,7 +49,7 @@ args = utils.parse_script_args("Export CloudFront distributions to Excel")
 
 
 @utils.aws_error_handler("Collecting CloudFront distributions", default_return=[])
-def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
+def collect_cloudfront_distributions() -> list[dict[str, Any]]:
     """
     Collect CloudFront distribution information.
     CloudFront is a global service, so we don't need to iterate regions.
@@ -206,7 +206,7 @@ def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting origin details", default_return=[])
-def collect_origin_details() -> List[Dict[str, Any]]:
+def collect_origin_details() -> list[dict[str, Any]]:
     """
     Collect detailed origin information for all distributions.
 
@@ -289,7 +289,7 @@ def collect_origin_details() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting cache behavior details", default_return=[])
-def collect_cache_behaviors() -> List[Dict[str, Any]]:
+def collect_cache_behaviors() -> list[dict[str, Any]]:
     """
     Collect cache behavior information for all distributions.
 
@@ -332,7 +332,7 @@ def collect_cache_behaviors() -> List[Dict[str, Any]]:
     return behaviors_data
 
 
-def process_cache_behavior(dist_id: str, path_pattern: str, behavior: Dict[str, Any]) -> Dict[str, Any]:
+def process_cache_behavior(dist_id: str, path_pattern: str, behavior: dict[str, Any]) -> dict[str, Any]:
     """
     Process a single cache behavior into a dictionary.
 

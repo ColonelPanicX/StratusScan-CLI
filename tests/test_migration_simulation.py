@@ -8,9 +8,10 @@ Covers functions that have no other test coverage:
 - utils.aws_error_handler()
 """
 
-import pytest
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))

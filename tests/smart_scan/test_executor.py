@@ -4,13 +4,14 @@ Comprehensive tests for smart_scan.executor module.
 Tests batch script execution, progress tracking, and result reporting.
 """
 
-import sys
 import os
-import pytest
+import sys
 import tempfile
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 # Add scripts directory to path
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "scripts"))

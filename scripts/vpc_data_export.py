@@ -416,7 +416,7 @@ def _load_natgw_monthly_cost() -> float:
     """Return NAT Gateway base hourly cost × 730 from pricing JSON."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'natgw-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         hourly = float(data.get('rates', {}).get('hourly', 0.045))
         return round(hourly * 730, 2)

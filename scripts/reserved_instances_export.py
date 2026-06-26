@@ -26,7 +26,7 @@ Features:
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -44,7 +44,7 @@ utils.setup_logging('reserved-instances-export')
 
 
 @utils.aws_error_handler("Collecting EC2 Reserved Instances", default_return=[])
-def collect_ec2_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_ec2_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect EC2 Reserved Instances."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reserved_instances = []
@@ -77,7 +77,7 @@ def collect_ec2_reserved_instances(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting RDS Reserved DB Instances", default_return=[])
-def collect_rds_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_rds_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect RDS Reserved DB Instances."""
     rds = utils.get_boto3_client('rds', region_name=region)
     reserved_instances = []
@@ -112,7 +112,7 @@ def collect_rds_reserved_instances(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ElastiCache Reserved Cache Nodes", default_return=[])
-def collect_elasticache_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_elasticache_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect ElastiCache Reserved Cache Nodes."""
     elasticache = utils.get_boto3_client('elasticache', region_name=region)
     reserved_instances = []
@@ -146,7 +146,7 @@ def collect_elasticache_reserved_instances(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting OpenSearch Reserved Instances", default_return=[])
-def collect_opensearch_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_opensearch_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect OpenSearch Reserved Instances."""
     opensearch = utils.get_boto3_client('es', region_name=region)  # 'es' is the service name
     reserved_instances = []
@@ -179,7 +179,7 @@ def collect_opensearch_reserved_instances(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Redshift Reserved Nodes", default_return=[])
-def collect_redshift_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_redshift_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect Redshift Reserved Nodes."""
     redshift = utils.get_boto3_client('redshift', region_name=region)
     reserved_instances = []
@@ -212,7 +212,7 @@ def collect_redshift_reserved_instances(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting MemoryDB Reserved Nodes", default_return=[])
-def collect_memorydb_reserved_instances(region: str) -> List[Dict[str, Any]]:
+def collect_memorydb_reserved_instances(region: str) -> list[dict[str, Any]]:
     """Collect MemoryDB Reserved Nodes."""
     memorydb = utils.get_boto3_client('memorydb', region_name=region)
     reserved_instances = []
@@ -270,7 +270,7 @@ def calculate_expiration_status(end_date) -> str:
         return 'Unknown'
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Reserved Instance data and write the Excel export."""
     utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({utils.mask_account_id(account_id)})")
     utils.log_info(f"Scanning {len(regions)} region(s) for Reserved Instances...")

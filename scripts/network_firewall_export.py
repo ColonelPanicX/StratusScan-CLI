@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -48,7 +48,7 @@ args = utils.parse_script_args("Export AWS Network Firewall policies and rule gr
 
 
 @utils.aws_error_handler("Collecting Network Firewalls from region", default_return=[])
-def collect_network_firewalls_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_network_firewalls_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall information from a single AWS region.
 
@@ -150,7 +150,7 @@ def collect_network_firewalls_from_region(region: str) -> List[Dict[str, Any]]:
     return firewalls
 
 
-def collect_network_firewalls(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_network_firewalls(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall information using concurrent scanning.
 
@@ -179,7 +179,7 @@ def collect_network_firewalls(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting firewall policies from region", default_return=[])
-def collect_firewall_policies_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_firewall_policies_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall policy information from a single AWS region.
 
@@ -259,7 +259,7 @@ def collect_firewall_policies_from_region(region: str) -> List[Dict[str, Any]]:
     return policies
 
 
-def collect_firewall_policies(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_firewall_policies(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall policy information using concurrent scanning.
 
@@ -288,7 +288,7 @@ def collect_firewall_policies(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting rule groups from region", default_return=[])
-def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_rule_groups_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall rule group information from a single AWS region.
 
@@ -366,7 +366,7 @@ def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
     return rule_groups
 
 
-def collect_rule_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_rule_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall rule group information using concurrent scanning.
 
@@ -395,7 +395,7 @@ def collect_rule_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting logging configurations from region", default_return=[])
-def collect_logging_configurations_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_logging_configurations_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall logging configuration information from a single AWS region.
 
@@ -463,7 +463,7 @@ def collect_logging_configurations_from_region(region: str) -> List[Dict[str, An
     return logging_configs
 
 
-def collect_logging_configurations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_logging_configurations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall logging configuration information using concurrent scanning.
 

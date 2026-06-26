@@ -23,7 +23,7 @@ us-west-2 as the primary endpoint for API operations.
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -37,7 +37,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export IAM Roles Anywhere profiles and trust anchors to Excel")
 
-def format_tags(tags: List[Dict[str, str]]) -> str:
+def format_tags(tags: list[dict[str, str]]) -> str:
     """Format tags for display."""
     if not tags:
         return "None"
@@ -45,7 +45,7 @@ def format_tags(tags: List[Dict[str, str]]) -> str:
     return ", ".join(tag_strings)
 
 @utils.aws_error_handler("Collecting Trust Anchors", default_return=[])
-def collect_trust_anchors() -> List[Dict[str, Any]]:
+def collect_trust_anchors() -> list[dict[str, Any]]:
     """Collect IAM Roles Anywhere Trust Anchors."""
     utils.log_info("Collecting IAM Roles Anywhere Trust Anchors...")
 
@@ -121,7 +121,7 @@ def collect_trust_anchors() -> List[Dict[str, Any]]:
     return trust_anchors
 
 @utils.aws_error_handler("Collecting Profiles", default_return=[])
-def collect_profiles() -> List[Dict[str, Any]]:
+def collect_profiles() -> list[dict[str, Any]]:
     """Collect IAM Roles Anywhere Profiles."""
     utils.log_info("Collecting IAM Roles Anywhere Profiles...")
 
@@ -212,7 +212,7 @@ def collect_profiles() -> List[Dict[str, Any]]:
     return profiles
 
 @utils.aws_error_handler("Collecting CRLs", default_return=[])
-def collect_crls() -> List[Dict[str, Any]]:
+def collect_crls() -> list[dict[str, Any]]:
     """Collect IAM Roles Anywhere Certificate Revocation Lists (CRLs)."""
     utils.log_info("Collecting IAM Roles Anywhere CRLs...")
 
@@ -285,7 +285,7 @@ def collect_crls() -> List[Dict[str, Any]]:
 
     return crls
 
-def create_summary(trust_anchors: List[Dict], profiles: List[Dict], crls: List[Dict]) -> Dict[str, Any]:
+def create_summary(trust_anchors: list[dict], profiles: list[dict], crls: list[dict]) -> dict[str, Any]:
     """Create summary statistics for IAM Roles Anywhere."""
     summary = {
         'Category': [
@@ -334,7 +334,7 @@ def create_summary(trust_anchors: List[Dict], profiles: List[Dict], crls: List[D
 
     return summary
 
-def export_to_excel(trust_anchors: List[Dict], profiles: List[Dict], crls: List[Dict],
+def export_to_excel(trust_anchors: list[dict], profiles: list[dict], crls: list[dict],
                    account_id: str, account_name: str) -> str:
     """Export IAM Roles Anywhere data to Excel with multiple sheets."""
     try:

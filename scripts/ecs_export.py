@@ -28,7 +28,7 @@ ELB Target Group, Network Mode, Subnet IDs, Security Groups, IAM Role, and Creat
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from botocore.exceptions import EndpointConnectionError
 
@@ -144,7 +144,7 @@ def get_load_balancer_name(elbv2_client, load_balancer_arn):
     return 'Unknown'
 
 @utils.aws_error_handler("Collecting ECS resources from region", default_return=[])
-def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
+def get_ecs_resources_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect ECS resource information for a specific region.
 
@@ -395,7 +395,7 @@ def get_ecs_resources_from_region(region: str) -> List[Dict[str, Any]]:
 
     return ecs_resources
 
-def get_ecs_resources(regions: List[str]) -> List[Dict[str, Any]]:
+def get_ecs_resources(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECS resources from multiple regions concurrently.
 
@@ -421,7 +421,7 @@ def get_ecs_resources(regions: List[str]) -> List[Dict[str, Any]]:
     utils.log_success(f"Total ECS resources collected: {len(all_resources)}")
     return all_resources
 
-def get_standalone_tasks_from_region(region: str) -> List[Dict[str, Any]]:
+def get_standalone_tasks_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect ECS tasks not managed by a service (one-off / scheduled tasks) from a single region.
 
@@ -498,7 +498,7 @@ def get_standalone_tasks_from_region(region: str) -> List[Dict[str, Any]]:
     return standalone_tasks
 
 
-def get_standalone_tasks(regions: List[str]) -> List[Dict[str, Any]]:
+def get_standalone_tasks(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect standalone ECS tasks from multiple regions concurrently.
 

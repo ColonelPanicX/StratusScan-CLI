@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,7 +45,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS API Gateway REST and HTTP APIs to Excel")
 
 
-def scan_rest_apis_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_rest_apis_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan REST APIs in a single AWS region.
 
@@ -113,7 +113,7 @@ def scan_rest_apis_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting REST APIs", default_return=[])
-def collect_rest_apis(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_rest_apis(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect REST API (v1) information from AWS regions.
 
@@ -140,7 +140,7 @@ def collect_rest_apis(regions: List[str]) -> List[Dict[str, Any]]:
     return all_apis
 
 
-def scan_http_apis_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_http_apis_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan HTTP APIs in a single AWS region.
 
@@ -211,7 +211,7 @@ def scan_http_apis_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting HTTP APIs", default_return=[])
-def collect_http_apis(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_http_apis(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect HTTP API (v2) information from AWS regions.
 
@@ -238,7 +238,7 @@ def collect_http_apis(regions: List[str]) -> List[Dict[str, Any]]:
     return all_apis
 
 
-def scan_api_stages_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_api_stages_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan API Gateway stages in a single AWS region.
 
@@ -337,7 +337,7 @@ def scan_api_stages_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting API stages", default_return=[])
-def collect_api_stages(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_api_stages(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect API Gateway stage information for REST APIs.
 

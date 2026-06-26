@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,7 +31,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS AppSync GraphQL APIs to Excel")
 
-def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
+def _scan_graphql_apis_region(region: str) -> list[dict[str, Any]]:
     """Scan AppSync GraphQL APIs in a single region."""
     regional_apis = []
 
@@ -113,7 +113,7 @@ def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting AppSync GraphQL APIs", default_return=[])
-def collect_graphql_apis(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_graphql_apis(regions: list[str]) -> list[dict[str, Any]]:
     """Collect AppSync GraphQL API information from AWS regions."""
     print("\n=== COLLECTING APPSYNC GRAPHQL APIS ===")
     results = utils.scan_regions_concurrent(regions, _scan_graphql_apis_region)
@@ -123,7 +123,7 @@ def collect_graphql_apis(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting AppSync data sources", default_return=[])
-def collect_data_sources(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_data_sources(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync data source information from AWS regions."""
     all_data_sources = []
 
@@ -205,7 +205,7 @@ def collect_data_sources(regions: List[str], apis: List[Dict[str, Any]]) -> List
 
 
 @utils.aws_error_handler("Collecting AppSync resolvers", default_return=[])
-def collect_resolvers(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_resolvers(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync resolver information from AWS regions (limited sample)."""
     all_resolvers = []
 
@@ -286,7 +286,7 @@ def collect_resolvers(regions: List[str], apis: List[Dict[str, Any]]) -> List[Di
 
 
 @utils.aws_error_handler("Collecting AppSync API keys", default_return=[])
-def collect_api_keys(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_api_keys(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync API key information from AWS regions."""
     all_api_keys = []
 
@@ -354,10 +354,10 @@ def collect_api_keys(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dic
     return all_api_keys
 
 
-def generate_summary(apis: List[Dict[str, Any]],
-                     data_sources: List[Dict[str, Any]],
-                     resolvers: List[Dict[str, Any]],
-                     api_keys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(apis: list[dict[str, Any]],
+                     data_sources: list[dict[str, Any]],
+                     resolvers: list[dict[str, Any]],
+                     api_keys: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for AppSync resources."""
     summary = []
 
@@ -454,7 +454,7 @@ def generate_summary(apis: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect AppSync data and write the Excel export."""
     # Collect data
     print("\n=== Collecting AppSync Data ===")

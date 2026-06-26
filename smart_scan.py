@@ -17,7 +17,7 @@ import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Ensure the project root is on sys.path for utils
 _root = Path(__file__).parent.absolute()
@@ -46,11 +46,11 @@ except ImportError:
 
 try:
     from services_in_use_export import (
+        create_category_sheets,
+        create_detailed_export,
+        create_recommendations_sheet,
         discover_services,
         generate_summary,
-        create_detailed_export,
-        create_category_sheets,
-        create_recommendations_sheet,
     )
 except ImportError as exc:
     utils.log_error(f"Could not import services_in_use_export: {exc}", exc)
@@ -80,14 +80,14 @@ def _prompt_scan_mode() -> str:
     return 'deep' if choice == '2' else 'quick'
 
 
-def _format_detail(detail: Dict[str, int]) -> str:
+def _format_detail(detail: dict[str, int]) -> str:
     """Format a detail dict as a readable inline string."""
     return "  |  ".join(f"{k}: {v}" for k, v in detail.items() if v > 0)
 
 
 def _print_discovery_summary(
-    services: Dict[str, Any],
-    recommendations: Optional[Dict[str, Any]] = None,
+    services: dict[str, Any],
+    recommendations: Optional[dict[str, Any]] = None,
 ) -> None:
     """Print formatted discovery results to console (Deep Scan only)."""
     print()
@@ -96,7 +96,7 @@ def _print_discovery_summary(
     print("=" * 70)
 
     # Group by category
-    by_category: Dict[str, list] = {}
+    by_category: dict[str, list] = {}
     for name, data in sorted(services.items()):
         cat = data['category']
         by_category.setdefault(cat, []).append((name, data))
@@ -132,9 +132,9 @@ def _print_discovery_summary(
 
 
 def _write_quick_scan_excel(
-    recommendations: Dict[str, Any],
+    recommendations: dict[str, Any],
     account_name: str,
-    regions: List[str],
+    regions: list[str],
 ) -> None:
     """
     Write a minimal two-column Excel for Quick Scan results.
@@ -165,13 +165,13 @@ def _write_quick_scan_excel(
 
 
 def _write_markdown_report(
-    services: Dict[str, Any],
-    recommendations: Dict[str, Any],
+    services: dict[str, Any],
+    recommendations: dict[str, Any],
     account_name: str,
     account_id: str,
-    regions: List[str],
+    regions: list[str],
     mode: str,
-    crosscheck: Optional[Dict[str, Any]] = None,
+    crosscheck: Optional[dict[str, Any]] = None,
 ) -> Optional[Path]:
     """
     Write discovery report as Markdown to reports/ directory.
@@ -208,7 +208,7 @@ def _write_markdown_report(
     ]
 
     # Group by category
-    by_category: Dict[str, list] = {}
+    by_category: dict[str, list] = {}
     for name, data in sorted(services.items()):
         by_category.setdefault(data['category'], []).append((name, data))
 
@@ -368,8 +368,8 @@ def _resume_from_session(session_path: str) -> None:
 
 
 def _run_bill_crosscheck(
-    services: Dict[str, Any], regions: List[str]
-) -> Optional[Dict[str, Any]]:
+    services: dict[str, Any], regions: list[str]
+) -> Optional[dict[str, Any]]:
     """Run the Cost Explorer ground-truth cross-check unless opted out.
 
     Never raises — returns the cross-check result, a skip status dict, or None
@@ -396,7 +396,7 @@ _CROSSCHECK_STATUS_ORDER = [
 ]
 
 
-def _crosscheck_dataframe(result: Dict[str, Any]) -> "pd.DataFrame":
+def _crosscheck_dataframe(result: dict[str, Any]) -> "pd.DataFrame":
     """Flatten a cross-check result into a single status-tagged DataFrame."""
     rows = []
     for bucket, label in _CROSSCHECK_STATUS_ORDER:
@@ -411,7 +411,7 @@ def _crosscheck_dataframe(result: Dict[str, Any]) -> "pd.DataFrame":
     return pd.DataFrame(rows)
 
 
-def _crosscheck_markdown_lines(result: Optional[Dict[str, Any]]) -> List[str]:
+def _crosscheck_markdown_lines(result: Optional[dict[str, Any]]) -> list[str]:
     """Render the cross-check as a Markdown report section."""
     if not result:
         return []
@@ -456,7 +456,7 @@ def _crosscheck_markdown_lines(result: Optional[Dict[str, Any]]) -> List[str]:
     return lines
 
 
-def _print_crosscheck_summary(result: Optional[Dict[str, Any]]) -> None:
+def _print_crosscheck_summary(result: Optional[dict[str, Any]]) -> None:
     """Print a concise cross-check summary to the console."""
     if not result:
         return
@@ -586,7 +586,7 @@ def main() -> None:
         df_recs = create_recommendations_sheet(services)
         df_recs = utils.prepare_dataframe_for_export(df_recs)
 
-        dataframes: Dict[str, Any] = {
+        dataframes: dict[str, Any] = {
             'Summary': df_summary,
             'Recommended Scripts': df_recs,
             'All Services': df_details,
@@ -630,7 +630,7 @@ def main() -> None:
 
     if choice == 'C':
         try:
-            from smart_scan.selector import interactive_select, QUESTIONARY_AVAILABLE
+            from smart_scan.selector import QUESTIONARY_AVAILABLE, interactive_select
             if QUESTIONARY_AVAILABLE:
                 selected_scripts = interactive_select(recommendations) or set()
             else:

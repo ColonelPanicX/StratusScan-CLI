@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,16 +31,16 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Redshift clusters to Excel")
 
-def load_redshift_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+def load_redshift_pricing_data(region: str = 'us-east-1') -> dict[str, Any]:
     """Load Redshift pricing data from the reference JSON file."""
-    pricing_data: Dict[str, Any] = {}
+    pricing_data: dict[str, Any] = {}
     try:
         script_dir = Path(__file__).parent.absolute()
         pricing_file = script_dir.parent / 'reference' / 'redshift-pricing.json'
         if not pricing_file.exists():
             utils.log_warning(f"Redshift pricing file not found at {pricing_file}")
             return pricing_data
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         partition = utils.detect_partition(region)
         pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
@@ -64,7 +64,7 @@ def load_redshift_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
 def calculate_redshift_monthly_cost(
     node_type: str,
     number_of_nodes: int,
-    pricing_data: Dict[str, Any],
+    pricing_data: dict[str, Any],
 ) -> Any:
     """Calculate total monthly cost for a Redshift cluster (per-node price × node count)."""
     if node_type not in pricing_data or not number_of_nodes:
@@ -79,7 +79,7 @@ def calculate_redshift_monthly_cost(
         return 'N/A'
 
 
-def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_redshift_clusters_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Redshift clusters in a single AWS region.
 
@@ -246,7 +246,7 @@ def scan_redshift_clusters_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Redshift clusters", default_return=[])
-def collect_redshift_clusters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_redshift_clusters(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Redshift cluster information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -260,7 +260,7 @@ def collect_redshift_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     return all_clusters
 
 
-def scan_redshift_snapshots_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_redshift_snapshots_in_region(region: str) -> list[dict[str, Any]]:
     """Scan Redshift snapshots in a single AWS region."""
     region_snapshots = []
 
@@ -348,7 +348,7 @@ def scan_redshift_snapshots_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Redshift snapshots", default_return=[])
-def collect_redshift_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_redshift_snapshots(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Redshift snapshot information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -362,7 +362,7 @@ def collect_redshift_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
     return all_snapshots
 
 
-def scan_redshift_parameter_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_redshift_parameter_groups_in_region(region: str) -> list[dict[str, Any]]:
     """Scan Redshift parameter groups in a single AWS region."""
     region_parameter_groups = []
 
@@ -398,7 +398,7 @@ def scan_redshift_parameter_groups_in_region(region: str) -> List[Dict[str, Any]
 
 
 @utils.aws_error_handler("Collecting Redshift parameter groups", default_return=[])
-def collect_redshift_parameter_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_redshift_parameter_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Redshift parameter group information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -412,7 +412,7 @@ def collect_redshift_parameter_groups(regions: List[str]) -> List[Dict[str, Any]
     return all_parameter_groups
 
 
-def scan_redshift_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_redshift_subnet_groups_in_region(region: str) -> list[dict[str, Any]]:
     """Scan Redshift subnet groups in a single AWS region."""
     region_subnet_groups = []
 
@@ -467,7 +467,7 @@ def scan_redshift_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Redshift subnet groups", default_return=[])
-def collect_redshift_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_redshift_subnet_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Redshift subnet group information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -481,10 +481,10 @@ def collect_redshift_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_subnet_groups
 
 
-def generate_summary(clusters: List[Dict[str, Any]],
-                     snapshots: List[Dict[str, Any]],
-                     parameter_groups: List[Dict[str, Any]],
-                     subnet_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(clusters: list[dict[str, Any]],
+                     snapshots: list[dict[str, Any]],
+                     parameter_groups: list[dict[str, Any]],
+                     subnet_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Redshift resources."""
     summary = []
 
@@ -605,7 +605,7 @@ def generate_summary(clusters: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Redshift data and write the Excel export."""
     # Collect data
     print("\n=== Collecting Redshift Data ===")

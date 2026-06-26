@@ -24,7 +24,7 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -42,7 +42,7 @@ utils.setup_logging('cost-anomaly-detection-export')
 
 
 @utils.aws_error_handler("Retrieving Anomaly Monitors", default_return=[])
-def get_anomaly_monitors() -> List[Dict[str, Any]]:
+def get_anomaly_monitors() -> list[dict[str, Any]]:
     """Get all anomaly monitors."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
@@ -69,7 +69,7 @@ def get_anomaly_monitors() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Retrieving Anomaly Subscriptions", default_return=[])
-def get_anomaly_subscriptions() -> List[Dict[str, Any]]:
+def get_anomaly_subscriptions() -> list[dict[str, Any]]:
     """Get all anomaly subscriptions."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
@@ -96,7 +96,7 @@ def get_anomaly_subscriptions() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Retrieving Anomalies", default_return=[])
-def get_anomalies(start_date: str, end_date: str, monitor_arn: str = None) -> List[Dict[str, Any]]:
+def get_anomalies(start_date: str, end_date: str, monitor_arn: str = None) -> list[dict[str, Any]]:
     """Get anomalies for a time period."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
@@ -132,7 +132,7 @@ def get_anomalies(start_date: str, end_date: str, monitor_arn: str = None) -> Li
     return anomalies
 
 
-def parse_monitor_expression(expression: Dict) -> str:
+def parse_monitor_expression(expression: dict) -> str:
     """Parse monitor expression into human-readable format."""
     if not expression:
         return "N/A"
@@ -171,7 +171,7 @@ def parse_monitor_expression(expression: Dict) -> str:
         return "Complex Expression (see JSON)"
 
 
-def classify_impact(impact: Dict) -> str:
+def classify_impact(impact: dict) -> str:
     """Classify anomaly impact level."""
     try:
         max_impact = float(impact.get('MaxImpact', 0))

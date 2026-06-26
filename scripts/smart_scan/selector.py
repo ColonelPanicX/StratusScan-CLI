@@ -7,7 +7,7 @@ Uses questionary library for rich checkbox/menu navigation.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Optional
 
 try:
     import utils
@@ -49,7 +49,7 @@ from .mapping import ALWAYS_RUN_SCRIPTS
 class SmartScanSelector:
     """Interactive selector for Smart Scan script recommendations."""
 
-    def __init__(self, recommendations: Dict[str, Any]):
+    def __init__(self, recommendations: dict[str, Any]):
         """
         Initialize the selector with recommendations.
 
@@ -63,7 +63,7 @@ class SmartScanSelector:
             )
 
         self.recommendations = recommendations
-        self.selected_scripts: Set[str] = set()
+        self.selected_scripts: set[str] = set()
 
     def show_welcome(self) -> None:
         """Display welcome message with Smart Scan stats."""
@@ -152,7 +152,7 @@ class SmartScanSelector:
 
         return confirm if confirm is not None else False
 
-    def custom_selection_by_category(self) -> Set[str]:
+    def custom_selection_by_category(self) -> set[str]:
         """
         Interactive category-based script selection.
 
@@ -220,7 +220,7 @@ class SmartScanSelector:
 
         return selected
 
-    def custom_selection_by_service(self) -> Set[str]:
+    def custom_selection_by_service(self) -> set[str]:
         """
         Interactive service-based script selection.
 
@@ -266,7 +266,7 @@ class SmartScanSelector:
 
         return selected
 
-    def custom_selection_menu(self) -> Set[str]:
+    def custom_selection_menu(self) -> set[str]:
         """
         Show custom selection menu and handle selection flow.
 
@@ -402,7 +402,7 @@ class SmartScanSelector:
             utils.log_error(f"Error saving checklist to {filename}", e)
             return False
 
-    def run_interactive(self) -> Optional[Set[str]]:
+    def run_interactive(self) -> Optional[set[str]]:
         """
         Run the complete interactive selection workflow.
 
@@ -457,7 +457,7 @@ class SmartScanSelector:
                 return None
 
 
-def interactive_select(recommendations: Dict[str, Any]) -> Optional[Set[str]]:
+def interactive_select(recommendations: dict[str, Any]) -> Optional[set[str]]:
     """
     Run interactive script selection.
 
