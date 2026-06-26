@@ -513,6 +513,7 @@ def get_menu_structure():
                         "11": {"name": "AWS Config", "file": scripts_dir / "config_export.py", "description": "Export Config rules and compliance"},
                     }
                 },
+                "3": {"name": "All Security & Compliance", "file": scripts_dir / "security_compliance_resources.py", "description": "Export all security & compliance resources in one report"},
             }
         },
         "4": {
@@ -528,6 +529,7 @@ def get_menu_structure():
                     "file": scripts_dir / "iam_identity_center_export.py",
                     "description": "Export IAM Identity Center users, groups, and permission sets"
                 },
+                "3": {"name": "All IAM Resources", "file": scripts_dir / "iam_resources.py", "description": "Export all IAM resources in one report"},
             }
         },
         "5": {
@@ -542,6 +544,7 @@ def get_menu_structure():
                 "7": {"name": "Reserved Instances", "file": scripts_dir / "reserved_instances_export.py", "description": "Export Reserved Instances"},
                 "8": {"name": "Cost Categories", "file": scripts_dir / "cost_categories_export.py", "description": "Export Cost Categories"},
                 "9": {"name": "Cost Anomaly Detection", "file": scripts_dir / "cost_anomaly_detection_export.py", "description": "Export Cost Anomaly Detection"},
+                "10": {"name": "All Cost Management", "file": scripts_dir / "cost_resources.py", "description": "Export all cost management resources in one report"},
             }
         },
         "6": {
@@ -558,6 +561,7 @@ def get_menu_structure():
                 "9": {"name": "Cloud Map", "file": scripts_dir / "cloudmap_export.py", "description": "Export Cloud Map service discovery"},
                 "10": {"name": "SES", "file": scripts_dir / "ses_export.py", "description": "Export SES email identities"},
                 "11": {"name": "SES & Pinpoint", "file": scripts_dir / "ses_pinpoint_export.py", "description": "Export SES and Pinpoint combined"},
+                "12": {"name": "All Application Services", "file": scripts_dir / "application_resources.py", "description": "Export all application services resources in one report"},
             }
         },
         "7": {
@@ -573,6 +577,7 @@ def get_menu_structure():
                 "8": {"name": "Rekognition", "file": scripts_dir / "rekognition_export.py", "description": "Export Rekognition computer vision"},
                 "9": {"name": "CloudWatch", "file": scripts_dir / "cloudwatch_export.py", "description": "Export CloudWatch alarms and logs"},
                 "10": {"name": "X-Ray", "file": scripts_dir / "xray_export.py", "description": "Export X-Ray distributed tracing"},
+                "11": {"name": "All Data & Analytics", "file": scripts_dir / "analytics_resources.py", "description": "Export all data & analytics resources in one report"},
             }
         },
         "8": {
@@ -582,6 +587,7 @@ def get_menu_structure():
                 "2": {"name": "CodePipeline", "file": scripts_dir / "codepipeline_export.py", "description": "Export CodePipeline pipelines"},
                 "3": {"name": "CodeCommit", "file": scripts_dir / "codecommit_export.py", "description": "Export CodeCommit repositories"},
                 "4": {"name": "CodeDeploy", "file": scripts_dir / "codedeploy_export.py", "description": "Export CodeDeploy applications"},
+                "5": {"name": "All DevOps Services", "file": scripts_dir / "devops_resources.py", "description": "Export all DevOps services resources in one report"},
             }
         },
         "9": {
@@ -594,6 +600,7 @@ def get_menu_structure():
                 "5": {"name": "AWS Marketplace", "file": scripts_dir / "marketplace_export.py", "description": "Export AWS Marketplace configuration"},
                 "6": {"name": "AWS Control Tower", "file": scripts_dir / "controltower_export.py", "description": "Export Control Tower landing zone"},
                 "7": {"name": "Systems Manager Fleet", "file": scripts_dir / "ssm_fleet_export.py", "description": "Export SSM managed instances"},
+                "8": {"name": "All Management & Governance", "file": scripts_dir / "governance_resources.py", "description": "Export all management & governance resources in one report"},
             }
         },
         "10": {
