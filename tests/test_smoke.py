@@ -44,6 +44,13 @@ _EXCLUDED = {
     "database_resources.py",
     "network_resources.py",
     "storage_resources.py",
+    "security_compliance_resources.py",
+    "iam_resources.py",
+    "cost_resources.py",
+    "application_resources.py",
+    "analytics_resources.py",
+    "devops_resources.py",
+    "governance_resources.py",
     "output_archive.py",
     "services_in_use_export.py",
 }
