@@ -302,7 +302,7 @@ def _load_s3_standard_rate() -> float:
     """Load S3 Standard storage rate from pricing JSON, falling back to built-in default."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 's3-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         return float(data.get('rates', {}).get('STANDARD', 0.023))
     except Exception:

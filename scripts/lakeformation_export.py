@@ -17,7 +17,7 @@ Output: Excel file with 5 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -30,7 +30,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Lake Formation resources and permissions to Excel")
 
-def _scan_lakeformation_resources_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lakeformation_resources_region(region: str) -> list[dict[str, Any]]:
     """Scan Lake Formation resources in a single region."""
     regional_resources = []
     try:
@@ -74,7 +74,7 @@ def _scan_lakeformation_resources_region(region: str) -> List[Dict[str, Any]]:
     return regional_resources
 
 
-def _scan_lakeformation_permissions_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lakeformation_permissions_region(region: str) -> list[dict[str, Any]]:
     """Scan Lake Formation permissions in a single region."""
     regional_permissions = []
     try:
@@ -167,7 +167,7 @@ def _scan_lakeformation_permissions_region(region: str) -> List[Dict[str, Any]]:
     return regional_permissions
 
 
-def _scan_lakeformation_settings_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lakeformation_settings_region(region: str) -> list[dict[str, Any]]:
     """Scan Lake Formation settings in a single region."""
     regional_settings = []
     try:
@@ -229,7 +229,7 @@ def _scan_lakeformation_settings_region(region: str) -> List[Dict[str, Any]]:
     return regional_settings
 
 
-def _scan_lakeformation_tags_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lakeformation_tags_region(region: str) -> list[dict[str, Any]]:
     """Scan Lake Formation LF-Tags in a single region."""
     regional_tags = []
     try:
@@ -259,7 +259,7 @@ def _scan_lakeformation_tags_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Lake Formation resources", default_return=[])
-def collect_lakeformation_resources(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lakeformation_resources(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Lake Formation registered resource information from AWS regions."""
     print("\n=== COLLECTING LAKE FORMATION RESOURCES ===")
     results = utils.scan_regions_concurrent(regions, _scan_lakeformation_resources_region)
@@ -269,7 +269,7 @@ def collect_lakeformation_resources(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Lake Formation permissions", default_return=[])
-def collect_lakeformation_permissions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lakeformation_permissions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Lake Formation permissions information from AWS regions."""
     print("\n=== COLLECTING LAKE FORMATION PERMISSIONS ===")
     results = utils.scan_regions_concurrent(regions, _scan_lakeformation_permissions_region)
@@ -279,7 +279,7 @@ def collect_lakeformation_permissions(regions: List[str]) -> List[Dict[str, Any]
 
 
 @utils.aws_error_handler("Collecting Lake Formation settings", default_return=[])
-def collect_lakeformation_settings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lakeformation_settings(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Lake Formation data lake settings from AWS regions."""
     print("\n=== COLLECTING LAKE FORMATION SETTINGS ===")
     results = utils.scan_regions_concurrent(regions, _scan_lakeformation_settings_region)
@@ -289,7 +289,7 @@ def collect_lakeformation_settings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Lake Formation tags", default_return=[])
-def collect_lakeformation_tags(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lakeformation_tags(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Lake Formation LF-Tag information from AWS regions."""
     print("\n=== COLLECTING LAKE FORMATION LF-TAGS ===")
     results = utils.scan_regions_concurrent(regions, _scan_lakeformation_tags_region)
@@ -298,10 +298,10 @@ def collect_lakeformation_tags(regions: List[str]) -> List[Dict[str, Any]]:
     return all_tags
 
 
-def generate_summary(resources: List[Dict[str, Any]],
-                     permissions: List[Dict[str, Any]],
-                     settings: List[Dict[str, Any]],
-                     tags: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(resources: list[dict[str, Any]],
+                     permissions: list[dict[str, Any]],
+                     settings: list[dict[str, Any]],
+                     tags: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Lake Formation resources."""
     summary = []
 
@@ -390,7 +390,7 @@ def generate_summary(resources: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Lake Formation data and write the Excel export."""
     # Collect data
     print("\n=== Collecting Lake Formation Data ===")

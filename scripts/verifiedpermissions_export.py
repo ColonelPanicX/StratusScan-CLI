@@ -24,7 +24,7 @@ Note: Verified Permissions is a regional service
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -42,7 +42,7 @@ utils.setup_logging('verifiedpermissions-export')
 
 
 @utils.aws_error_handler("Collecting policy stores", default_return=[])
-def collect_policy_stores(region: str) -> List[Dict[str, Any]]:
+def collect_policy_stores(region: str) -> list[dict[str, Any]]:
     """Collect all Verified Permissions policy stores in a region."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     stores = []
@@ -86,7 +86,7 @@ def collect_policy_stores(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting policies", default_return=[])
-def collect_policies(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_policies(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect policies for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     policies = []
@@ -133,7 +133,7 @@ def collect_policies(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting policy templates", default_return=[])
-def collect_policy_templates(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_policy_templates(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect policy templates for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     templates = []
@@ -159,7 +159,7 @@ def collect_policy_templates(region: str, policy_store_id: str) -> List[Dict[str
 
 
 @utils.aws_error_handler("Collecting identity sources", default_return=[])
-def collect_identity_sources(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_identity_sources(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect identity sources for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     sources = []
@@ -214,7 +214,7 @@ def collect_identity_sources(region: str, policy_store_id: str) -> List[Dict[str
     return sources
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Verified Permissions data and write the Excel export."""
     utils.log_info(f"Exporting Verified Permissions for account: {account_name} ({utils.mask_account_id(account_id)})")
 

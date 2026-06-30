@@ -14,7 +14,7 @@ Output: Multi-worksheet Excel file with Cognito resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Cognito user pools and identity pools to Excel")
 
-def scan_user_pools_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_user_pools_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pools in a single region.
 
@@ -169,7 +169,7 @@ def scan_user_pools_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Cognito user pools", default_return=[])
-def collect_user_pools(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pools(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito user pool information from AWS regions using concurrent scanning.
 
@@ -193,7 +193,7 @@ def collect_user_pools(regions: List[str]) -> List[Dict[str, Any]]:
     return all_pools
 
 
-def scan_identity_pools_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_identity_pools_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito identity pools in a single region.
 
@@ -268,7 +268,7 @@ def scan_identity_pools_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Cognito identity pools", default_return=[])
-def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_identity_pools(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito identity pool (federated identities) information using concurrent scanning.
 
@@ -292,7 +292,7 @@ def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
     return all_identity_pools
 
 
-def scan_user_pool_clients_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_user_pool_clients_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pool clients in a single region.
 
@@ -412,7 +412,7 @@ def scan_user_pool_clients_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting user pool clients", default_return=[])
-def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pool_clients(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito user pool client (app) information using concurrent scanning.
 
@@ -436,7 +436,7 @@ def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
     return all_clients
 
 
-def scan_identity_providers_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_identity_providers_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito identity providers in a single region.
 
@@ -542,7 +542,7 @@ def scan_identity_providers_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting identity providers", default_return=[])
-def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_identity_providers(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito identity provider information (SAML, OIDC, Social) using concurrent scanning.
 
@@ -566,7 +566,7 @@ def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
     return all_providers
 
 
-def scan_user_pool_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_user_pool_groups_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pool groups in a single region.
 
@@ -633,7 +633,7 @@ def scan_user_pool_groups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting user pool groups", default_return=[])
-def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pool_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito user pool group information using concurrent scanning.
 
@@ -657,11 +657,11 @@ def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_groups
 
 
-def generate_summary(user_pools: List[Dict[str, Any]],
-                     identity_pools: List[Dict[str, Any]],
-                     clients: List[Dict[str, Any]],
-                     providers: List[Dict[str, Any]],
-                     groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(user_pools: list[dict[str, Any]],
+                     identity_pools: list[dict[str, Any]],
+                     clients: list[dict[str, Any]],
+                     providers: list[dict[str, Any]],
+                     groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Cognito resources."""
     utils.log_info("Generating summary statistics...")
 

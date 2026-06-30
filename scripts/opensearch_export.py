@@ -19,7 +19,7 @@ Output: Excel file with 3 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -32,16 +32,16 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon OpenSearch Service domains to Excel")
 
-def load_opensearch_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+def load_opensearch_pricing_data(region: str = 'us-east-1') -> dict[str, Any]:
     """Load OpenSearch pricing data from the reference JSON file."""
-    pricing_data: Dict[str, Any] = {}
+    pricing_data: dict[str, Any] = {}
     try:
         script_dir = Path(__file__).parent.absolute()
         pricing_file = script_dir.parent / 'reference' / 'opensearch-pricing.json'
         if not pricing_file.exists():
             utils.log_warning(f"OpenSearch pricing file not found at {pricing_file}")
             return pricing_data
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         partition = utils.detect_partition(region)
         pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
@@ -65,7 +65,7 @@ def load_opensearch_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
 def calculate_opensearch_monthly_cost(
     instance_type: str,
     instance_count: int,
-    pricing_data: Dict[str, Any],
+    pricing_data: dict[str, Any],
 ) -> Any:
     """Calculate monthly cost for OpenSearch data nodes (excludes dedicated masters and warm nodes)."""
     # Strip .search suffix: 'm6g.large.search' -> 'm6g.large'
@@ -82,7 +82,7 @@ def calculate_opensearch_monthly_cost(
         return 'N/A'
 
 
-def scan_opensearch_domains_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_opensearch_domains_in_region(region: str) -> list[dict[str, Any]]:
     """Scan OpenSearch domains in a single AWS region."""
     region_domains = []
     pricing_data = load_opensearch_pricing_data(region)
@@ -277,7 +277,7 @@ def scan_opensearch_domains_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting OpenSearch domains", default_return=[])
-def collect_opensearch_domains(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_opensearch_domains(regions: list[str]) -> list[dict[str, Any]]:
     """Collect OpenSearch Service domain information from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -291,7 +291,7 @@ def collect_opensearch_domains(regions: List[str]) -> List[Dict[str, Any]]:
     return all_domains
 
 
-def scan_opensearch_tags_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_opensearch_tags_in_region(region: str) -> list[dict[str, Any]]:
     """Scan OpenSearch domain tags in a single AWS region."""
     region_tags = []
 
@@ -346,7 +346,7 @@ def scan_opensearch_tags_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting OpenSearch domain tags", default_return=[])
-def collect_opensearch_tags(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_opensearch_tags(regions: list[str]) -> list[dict[str, Any]]:
     """Collect OpenSearch Service domain tags from AWS regions."""
     utils.log_info("Using concurrent region scanning for improved performance")
 
@@ -360,7 +360,7 @@ def collect_opensearch_tags(regions: List[str]) -> List[Dict[str, Any]]:
     return all_tags
 
 
-def generate_summary(domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(domains: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for OpenSearch domains."""
     summary = []
 
@@ -497,7 +497,7 @@ def generate_summary(domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect OpenSearch data and write the Excel export."""
     # Collect data
     print("\n=== Collecting OpenSearch Data ===")

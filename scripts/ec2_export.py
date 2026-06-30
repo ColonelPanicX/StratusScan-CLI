@@ -224,7 +224,7 @@ def load_pricing_data(region='us-east-1'):
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8') as f:
+        with open(pricing_file, encoding='utf-8') as f:
             json_data = json.load(f)
 
         partition = utils.detect_partition(region)
@@ -267,7 +267,7 @@ def load_storage_pricing_data():
             utils.log_warning(f"Storage pricing file not found at {pricing_file}")
             return storage_pricing
 
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         storage_pricing = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded storage pricing data for {len(storage_pricing)} volume types")

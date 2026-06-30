@@ -21,7 +21,7 @@ Output: Multi-worksheet Excel file with:
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -35,7 +35,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Control Tower landing zone configuration to Excel")
 
 @utils.aws_error_handler("Collecting landing zone information", default_return={})
-def collect_landing_zone() -> Dict[str, Any]:
+def collect_landing_zone() -> dict[str, Any]:
     """Collect AWS Control Tower landing zone information (global service)."""
     print("\n=== COLLECTING LANDING ZONE INFORMATION ===")
 
@@ -98,7 +98,7 @@ def collect_landing_zone() -> Dict[str, Any]:
 
 
 @utils.aws_error_handler("Collecting organizational units", default_return=[])
-def collect_organizational_units() -> List[Dict[str, Any]]:
+def collect_organizational_units() -> list[dict[str, Any]]:
     """Collect organizational units from AWS Organizations."""
     print("\n=== COLLECTING ORGANIZATIONAL UNITS ===")
     all_ous = []
@@ -195,9 +195,7 @@ def extract_service_from_control_identifier(control_id: str) -> str:
         return 'DynamoDB'
     elif 'EBS' in control_id.upper():
         return 'EBS'
-    elif 'ELB' in control_id.upper():
-        return 'ELB'
-    elif 'ELASTICLOADBALANCING' in control_id.upper():
+    elif 'ELB' in control_id.upper() or 'ELASTICLOADBALANCING' in control_id.upper():
         return 'ELB'
     elif 'REDSHIFT' in control_id.upper():
         return 'Redshift'
@@ -226,7 +224,7 @@ def extract_service_from_control_identifier(control_id: str) -> str:
 
 
 @utils.aws_error_handler("Collecting enabled controls", default_return=[])
-def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_enabled_controls(ous: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect enabled controls for all organizational units."""
     print("\n=== COLLECTING ENABLED CONTROLS ===")
     all_controls = []
@@ -369,9 +367,9 @@ def collect_enabled_controls(ous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return all_controls
 
 
-def generate_summary(landing_zone: Dict[str, Any],
-                     ous: List[Dict[str, Any]],
-                     controls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(landing_zone: dict[str, Any],
+                     ous: list[dict[str, Any]],
+                     controls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Control Tower resources."""
     utils.log_info("Generating summary statistics...")
 

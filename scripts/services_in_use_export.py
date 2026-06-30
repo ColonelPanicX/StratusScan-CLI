@@ -25,7 +25,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import boto3
 from botocore.config import Config as BotocoreConfig
@@ -844,7 +844,7 @@ SERVICE_CHECKS = {
 
 
 # Flat map from service name → config dict for O(1) lookup in _enrich_with_detail.
-_SERVICE_CONFIG_FLAT: Dict[str, dict] = {
+_SERVICE_CONFIG_FLAT: dict[str, dict] = {
     service_name: config
     for category_services in SERVICE_CHECKS.values()
     for service_name, config in category_services.items()
@@ -942,7 +942,7 @@ def _stop_heartbeat(stop_event, thread) -> None:
     thread.join()
 
 
-def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
+def check_service_in_region(service_name: str, config: dict, region: str) -> tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
 
@@ -964,9 +964,9 @@ def check_service_in_region(service_name: str, config: dict, region: str) -> Tup
 
 
 def _enrich_with_detail(
-    services: Dict[str, Dict[str, Any]],
-    regions: List[str],
-    errors: Dict[str, List[str]],
+    services: dict[str, dict[str, Any]],
+    regions: list[str],
+    errors: dict[str, list[str]],
 ) -> None:
     """
     Second pass (Deep Scan only): add asset breakdown to detected services.
@@ -980,7 +980,7 @@ def _enrich_with_detail(
         if config is None or 'detail' not in config:
             continue
 
-        aggregated: Dict[str, int] = {}
+        aggregated: dict[str, int] = {}
         check_regions = list(data['regions'].keys()) if data['regional'] else regions[:1]
 
         for region in check_regions:
@@ -997,10 +997,10 @@ def _enrich_with_detail(
 
 
 def discover_services(
-    regions: List[str],
+    regions: list[str],
     mode: str = 'quick',
     errors_out=None,
-) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
     """
     Discover all services in use across regions using concurrent scanning.
 
@@ -1018,7 +1018,7 @@ def discover_services(
     utils.log_info("Starting concurrent service discovery across all categories...")
 
     all_services = {}
-    errors: Dict[str, List[str]] = {}
+    errors: dict[str, list[str]] = {}
     total_services = sum(len(services) for services in SERVICE_CHECKS.values())
     completed = 0
 
@@ -1123,7 +1123,7 @@ def discover_services(
     return all_services, errors
 
 
-def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(services: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics."""
     summary = []
 
@@ -1157,7 +1157,7 @@ def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
     return summary
 
 
-def create_detailed_export(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+def create_detailed_export(services: dict[str, dict[str, Any]]) -> pd.DataFrame:
     """Create detailed services DataFrame."""
     rows = []
 
@@ -1178,7 +1178,7 @@ def create_detailed_export(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
+def create_category_sheets(services: dict[str, dict[str, Any]]) -> dict[str, pd.DataFrame]:
     """Create separate sheets for each category."""
     sheets = {}
 
@@ -1207,7 +1207,7 @@ def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.
     return sheets
 
 
-def create_recommendations_sheet(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+def create_recommendations_sheet(services: dict[str, dict[str, Any]]) -> pd.DataFrame:
     """
     Generate Smart Scan recommendations based on discovered services.
 

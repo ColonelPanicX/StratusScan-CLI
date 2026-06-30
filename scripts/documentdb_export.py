@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,11 +31,11 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon DocumentDB clusters to Excel")
 
-def load_documentdb_pricing_data(region: str) -> Dict[str, float]:
+def load_documentdb_pricing_data(region: str) -> dict[str, float]:
     """Load DocumentDB on-demand monthly pricing for the given region's partition."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'documentdb-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)
@@ -50,7 +50,7 @@ def load_documentdb_pricing_data(region: str) -> Dict[str, float]:
         return {}
 
 
-def calculate_documentdb_instance_monthly_cost(instance_class: str, pricing_data: Dict[str, float]):
+def calculate_documentdb_instance_monthly_cost(instance_class: str, pricing_data: dict[str, float]):
     """Return monthly on-demand cost for a single DocumentDB instance, or 'N/A'."""
     monthly = pricing_data.get(instance_class)
     if monthly is None:
@@ -58,7 +58,7 @@ def calculate_documentdb_instance_monthly_cost(instance_class: str, pricing_data
     return round(float(monthly), 2)
 
 
-def _scan_documentdb_clusters_region(region: str) -> List[Dict[str, Any]]:
+def _scan_documentdb_clusters_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for DocumentDB clusters."""
     clusters_data = []
 
@@ -169,7 +169,7 @@ def _scan_documentdb_clusters_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DocumentDB clusters", default_return=[])
-def collect_documentdb_clusters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_documentdb_clusters(regions: list[str]) -> list[dict[str, Any]]:
     """Collect DocumentDB cluster information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_documentdb_clusters_region)
     all_clusters = [cluster for result in results for cluster in result]
@@ -177,7 +177,7 @@ def collect_documentdb_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     return all_clusters
 
 
-def _scan_documentdb_instances_region(region: str) -> List[Dict[str, Any]]:
+def _scan_documentdb_instances_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for DocumentDB instances."""
     instances_data = []
     pricing_data = load_documentdb_pricing_data(region)
@@ -263,7 +263,7 @@ def _scan_documentdb_instances_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DocumentDB instances", default_return=[])
-def collect_documentdb_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_documentdb_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect DocumentDB instance information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_documentdb_instances_region)
     all_instances = [instance for result in results for instance in result]
@@ -271,7 +271,7 @@ def collect_documentdb_instances(regions: List[str]) -> List[Dict[str, Any]]:
     return all_instances
 
 
-def _scan_documentdb_snapshots_region(region: str) -> List[Dict[str, Any]]:
+def _scan_documentdb_snapshots_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for DocumentDB cluster snapshots."""
     snapshots_data = []
 
@@ -346,7 +346,7 @@ def _scan_documentdb_snapshots_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DocumentDB snapshots", default_return=[])
-def collect_documentdb_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_documentdb_snapshots(regions: list[str]) -> list[dict[str, Any]]:
     """Collect DocumentDB cluster snapshot information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_documentdb_snapshots_region)
     all_snapshots = [snapshot for result in results for snapshot in result]
@@ -354,7 +354,7 @@ def collect_documentdb_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
     return all_snapshots
 
 
-def _scan_documentdb_subnet_groups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_documentdb_subnet_groups_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for DocumentDB subnet groups."""
     subnet_groups_data = []
 
@@ -411,7 +411,7 @@ def _scan_documentdb_subnet_groups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DocumentDB subnet groups", default_return=[])
-def collect_documentdb_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_documentdb_subnet_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect DocumentDB subnet group information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_documentdb_subnet_groups_region)
     all_subnet_groups = [sg for result in results for sg in result]
@@ -419,10 +419,10 @@ def collect_documentdb_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]
     return all_subnet_groups
 
 
-def generate_summary(clusters: List[Dict[str, Any]],
-                     instances: List[Dict[str, Any]],
-                     snapshots: List[Dict[str, Any]],
-                     subnet_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(clusters: list[dict[str, Any]],
+                     instances: list[dict[str, Any]],
+                     snapshots: list[dict[str, Any]],
+                     subnet_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for DocumentDB resources."""
     summary = []
 
@@ -516,7 +516,7 @@ def generate_summary(clusters: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect DocumentDB data and write the Excel export."""
     print("\n=== Collecting DocumentDB Data ===")
     clusters = collect_documentdb_clusters(regions)

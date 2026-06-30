@@ -14,7 +14,7 @@ Output: Multi-worksheet Excel file with Cloud Map resources
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Cloud Map namespaces and services to Excel")
 
-def _scan_namespaces_region(region: str) -> List[Dict[str, Any]]:
+def _scan_namespaces_region(region: str) -> list[dict[str, Any]]:
     """Scan Cloud Map namespaces in a single region."""
     regional_namespaces = []
     sd_client = utils.get_boto3_client('servicediscovery', region_name=region)
@@ -88,7 +88,7 @@ def _scan_namespaces_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Cloud Map namespaces", default_return=[])
-def collect_namespaces(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_namespaces(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Cloud Map namespace information from AWS regions."""
     print("\n=== COLLECTING CLOUD MAP NAMESPACES ===")
     results = utils.scan_regions_concurrent(regions, _scan_namespaces_region)
@@ -97,7 +97,7 @@ def collect_namespaces(regions: List[str]) -> List[Dict[str, Any]]:
     return all_namespaces
 
 
-def _scan_services_region(region: str) -> List[Dict[str, Any]]:
+def _scan_services_region(region: str) -> list[dict[str, Any]]:
     """Scan Cloud Map services in a single region."""
     regional_services = []
     sd_client = utils.get_boto3_client('servicediscovery', region_name=region)
@@ -171,7 +171,7 @@ def _scan_services_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Cloud Map services", default_return=[])
-def collect_services(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_services(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Cloud Map service information from AWS regions."""
     print("\n=== COLLECTING CLOUD MAP SERVICES ===")
     results = utils.scan_regions_concurrent(regions, _scan_services_region)
@@ -180,7 +180,7 @@ def collect_services(regions: List[str]) -> List[Dict[str, Any]]:
     return all_services
 
 
-def _scan_service_instances_region(region: str) -> List[Dict[str, Any]]:
+def _scan_service_instances_region(region: str) -> list[dict[str, Any]]:
     """Scan service instances in a single region."""
     regional_instances = []
     sd_client = utils.get_boto3_client('servicediscovery', region_name=region)
@@ -227,7 +227,7 @@ def _scan_service_instances_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting service instances", default_return=[])
-def collect_service_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_service_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect service instance information from AWS regions."""
     print("\n=== COLLECTING SERVICE INSTANCES ===")
     results = utils.scan_regions_concurrent(regions, _scan_service_instances_region)
@@ -236,9 +236,9 @@ def collect_service_instances(regions: List[str]) -> List[Dict[str, Any]]:
     return all_instances
 
 
-def generate_summary(namespaces: List[Dict[str, Any]],
-                     services: List[Dict[str, Any]],
-                     instances: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(namespaces: list[dict[str, Any]],
+                     services: list[dict[str, Any]],
+                     instances: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Cloud Map resources."""
     utils.log_info("Generating summary statistics...")
 

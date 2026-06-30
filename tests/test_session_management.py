@@ -4,7 +4,9 @@ Test script for new session management and partition awareness features.
 """
 
 import pytest
+
 import utils
+
 
 def test_detect_partition():
     """Test partition detection."""

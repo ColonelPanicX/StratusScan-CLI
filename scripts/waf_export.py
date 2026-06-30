@@ -27,7 +27,7 @@ Note: This exports WAFv2 (latest version). WAF Classic is deprecated.
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -49,7 +49,7 @@ args = utils.parse_script_args("Export AWS WAF web ACLs and rules to Excel")
 
 
 @utils.aws_error_handler("Collecting WAF web ACLs from region", default_return=[])
-def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF web ACL information from a single AWS region.
 
@@ -142,7 +142,7 @@ def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> List[D
     return web_acls_data
 
 
-def collect_web_acls(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_web_acls(regions: list[str], scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF web ACL information from AWS regions using concurrent scanning.
 
@@ -162,7 +162,7 @@ def collect_web_acls(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[s
     utils.log_info(f"Scanning {len(regions)} regions...")
 
     # Use concurrent scanning with a wrapper that passes the scope parameter
-    def scan_region_with_scope(region: str) -> List[Dict[str, Any]]:
+    def scan_region_with_scope(region: str) -> list[dict[str, Any]]:
         return collect_web_acls_from_region(region, scope)
 
     region_results = utils.scan_regions_concurrent(
@@ -180,7 +180,7 @@ def collect_web_acls(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[s
 
 
 @utils.aws_error_handler("Collecting WAF rules from region", default_return=[])
-def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF rule information from web ACLs in a single AWS region.
 
@@ -299,7 +299,7 @@ def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> List[
     return rules_data
 
 
-def collect_waf_rules(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_waf_rules(regions: list[str], scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF rule information from web ACLs using concurrent scanning.
 
@@ -319,7 +319,7 @@ def collect_waf_rules(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[
     utils.log_info(f"Scanning {len(regions)} regions...")
 
     # Use concurrent scanning with a wrapper that passes the scope parameter
-    def scan_region_with_scope(region: str) -> List[Dict[str, Any]]:
+    def scan_region_with_scope(region: str) -> list[dict[str, Any]]:
         return collect_waf_rules_from_region(region, scope)
 
     region_results = utils.scan_regions_concurrent(
@@ -337,7 +337,7 @@ def collect_waf_rules(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[
 
 
 @utils.aws_error_handler("Collecting IP sets from region", default_return=[])
-def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF IP set information from a single AWS region.
 
@@ -404,7 +404,7 @@ def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> List[Di
     return ip_sets_data
 
 
-def collect_ip_sets(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_ip_sets(regions: list[str], scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF IP set information using concurrent scanning.
 
@@ -424,7 +424,7 @@ def collect_ip_sets(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[st
     utils.log_info(f"Scanning {len(regions)} regions...")
 
     # Use concurrent scanning with a wrapper that passes the scope parameter
-    def scan_region_with_scope(region: str) -> List[Dict[str, Any]]:
+    def scan_region_with_scope(region: str) -> list[dict[str, Any]]:
         return collect_ip_sets_from_region(region, scope)
 
     region_results = utils.scan_regions_concurrent(
@@ -442,7 +442,7 @@ def collect_ip_sets(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[st
 
 
 @utils.aws_error_handler("Collecting rule groups from region", default_return=[])
-def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF rule group information from a single AWS region.
 
@@ -506,7 +506,7 @@ def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> Lis
     return rule_groups_data
 
 
-def collect_rule_groups(regions: List[str], scope: str = 'REGIONAL') -> List[Dict[str, Any]]:
+def collect_rule_groups(regions: list[str], scope: str = 'REGIONAL') -> list[dict[str, Any]]:
     """
     Collect WAF rule group information using concurrent scanning.
 
@@ -524,7 +524,7 @@ def collect_rule_groups(regions: List[str], scope: str = 'REGIONAL') -> List[Dic
 
     utils.log_info(f"Scanning {len(regions)} regions...")
 
-    def scan_region_with_scope(region: str) -> List[Dict[str, Any]]:
+    def scan_region_with_scope(region: str) -> list[dict[str, Any]]:
         return collect_rule_groups_from_region(region, scope)
 
     region_results = utils.scan_regions_concurrent(

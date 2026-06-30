@@ -23,7 +23,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -44,7 +44,7 @@ except ImportError:
 args = utils.parse_script_args("Export Systems Manager fleet and patch data to Excel")
 
 
-def _scan_managed_instances_region(region: str) -> List[Dict[str, Any]]:
+def _scan_managed_instances_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SSM managed instances."""
     instances_data = []
 
@@ -131,7 +131,7 @@ def _scan_managed_instances_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SSM managed instances", default_return=[])
-def collect_managed_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_managed_instances(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect SSM managed instance information from AWS regions.
 
@@ -148,7 +148,7 @@ def collect_managed_instances(regions: List[str]) -> List[Dict[str, Any]]:
     return all_instances
 
 
-def _scan_patch_compliance_region(region: str) -> List[Dict[str, Any]]:
+def _scan_patch_compliance_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SSM patch compliance."""
     compliance_data = []
 
@@ -229,7 +229,7 @@ def _scan_patch_compliance_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SSM patch compliance", default_return=[])
-def collect_patch_compliance(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_patch_compliance(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect SSM patch compliance information from AWS regions.
 
@@ -246,7 +246,7 @@ def collect_patch_compliance(regions: List[str]) -> List[Dict[str, Any]]:
     return all_compliance
 
 
-def _scan_ssm_parameters_region(region: str) -> List[Dict[str, Any]]:
+def _scan_ssm_parameters_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for SSM parameters."""
     parameters_data = []
 
@@ -312,7 +312,7 @@ def _scan_ssm_parameters_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SSM parameters", default_return=[])
-def collect_ssm_parameters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ssm_parameters(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect SSM Parameter Store parameters from AWS regions.
 

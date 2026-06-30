@@ -31,7 +31,7 @@ Cost Awareness:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -52,7 +52,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Direct Connect connections and virtual interfaces to Excel")
 
 
-def _scan_connections_region(region: str) -> List[Dict[str, Any]]:
+def _scan_connections_region(region: str) -> list[dict[str, Any]]:
     """Scan Direct Connect connections in a single region."""
     regional_connections = []
 
@@ -112,7 +112,7 @@ def _scan_connections_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Direct Connect connections", default_return=[])
-def collect_connections(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_connections(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect connection information from AWS regions.
 
@@ -129,7 +129,7 @@ def collect_connections(regions: List[str]) -> List[Dict[str, Any]]:
     return all_connections
 
 
-def _scan_virtual_interfaces_region(region: str) -> List[Dict[str, Any]]:
+def _scan_virtual_interfaces_region(region: str) -> list[dict[str, Any]]:
     """Scan Direct Connect virtual interfaces in a single region."""
     regional_vifs = []
 
@@ -202,7 +202,7 @@ def _scan_virtual_interfaces_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Virtual Interfaces", default_return=[])
-def collect_virtual_interfaces(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_virtual_interfaces(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect virtual interface information from AWS regions.
 
@@ -219,7 +219,7 @@ def collect_virtual_interfaces(regions: List[str]) -> List[Dict[str, Any]]:
     return all_vifs
 
 
-def _scan_lags_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lags_region(region: str) -> list[dict[str, Any]]:
     """Scan Direct Connect LAGs in a single region."""
     regional_lags = []
 
@@ -287,7 +287,7 @@ def _scan_lags_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting LAGs", default_return=[])
-def collect_lags(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lags(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect Link Aggregation Group (LAG) information from AWS regions.
 
@@ -305,7 +305,7 @@ def collect_lags(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Direct Connect Gateways", default_return=[])
-def collect_directconnect_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_directconnect_gateways(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect Gateway information from AWS regions.
 
@@ -361,7 +361,7 @@ def collect_directconnect_gateways(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Virtual Gateway Associations", default_return=[])
-def collect_virtual_gateway_associations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_virtual_gateway_associations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect Gateway virtual private gateway associations.
 
@@ -431,7 +431,7 @@ def collect_virtual_gateway_associations(regions: List[str]) -> List[Dict[str, A
 
 
 @utils.aws_error_handler("Collecting Transit Gateway Associations", default_return=[])
-def collect_transit_gateway_associations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_associations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Direct Connect Gateway transit gateway associations.
 
@@ -500,7 +500,7 @@ def collect_transit_gateway_associations(regions: List[str]) -> List[Dict[str, A
     return all_associations
 
 
-def create_summary(data_frames: Dict[str, Any]) -> List[Dict[str, Any]]:
+def create_summary(data_frames: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Create summary statistics for Direct Connect resources.
 

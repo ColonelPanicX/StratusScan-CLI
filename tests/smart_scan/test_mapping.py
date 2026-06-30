@@ -4,10 +4,11 @@ Comprehensive tests for smart_scan.mapping module.
 Tests service-to-script mapping, aliases, and categorization.
 """
 
-import sys
 import os
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add scripts directory to path
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "scripts"))
@@ -15,13 +16,13 @@ if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
 from smart_scan.mapping import (
-    SERVICE_SCRIPT_MAP,
-    SERVICE_ALIASES,
-    SCRIPT_CATEGORIES,
     ALWAYS_RUN_SCRIPTS,
+    SCRIPT_CATEGORIES,
+    SERVICE_ALIASES,
+    SERVICE_SCRIPT_MAP,
     get_canonical_service_name,
-    get_scripts_for_service,
     get_category_for_script,
+    get_scripts_for_service,
 )
 
 

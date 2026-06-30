@@ -25,7 +25,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,7 +46,7 @@ except ImportError:
 args = utils.parse_script_args("Export Elastic Container Registry repositories and images to Excel")
 
 
-def scan_ecr_repositories_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_ecr_repositories_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR repositories in a single region.
 
@@ -127,7 +127,7 @@ def scan_ecr_repositories_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ECR repositories", default_return=[])
-def collect_ecr_repositories(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ecr_repositories(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECR repository information from AWS regions using concurrent scanning.
 
@@ -151,7 +151,7 @@ def collect_ecr_repositories(regions: List[str]) -> List[Dict[str, Any]]:
     return all_repos
 
 
-def scan_ecr_images_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_ecr_images_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR images in a single region.
 
@@ -240,7 +240,7 @@ def scan_ecr_images_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ECR images", default_return=[])
-def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ecr_images(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECR image information from AWS regions using concurrent scanning.
 
@@ -264,7 +264,7 @@ def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
     return all_images
 
 
-def scan_lifecycle_policies_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_lifecycle_policies_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR lifecycle policies in a single region.
 
@@ -338,7 +338,7 @@ def scan_lifecycle_policies_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting lifecycle policies", default_return=[])
-def collect_lifecycle_policies(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lifecycle_policies(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECR lifecycle policy information from AWS regions using concurrent scanning.
 

@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,7 +45,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Backup plans, vaults, and jobs to Excel")
 
 
-def _scan_backup_vaults_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_vaults_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup vaults."""
     vaults_data = []
 
@@ -97,7 +97,7 @@ def _scan_backup_vaults_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup vaults", default_return=[])
-def collect_backup_vaults(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_vaults(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup vault information from AWS regions.
 
@@ -117,7 +117,7 @@ def collect_backup_vaults(regions: List[str]) -> List[Dict[str, Any]]:
     return all_vaults
 
 
-def _scan_backup_plans_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_plans_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup plans."""
     plans_data = []
 
@@ -185,7 +185,7 @@ def _scan_backup_plans_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup plans", default_return=[])
-def collect_backup_plans(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_plans(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup plan information from AWS regions.
 
@@ -205,7 +205,7 @@ def collect_backup_plans(regions: List[str]) -> List[Dict[str, Any]]:
     return all_plans
 
 
-def _scan_backup_selections_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_selections_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup selections."""
     selections_data = []
 
@@ -258,7 +258,7 @@ def _scan_backup_selections_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup selections", default_return=[])
-def collect_backup_selections(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_selections(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup selection information from AWS regions.
 
@@ -278,7 +278,7 @@ def collect_backup_selections(regions: List[str]) -> List[Dict[str, Any]]:
     return all_selections
 
 
-def _scan_backup_jobs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_jobs_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup jobs."""
     jobs_data = []
 
@@ -321,7 +321,7 @@ def _scan_backup_jobs_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup jobs", default_return=[])
-def collect_backup_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup job information from AWS regions.
 

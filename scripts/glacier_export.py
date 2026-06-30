@@ -16,7 +16,7 @@ Output: Multi-worksheet Excel file with Glacier resources
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -29,7 +29,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export S3 Glacier vaults to Excel")
 
-def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
+def _scan_vaults_region(region: str) -> list[dict[str, Any]]:
     """Scan Glacier vaults in a single region."""
     regional_vaults = []
     glacier_client = utils.get_boto3_client('glacier', region_name=region)
@@ -121,7 +121,7 @@ def _scan_vaults_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Glacier vaults", default_return=[])
-def collect_vaults(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_vaults(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Glacier vault information from AWS regions."""
     print("\n=== COLLECTING GLACIER VAULTS ===")
     results = utils.scan_regions_concurrent(regions, _scan_vaults_region)
@@ -130,7 +130,7 @@ def collect_vaults(regions: List[str]) -> List[Dict[str, Any]]:
     return all_vaults
 
 
-def generate_summary(vaults: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(vaults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Glacier resources."""
     utils.log_info("Generating summary statistics...")
 

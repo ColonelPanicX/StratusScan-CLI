@@ -7,7 +7,6 @@ StratusScan export scripts. Includes service aliases and categorization.
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ ALWAYS_RUN_SCRIPTS = [
 
 # Service name aliases and variations
 # Maps common service name variations to canonical names
-SERVICE_ALIASES: Dict[str, str] = {
+SERVICE_ALIASES: dict[str, str] = {
     # EC2 and Compute
     "ec2": "Amazon Elastic Compute Cloud",
     "amazon ec2": "Amazon Elastic Compute Cloud",
@@ -177,7 +176,7 @@ SERVICE_ALIASES: Dict[str, str] = {
 # Primary mapping: Service name → list of export scripts
 # Only references scripts that exist on disk. Entries for services whose
 # scripts have not yet been created are omitted until those scripts are added.
-SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
+SERVICE_SCRIPT_MAP: dict[str, list[str]] = {
     # Compute Services
     "Amazon Elastic Compute Cloud": [
         "ec2_export.py",
@@ -329,7 +328,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
 }
 
 # Script categories for organization
-SCRIPT_CATEGORIES: Dict[str, List[str]] = {
+SCRIPT_CATEGORIES: dict[str, list[str]] = {
     "Security & Compliance": [
         "iam_export.py",
         "guardduty_export.py",
@@ -448,7 +447,7 @@ SCRIPT_CATEGORIES: Dict[str, List[str]] = {
 }
 
 
-def get_all_scripts() -> Set[str]:
+def get_all_scripts() -> set[str]:
     """Get a set of all unique script names from the mapping."""
     scripts = set()
     for script_list in SERVICE_SCRIPT_MAP.values():
@@ -479,7 +478,7 @@ def get_canonical_service_name(service_name: str) -> str:
     return service_name
 
 
-def get_scripts_for_service(service_name: str) -> List[str]:
+def get_scripts_for_service(service_name: str) -> list[str]:
     """
     Get export scripts for a given service name.
 
@@ -509,7 +508,7 @@ def get_category_for_script(script_name: str) -> str:
     return "Other"
 
 
-def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
+def validate_script_mappings(scripts_dir: Path = None) -> dict[str, list[str]]:
     """
     Validate that all scripts referenced in SERVICE_SCRIPT_MAP exist on disk.
 
@@ -529,7 +528,7 @@ def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
         # so the scripts dir is two levels up from this file
         scripts_dir = Path(__file__).parent.parent
 
-    result: Dict[str, List[str]] = {"missing": [], "found": []}
+    result: dict[str, list[str]] = {"missing": [], "found": []}
 
     for script in get_all_scripts():
         script_path = scripts_dir / script

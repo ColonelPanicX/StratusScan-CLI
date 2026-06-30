@@ -25,7 +25,7 @@ import datetime
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,7 +46,7 @@ except ImportError:
 args = utils.parse_script_args("Export Amazon FSx file systems to Excel")
 
 
-def _load_fsx_pricing() -> Dict[str, float]:
+def _load_fsx_pricing() -> dict[str, float]:
     """Load FSx per-GB-month storage rates from pricing JSON."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'fsx-pricing.json'
     defaults = {
@@ -56,7 +56,7 @@ def _load_fsx_pricing() -> Dict[str, float]:
         'OPENZFS_SSD': 0.09, 'OPENZFS_HDD': 0.025,
     }
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         rates = data.get('rates', {})
         if rates:
@@ -70,7 +70,7 @@ def calculate_fsx_monthly_cost(
     file_system_type: str,
     storage_type: str,
     storage_capacity_gb: int,
-    pricing: Dict[str, float],
+    pricing: dict[str, float],
 ) -> float:
     """Return estimated monthly storage cost for an FSx file system."""
     key = f"{file_system_type}_{storage_type}"
@@ -80,7 +80,7 @@ def calculate_fsx_monthly_cost(
     return round(float(storage_capacity_gb) * rate, 2)
 
 
-def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
+def _scan_fsx_file_systems_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for FSx file systems."""
     file_systems_data = []
 
@@ -201,7 +201,7 @@ def _scan_fsx_file_systems_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting FSx file systems", default_return=[])
-def collect_fsx_file_systems(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_fsx_file_systems(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect FSx file system information from AWS regions.
 
@@ -218,7 +218,7 @@ def collect_fsx_file_systems(regions: List[str]) -> List[Dict[str, Any]]:
     return all_file_systems
 
 
-def _scan_fsx_backups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_fsx_backups_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for FSx backups."""
     backups_data = []
 
@@ -279,7 +279,7 @@ def _scan_fsx_backups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting FSx backups", default_return=[])
-def collect_fsx_backups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_fsx_backups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect FSx backup information from AWS regions.
 

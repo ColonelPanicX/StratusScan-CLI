@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,7 +45,7 @@ except ImportError:
 args = utils.parse_script_args("Export DynamoDB tables and capacity to Excel")
 
 
-def scan_dynamodb_tables_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_dynamodb_tables_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan DynamoDB tables in a single region.
 
@@ -180,7 +180,7 @@ def scan_dynamodb_tables_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DynamoDB tables", default_return=[])
-def collect_dynamodb_tables(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_dynamodb_tables(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect DynamoDB table information from AWS regions using concurrent scanning.
 
@@ -205,7 +205,7 @@ def collect_dynamodb_tables(regions: List[str]) -> List[Dict[str, Any]]:
     return all_tables
 
 
-def scan_global_secondary_indexes_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_global_secondary_indexes_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan DynamoDB Global Secondary Indexes in a single region.
 
@@ -299,7 +299,7 @@ def scan_global_secondary_indexes_in_region(region: str) -> List[Dict[str, Any]]
 
 
 @utils.aws_error_handler("Collecting Global Secondary Indexes", default_return=[])
-def collect_global_secondary_indexes(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_global_secondary_indexes(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect DynamoDB Global Secondary Index information from AWS regions using concurrent scanning.
 
@@ -324,7 +324,7 @@ def collect_global_secondary_indexes(regions: List[str]) -> List[Dict[str, Any]]
     return all_gsis
 
 
-def scan_dynamodb_backups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_dynamodb_backups_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan DynamoDB backups in a single region.
 
@@ -389,7 +389,7 @@ def scan_dynamodb_backups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DynamoDB backups", default_return=[])
-def collect_dynamodb_backups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_dynamodb_backups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect DynamoDB backup information from AWS regions using concurrent scanning.
 

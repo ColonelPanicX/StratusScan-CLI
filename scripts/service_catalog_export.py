@@ -24,7 +24,7 @@ Features:
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -39,7 +39,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Service Catalog portfolios and products to Excel")
 
 @utils.aws_error_handler("Listing portfolios", default_return=[])
-def list_portfolios(region: str) -> List[Dict[str, Any]]:
+def list_portfolios(region: str) -> list[dict[str, Any]]:
     """List all portfolios."""
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     portfolios = []
@@ -61,7 +61,7 @@ def list_portfolios(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Searching products as admin", default_return=[])
-def search_products_as_admin(region: str) -> List[Dict[str, Any]]:
+def search_products_as_admin(region: str) -> list[dict[str, Any]]:
     """Search all products as admin."""
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     products = []
@@ -90,7 +90,7 @@ def search_products_as_admin(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Scanning provisioned products", default_return=[])
-def scan_provisioned_products(region: str) -> List[Dict[str, Any]]:
+def scan_provisioned_products(region: str) -> list[dict[str, Any]]:
     """Scan all provisioned products."""
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     provisioned = []
@@ -120,7 +120,7 @@ def scan_provisioned_products(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Listing provisioning artifacts", default_return=[])
-def list_provisioning_artifacts(region: str, product_id: str) -> List[Dict[str, Any]]:
+def list_provisioning_artifacts(region: str, product_id: str) -> list[dict[str, Any]]:
     """List provisioning artifacts (versions) for a product."""
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     artifacts = []
@@ -148,7 +148,7 @@ def list_provisioning_artifacts(region: str, product_id: str) -> List[Dict[str, 
 
 
 @utils.aws_error_handler("Listing portfolio access", default_return=[])
-def list_portfolio_principals(region: str, portfolio_id: str) -> List[Dict[str, Any]]:
+def list_portfolio_principals(region: str, portfolio_id: str) -> list[dict[str, Any]]:
     """List principals with access to a portfolio."""
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     principals = []

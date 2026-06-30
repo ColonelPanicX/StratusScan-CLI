@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -48,7 +48,7 @@ args = utils.parse_script_args("Export GuardDuty detectors and findings to Excel
 
 
 @utils.aws_error_handler("Collecting GuardDuty detectors from region", default_return=[])
-def collect_detectors_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_detectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect GuardDuty detector information from a single AWS region.
 
@@ -144,7 +144,7 @@ def collect_detectors_from_region(region: str) -> List[Dict[str, Any]]:
     return detectors_data
 
 
-def collect_detectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_detectors(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect GuardDuty detector information using concurrent scanning.
 
@@ -174,7 +174,7 @@ def collect_detectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting GuardDuty findings from region", default_return=[])
-def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_findings_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect GuardDuty findings from a single AWS region.
 
@@ -293,7 +293,7 @@ def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
     return findings_data
 
 
-def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_findings(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect GuardDuty findings using concurrent scanning.
 
@@ -323,7 +323,7 @@ def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting threat intel sets from region", default_return=[])
-def collect_threat_intel_sets_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_threat_intel_sets_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect GuardDuty threat intelligence sets from a single AWS region.
 
@@ -390,7 +390,7 @@ def collect_threat_intel_sets_from_region(region: str) -> List[Dict[str, Any]]:
     return threat_sets_data
 
 
-def collect_threat_intel_sets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_threat_intel_sets(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect GuardDuty threat intelligence sets using concurrent scanning.
 
@@ -420,7 +420,7 @@ def collect_threat_intel_sets(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting IP sets from region", default_return=[])
-def collect_ip_sets_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_ip_sets_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect GuardDuty IP sets from a single AWS region.
 
@@ -487,7 +487,7 @@ def collect_ip_sets_from_region(region: str) -> List[Dict[str, Any]]:
     return ip_sets_data
 
 
-def collect_ip_sets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ip_sets(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect GuardDuty IP sets using concurrent scanning.
 

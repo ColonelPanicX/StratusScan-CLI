@@ -8,29 +8,22 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import utils as aws_mod
 from utils import (
     _DEFAULT_REGIONS,
     _GOVCLOUD_DEFAULT_REGIONS,
-    build_arn,
-    check_aws_region_access,
     detect_partition,
-    get_aws_regions,
     get_boto3_client,
     get_cached_account_info,
     get_partition_default_region,
     get_partition_regions,
     is_auto_run,
-    is_aws_commercial_environment,
     is_aws_region,
     is_service_available_in_partition,
     validate_aws_credentials,
     validate_aws_region,
 )
-
 
 # ---------------------------------------------------------------------------
 # Environment helpers

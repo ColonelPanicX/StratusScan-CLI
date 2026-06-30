@@ -5,7 +5,6 @@ Previously tested sslib.concurrency; now tests utils directly.
 """
 
 import sys
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,7 +19,6 @@ from utils import (
     paginate_with_progress,
     scan_regions_concurrent,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

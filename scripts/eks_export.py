@@ -191,7 +191,7 @@ def _load_ec2_pricing_for_eks(region: str) -> dict:
     """Load EC2 Linux on-demand monthly prices for EKS node cost estimation."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'ec2-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)

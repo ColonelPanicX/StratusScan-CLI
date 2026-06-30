@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with Connect resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -28,7 +28,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Connect instances and resources to Excel")
 
-def _scan_instances_region(region: str) -> List[Dict[str, Any]]:
+def _scan_instances_region(region: str) -> list[dict[str, Any]]:
     """Scan Connect instances in a single region."""
     regional_instances = []
     connect_client = utils.get_boto3_client('connect', region_name=region)
@@ -72,7 +72,7 @@ def _scan_instances_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Connect instances", default_return=[])
-def collect_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Connect instance information from AWS regions."""
     print("\n=== COLLECTING CONNECT INSTANCES ===")
     results = utils.scan_regions_concurrent(regions, _scan_instances_region)
@@ -82,7 +82,7 @@ def collect_instances(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting queues", default_return=[])
-def collect_queues(instances: List[Dict[str, Any]], region: str) -> List[Dict[str, Any]]:
+def collect_queues(instances: list[dict[str, Any]], region: str) -> list[dict[str, Any]]:
     """Collect queue information for Connect instances."""
     print("\n=== COLLECTING CONNECT QUEUES ===")
     all_queues = []
@@ -122,7 +122,7 @@ def collect_queues(instances: List[Dict[str, Any]], region: str) -> List[Dict[st
 
 
 @utils.aws_error_handler("Collecting phone numbers", default_return=[])
-def collect_phone_numbers(instances: List[Dict[str, Any]], region: str) -> List[Dict[str, Any]]:
+def collect_phone_numbers(instances: list[dict[str, Any]], region: str) -> list[dict[str, Any]]:
     """Collect phone number information for Connect instances."""
     print("\n=== COLLECTING PHONE NUMBERS ===")
     all_numbers = []
@@ -161,9 +161,9 @@ def collect_phone_numbers(instances: List[Dict[str, Any]], region: str) -> List[
     return all_numbers
 
 
-def generate_summary(instances: List[Dict[str, Any]],
-                     queues: List[Dict[str, Any]],
-                     phone_numbers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(instances: list[dict[str, Any]],
+                     queues: list[dict[str, Any]],
+                     phone_numbers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Connect resources."""
     utils.log_info("Generating summary statistics...")
 

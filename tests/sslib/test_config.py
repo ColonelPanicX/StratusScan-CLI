@@ -6,11 +6,8 @@ Previously tested sslib.config; now tests utils directly.
 
 import json
 import sys
-import threading
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import utils as cfg_mod
@@ -23,7 +20,6 @@ from utils import (
     is_valid_aws_account_id,
     load_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with Bedrock resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -29,7 +29,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Bedrock models and usage to Excel")
 
 @utils.aws_error_handler("Collecting Bedrock foundation models", default_return=[])
-def collect_foundation_models(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_foundation_models(regions: list[str]) -> list[dict[str, Any]]:
     """Collect available Bedrock foundation models from AWS regions."""
     all_models = []
 
@@ -92,7 +92,7 @@ def collect_foundation_models(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Bedrock custom models", default_return=[])
-def collect_custom_models(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_custom_models(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Bedrock custom (fine-tuned) models."""
     all_custom_models = []
 
@@ -141,7 +141,7 @@ def collect_custom_models(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Bedrock model invocation logging", default_return=[])
-def collect_model_invocation_logging(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_model_invocation_logging(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Bedrock model invocation logging configurations."""
     all_logging_configs = []
 
@@ -193,7 +193,7 @@ def collect_model_invocation_logging(regions: List[str]) -> List[Dict[str, Any]]
 
 
 @utils.aws_error_handler("Collecting Bedrock guardrails", default_return=[])
-def collect_guardrails(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_guardrails(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Bedrock guardrails for responsible AI."""
     all_guardrails = []
 
@@ -243,7 +243,7 @@ def collect_guardrails(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Bedrock knowledge bases", default_return=[])
-def collect_knowledge_bases(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_knowledge_bases(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Bedrock knowledge bases for RAG applications."""
     all_knowledge_bases = []
 
@@ -322,7 +322,7 @@ def collect_knowledge_bases(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Bedrock agents", default_return=[])
-def collect_agents(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_agents(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Bedrock agents for task automation."""
     all_agents = []
 
@@ -401,12 +401,12 @@ def collect_agents(regions: List[str]) -> List[Dict[str, Any]]:
     return all_agents
 
 
-def generate_summary(foundation_models: List[Dict[str, Any]],
-                     custom_models: List[Dict[str, Any]],
-                     logging_configs: List[Dict[str, Any]],
-                     guardrails: List[Dict[str, Any]],
-                     knowledge_bases: List[Dict[str, Any]],
-                     agents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(foundation_models: list[dict[str, Any]],
+                     custom_models: list[dict[str, Any]],
+                     logging_configs: list[dict[str, Any]],
+                     guardrails: list[dict[str, Any]],
+                     knowledge_bases: list[dict[str, Any]],
+                     agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Bedrock resources."""
     utils.log_info("Generating summary statistics...")
 

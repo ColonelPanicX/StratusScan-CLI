@@ -26,7 +26,7 @@ Features:
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -41,7 +41,7 @@ except ImportError:
 args = utils.parse_script_args("Export CloudFormation stacks and resources to Excel")
 
 @utils.aws_error_handler("Collecting CloudFormation stacks", default_return=[])
-def collect_stacks(region: str) -> List[Dict[str, Any]]:
+def collect_stacks(region: str) -> list[dict[str, Any]]:
     """Collect all CloudFormation stacks in a region."""
     cfn = utils.get_boto3_client('cloudformation', region_name=region)
     stacks = []
@@ -95,7 +95,7 @@ def collect_stacks(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting stack resources", default_return=[])
-def collect_stack_resources(region: str, stack_name: str) -> List[Dict[str, Any]]:
+def collect_stack_resources(region: str, stack_name: str) -> list[dict[str, Any]]:
     """Collect resources for a specific stack."""
     cfn = utils.get_boto3_client('cloudformation', region_name=region)
     resources = []
@@ -123,7 +123,7 @@ def collect_stack_resources(region: str, stack_name: str) -> List[Dict[str, Any]
 
 
 @utils.aws_error_handler("Collecting StackSets", default_return=[])
-def collect_stacksets(region: str) -> List[Dict[str, Any]]:
+def collect_stacksets(region: str) -> list[dict[str, Any]]:
     """Collect all StackSets (only from us-east-1 typically, but scanning all regions)."""
     cfn = utils.get_boto3_client('cloudformation', region_name=region)
     stacksets = []
@@ -164,7 +164,7 @@ def collect_stacksets(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting StackSet instances", default_return=[])
-def collect_stackset_instances(region: str, stackset_name: str) -> List[Dict[str, Any]]:
+def collect_stackset_instances(region: str, stackset_name: str) -> list[dict[str, Any]]:
     """Collect instances for a specific StackSet."""
     cfn = utils.get_boto3_client('cloudformation', region_name=region)
     instances = []

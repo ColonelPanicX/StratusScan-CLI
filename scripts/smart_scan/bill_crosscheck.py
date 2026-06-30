@@ -24,7 +24,7 @@ utils.log_* — it never prints.
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 try:
     import utils
@@ -57,7 +57,7 @@ STATUS_OK = "ok"
 STATUS_SKIPPED = "skipped"
 
 
-def _last_full_month(reference_date: Optional[datetime.date] = None) -> Tuple[str, str]:
+def _last_full_month(reference_date: Optional[datetime.date] = None) -> tuple[str, str]:
     """Return (start, end) ISO dates spanning the last full calendar month.
 
     Cost Explorer's TimePeriod end is exclusive, so end is the first day of the
@@ -71,7 +71,7 @@ def _last_full_month(reference_date: Optional[datetime.date] = None) -> Tuple[st
     return last_month_start.isoformat(), last_month_end.isoformat()
 
 
-def map_ce_service(ce_name: str) -> Tuple[Optional[str], bool]:
+def map_ce_service(ce_name: str) -> tuple[Optional[str], bool]:
     """Map a Cost Explorer service name to a canonical StratusScan service.
 
     Returns (canonical_name_or_None, is_ignored_line_item).
@@ -94,10 +94,10 @@ def map_ce_service(ce_name: str) -> Tuple[Optional[str], bool]:
 
 
 def reconcile(
-    spend: Dict[str, float],
-    discovered_services: Set[str],
+    spend: dict[str, float],
+    discovered_services: set[str],
     min_cost: float = 0.0,
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Reconcile per-service CE spend against discovered services.
 
     Args:
@@ -114,10 +114,10 @@ def reconcile(
     # Normalise discovered names to canonical for comparison.
     discovered_canonical = {get_canonical_service_name(s) for s in discovered_services}
 
-    confirmed: List[Dict[str, Any]] = []
-    not_collected: List[Dict[str, Any]] = []
-    unmapped: List[Dict[str, Any]] = []
-    ignored: List[Dict[str, Any]] = []
+    confirmed: list[dict[str, Any]] = []
+    not_collected: list[dict[str, Any]] = []
+    unmapped: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
 
     for ce_name, cost in sorted(spend.items(), key=lambda kv: kv[1], reverse=True):
         if cost <= min_cost:
@@ -151,7 +151,7 @@ def reconcile(
 def get_service_spend(
     partition: Optional[str] = None,
     reference_date: Optional[datetime.date] = None,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Query Cost Explorer for per-service blended cost over the last full month.
 
     Returns a dict of CE service name -> cost. Raises BillCrossCheckUnavailable
@@ -172,10 +172,10 @@ def get_service_spend(
     start, end = _last_full_month(reference_date)
 
     try:
-        spend: Dict[str, float] = {}
+        spend: dict[str, float] = {}
         next_token: Optional[str] = None
         while True:
-            kwargs: Dict[str, Any] = {
+            kwargs: dict[str, Any] = {
                 "TimePeriod": {"Start": start, "End": end},
                 "Granularity": "MONTHLY",
                 "Metrics": ["BlendedCost"],
@@ -207,11 +207,11 @@ def get_service_spend(
 
 
 def run_crosscheck(
-    discovered_services: Set[str],
+    discovered_services: set[str],
     partition: Optional[str] = None,
     reference_date: Optional[datetime.date] = None,
     min_cost: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the full bill cross-check, returning a status-tagged result.
 
     Never raises: an unavailable cross-check returns {"status": "skipped",

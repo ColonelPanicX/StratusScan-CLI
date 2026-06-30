@@ -29,7 +29,7 @@ Notes:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -50,7 +50,7 @@ except ImportError:
 args = utils.parse_script_args("Export VPN connections and customer gateways to Excel")
 
 
-def scan_vpn_connections_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_vpn_connections_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Site-to-Site VPN connections in a single AWS region.
 
@@ -128,7 +128,7 @@ def scan_vpn_connections_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Site-to-Site VPN connections", default_return=[])
-def collect_vpn_connections(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_vpn_connections(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Site-to-Site VPN connection information across regions.
 
@@ -152,7 +152,7 @@ def collect_vpn_connections(regions: List[str]) -> List[Dict[str, Any]]:
     return vpn_connections
 
 
-def scan_vpn_tunnels_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_vpn_tunnels_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan VPN tunnels in a single AWS region.
 
@@ -253,7 +253,7 @@ def scan_vpn_tunnels_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting VPN tunnel details", default_return=[])
-def collect_vpn_tunnels(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_vpn_tunnels(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect VPN tunnel information across regions.
 
@@ -277,7 +277,7 @@ def collect_vpn_tunnels(regions: List[str]) -> List[Dict[str, Any]]:
     return tunnels
 
 
-def scan_customer_gateways_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_customer_gateways_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan customer gateways in a single AWS region.
 
@@ -336,7 +336,7 @@ def scan_customer_gateways_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting customer gateways", default_return=[])
-def collect_customer_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_customer_gateways(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect customer gateway information across regions.
 
@@ -360,7 +360,7 @@ def collect_customer_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     return gateways
 
 
-def scan_virtual_private_gateways_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_virtual_private_gateways_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan virtual private gateways in a single AWS region.
 
@@ -427,7 +427,7 @@ def scan_virtual_private_gateways_in_region(region: str) -> List[Dict[str, Any]]
 
 
 @utils.aws_error_handler("Collecting virtual private gateways", default_return=[])
-def collect_virtual_private_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_virtual_private_gateways(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect virtual private gateway information across regions.
 
@@ -452,7 +452,7 @@ def collect_virtual_private_gateways(regions: List[str]) -> List[Dict[str, Any]]
 
 
 @utils.aws_error_handler("Collecting Client VPN endpoints", default_return=[])
-def collect_client_vpn_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_client_vpn_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Client VPN endpoint information across regions.
 
@@ -556,7 +556,7 @@ def collect_client_vpn_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
     return endpoints
 
 
-def scan_client_vpn_authorization_rules_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_client_vpn_authorization_rules_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Client VPN authorization rules in a single AWS region.
 
@@ -615,7 +615,7 @@ def scan_client_vpn_authorization_rules_in_region(region: str) -> List[Dict[str,
 
 
 @utils.aws_error_handler("Collecting Client VPN authorization rules", default_return=[])
-def collect_client_vpn_authorization_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_client_vpn_authorization_rules(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Client VPN authorization rule information across regions.
 
@@ -639,8 +639,8 @@ def collect_client_vpn_authorization_rules(regions: List[str]) -> List[Dict[str,
     return rules
 
 
-def generate_summary(vpn_connections: List[Dict], tunnels: List[Dict], customer_gateways: List[Dict],
-                     vgws: List[Dict], client_vpn_endpoints: List[Dict], auth_rules: List[Dict]) -> List[Dict[str, Any]]:
+def generate_summary(vpn_connections: list[dict], tunnels: list[dict], customer_gateways: list[dict],
+                     vgws: list[dict], client_vpn_endpoints: list[dict], auth_rules: list[dict]) -> list[dict[str, Any]]:
     """
     Generate summary statistics for VPN resources.
 
@@ -741,7 +741,7 @@ def generate_summary(vpn_connections: List[Dict], tunnels: List[Dict], customer_
     return summary
 
 
-def export_vpn_data(account_id: str, account_name: str, regions: List[str]):
+def export_vpn_data(account_id: str, account_name: str, regions: list[str]):
     """
     Export VPN connectivity information to an Excel file.
 

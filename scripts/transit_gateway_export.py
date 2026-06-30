@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,7 +47,7 @@ except ImportError:
 args = utils.parse_script_args("Export Transit Gateways and attachments to Excel")
 
 
-def scan_transit_gateways_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateways_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateways in a single AWS region.
 
@@ -141,7 +141,7 @@ def scan_transit_gateways_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transit Gateways", default_return=[])
-def collect_transit_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateways(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway information from AWS regions.
 
@@ -165,7 +165,7 @@ def collect_transit_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     return all_tgws
 
 
-def scan_transit_gateway_attachments_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_attachments_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway attachments in a single AWS region.
 
@@ -246,7 +246,7 @@ def scan_transit_gateway_attachments_in_region(region: str) -> List[Dict[str, An
 
 
 @utils.aws_error_handler("Collecting Transit Gateway attachments", default_return=[])
-def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_attachments(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway attachment information from AWS regions.
 
@@ -270,7 +270,7 @@ def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, An
     return all_attachments
 
 
-def scan_transit_gateway_route_tables_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_route_tables_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway route tables in a single AWS region.
 
@@ -338,7 +338,7 @@ def scan_transit_gateway_route_tables_in_region(region: str) -> List[Dict[str, A
 
 
 @utils.aws_error_handler("Collecting Transit Gateway route tables", default_return=[])
-def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_route_tables(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway route table information from AWS regions.
 
@@ -362,7 +362,7 @@ def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, A
     return all_route_tables
 
 
-def scan_transit_gateway_routes_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_routes_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway routes in a single AWS region.
 
@@ -452,7 +452,7 @@ def scan_transit_gateway_routes_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transit Gateway routes", default_return=[])
-def collect_transit_gateway_routes(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_routes(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway route information from AWS regions.
 

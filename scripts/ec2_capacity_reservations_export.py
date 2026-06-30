@@ -23,7 +23,7 @@ Note: Requires ec2:Describe*CapacityReservation* permissions
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -41,7 +41,7 @@ utils.setup_logging('ec2-capacity-reservations-export')
 
 
 @utils.aws_error_handler("Collecting capacity reservations", default_return=[])
-def collect_capacity_reservations(region: str) -> List[Dict[str, Any]]:
+def collect_capacity_reservations(region: str) -> list[dict[str, Any]]:
     """Collect all EC2 Capacity Reservations in a region."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reservations = []
@@ -92,7 +92,7 @@ def collect_capacity_reservations(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting capacity reservation fleets", default_return=[])
-def collect_capacity_reservation_fleets(region: str) -> List[Dict[str, Any]]:
+def collect_capacity_reservation_fleets(region: str) -> list[dict[str, Any]]:
     """Collect Capacity Reservation Fleets in a region."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     fleets = []
@@ -128,7 +128,7 @@ def collect_capacity_reservation_fleets(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting capacity blocks", default_return=[])
-def collect_capacity_blocks(region: str) -> List[Dict[str, Any]]:
+def collect_capacity_blocks(region: str) -> list[dict[str, Any]]:
     """Collect Capacity Block Reservations (for ML workloads)."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     blocks = []
@@ -161,7 +161,7 @@ def collect_capacity_blocks(region: str) -> List[Dict[str, Any]]:
     return blocks
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect EC2 Capacity Reservation data and write the Excel export."""
     utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Capacity Reservations...")
 

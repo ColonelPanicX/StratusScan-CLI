@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodeCommit resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,7 +27,7 @@ except ImportError:
 args = utils.parse_script_args("Export CodeCommit repositories to Excel")
 
 @utils.aws_error_handler("Collecting CodeCommit repositories", default_return=[])
-def collect_repositories(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_repositories(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeCommit repository information from AWS regions."""
     all_repositories = []
 
@@ -103,7 +103,7 @@ def collect_repositories(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting repository branches", default_return=[])
-def collect_branches(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_branches(regions: list[str]) -> list[dict[str, Any]]:
     """Collect branch information from CodeCommit repositories."""
     all_branches = []
 
@@ -188,7 +188,7 @@ def collect_branches(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting pull requests", default_return=[])
-def collect_pull_requests(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_pull_requests(regions: list[str]) -> list[dict[str, Any]]:
     """Collect pull request information (limited to open PRs)."""
     all_pull_requests = []
 
@@ -282,9 +282,9 @@ def collect_pull_requests(regions: List[str]) -> List[Dict[str, Any]]:
     return all_pull_requests
 
 
-def generate_summary(repositories: List[Dict[str, Any]],
-                     branches: List[Dict[str, Any]],
-                     pull_requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(repositories: list[dict[str, Any]],
+                     branches: list[dict[str, Any]],
+                     pull_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodeCommit resources."""
     utils.log_info("Generating summary statistics...")
 

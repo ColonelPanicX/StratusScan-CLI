@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with Comprehend resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -29,7 +29,7 @@ except ImportError:
 args = utils.parse_script_args("Export Amazon Comprehend resources to Excel")
 
 @utils.aws_error_handler("Collecting Comprehend entity recognizers", default_return=[])
-def collect_entity_recognizers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_entity_recognizers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect custom entity recognizer information from AWS regions."""
     all_recognizers = []
 
@@ -104,7 +104,7 @@ def collect_entity_recognizers(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Comprehend document classifiers", default_return=[])
-def collect_document_classifiers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_document_classifiers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect custom document classifier information."""
     all_classifiers = []
 
@@ -190,7 +190,7 @@ def collect_document_classifiers(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Comprehend endpoints", default_return=[])
-def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Comprehend endpoint information for real-time inference."""
     all_endpoints = []
 
@@ -264,7 +264,7 @@ def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Comprehend document classification jobs", default_return=[])
-def collect_document_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_document_classification_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect document classification job information (limited to recent 30 per region)."""
     all_jobs = []
 
@@ -336,7 +336,7 @@ def collect_document_classification_jobs(regions: List[str]) -> List[Dict[str, A
 
 
 @utils.aws_error_handler("Collecting Comprehend entities detection jobs", default_return=[])
-def collect_entities_detection_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_entities_detection_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect entities detection job information (limited to recent 30 per region)."""
     all_jobs = []
 
@@ -409,11 +409,11 @@ def collect_entities_detection_jobs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_jobs
 
 
-def generate_summary(recognizers: List[Dict[str, Any]],
-                     classifiers: List[Dict[str, Any]],
-                     endpoints: List[Dict[str, Any]],
-                     classification_jobs: List[Dict[str, Any]],
-                     entities_jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(recognizers: list[dict[str, Any]],
+                     classifiers: list[dict[str, Any]],
+                     endpoints: list[dict[str, Any]],
+                     classification_jobs: list[dict[str, Any]],
+                     entities_jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Comprehend resources."""
     utils.log_info("Generating summary statistics...")
 

@@ -30,7 +30,7 @@ Phase 4B Update:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -52,7 +52,7 @@ args = utils.parse_script_args("Export Lambda functions to Excel")
 
 
 @utils.aws_error_handler("Collecting Lambda functions for region", default_return=[])
-def collect_lambda_functions_for_region(region: str) -> List[Dict[str, Any]]:
+def collect_lambda_functions_for_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Lambda function information from a single AWS region.
 
@@ -174,7 +174,7 @@ def collect_lambda_functions_for_region(region: str) -> List[Dict[str, Any]]:
     print(f"  Found {function_count} Lambda functions")
     return functions
 
-def collect_lambda_functions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lambda_functions(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Lambda function information from AWS regions (Phase 4B: concurrent).
 
@@ -203,7 +203,7 @@ def collect_lambda_functions(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting event source mappings for region", default_return=[])
-def collect_event_source_mappings_for_region(region: str) -> List[Dict[str, Any]]:
+def collect_event_source_mappings_for_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Lambda event source mapping information from a single AWS region.
 
@@ -268,7 +268,7 @@ def collect_event_source_mappings_for_region(region: str) -> List[Dict[str, Any]
 
     return mappings
 
-def collect_event_source_mappings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_source_mappings(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Lambda event source mapping information from AWS regions (Phase 4B: concurrent).
 
@@ -297,7 +297,7 @@ def collect_event_source_mappings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting concurrency configurations for region", default_return=[])
-def collect_concurrency_configs_for_region(region: str) -> List[Dict[str, Any]]:
+def collect_concurrency_configs_for_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Lambda concurrency configuration information from a single AWS region.
 
@@ -375,7 +375,7 @@ def collect_concurrency_configs_for_region(region: str) -> List[Dict[str, Any]]:
 
     return configs
 
-def collect_concurrency_configs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_concurrency_configs(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Lambda concurrency configuration information from AWS regions (Phase 4B: concurrent).
 

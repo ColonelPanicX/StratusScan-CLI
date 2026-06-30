@@ -16,7 +16,7 @@ Output: Multi-worksheet Excel file with SageMaker resources
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,7 +31,7 @@ args = utils.parse_script_args("Export Amazon SageMaker resources to Excel")
 
 
 
-def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
+def _load_sagemaker_pricing_data(region: str) -> dict[str, dict[str, float]]:
     """Load SageMaker on-demand pricing for ml.* instance types.
 
     Returns dict: {instance_type: {'hourly': float, 'monthly': float}}
@@ -40,7 +40,7 @@ def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
     """
     pricing_file = Path(__file__).parent.parent / 'reference' / 'sagemaker-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)
@@ -61,7 +61,7 @@ def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
         return {}
 
 
-def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
+def _scan_notebook_instances_region(region: str) -> list[dict[str, Any]]:
     """Scan SageMaker notebook instances in a single region."""
     regional_notebooks = []
 
@@ -177,7 +177,7 @@ def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SageMaker notebook instances", default_return=[])
-def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_notebook_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SageMaker notebook instance information from AWS regions."""
     print("\n=== COLLECTING SAGEMAKER NOTEBOOK INSTANCES ===")
     results = utils.scan_regions_concurrent(regions, _scan_notebook_instances_region)
@@ -186,7 +186,7 @@ def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
     return all_notebooks
 
 
-def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_training_jobs_region(region: str) -> list[dict[str, Any]]:
     """Scan SageMaker training jobs in a single region (limited to 50 most recent)."""
     regional_jobs = []
 
@@ -327,7 +327,7 @@ def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SageMaker training jobs", default_return=[])
-def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_training_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SageMaker training job information (limited to recent 50 per region)."""
     print("\n=== COLLECTING SAGEMAKER TRAINING JOBS ===")
     results = utils.scan_regions_concurrent(regions, _scan_training_jobs_region)
@@ -336,7 +336,7 @@ def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_jobs
 
 
-def _scan_models_region(region: str) -> List[Dict[str, Any]]:
+def _scan_models_region(region: str) -> list[dict[str, Any]]:
     """Scan SageMaker models in a single region."""
     regional_models = []
 
@@ -408,7 +408,7 @@ def _scan_models_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SageMaker models", default_return=[])
-def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_models(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SageMaker model information."""
     print("\n=== COLLECTING SAGEMAKER MODELS ===")
     results = utils.scan_regions_concurrent(regions, _scan_models_region)
@@ -417,7 +417,7 @@ def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
     return all_models
 
 
-def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
+def _scan_endpoints_region(region: str) -> list[dict[str, Any]]:
     """Scan SageMaker endpoints in a single region."""
     regional_endpoints = []
 
@@ -518,7 +518,7 @@ def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SageMaker endpoints", default_return=[])
-def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SageMaker endpoint information."""
     print("\n=== COLLECTING SAGEMAKER ENDPOINTS ===")
     results = utils.scan_regions_concurrent(regions, _scan_endpoints_region)
@@ -527,7 +527,7 @@ def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
     return all_endpoints
 
 
-def _scan_processing_jobs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_processing_jobs_region(region: str) -> list[dict[str, Any]]:
     """Scan SageMaker processing jobs in a single region (limited to 30 most recent)."""
     regional_jobs = []
 
@@ -585,7 +585,7 @@ def _scan_processing_jobs_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SageMaker processing jobs", default_return=[])
-def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_processing_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SageMaker processing job information (limited to recent 30 per region)."""
     print("\n=== COLLECTING SAGEMAKER PROCESSING JOBS ===")
     results = utils.scan_regions_concurrent(regions, _scan_processing_jobs_region)
@@ -594,11 +594,11 @@ def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_jobs
 
 
-def generate_summary(notebooks: List[Dict[str, Any]],
-                     training_jobs: List[Dict[str, Any]],
-                     models: List[Dict[str, Any]],
-                     endpoints: List[Dict[str, Any]],
-                     processing_jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(notebooks: list[dict[str, Any]],
+                     training_jobs: list[dict[str, Any]],
+                     models: list[dict[str, Any]],
+                     endpoints: list[dict[str, Any]],
+                     processing_jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for SageMaker resources."""
     utils.log_info("Generating summary statistics...")
 

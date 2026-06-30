@@ -29,7 +29,7 @@ Phase 4B Update:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -51,7 +51,7 @@ args = utils.parse_script_args("Export Auto Scaling Groups to Excel")
 
 
 @utils.aws_error_handler("Collecting Auto Scaling Groups", default_return=[])
-def collect_autoscaling_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_autoscaling_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Auto Scaling Group information from AWS regions.
 
@@ -177,7 +177,7 @@ def collect_autoscaling_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ASG instances", default_return=[])
-def collect_asg_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_asg_instances(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect instance information from Auto Scaling Groups.
 
@@ -239,7 +239,7 @@ def collect_asg_instances(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting scaling policies", default_return=[])
-def collect_scaling_policies(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_scaling_policies(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect scaling policy information from Auto Scaling Groups.
 
@@ -312,7 +312,7 @@ def collect_scaling_policies(regions: List[str]) -> List[Dict[str, Any]]:
     return all_policies
 
 
-def _scan_lifecycle_hooks_region(region: str) -> List[Dict[str, Any]]:
+def _scan_lifecycle_hooks_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for ASG lifecycle hooks."""
     hooks_data = []
 
@@ -352,7 +352,7 @@ def _scan_lifecycle_hooks_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting lifecycle hooks", default_return=[])
-def collect_lifecycle_hooks(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lifecycle_hooks(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ASG lifecycle hook information from AWS regions.
 

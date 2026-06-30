@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -80,7 +80,7 @@ def determine_location_type(location_arn: str) -> str:
     return "Unknown"
 
 @utils.aws_error_handler("Collecting DataSync tasks", default_return=[])
-def collect_datasync_tasks(region: str) -> List[Dict[str, Any]]:
+def collect_datasync_tasks(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync tasks in a region.
 
@@ -171,7 +171,7 @@ def collect_datasync_tasks(region: str) -> List[Dict[str, Any]]:
     return tasks_data
 
 @utils.aws_error_handler("Collecting DataSync locations", default_return=[])
-def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
+def collect_datasync_locations(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync locations in a region.
 
@@ -372,7 +372,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
     return locations_data
 
 @utils.aws_error_handler("Collecting DataSync agents", default_return=[])
-def collect_datasync_agents(region: str) -> List[Dict[str, Any]]:
+def collect_datasync_agents(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync agents in a region.
 
@@ -450,7 +450,7 @@ def collect_datasync_agents(region: str) -> List[Dict[str, Any]]:
     return agents_data
 
 @utils.aws_error_handler("Collecting task executions", default_return=[])
-def collect_task_executions(region: str, task_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_task_executions(region: str, task_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect recent task executions (last 30 days) for all tasks in a region.
 
@@ -537,8 +537,8 @@ def collect_task_executions(region: str, task_arns: List[str]) -> List[Dict[str,
 
     return executions_data
 
-def create_summary_data(tasks: List[Dict], locations: List[Dict],
-                       agents: List[Dict], executions: List[Dict]) -> Dict[str, Any]:
+def create_summary_data(tasks: list[dict], locations: list[dict],
+                       agents: list[dict], executions: list[dict]) -> dict[str, Any]:
     """
     Create summary statistics from collected data.
 
@@ -618,7 +618,7 @@ def create_summary_data(tasks: List[Dict], locations: List[Dict],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect DataSync data and write the Excel export."""
     import pandas as pd
 

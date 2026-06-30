@@ -28,7 +28,7 @@ configuration information for inventory and compliance purposes.
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -49,7 +49,7 @@ except ImportError:
 args = utils.parse_script_args("Export Secrets Manager secrets to Excel")
 
 
-def scan_secrets_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_secrets_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Secrets Manager secrets in a single region.
 
@@ -162,7 +162,7 @@ def scan_secrets_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Secrets Manager secrets", default_return=[])
-def collect_secrets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_secrets(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Secrets Manager secret information from AWS regions using concurrent scanning.
 
@@ -189,7 +189,7 @@ def collect_secrets(regions: List[str]) -> List[Dict[str, Any]]:
     return all_secrets
 
 
-def scan_secret_versions_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_secret_versions_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan secret versions in a single region.
 
@@ -263,7 +263,7 @@ def scan_secret_versions_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting secret versions", default_return=[])
-def collect_secret_versions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_secret_versions(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect secret version information from AWS regions using concurrent scanning.
 
@@ -288,7 +288,7 @@ def collect_secret_versions(regions: List[str]) -> List[Dict[str, Any]]:
     return all_versions
 
 
-def scan_secret_replications_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_secret_replications_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan secret replications in a single region.
 
@@ -348,7 +348,7 @@ def scan_secret_replications_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting secret replications", default_return=[])
-def collect_secret_replications(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_secret_replications(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect secret replication information from AWS regions using concurrent scanning.
 

@@ -25,7 +25,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,7 +46,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Certificate Manager certificates to Excel")
 
 
-def scan_acm_certificates_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_acm_certificates_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ACM certificates in a single region.
 
@@ -198,7 +198,7 @@ def scan_acm_certificates_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ACM certificates", default_return=[])
-def collect_acm_certificates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_acm_certificates(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ACM certificate information from AWS regions using concurrent scanning.
 
@@ -223,7 +223,7 @@ def collect_acm_certificates(regions: List[str]) -> List[Dict[str, Any]]:
     return all_certificates
 
 
-def scan_certificate_validation_details_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_certificate_validation_details_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan certificate validation details in a single region.
 
@@ -295,7 +295,7 @@ def scan_certificate_validation_details_in_region(region: str) -> List[Dict[str,
 
 
 @utils.aws_error_handler("Collecting certificate validation details", default_return=[])
-def collect_certificate_validation_details(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_certificate_validation_details(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect detailed validation information for ACM certificates using concurrent scanning.
 

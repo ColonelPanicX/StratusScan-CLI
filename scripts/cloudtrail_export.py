@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -48,7 +48,7 @@ args = utils.parse_script_args("Export CloudTrail trails and event history to Ex
 
 
 @utils.aws_error_handler("Collecting CloudTrail trails from region", default_return=[])
-def collect_trails_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_trails_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail trail information from a single AWS region.
 
@@ -161,7 +161,7 @@ def collect_trails_from_region(region: str) -> List[Dict[str, Any]]:
     return trails_data
 
 
-def collect_trails(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_trails(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail trail information from AWS regions using concurrent scanning.
 
@@ -200,7 +200,7 @@ def collect_trails(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting event selectors from region", default_return=[])
-def collect_event_selectors_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_event_selectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail event selector information from a single region.
 
@@ -261,7 +261,7 @@ def collect_event_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     return selectors_data
 
 
-def collect_event_selectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_selectors(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail event selector information using concurrent scanning.
 
@@ -300,7 +300,7 @@ def collect_event_selectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting insight selectors from region", default_return=[])
-def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_insight_selectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail insight selector information from a single region.
 
@@ -349,7 +349,7 @@ def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     return insights_data
 
 
-def collect_insight_selectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_insight_selectors(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail insight selector information using concurrent scanning.
 
@@ -388,7 +388,7 @@ def collect_insight_selectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudTrail Lake event data stores from region", default_return=[])
-def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_event_data_stores_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail Lake event data store information from a single region.
 
@@ -425,7 +425,7 @@ def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
     return stores_data
 
 
-def collect_event_data_stores(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_data_stores(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail Lake event data store information using concurrent scanning.
 

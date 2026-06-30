@@ -121,7 +121,7 @@ def load_ebs_pricing_data():
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         pricing_data = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded pricing data for {len(pricing_data)} EBS volume types")

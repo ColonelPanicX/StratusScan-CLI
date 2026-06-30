@@ -36,7 +36,7 @@ Prerequisites:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -54,7 +54,7 @@ args = utils.parse_script_args("Export AWS Shield Advanced protections to Excel"
 
 
 @utils.aws_error_handler("Checking Shield Advanced subscription", default_return=None)
-def check_subscription() -> Dict[str, Any]:
+def check_subscription() -> dict[str, Any]:
     """
     Check if Shield Advanced is subscribed.
 
@@ -88,7 +88,7 @@ def check_subscription() -> Dict[str, Any]:
 
 
 @utils.aws_error_handler("Collecting Shield protections", default_return=[])
-def collect_protections() -> List[Dict[str, Any]]:
+def collect_protections() -> list[dict[str, Any]]:
     """
     Collect all Shield Advanced protections.
 
@@ -163,7 +163,7 @@ def collect_protections() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Shield attacks", default_return=[])
-def collect_attacks() -> List[Dict[str, Any]]:
+def collect_attacks() -> list[dict[str, Any]]:
     """
     Collect attack history (last 90 days).
 
@@ -241,7 +241,7 @@ def collect_attacks() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting emergency contacts", default_return=[])
-def collect_emergency_contacts() -> List[Dict[str, Any]]:
+def collect_emergency_contacts() -> list[dict[str, Any]]:
     """
     Collect emergency contact settings.
 
@@ -278,7 +278,7 @@ def collect_emergency_contacts() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting protection groups", default_return=[])
-def collect_protection_groups() -> List[Dict[str, Any]]:
+def collect_protection_groups() -> list[dict[str, Any]]:
     """
     Collect Shield protection groups.
 
@@ -321,7 +321,7 @@ def collect_protection_groups() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting DRT access configuration", default_return={})
-def collect_drt_access() -> Dict[str, Any]:
+def collect_drt_access() -> dict[str, Any]:
     """
     Collect DDoS Response Team (DRT) access configuration.
 
@@ -405,7 +405,7 @@ def parse_resource_type(resource_arn: str) -> str:
     return 'Unknown'
 
 
-def format_list(items: List[str]) -> str:
+def format_list(items: list[str]) -> str:
     """
     Format a list for display.
 
@@ -422,7 +422,7 @@ def format_list(items: List[str]) -> str:
     return '; '.join(items)
 
 
-def format_mitigations(mitigations: List[Dict[str, Any]]) -> str:
+def format_mitigations(mitigations: list[dict[str, Any]]) -> str:
     """
     Format mitigation information.
 
@@ -471,12 +471,12 @@ def calculate_duration(start_time, end_time) -> str:
 
 
 def export_to_excel(
-    subscription_data: Dict[str, Any],
-    protections_data: List[Dict[str, Any]],
-    attacks_data: List[Dict[str, Any]],
-    contacts_data: List[Dict[str, Any]],
-    groups_data: List[Dict[str, Any]],
-    drt_data: Dict[str, Any],
+    subscription_data: dict[str, Any],
+    protections_data: list[dict[str, Any]],
+    attacks_data: list[dict[str, Any]],
+    contacts_data: list[dict[str, Any]],
+    groups_data: list[dict[str, Any]],
+    drt_data: dict[str, Any],
     account_name: str
 ) -> str:
     """

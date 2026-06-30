@@ -25,7 +25,7 @@ import datetime
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,16 +46,16 @@ except ImportError:
 args = utils.parse_script_args("Export ElastiCache clusters and replication groups to Excel")
 
 
-def load_elasticache_pricing_data(region: str = 'us-east-1') -> Dict[str, Any]:
+def load_elasticache_pricing_data(region: str = 'us-east-1') -> dict[str, Any]:
     """Load ElastiCache pricing data from the reference JSON file."""
-    pricing_data: Dict[str, Any] = {}
+    pricing_data: dict[str, Any] = {}
     try:
         script_dir = Path(__file__).parent.absolute()
         pricing_file = script_dir.parent / 'reference' / 'elasticache-pricing.json'
         if not pricing_file.exists():
             utils.log_warning(f"ElastiCache pricing file not found at {pricing_file}")
             return pricing_data
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         partition = utils.detect_partition(region)
         pricing_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
@@ -80,7 +80,7 @@ def calculate_elasticache_monthly_cost(
     node_type: str,
     node_count: int,
     engine: str,
-    pricing_data: Dict[str, Any],
+    pricing_data: dict[str, Any],
 ) -> Any:
     """Calculate total monthly cost for an ElastiCache cluster (engine-aware)."""
     if node_type not in pricing_data or not node_count:
@@ -103,7 +103,7 @@ def calculate_elasticache_monthly_cost(
         return 'N/A'
 
 
-def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_replication_groups_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ElastiCache replication groups (Redis) in a single region.
 
@@ -214,7 +214,7 @@ def scan_replication_groups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ElastiCache replication groups", default_return=[])
-def collect_replication_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_replication_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ElastiCache replication group (Redis) information from AWS regions using concurrent scanning.
 
@@ -239,7 +239,7 @@ def collect_replication_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_replication_groups
 
 
-def scan_cache_clusters_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_cache_clusters_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ElastiCache cache clusters in a single region.
 
@@ -343,7 +343,7 @@ def scan_cache_clusters_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ElastiCache clusters", default_return=[])
-def collect_cache_clusters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_cache_clusters(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ElastiCache cache cluster information from AWS regions using concurrent scanning.
 
@@ -368,7 +368,7 @@ def collect_cache_clusters(regions: List[str]) -> List[Dict[str, Any]]:
     return all_clusters
 
 
-def scan_cache_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_cache_subnet_groups_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ElastiCache cache subnet groups in a single region.
 
@@ -430,7 +430,7 @@ def scan_cache_subnet_groups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ElastiCache subnet groups", default_return=[])
-def collect_cache_subnet_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_cache_subnet_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ElastiCache cache subnet group information from AWS regions using concurrent scanning.
 

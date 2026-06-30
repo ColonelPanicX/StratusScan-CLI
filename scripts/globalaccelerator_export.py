@@ -36,7 +36,7 @@ Global Service Notes:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -58,7 +58,7 @@ args = utils.parse_script_args("Export AWS Global Accelerator accelerators to Ex
 
 
 @utils.aws_error_handler("Collecting Global Accelerators", default_return=[])
-def collect_accelerators() -> List[Dict[str, Any]]:
+def collect_accelerators() -> list[dict[str, Any]]:
     """
     Collect Global Accelerator information.
 
@@ -130,7 +130,7 @@ def collect_accelerators() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Listeners", default_return=[])
-def collect_listeners(accelerator_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_listeners(accelerator_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect Global Accelerator listener information.
 
@@ -188,7 +188,7 @@ def collect_listeners(accelerator_arns: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Endpoint Groups", default_return=[])
-def collect_endpoint_groups(listener_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_endpoint_groups(listener_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect Global Accelerator endpoint group information.
 
@@ -253,7 +253,7 @@ def collect_endpoint_groups(listener_arns: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Endpoints", default_return=[])
-def collect_endpoints(endpoint_group_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_endpoints(endpoint_group_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect endpoint information from endpoint groups.
 
@@ -312,7 +312,7 @@ def collect_endpoints(endpoint_group_arns: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Custom Routing Accelerators", default_return=[])
-def collect_custom_routing_accelerators() -> List[Dict[str, Any]]:
+def collect_custom_routing_accelerators() -> list[dict[str, Any]]:
     """
     Collect Custom Routing Accelerator information.
 
@@ -383,7 +383,7 @@ def collect_custom_routing_accelerators() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Custom Routing Listeners", default_return=[])
-def collect_custom_routing_listeners(accelerator_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_custom_routing_listeners(accelerator_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect Custom Routing listener information.
 
@@ -435,7 +435,7 @@ def collect_custom_routing_listeners(accelerator_arns: List[str]) -> List[Dict[s
 
 
 @utils.aws_error_handler("Collecting Custom Routing Endpoint Groups", default_return=[])
-def collect_custom_routing_endpoint_groups(listener_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_custom_routing_endpoint_groups(listener_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect Custom Routing endpoint group information.
 
@@ -498,7 +498,7 @@ def collect_custom_routing_endpoint_groups(listener_arns: List[str]) -> List[Dic
     return all_endpoint_groups
 
 
-def create_summary(data_frames: Dict[str, Any]) -> List[Dict[str, Any]]:
+def create_summary(data_frames: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Create summary statistics for Global Accelerator resources.
 

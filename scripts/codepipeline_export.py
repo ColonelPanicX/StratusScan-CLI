@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodePipeline resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -26,7 +26,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CodePipeline pipelines to Excel")
 
-def _scan_pipelines_region(region: str) -> List[Dict[str, Any]]:
+def _scan_pipelines_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CodePipeline pipelines."""
     pipelines_data = []
 
@@ -126,7 +126,7 @@ def _scan_pipelines_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CodePipeline pipelines", default_return=[])
-def collect_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_pipelines(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodePipeline pipeline information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_pipelines_region)
     all_pipelines = [pipeline for result in results for pipeline in result]
@@ -134,7 +134,7 @@ def collect_pipelines(regions: List[str]) -> List[Dict[str, Any]]:
     return all_pipelines
 
 
-def _scan_executions_region(region: str) -> List[Dict[str, Any]]:
+def _scan_executions_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for pipeline executions."""
     executions_data = []
 
@@ -221,7 +221,7 @@ def _scan_executions_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting pipeline executions", default_return=[])
-def collect_executions(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_executions(regions: list[str]) -> list[dict[str, Any]]:
     """Collect recent pipeline execution information (limited to 10 most recent per pipeline)."""
     results = utils.scan_regions_concurrent(regions, _scan_executions_region)
     all_executions = [execution for result in results for execution in result]
@@ -229,7 +229,7 @@ def collect_executions(regions: List[str]) -> List[Dict[str, Any]]:
     return all_executions
 
 
-def _scan_webhooks_region(region: str) -> List[Dict[str, Any]]:
+def _scan_webhooks_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for pipeline webhooks."""
     webhooks_data = []
 
@@ -289,7 +289,7 @@ def _scan_webhooks_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting pipeline webhooks", default_return=[])
-def collect_webhooks(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_webhooks(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodePipeline webhook information."""
     results = utils.scan_regions_concurrent(regions, _scan_webhooks_region)
     all_webhooks = [webhook for result in results for webhook in result]
@@ -297,9 +297,9 @@ def collect_webhooks(regions: List[str]) -> List[Dict[str, Any]]:
     return all_webhooks
 
 
-def generate_summary(pipelines: List[Dict[str, Any]],
-                     executions: List[Dict[str, Any]],
-                     webhooks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(pipelines: list[dict[str, Any]],
+                     executions: list[dict[str, Any]],
+                     webhooks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodePipeline resources."""
     utils.log_info("Generating summary statistics...")
 

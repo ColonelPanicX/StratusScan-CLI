@@ -24,7 +24,7 @@ Note: Requires license-manager:List* and license-manager:Get* permissions
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -39,7 +39,7 @@ except ImportError:
 args = utils.parse_script_args("Export AWS License Manager configurations to Excel")
 
 @utils.aws_error_handler("Collecting license configurations", default_return=[])
-def collect_license_configurations(region: str) -> List[Dict[str, Any]]:
+def collect_license_configurations(region: str) -> list[dict[str, Any]]:
     """Collect all license configurations in a region."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     configs = []
@@ -87,7 +87,7 @@ def collect_license_configurations(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting license usage", default_return=[])
-def collect_license_usage(region: str, config_arn: str) -> List[Dict[str, Any]]:
+def collect_license_usage(region: str, config_arn: str) -> list[dict[str, Any]]:
     """Collect usage information for a specific license configuration."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     usage_list = []
@@ -114,7 +114,7 @@ def collect_license_usage(region: str, config_arn: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting grants", default_return=[])
-def collect_grants(region: str) -> List[Dict[str, Any]]:
+def collect_grants(region: str) -> list[dict[str, Any]]:
     """Collect license grants (both issued and received)."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     grants = []
@@ -161,7 +161,7 @@ def collect_grants(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting licenses", default_return=[])
-def collect_licenses(region: str) -> List[Dict[str, Any]]:
+def collect_licenses(region: str) -> list[dict[str, Any]]:
     """Collect managed licenses."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     licenses = []
@@ -197,7 +197,7 @@ def collect_licenses(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting resource inventory", default_return=[])
-def collect_resource_inventory(region: str) -> List[Dict[str, Any]]:
+def collect_resource_inventory(region: str) -> list[dict[str, Any]]:
     """Collect resource inventory tracked by License Manager."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     inventory = []

@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,7 +45,7 @@ except ImportError:
 args = utils.parse_script_args("Export KMS keys and aliases to Excel")
 
 
-def scan_kms_keys_in_region(region: str, account_id: str) -> List[Dict[str, Any]]:
+def scan_kms_keys_in_region(region: str, account_id: str) -> list[dict[str, Any]]:
     """
     Scan KMS keys in a single region.
 
@@ -163,7 +163,7 @@ def scan_kms_keys_in_region(region: str, account_id: str) -> List[Dict[str, Any]
 
 
 @utils.aws_error_handler("Collecting KMS keys", default_return=[])
-def collect_kms_keys(regions: List[str], account_id: str) -> List[Dict[str, Any]]:
+def collect_kms_keys(regions: list[str], account_id: str) -> list[dict[str, Any]]:
     """
     Collect KMS key information from AWS regions using concurrent scanning.
 
@@ -190,7 +190,7 @@ def collect_kms_keys(regions: List[str], account_id: str) -> List[Dict[str, Any]
     return all_keys
 
 
-def scan_kms_aliases_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_kms_aliases_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan KMS aliases in a single region.
 
@@ -244,7 +244,7 @@ def scan_kms_aliases_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting KMS aliases", default_return=[])
-def collect_kms_aliases(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_kms_aliases(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect KMS key alias information from AWS regions using concurrent scanning.
 
@@ -269,7 +269,7 @@ def collect_kms_aliases(regions: List[str]) -> List[Dict[str, Any]]:
     return all_aliases
 
 
-def scan_kms_grants_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_kms_grants_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan KMS grants in a single region.
 
@@ -347,7 +347,7 @@ def scan_kms_grants_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting KMS grants", default_return=[])
-def collect_kms_grants(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_kms_grants(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect KMS grant information from AWS regions using concurrent scanning.
 

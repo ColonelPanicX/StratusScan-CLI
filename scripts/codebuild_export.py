@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodeBuild resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -26,7 +26,7 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CodeBuild projects and builds to Excel")
 
-def _scan_projects_region(region: str) -> List[Dict[str, Any]]:
+def _scan_projects_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CodeBuild projects."""
     projects_data = []
 
@@ -97,7 +97,7 @@ def _scan_projects_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CodeBuild projects", default_return=[])
-def collect_projects(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_projects(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeBuild project information from AWS regions."""
     results = utils.scan_regions_concurrent(regions, _scan_projects_region)
     all_projects = [p for result in results for p in result]
@@ -105,7 +105,7 @@ def collect_projects(regions: List[str]) -> List[Dict[str, Any]]:
     return all_projects
 
 
-def _scan_builds_region(region: str) -> List[Dict[str, Any]]:
+def _scan_builds_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for recent CodeBuild builds."""
     builds_data = []
 
@@ -174,7 +174,7 @@ def _scan_builds_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CodeBuild builds", default_return=[])
-def collect_builds(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_builds(regions: list[str]) -> list[dict[str, Any]]:
     """Collect recent CodeBuild build information (limited to 50 most recent per region)."""
     results = utils.scan_regions_concurrent(regions, _scan_builds_region)
     all_builds = [b for result in results for b in result]
@@ -182,7 +182,7 @@ def collect_builds(regions: List[str]) -> List[Dict[str, Any]]:
     return all_builds
 
 
-def _scan_report_groups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_report_groups_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CodeBuild report groups."""
     groups_data = []
 
@@ -231,7 +231,7 @@ def _scan_report_groups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CodeBuild report groups", default_return=[])
-def collect_report_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_report_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeBuild report group information."""
     results = utils.scan_regions_concurrent(regions, _scan_report_groups_region)
     all_report_groups = [g for result in results for g in result]
@@ -239,9 +239,9 @@ def collect_report_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_report_groups
 
 
-def generate_summary(projects: List[Dict[str, Any]],
-                     builds: List[Dict[str, Any]],
-                     report_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(projects: list[dict[str, Any]],
+                     builds: list[dict[str, Any]],
+                     report_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodeBuild resources."""
     utils.log_info("Generating summary statistics...")
 

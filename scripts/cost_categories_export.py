@@ -23,7 +23,7 @@ Features:
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -40,7 +40,7 @@ args = utils.parse_script_args("Export AWS Cost Categories to Excel")
 utils.setup_logging('cost-categories-export')
 
 
-def parse_expression(expression: Dict, prefix: str = "") -> str:
+def parse_expression(expression: dict, prefix: str = "") -> str:
     """Parse Cost Category expression into human-readable format."""
     if not expression:
         return "N/A"
@@ -84,7 +84,7 @@ def parse_expression(expression: Dict, prefix: str = "") -> str:
 
 
 @utils.aws_error_handler("Listing Cost Category Definitions", default_return=[])
-def list_cost_category_definitions() -> List[Dict[str, Any]]:
+def list_cost_category_definitions() -> list[dict[str, Any]]:
     """List all Cost Category definitions."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
@@ -111,7 +111,7 @@ def list_cost_category_definitions() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Describing Cost Category Definition", default_return=None)
-def describe_cost_category(cost_category_arn: str) -> Dict[str, Any]:
+def describe_cost_category(cost_category_arn: str) -> dict[str, Any]:
     """Get detailed Cost Category definition."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()

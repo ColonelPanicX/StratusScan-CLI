@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -48,7 +48,7 @@ args = utils.parse_script_args("Export AWS Config rules, recorders, and complian
 
 
 @utils.aws_error_handler("Collecting Config recorders from region", default_return=[])
-def collect_configuration_recorders_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_configuration_recorders_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect AWS Config configuration recorder information from a single region.
 
@@ -139,7 +139,7 @@ def collect_configuration_recorders_from_region(region: str) -> List[Dict[str, A
     return recorders_data
 
 
-def collect_configuration_recorders(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_configuration_recorders(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Config configuration recorder information using concurrent scanning.
 
@@ -169,7 +169,7 @@ def collect_configuration_recorders(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting delivery channels from region", default_return=[])
-def collect_delivery_channels_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_delivery_channels_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect AWS Config delivery channel information from a single region.
 
@@ -223,7 +223,7 @@ def collect_delivery_channels_from_region(region: str) -> List[Dict[str, Any]]:
     return channels_data
 
 
-def collect_delivery_channels(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_delivery_channels(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Config delivery channel information using concurrent scanning.
 
@@ -253,7 +253,7 @@ def collect_delivery_channels(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Config rules from region", default_return=[])
-def collect_config_rules_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_config_rules_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect AWS Config rule information from a single region with compliance status.
 
@@ -339,7 +339,7 @@ def collect_config_rules_from_region(region: str) -> List[Dict[str, Any]]:
     return rules_data
 
 
-def collect_config_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_config_rules(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Config rule information using concurrent scanning.
 
@@ -369,7 +369,7 @@ def collect_config_rules(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting conformance packs from region", default_return=[])
-def collect_conformance_packs_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_conformance_packs_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect AWS Config conformance pack information from a single region.
 
@@ -438,7 +438,7 @@ def collect_conformance_packs_from_region(region: str) -> List[Dict[str, Any]]:
     return packs_data
 
 
-def collect_conformance_packs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_conformance_packs(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Config conformance pack information using concurrent scanning.
 

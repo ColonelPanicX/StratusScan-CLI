@@ -20,7 +20,7 @@ including AWS identifiers for compliance and audit purposes.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Add path to import utils module
 try:
@@ -36,7 +36,7 @@ args = utils.parse_script_args("Export S3 access points to Excel")
 
 
 @utils.aws_error_handler("Collecting standard access points", default_return=[])
-def collect_standard_access_points(region: str, account_id: str) -> List[Dict[str, Any]]:
+def collect_standard_access_points(region: str, account_id: str) -> list[dict[str, Any]]:
     """
     Collect standard S3 Access Points for a specific region
 
@@ -146,7 +146,7 @@ def collect_standard_access_points(region: str, account_id: str) -> List[Dict[st
 
 
 @utils.aws_error_handler("Collecting multi-region access points", default_return=[])
-def collect_multi_region_access_points(account_id: str) -> List[Dict[str, Any]]:
+def collect_multi_region_access_points(account_id: str) -> list[dict[str, Any]]:
     """
     Collect Multi-Region Access Points (always queried from us-west-2)
 
@@ -244,7 +244,7 @@ def collect_multi_region_access_points(account_id: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Object Lambda Access Points", default_return=[])
-def collect_object_lambda_access_points(region: str, account_id: str) -> List[Dict[str, Any]]:
+def collect_object_lambda_access_points(region: str, account_id: str) -> list[dict[str, Any]]:
     """
     Collect Object Lambda Access Points for a specific region
 
@@ -338,10 +338,10 @@ def collect_object_lambda_access_points(region: str, account_id: str) -> List[Di
 
 
 def create_summary_sheet(
-    standard_aps: List[Dict[str, Any]],
-    mraps: List[Dict[str, Any]],
-    ol_aps: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    standard_aps: list[dict[str, Any]],
+    mraps: list[dict[str, Any]],
+    ol_aps: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Create a summary sheet with counts and statistics
 
@@ -393,9 +393,9 @@ def create_summary_sheet(
 
 
 def export_to_excel(
-    standard_aps: List[Dict[str, Any]],
-    mraps: List[Dict[str, Any]],
-    ol_aps: List[Dict[str, Any]],
+    standard_aps: list[dict[str, Any]],
+    mraps: list[dict[str, Any]],
+    ol_aps: list[dict[str, Any]],
     account_name: str
 ) -> Optional[str]:
     """

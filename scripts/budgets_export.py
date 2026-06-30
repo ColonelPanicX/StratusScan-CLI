@@ -23,7 +23,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,7 +45,7 @@ args = utils.parse_script_args("Export AWS Budgets configuration to Excel")
 
 
 @utils.aws_error_handler("Collecting Budgets", default_return=[])
-def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
+def collect_budgets(account_id: str) -> list[dict[str, Any]]:
     """
     Collect AWS Budgets information.
 
@@ -162,7 +162,7 @@ def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Budget Notifications", default_return=[])
-def collect_budget_notifications(account_id: str, budget_names: List[str]) -> List[Dict[str, Any]]:
+def collect_budget_notifications(account_id: str, budget_names: list[str]) -> list[dict[str, Any]]:
     """
     Collect notification configurations for budgets.
 

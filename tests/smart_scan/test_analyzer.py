@@ -4,12 +4,13 @@ Comprehensive tests for smart_scan.analyzer module.
 Tests service analysis, Excel parsing, and recommendation generation.
 """
 
-import sys
 import os
-import pytest
+import sys
 import tempfile
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import pytest
 
 # Add scripts directory to path
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "scripts"))
@@ -18,11 +19,11 @@ if scripts_dir not in sys.path:
 
 from smart_scan.analyzer import (
     ServiceAnalyzer,
-    find_latest_services_export,
-    parse_services_from_excel,
-    map_services_to_scripts,
-    generate_recommendations,
     analyze_services,
+    find_latest_services_export,
+    generate_recommendations,
+    map_services_to_scripts,
+    parse_services_from_excel,
 )
 
 
