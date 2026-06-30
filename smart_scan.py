@@ -59,7 +59,9 @@ except ImportError as exc:
 try:
     from smart_scan.analyzer import analyze_services_from_dict
     from smart_scan.executor import execute_scripts
-    from smart_scan.mapping import ALWAYS_RUN_SCRIPTS
+    from smart_scan.mapping import (
+        ALWAYS_RUN_SCRIPTS,  # noqa: F401  # part of the import-or-die package check
+    )
 except ImportError as exc:
     utils.log_error(f"Could not import smart_scan package: {exc}", exc)
     sys.exit(1)

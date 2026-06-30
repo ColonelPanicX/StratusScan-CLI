@@ -66,7 +66,6 @@ utils.log_system_info()
 from utils import BackSignal, ExitToMainSignal, QuitSignal
 
 
-
 def prompt_with_navigation(prompt_text: str) -> str:
     """
     Wrap input() and raise navigation signals for b, x, and q.
@@ -184,10 +183,10 @@ def print_header():
 def check_dependency(dependency):
     """
     Check if a Python dependency is installed.
-    
+
     Args:
         dependency: Name of the Python package to check
-        
+
     Returns:
         bool: True if installed, False otherwise
     """
@@ -200,16 +199,16 @@ def check_dependency(dependency):
 def install_dependency(dependency):
     """
     Install a Python dependency after user confirmation.
-    
+
     Args:
         dependency: Name of the Python package to install
-        
+
     Returns:
         bool: True if installed successfully, False otherwise
     """
     print(f"\nPackage '{dependency}' is required but not installed.")
     response = input(f"Would you like to install {dependency}? (y/n): ").lower()
-    
+
     if response == 'y':
         try:
             import subprocess
@@ -243,33 +242,33 @@ def ensure_directory_structure():
     """
     Ensure the required directory structure exists.
     Creates the scripts and output directories if they don't exist.
-    
+
     Returns:
         tuple: (scripts_dir, output_dir) - Paths to the scripts and output directories
     """
     # Get the base directory (where this script is located)
     base_dir = Path(__file__).parent.absolute()
-    
+
     # Create scripts directory if it doesn't exist
     scripts_dir = base_dir / "scripts"
     if not scripts_dir.exists():
         print(f"Creating scripts directory: {scripts_dir}")
         scripts_dir.mkdir(exist_ok=True)
-    
+
     # Create output directory if it doesn't exist
     output_dir = base_dir / "output"
     if not output_dir.exists():
         print(f"Creating output directory: {output_dir}")
         output_dir.mkdir(exist_ok=True)
-    
+
     # Check if config.json exists, create default if it doesn't
     config_path = base_dir / "config.json"
 
     if not config_path.exists():
-        print(f"No configuration file found. The config.json file should exist.")
-        print(f"Please ensure config.json is present in the StratusScan directory.")
-        print(f"You may want to edit this file to add your account mappings.")
-    
+        print("No configuration file found. The config.json file should exist.")
+        print("Please ensure config.json is present in the StratusScan directory.")
+        print("You may want to edit this file to add your account mappings.")
+
     return scripts_dir, output_dir
 
 def execute_script(script_path):
@@ -333,54 +332,54 @@ def execute_script(script_path):
 def create_output_archive(account_name):
     """
     Create a zip archive of the output directory.
-    
+
     Args:
         account_name: The AWS account name to use in the filename
-        
+
     Returns:
         bool: True if archive was created successfully, False otherwise
     """
     try:
         # Clear the screen
         clear_screen()
-        
+
         print_section("CREATING OUTPUT ARCHIVE")
 
         # Get the output directory path
         output_dir = Path(__file__).parent / "output"
-        
+
         # Check if output directory exists and has files
         if not output_dir.exists():
             print(f"Output directory not found: {output_dir}")
             return False
-        
+
         files = list(output_dir.glob("*.*"))
         if not files:
             print("No files found in the output directory to archive.")
             return False
-        
+
         print(f"Found {len(files)} files to archive.")
-        
+
         # Create filename with current date
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
         zip_filename = f"{account_name}-export-{current_date}.zip"
         zip_path = Path(__file__).parent / zip_filename
-        
+
         # Create the zip file
         print(f"Creating archive: {zip_filename}")
         print("Please wait...")
-        
+
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file in files:
                 # Archive file with relative path inside the zip
                 zipf.write(file, arcname=file.name)
                 print(f"  Added: {file.name}")
-        
+
         print("\nArchive creation completed successfully!")
         print(f"Archive saved to: {zip_path}")
-        
+
         return True
-    
+
     except Exception as e:
         print(f"Error creating archive: {e}")
         return False
@@ -611,13 +610,13 @@ def get_menu_structure():
     }
 
     # Verify the script files exist (only for actual scripts)
-    for main_option, main_info in menu_structure.items():
+    for _main_option, main_info in menu_structure.items():
         if "submenu" in main_info:
             # Check first level submenus
-            for sub_option, sub_info in main_info["submenu"].items():
+            for _sub_option, sub_info in main_info["submenu"].items():
                 if "submenu" in sub_info:
                     # Check nested submenus
-                    for nested_option, nested_info in sub_info["submenu"].items():
+                    for _nested_option, nested_info in sub_info["submenu"].items():
                         if nested_info.get("file") and not nested_info["file"].exists():
                             print(f"Warning: Script file {nested_info['file']} not found!")
                 elif sub_info.get("file") and not sub_info["file"].exists():
@@ -938,7 +937,7 @@ def run_org_scan() -> None:
     utils.complete_scan_session(session)
 
     # Summary
-    print(f"\nORG SCAN COMPLETE")
+    print("\nORG SCAN COMPLETE")
     print(SEP)
     for r in results:
         icon = "✅" if r["exit_code"] == 0 else "❌"
@@ -1072,7 +1071,7 @@ def _resume_org_scan_from_session(session: dict) -> None:
         results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
 
     utils.complete_scan_session(session)
-    print(f"\n  RESUME COMPLETE")
+    print("\n  RESUME COMPLETE")
     print(f"  {SEP}")
     for r in results:
         icon = "✅" if r["exit_code"] == 0 else "❌"
@@ -1101,7 +1100,7 @@ def _startup_interrupted_check() -> None:
     SEP = "─" * 60
     print()
     print(f"  {SEP}")
-    print(f"  ⚠  INTERRUPTED SCAN DETECTED")
+    print("  ⚠  INTERRUPTED SCAN DETECTED")
     print(f"  {SEP}")
     print(f"  {label}")
     print(f"  Started: {ts}  |  Completed: {n_done}/{n_total}")
@@ -1259,14 +1258,14 @@ def _run_dry_run() -> None:
         print("\nDry run failed. Configure credentials before running.")
         sys.exit(1)
 
-    print(f"  [✓] AWS credentials: valid")
+    print("  [✓] AWS credentials: valid")
     print(f"  [✓] Account: {account_name} ({account_id})")
 
     partition = utils.detect_partition()
     print(f"  [✓] Partition: {partition}")
 
     config, _ = utils.get_config()
-    print(f"  [✓] Config: loaded")
+    print("  [✓] Config: loaded")
 
     # Count available scripts
     scripts_dir = Path(__file__).parent / "scripts"

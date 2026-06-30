@@ -222,9 +222,8 @@ def process_check_results(results):
                         field_name = "Potential Cost Savings"
 
                 # Special column mapping for "Low Utilization Amazon EC2 Instances" (check ID: Qch7DwouX1)
-                elif check_id == "Qch7DwouX1":
-                    if i == 4:
-                        field_name = "Estimated Monthly Savings"
+                elif check_id == "Qch7DwouX1" and i == 4:
+                    field_name = "Estimated Monthly Savings"
 
                 resource_metadata[field_name] = field
 

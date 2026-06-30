@@ -187,10 +187,7 @@ def collect_oidc_providers() -> list[dict[str, Any]]:
                 # Determine provider type based on URL
                 provider_type = 'Generic OIDC'
                 if 'amazonaws.com' in url:
-                    if 'eks' in url:
-                        provider_type = 'Amazon EKS'
-                    else:
-                        provider_type = 'AWS Service'
+                    provider_type = 'Amazon EKS' if 'eks' in url else 'AWS Service'
                 elif 'accounts.google.com' in url:
                     provider_type = 'Google'
                 elif 'login.microsoftonline.com' in url or 'sts.windows.net' in url:

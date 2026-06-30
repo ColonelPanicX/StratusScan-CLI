@@ -383,12 +383,12 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
 
     if not df_ses_identities.empty:
         verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == 'Success'])
-        dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])
+        dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])  # noqa: E712  pandas boolean mask — column dtype may be object/NaN, so `== True` is required
         summary_data.append({'Metric': 'Verified Identities', 'Value': verified_identities})
         summary_data.append({'Metric': 'DKIM Enabled Identities', 'Value': dkim_enabled})
 
     if not df_ses_account.empty:
-        production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])
+        production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])  # noqa: E712  pandas boolean mask — column dtype may be object/NaN, so `== True` is required
         summary_data.append({'Metric': 'Regions with Production Access', 'Value': production_regions})
 
     if not df_pinpoint_campaigns.empty:

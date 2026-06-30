@@ -375,10 +375,7 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
         utils.log_info(f"[{progress:.1f}%] Processing bucket {i}/{total_buckets}: {bucket_name}")
 
         # Get the bucket's region if we haven't already
-        if target_region:
-            region = target_region
-        else:
-            region = get_bucket_region(bucket_name)
+        region = target_region or get_bucket_region(bucket_name)
 
         # Initialize size and object count
         size_bytes = 0
@@ -669,12 +666,11 @@ def main():
                     print(f"Please enter a valid number (1-{len(all_available_regions)}).")
 
     # Validate region if a specific one was provided
-    if target_region:
-        if not is_valid_aws_region(target_region):
-            utils.log_warning(f"'{target_region}' is not a valid AWS region.")
-            utils.log_info(f"Valid AWS regions include: {example_regions}")
-            utils.log_info("Checking all AWS regions instead.")
-            target_region = None
+    if target_region and not is_valid_aws_region(target_region):
+        utils.log_warning(f"'{target_region}' is not a valid AWS region.")
+        utils.log_info(f"Valid AWS regions include: {example_regions}")
+        utils.log_info("Checking all AWS regions instead.")
+        target_region = None
 
     utils.log_info("Checking for S3 Storage Lens availability in AWS...")
     use_storage_lens = check_storage_lens_availability()

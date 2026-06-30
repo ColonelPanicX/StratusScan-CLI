@@ -20,8 +20,9 @@ import sys
 from pathlib import Path
 
 import pytest
-import utils  # imported here so monkeypatch can patch utils attributes by reference
 from moto import mock_aws
+
+import utils  # imported here so monkeypatch can patch utils attributes by reference
 
 # Shared null logger — absorbs all log calls without writing files or to stderr.
 _NULL_LOGGER = logging.getLogger("stratusscan-smoke")

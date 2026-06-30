@@ -43,7 +43,7 @@ class TestServiceScriptMapping:
 
     def test_all_scripts_end_with_py(self):
         """Verify all script names end with .py."""
-        for service, scripts in SERVICE_SCRIPT_MAP.items():
+        for _service, scripts in SERVICE_SCRIPT_MAP.items():
             for script in scripts:
                 assert script.endswith(".py"), f"Invalid script name: {script}"
 

@@ -910,9 +910,7 @@ def _is_not_in_use_error(exc: Exception) -> bool:
     if "only existing" in msg and "customers" in msg:
         return True
     # Organizations: AccessDeniedException on ListAccounts = not an org master account
-    if "accessdeniedexception" in msg and "listaccounts" in msg:
-        return True
-    return False
+    return bool("accessdeniedexception" in msg and "listaccounts" in msg)
 
 
 def _start_heartbeat(service_name: str):

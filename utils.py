@@ -25,29 +25,30 @@ Features:
 - Phase 4B Performance Optimization (concurrent region scanning, session-level caching)
 """
 
-import importlib
-import os
-import platform
-import sys
 import datetime
+import importlib
 import json
 import logging
+import os
+import platform
 import re
 import subprocess
+import sys
 import threading
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from functools import wraps
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, Callable, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
 import boto3
 import botocore
 from botocore.client import BaseClient
 from botocore.config import Config
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # openpyxl is imported lazily inside _adjust_column_widths to avoid a hard
 # import failure when the package is not installed (e.g. fresh clone before
@@ -227,7 +228,7 @@ AWS_PARTITION = 'aws'
 
 def prompt_menu(
     title: str,
-    options: List[str],
+    options: list[str],
     allow_back: bool = True,
     allow_exit: bool = True,
 ) -> int:
@@ -265,7 +266,7 @@ def prompt_menu(
         print("  " + "    ".join(footer_parts))
     print("=" * 64)
 
-    valid = set(str(i) for i in range(1, len(options) + 1))
+    valid = {str(i) for i in range(1, len(options) + 1)}
     if allow_back:
         valid.add("b")
     if allow_exit:
@@ -291,7 +292,7 @@ def prompt_menu(
 
 def prompt_region_selection(
     service_name: Optional[str] = None,
-) -> Union[List[str], str]:
+) -> Union[list[str], str]:
     """
     Prompt user for AWS region selection with a standardized 3-option menu.
 
@@ -500,7 +501,7 @@ def log_aws_info(message: str) -> None:
     current_logger = get_logger()
     current_logger.info(f"AWS: {message}")
 
-def log_partition_info(partition: str, regions: List[str]) -> None:
+def log_partition_info(partition: str, regions: list[str]) -> None:
     """
     Log AWS partition information for user awareness.
 
@@ -700,14 +701,14 @@ def format_bytes(size_bytes: Union[int, float]) -> str:
     """
     if size_bytes == 0:
         return "0 B"
-    
+
     size_names = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = 0
-    
+
     while size_bytes >= 1024 and i < len(size_names) - 1:
         size_bytes /= 1024.0
         i += 1
-    
+
     return f"{size_bytes:.2f} {size_names[i]}"
 
 def get_log_timestamp() -> str:
@@ -748,7 +749,7 @@ def get_current_timestamp() -> str:
     )
     return get_log_timestamp()
 
-def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> Any:
+def resource_list_to_dataframe(resource_list: list[dict[str, Any]], columns: Optional[list[str]] = None) -> Any:
     """
     Convert a list of dictionaries to a pandas DataFrame with specific columns.
 
@@ -760,17 +761,17 @@ def resource_list_to_dataframe(resource_list: List[Dict[str, Any]], columns: Opt
         DataFrame: pandas DataFrame
     """
     import pandas as pd
-    
+
     if not resource_list:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(resource_list)
-    
+
     if columns:
         # Keep only specified columns that exist in the DataFrame
         existing_columns = [col for col in columns if col in df.columns]
         df = df[existing_columns]
-    
+
     return df
 
 def get_stratusscan_root() -> Path:
@@ -971,7 +972,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         logger.error(f"Error saving file: {e}")
         return None
 
-def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename: str, prepare: bool = False) -> Optional[str]:
+def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename: str, prepare: bool = False) -> Optional[str]:
     """
     Save multiple pandas DataFrames to a single Excel file with multiple sheets,
     or to individual CSV files (one per sheet) when format is 'csv'.
@@ -1035,7 +1036,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: Dict[str, Any], filename:
         output_path = get_output_filepath(filename)
 
         # Sanitize sheet names for Excel (max 31 chars, no invalid chars, unique)
-        sanitized_dict: Dict[str, Any] = {}
+        sanitized_dict: dict[str, Any] = {}
         for raw_name, df in dataframes_dict.items():
             safe = raw_name
             for ch in ('\\', '/', '*', '?', ':', '[', ']'):
@@ -1108,7 +1109,7 @@ def create_aws_arn(service: str, resource: str, region: Optional[str] = None, ac
     # Delegate to the new partition-aware function
     return build_arn(service, resource, region=region, account_id=account_id)
 
-def parse_aws_arn(arn: str) -> Optional[Dict[str, str]]:
+def parse_aws_arn(arn: str) -> Optional[dict[str, str]]:
     """
     Parse an AWS ARN into its components (partition-aware).
 
@@ -1192,7 +1193,7 @@ def aws_error_handler(
             except Exception as e:
                 # Import here to avoid circular imports
                 try:
-                    from botocore.exceptions import NoCredentialsError, ClientError
+                    from botocore.exceptions import ClientError, NoCredentialsError
 
                     # Handle NoCredentialsError specifically
                     if isinstance(e, NoCredentialsError):
@@ -1290,7 +1291,7 @@ def handle_aws_operation(
     except Exception as e:
         # Import here to avoid circular imports
         try:
-            from botocore.exceptions import NoCredentialsError, ClientError
+            from botocore.exceptions import ClientError, NoCredentialsError
 
             # Handle NoCredentialsError specifically
             if isinstance(e, NoCredentialsError):
@@ -1530,7 +1531,7 @@ def mask_account_id(account_id: str) -> str:
     return f"...{account_id[-4:]}"
 
 
-def get_account_info() -> Tuple[str, str]:
+def get_account_info() -> tuple[str, str]:
     """
     Get AWS account ID and name with caching.
 
@@ -1572,7 +1573,7 @@ def get_account_info() -> Tuple[str, str]:
     return account_id, account_name
 
 
-def print_script_banner(subtitle: str) -> Tuple[str, str]:
+def print_script_banner(subtitle: str) -> tuple[str, str]:
     """
     Print a standardized export script banner and return AWS account information.
 
@@ -1718,7 +1719,7 @@ def prepare_dataframe_for_export(
 
 def sanitize_for_export(
     df,
-    sensitive_patterns: Optional[List[str]] = None,
+    sensitive_patterns: Optional[list[str]] = None,
     mask_string: str = '***REDACTED***'
 ):
     """
@@ -1886,11 +1887,11 @@ class ProgressCheckpoint:
 
         log_debug(f"Initialized checkpoint for {operation_name}")
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         """Load checkpoint data from file if it exists."""
         if self.checkpoint_file.exists():
             try:
-                with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                with open(self.checkpoint_file, encoding='utf-8') as f:
                     data = json.load(f)
                 log_info(f"Loaded checkpoint from {self.checkpoint_file}")
                 log_info(f"Previous progress: {data.get('current_index', 0)}/{self.total_items or '?'}")
@@ -1900,7 +1901,7 @@ class ProgressCheckpoint:
                 return {}
         return {}
 
-    def save(self, current_index: int, data: Optional[Dict[str, Any]] = None):
+    def save(self, current_index: int, data: Optional[dict[str, Any]] = None):
         """
         Save current progress to checkpoint file.
 
@@ -1973,9 +1974,9 @@ class ProgressCheckpoint:
 def validate_export(
     df,
     resource_type: str,
-    required_columns: Optional[List[str]] = None,
+    required_columns: Optional[list[str]] = None,
     dry_run: bool = False
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Validate DataFrame before export (supports dry-run mode).
 
@@ -2000,7 +2001,6 @@ def validate_export(
         >>>     utils.log_error(f"Validation failed: {error}")
         >>>     return
     """
-    import pandas as pd
 
     # Check if DataFrame is None or empty
     if df is None or df.empty:
@@ -2046,8 +2046,8 @@ def validate_export(
 # Module-level state (config singleton)
 # ---------------------------------------------------------------------------
 
-ACCOUNT_MAPPINGS: Dict[str, str] = {}
-CONFIG_DATA: Dict[str, Any] = {}
+ACCOUNT_MAPPINGS: dict[str, str] = {}
+CONFIG_DATA: dict[str, Any] = {}
 _CONFIG_LOADED: bool = False
 _CONFIG_LOCK: threading.Lock = threading.Lock()
 
@@ -2055,7 +2055,7 @@ _CONFIG_LOCK: threading.Lock = threading.Lock()
 # STS credential cache — keyed by (role_arn, region), stores (creds_dict, expiry)
 # ---------------------------------------------------------------------------
 
-_STS_CACHE: Dict[Tuple[str, Optional[str]], Tuple[Dict[str, str], datetime.datetime]] = {}
+_STS_CACHE: dict[tuple[str, Optional[str]], tuple[dict[str, str], datetime.datetime]] = {}
 _STS_CACHE_LOCK: threading.Lock = threading.Lock()
 _STS_CACHE_REFRESH_MARGIN: datetime.timedelta = datetime.timedelta(minutes=5)
 
@@ -2094,7 +2094,7 @@ def is_valid_aws_account_id(account_id: Union[str, int]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
+def load_config() -> tuple[dict[str, str], dict[str, Any]]:
     """
     Load configuration from config.json file.
 
@@ -2107,7 +2107,7 @@ def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
         config_file = _config_path()
 
         if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 CONFIG_DATA = json.load(f)
 
             if "account_mappings" in CONFIG_DATA:
@@ -2176,7 +2176,7 @@ def load_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
     return ACCOUNT_MAPPINGS, CONFIG_DATA
 
 
-def get_config() -> Tuple[Dict[str, str], Dict[str, Any]]:
+def get_config() -> tuple[dict[str, str], dict[str, Any]]:
     """
     Lazy-load configuration. First call loads from disk; subsequent calls return cached values.
     Thread-safe: uses _CONFIG_LOCK to prevent concurrent initialization.
@@ -2276,7 +2276,7 @@ def add_account_mapping(account_id: str, account_name: str) -> bool:
         # Acquire lock only around file I/O to avoid deadlock with get_config()
         with _CONFIG_LOCK:
             if config_file.exists():
-                with open(config_file, "r", encoding="utf-8") as f:
+                with open(config_file, encoding="utf-8") as f:
                     config = json.load(f)
 
                 if "account_mappings" not in config:
@@ -2346,7 +2346,7 @@ _ROLE_ARN_RE = re.compile(
 )
 
 
-def get_cross_account_roles() -> Dict[str, str]:
+def get_cross_account_roles() -> dict[str, str]:
     """
     Return the cross_account_roles map from config (account_id → role_arn).
 
@@ -2397,7 +2397,7 @@ def add_cross_account_role(account_id: str, role_arn: str) -> bool:
                 log.error("config.json not found — cannot add cross-account role")
                 return False
 
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = json.load(f)
 
             if "cross_account_roles" not in config:
@@ -2449,7 +2449,7 @@ def remove_cross_account_role(account_id: str) -> bool:
                 log.error("config.json not found — cannot remove cross-account role")
                 return False
 
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = json.load(f)
 
             roles = config.get("cross_account_roles", {})
@@ -2497,12 +2497,12 @@ class ConcurrentScanningError(Exception):
 
 
 def scan_regions_concurrent(
-    regions: List[str],
+    regions: list[str],
     scan_function: Callable[[str], Any],
     max_workers: Optional[int] = None,
     show_progress: Optional[bool] = True,
     fallback_on_error: Optional[bool] = None,
-) -> List[Any]:
+) -> list[Any]:
     """
     Scan multiple AWS regions concurrently with automatic fallback to sequential.
 
@@ -2623,10 +2623,10 @@ def scan_regions_concurrent(
 
 
 def _scan_regions_sequential(
-    regions: List[str],
+    regions: list[str],
     scan_function: Callable[[str], Any],
     show_progress: bool = True,
-) -> List[Any]:
+) -> list[Any]:
     """
     Fallback: Scan regions sequentially (one at a time).
 
@@ -2712,7 +2712,7 @@ def paginate_with_progress(
 
 
 def build_dataframe_in_batches(
-    data: List[Dict],
+    data: list[dict],
     batch_size: int = 1000,
 ):
     """
@@ -2770,7 +2770,7 @@ _AWS_PARTITION = "aws"
 # Account info cache (session-level, thread-safe)
 # ---------------------------------------------------------------------------
 
-_account_info_cache: Optional[Tuple[str, str, str]] = None
+_account_info_cache: Optional[tuple[str, str, str]] = None
 _account_info_lock = threading.Lock()
 
 
@@ -2789,7 +2789,7 @@ def is_auto_run() -> bool:
     return os.environ.get("STRATUSSCAN_AUTO_RUN", "").lower() in ("1", "true", "yes")
 
 
-def get_auto_regions() -> Optional[List[str]]:
+def get_auto_regions() -> Optional[list[str]]:
     """
     Get the list of regions from the STRATUSSCAN_REGIONS environment variable.
 
@@ -2918,7 +2918,7 @@ def validate_aws_region(region: str) -> bool:
     return True
 
 
-def get_aws_regions() -> List[str]:
+def get_aws_regions() -> list[str]:
     """
     Get list of default AWS regions for the current partition.
     Partition-aware: Returns GovCloud regions when in GovCloud, Commercial otherwise.
@@ -2979,7 +2979,7 @@ def _assume_role_cached(
     role_arn: str,
     region_name: Optional[str] = None,
     profile_name: Optional[str] = None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Assume an IAM role via STS and return temporary credentials, using an
     in-memory cache keyed by (role_arn, region_name).  Credentials are
@@ -2998,7 +2998,7 @@ def _assume_role_cached(
         botocore.exceptions.ClientError: On STS API errors (after retries).
     """
     log = logging.getLogger(__name__)
-    cache_key: Tuple[str, Optional[str]] = (role_arn, region_name)
+    cache_key: tuple[str, Optional[str]] = (role_arn, region_name)
 
     # Validate partition alignment before any STS call
     arn_partition = role_arn.split(":")[1] if role_arn.startswith("arn:") else ""
@@ -3167,7 +3167,7 @@ def get_boto3_client(
     connect_timeout = sdk_config.get("connect_timeout", 10)
     read_timeout = sdk_config.get("read_timeout", 60)
 
-    config_kwargs: Dict[str, Any] = {
+    config_kwargs: dict[str, Any] = {
         "retries": retry_config,
         "connect_timeout": connect_timeout,
         "read_timeout": read_timeout,
@@ -3326,7 +3326,7 @@ def get_service_disability_reason(service_name: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def get_partition_regions(partition: str = "aws", all_regions: bool = False) -> List[str]:
+def get_partition_regions(partition: str = "aws", all_regions: bool = False) -> list[str]:
     """
     Get available regions for a specific AWS partition.
 
@@ -3385,7 +3385,7 @@ def get_partition_default_region(partition: Optional[str] = None) -> str:
         return "us-east-1"
 
 
-def get_default_regions(partition: Optional[str] = None) -> List[str]:
+def get_default_regions(partition: Optional[str] = None) -> list[str]:
     """
     Get the default AWS regions from configuration.
 
@@ -3409,7 +3409,7 @@ def get_default_regions(partition: Optional[str] = None) -> List[str]:
     return config_regions
 
 
-def get_partition_default_regions(partition: Optional[str] = None) -> List[str]:
+def get_partition_default_regions(partition: Optional[str] = None) -> list[str]:
     """
     Get the default AWS regions (alias for get_default_regions for consistency).
 
@@ -3435,7 +3435,7 @@ def get_partition_default_regions(partition: Optional[str] = None) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def validate_aws_credentials() -> Tuple[bool, Optional[str], Optional[str]]:
+def validate_aws_credentials() -> tuple[bool, Optional[str], Optional[str]]:
     """
     Validate AWS credentials.
 
@@ -3473,7 +3473,7 @@ def check_aws_region_access(region: str) -> bool:
         return False
 
 
-def get_available_aws_regions() -> List[str]:
+def get_available_aws_regions() -> list[str]:
     """
     Get list of AWS regions that are currently accessible.
     Partition-aware: Returns GovCloud regions when in GovCloud, Commercial otherwise.
@@ -3516,7 +3516,7 @@ def is_aws_commercial_environment() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_cached_account_info() -> Tuple[str, str, str]:
+def get_cached_account_info() -> tuple[str, str, str]:
     """
     Get AWS account info with session-level caching (Phase 4B optimization).
 
@@ -3566,13 +3566,16 @@ def get_cached_account_info() -> Tuple[str, str, str]:
 # =============================================================================
 
 if TYPE_CHECKING:
-    import pandas as _pd_type  # used for type annotations only — not imported at runtime
+    # argparse is imported lazily inside parse_script_args() to keep it out of
+    # the runtime namespace; declare it here so the "argparse.Namespace"
+    # forward-reference annotations resolve for type checkers and linters.
+    import argparse
 
 # Path to the reference/ directory (sibling of utils.py)
 _REFERENCE_DIR = Path(__file__).parent / "reference"
 
 
-def _load_pricing_json(filename: str, default: Dict[str, float]) -> Dict[str, float]:
+def _load_pricing_json(filename: str, default: dict[str, float]) -> dict[str, float]:
     """
     Load a flat key→value pricing dict from a JSON file in reference/.
 
@@ -3607,14 +3610,14 @@ def _load_pricing_json(filename: str, default: Dict[str, float]) -> Dict[str, fl
     return default
 
 
-def _load_rds_instance_pricing() -> Dict[str, float]:
+def _load_rds_instance_pricing() -> dict[str, float]:
     """
     Build an ``{instance_class: hourly_rate_usd}`` map from rds-pricing.json.
 
     Uses MySQL / us-east-1 on-demand monthly rate ÷ 730 as the hourly baseline.
     Falls back to a small built-in table if rds-pricing.json is missing.
     """
-    _defaults: Dict[str, float] = {
+    _defaults: dict[str, float] = {
         "db.t3.micro": 0.017,
         "db.t3.small": 0.034,
         "db.t3.medium": 0.068,
@@ -3634,7 +3637,7 @@ def _load_rds_instance_pricing() -> Dict[str, float]:
     try:
         with json_path.open(encoding="utf-8") as fh:
             data = json.load(fh)
-        pricing: Dict[str, float] = {}
+        pricing: dict[str, float] = {}
         for instance_class, info in data.get("records", {}).items():
             monthly = (
                 info.get("pricing", {})
@@ -3695,7 +3698,7 @@ def estimate_rds_monthly_cost(
     storage_gb: int,
     storage_type: str = "gp2",
     multi_az: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Estimate monthly cost for RDS database instance.
 
@@ -3725,7 +3728,7 @@ def estimate_rds_monthly_cost(
     instance_pricing = _load_rds_instance_pricing()
 
     # Storage pricing per GB/month
-    _storage_defaults: Dict[str, float] = {
+    _storage_defaults: dict[str, float] = {
         "gp2": 0.115,
         "gp3": 0.08,
         "io1": 0.125,
@@ -3766,7 +3769,7 @@ def estimate_s3_monthly_cost(
     total_size_gb: float,
     storage_class: str = "STANDARD",
     requests_per_month: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Estimate monthly cost for S3 storage.
 
@@ -3791,7 +3794,7 @@ def estimate_s3_monthly_cost(
         - Request costs are minimal unless very high volume
     """
     # S3 storage pricing per GB/month (us-east-1)
-    _s3_defaults: Dict[str, float] = {
+    _s3_defaults: dict[str, float] = {
         "STANDARD": 0.023,
         "INTELLIGENT_TIERING": 0.023,
         "STANDARD_IA": 0.0125,
@@ -3853,7 +3856,7 @@ def estimate_s3_monthly_cost(
 def calculate_nat_gateway_monthly_cost(
     hours_per_month: int = 730,
     data_processed_gb: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Calculate monthly cost for NAT Gateway.
 
@@ -3876,7 +3879,7 @@ def calculate_nat_gateway_monthly_cost(
         - Each NAT Gateway incurs these costs independently
     """
     # NAT Gateway pricing (us-east-1)
-    _natgw_defaults: Dict[str, float] = {
+    _natgw_defaults: dict[str, float] = {
         "hourly": 0.045,
         "data_processing_per_gb": 0.045,
     }
@@ -3912,8 +3915,8 @@ def calculate_nat_gateway_monthly_cost(
 
 def generate_cost_optimization_recommendations(
     resource_type: str,
-    resource_data: Dict[str, Any],
-) -> List[str]:
+    resource_data: dict[str, Any],
+) -> list[str]:
     """
     Generate cost optimization recommendations for AWS resources.
 

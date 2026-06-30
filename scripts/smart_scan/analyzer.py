@@ -61,10 +61,7 @@ class ServiceAnalyzer:
             pattern = "*-services-in-use-*-export-*.xlsx"
 
             # Use utils to get the proper output directory
-            if search_dir is None:
-                output_dir = utils.get_output_dir()
-            else:
-                output_dir = Path(search_dir)
+            output_dir = utils.get_output_dir() if search_dir is None else Path(search_dir)
 
             # Find all matching files in output directory
             export_files = list(output_dir.glob(pattern))

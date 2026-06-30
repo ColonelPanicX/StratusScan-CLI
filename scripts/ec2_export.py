@@ -455,10 +455,7 @@ def get_instance_data(region, instance_filter=None):
 
         # Get instances in the region with optional filter using paginator
         paginator = ec2.get_paginator('describe_instances')
-        if filters:
-            pages = paginator.paginate(Filters=filters)
-        else:
-            pages = paginator.paginate()
+        pages = paginator.paginate(Filters=filters) if filters else paginator.paginate()
 
         all_reservations = []
         for page in pages:
@@ -749,12 +746,11 @@ def main():
         utils.setup_logging("ec2-export")
         account_id, account_name = utils.print_script_banner("AWS EC2 INSTANCES DATA EXPORT")
 
-        if account_name == "UNKNOWN-ACCOUNT":
-            if not utils.prompt_for_confirmation(
-                "Unable to determine account name. Proceed anyway?", default=False
-            ):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "UNKNOWN-ACCOUNT" and not utils.prompt_for_confirmation(
+            "Unable to determine account name. Proceed anyway?", default=False
+        ):
+            print("Exiting script...")
+            sys.exit(0)
 
         step = 1
         regions = None
@@ -783,10 +779,7 @@ def main():
                 step = 3
 
             elif step == 3:
-                if len(regions) <= 3:
-                    region_str = ', '.join(regions)
-                else:
-                    region_str = f"{len(regions)} regions"
+                region_str = ', '.join(regions) if len(regions) <= 3 else f"{len(regions)} regions"
                 msg = f"Ready to export EC2 data ({filter_desc}, {region_str})."
                 result = utils.prompt_confirmation(msg)
                 if result == 'back':
