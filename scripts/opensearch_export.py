@@ -213,10 +213,7 @@ def scan_opensearch_domains_in_region(region: str) -> list[dict[str, Any]]:
 
                 # Domain creation time
                 created_time = domain.get('Created')
-                if created and created_time:
-                    created_time_str = 'Yes'
-                else:
-                    created_time_str = 'Unknown'
+                created_time_str = 'Yes' if created and created_time else 'Unknown'
 
                 # Cost estimation (data nodes only)
                 monthly_cost = calculate_opensearch_monthly_cost(

@@ -61,17 +61,11 @@ def collect_applications_from_region(region: str) -> list[dict[str, Any]]:
 
         # Date created
         date_created = app.get('DateCreated')
-        if date_created:
-            date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            date_created_str = 'N/A'
+        date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S') if date_created else 'N/A'
 
         # Date updated
         date_updated = app.get('DateUpdated')
-        if date_updated:
-            date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            date_updated_str = 'N/A'
+        date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S') if date_updated else 'N/A'
 
         # Versions count
         versions = app.get('Versions', [])
@@ -166,16 +160,10 @@ def collect_environments_from_region(region: str) -> list[dict[str, Any]]:
 
         # Date created and updated
         date_created = env.get('DateCreated')
-        if date_created:
-            date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            date_created_str = 'N/A'
+        date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S') if date_created else 'N/A'
 
         date_updated = env.get('DateUpdated')
-        if date_updated:
-            date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            date_updated_str = 'N/A'
+        date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S') if date_updated else 'N/A'
 
         # Resources (load balancer info)
         resources = env.get('Resources', {})

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Import utils with fallback for running from scripts directory
 try:
@@ -49,7 +49,7 @@ def list_gateways(region: str) -> list[str]:
 
 
 @utils.aws_error_handler("Describing gateway", default_return=None)
-def describe_gateway(gateway_arn: str, region: str) -> Optional[dict[str, Any]]:
+def describe_gateway(gateway_arn: str, region: str) -> dict[str, Any] | None:
     """Get detailed information about a gateway."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     response = sgw.describe_gateway_information(GatewayARN=gateway_arn)
@@ -198,7 +198,7 @@ def format_tags(tags: list[dict[str, str]]) -> str:
     return ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
 
 
-def bytes_to_gb(bytes_value: Optional[int]) -> str:
+def bytes_to_gb(bytes_value: int | None) -> str:
     """Convert bytes to GB with 2 decimal places."""
     if bytes_value is None or bytes_value == 0:
         return '0 GB'
@@ -206,7 +206,7 @@ def bytes_to_gb(bytes_value: Optional[int]) -> str:
     return f"{gb:.2f} GB"
 
 
-def bytes_to_tb(bytes_value: Optional[int]) -> str:
+def bytes_to_tb(bytes_value: int | None) -> str:
     """Convert bytes to TB with 2 decimal places."""
     if bytes_value is None or bytes_value == 0:
         return '0 TB'

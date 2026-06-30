@@ -10,10 +10,11 @@ Tests cover:
 - Logging setup
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
 import sys
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -332,14 +333,12 @@ class TestPromptMenu:
         assert result == 1
 
     def test_back_raises_signal(self):
-        with patch('builtins.input', return_value='b'):
-            with pytest.raises(utils.BackSignal):
-                utils.prompt_menu("TEST MENU", ["Option A"])
+        with patch('builtins.input', return_value='b'), pytest.raises(utils.BackSignal):
+            utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_exit_raises_signal(self):
-        with patch('builtins.input', return_value='x'):
-            with pytest.raises(utils.QuitSignal):
-                utils.prompt_menu("TEST MENU", ["Option A"])
+        with patch('builtins.input', return_value='x'), pytest.raises(utils.QuitSignal):
+            utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_invalid_then_valid(self):
         with patch('builtins.input', side_effect=['z', '2']):

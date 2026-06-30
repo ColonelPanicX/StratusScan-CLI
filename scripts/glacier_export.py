@@ -84,14 +84,12 @@ def _scan_vaults_region(region: str) -> list[dict[str, Any]]:
                     pass
 
                 creation_date = vault.get('CreationDate', 'N/A')
-                if creation_date != 'N/A':
-                    if isinstance(creation_date, datetime):
-                        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
+                if creation_date != 'N/A' and isinstance(creation_date, datetime):
+                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
 
                 last_inventory = vault.get('LastInventoryDate', 'N/A')
-                if last_inventory != 'N/A':
-                    if isinstance(last_inventory, datetime):
-                        last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
+                if last_inventory != 'N/A' and isinstance(last_inventory, datetime):
+                    last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
 
                 size_bytes = vault.get('SizeInBytes', 0)
                 size_gb = round(size_bytes / (1024**3), 2) if size_bytes else 0

@@ -34,7 +34,7 @@ from typing import Optional
 
 # Try to import boto3, but don't fail if it's missing (will be caught later)
 try:
-    import boto3
+    import boto3  # noqa: F401  # imported to probe availability; not used directly here
     from botocore.exceptions import ClientError, NoCredentialsError
     BOTO3_AVAILABLE = True
 except ImportError:
@@ -245,7 +245,7 @@ def check_permissions_silent() -> dict:
     optional_passed = 0
     optional_failed = 0
 
-    for permission, config in permission_tests.items():
+    for _permission, config in permission_tests.items():
         try:
             config['test_function']()
             if config['required']:
@@ -548,7 +548,8 @@ def config_wizard(config: dict):
     Steps the user through six essential setup tasks in sequence.
     Re-entrant — safe to run on an already-configured system.
     """
-    _clr = lambda: os.system('cls' if os.name == 'nt' else 'clear')
+    def _clr():
+        return os.system('cls' if os.name == 'nt' else 'clear')
 
     _clr()
     print_section("CONFIG WIZARD")
@@ -814,10 +815,7 @@ def configure_default_regions(config: dict):
     print_section("CONFIGURE DEFAULT REGIONS")
 
     identity = get_aws_identity()
-    if identity:
-        is_govcloud = identity['partition'] == 'aws-us-gov'
-    else:
-        is_govcloud = False
+    is_govcloud = identity['partition'] == 'aws-us-gov' if identity else False
 
     current_regions = config.get('default_regions', [])
     print(f"\nCurrent default regions: {', '.join(current_regions) if current_regions else 'None'}")

@@ -119,6 +119,19 @@ exclude = '''
 line-length = 100
 target-version = "py39"
 
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
 # Enable specific rule sets
 select = [
     "E",   # pycodestyle errors
@@ -138,23 +151,24 @@ ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
     "N806",  # SCRIPT_START_TIME is an intentional UPPERCASE local constant convention across all exporters
-]
-
-# Exclude directories
-exclude = [
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    "*.egg-info",
+    "N818",  # navigation/control-flow signals (BackSignal, ExitToMainSignal, QuitSignal, …) are intentionally not *Error
+    # --- Deferred: pre-existing style debt, not remediated in the CI-gate PR. ---
+    # CI enforces a clean floor today; these rules are silenced only because
+    # findings remain. Remove each code (and fix the findings) in a follow-up
+    # ratchet. None of these affect runtime behavior.
+    "SIM102",  # collapsible-if
+    "SIM113",  # enumerate-for-loop
+    "SIM116",  # if-else-block-instead-of-dict-lookup
+    "SIM117",  # multiple-with-statements
+    "B904",    # raise-without-from-inside-except
+    "F841",    # unused local variable (mostly in tests / config wizard)
 ]
 
 # Ruff per-file ignores
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]  # Unused imports in __init__.py are okay
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]     # Unused imports in __init__.py are okay
+"stratusscan.py" = ["E402"]  # imports intentionally follow sys.path setup + logging init
+"tests/**/*.py" = ["E402"]   # test modules import after sys.path manipulation
 
 # Mypy - Static type checker
 [tool.mypy]

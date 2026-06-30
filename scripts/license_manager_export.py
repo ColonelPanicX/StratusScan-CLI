@@ -376,10 +376,7 @@ def main():
                 step = 2
 
             elif step == 2:
-                if len(regions) <= 3:
-                    region_str = ', '.join(regions)
-                else:
-                    region_str = f"{len(regions)} regions"
+                region_str = ', '.join(regions) if len(regions) <= 3 else f"{len(regions)} regions"
                 msg = f"Ready to export License Manager data ({region_str})."
                 result = utils.prompt_confirmation(msg)
                 if result == 'back':

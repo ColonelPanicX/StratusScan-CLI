@@ -69,16 +69,10 @@ def collect_macie_status_from_region(region: str) -> list[dict[str, Any]]:
 
         # Created and updated timestamps
         created_at = status_response.get('createdAt')
-        if created_at:
-            created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            created_at_str = 'N/A'
+        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else 'N/A'
 
         updated_at = status_response.get('updatedAt')
-        if updated_at:
-            updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            updated_at_str = 'N/A'
+        updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S') if updated_at else 'N/A'
 
         status_data.append({
             'Region': region,
@@ -265,16 +259,10 @@ def collect_findings_from_region(region: str) -> list[dict[str, Any]]:
 
                 # Timestamps
                 created_at = finding.get('createdAt')
-                if created_at:
-                    created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    created_at_str = 'N/A'
+                created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else 'N/A'
 
                 updated_at = finding.get('updatedAt')
-                if updated_at:
-                    updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    updated_at_str = 'N/A'
+                updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S') if updated_at else 'N/A'
 
                 # Description
                 description = finding.get('description', 'N/A')

@@ -178,10 +178,7 @@ def format_ip_range(ip_range, protocol, from_port, to_port, is_inbound=True):
     # Format port range
     port_range = ''
     if from_port is not None and to_port is not None:
-        if from_port == to_port:
-            port_range = str(from_port)
-        else:
-            port_range = f"{from_port}-{to_port}"
+        port_range = str(from_port) if from_port == to_port else f"{from_port}-{to_port}"
     else:
         port_range = 'All'
 
@@ -213,10 +210,7 @@ def format_security_group_reference(sg_ref, protocol, from_port, to_port, is_inb
     # Format port range
     port_range = ''
     if from_port is not None and to_port is not None:
-        if from_port == to_port:
-            port_range = str(from_port)
-        else:
-            port_range = f"{from_port}-{to_port}"
+        port_range = str(from_port) if from_port == to_port else f"{from_port}-{to_port}"
     else:
         port_range = 'All'
 

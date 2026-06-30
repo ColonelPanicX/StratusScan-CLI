@@ -206,10 +206,7 @@ def configure_caching():
     enabled_str = 'Yes' if current['caching']['enabled'] else 'No'
     enabled_input = input(f"\nEnable caching? (Y/n) [Current: {enabled_str}]: ").strip().lower()
 
-    if enabled_input == '':
-        enabled = current['caching']['enabled']
-    else:
-        enabled = enabled_input != 'n'
+    enabled = current['caching']['enabled'] if enabled_input == '' else enabled_input != 'n'
 
     if enabled:
         # Cache expiration
