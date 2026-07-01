@@ -152,16 +152,6 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
     "N806",  # SCRIPT_START_TIME is an intentional UPPERCASE local constant convention across all exporters
     "N818",  # navigation/control-flow signals (BackSignal, ExitToMainSignal, QuitSignal, …) are intentionally not *Error
-    # --- Deferred: pre-existing style debt, not remediated in the CI-gate PR. ---
-    # CI enforces a clean floor today; these rules are silenced only because
-    # findings remain. Remove each code (and fix the findings) in a follow-up
-    # ratchet. None of these affect runtime behavior.
-    "SIM102",  # collapsible-if
-    "SIM113",  # enumerate-for-loop
-    "SIM116",  # if-else-block-instead-of-dict-lookup
-    "SIM117",  # multiple-with-statements
-    "B904",    # raise-without-from-inside-except
-    "F841",    # unused local variable (mostly in tests / config wizard)
 ]
 
 # Ruff per-file ignores

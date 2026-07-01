@@ -356,9 +356,7 @@ def get_rds_instances(region):
         utils.log_info(f"Found {total_instances} RDS instances in {region} to process")
 
     # Process each instance
-    processed = 0
-    for instance in all_instances:
-        processed += 1
+    for processed, instance in enumerate(all_instances, start=1):
         instance_id = instance.get('DBInstanceIdentifier', 'Unknown')
         progress = (processed / total_instances) * 100 if total_instances > 0 else 0
 

@@ -153,10 +153,9 @@ def extract_savings(metadata, index):
         float: The extracted savings value, or 0 if not found
     """
     try:
-        if len(metadata) > index and metadata[index] and isinstance(metadata[index], str):
-            if "$" in metadata[index]:
-                savings_text = metadata[index].replace("$", "").replace(",", "")
-                return float(savings_text)
+        if len(metadata) > index and metadata[index] and isinstance(metadata[index], str) and "$" in metadata[index]:
+            savings_text = metadata[index].replace("$", "").replace(",", "")
+            return float(savings_text)
     except (ValueError, IndexError, AttributeError):
         pass
     return 0

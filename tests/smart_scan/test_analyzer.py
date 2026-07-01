@@ -315,7 +315,7 @@ class TestServiceAnalyzerIntegration:
         analyzer = ServiceAnalyzer()
 
         services = {"Amazon Elastic Compute Cloud", "Amazon Simple Storage Service"}
-        service_map = analyzer.map_services_to_scripts(services)
+        analyzer.map_services_to_scripts(services)
         recommendations = analyzer.generate_recommendations(include_always_run=True)
 
         assert recommendations["coverage_stats"]["services_with_scripts"] == 2

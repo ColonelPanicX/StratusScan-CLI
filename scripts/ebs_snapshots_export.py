@@ -205,10 +205,9 @@ def main():
         # Now import pandas (after dependency check)
         import pandas as pd
 
-        if account_name == "UNKNOWN-ACCOUNT":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "UNKNOWN-ACCOUNT" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         regions = utils.prompt_region_selection()
 

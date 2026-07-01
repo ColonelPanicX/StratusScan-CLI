@@ -41,7 +41,7 @@ def test_decorator_reraise() -> str:
     """Test decorator that reraises exceptions."""
     # This will fail with NoCredentialsError if not configured
     ec2 = utils.get_boto3_client('ec2', region_name='us-east-1')
-    response = ec2.describe_instances(InstanceIds=['i-invalid12345'])
+    ec2.describe_instances(InstanceIds=['i-invalid12345'])
     return "Success"
 
 

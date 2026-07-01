@@ -151,16 +151,12 @@ def print_status_line(label: str, status: str, width: int = 70):
 
 def get_status_icon(status: str) -> str:
     """Get status icon based on status string."""
-    if status == "ok":
-        return "✅"
-    elif status == "warning":
-        return "⚠️ "
-    elif status == "error":
-        return "❌"
-    elif status == "unknown":
-        return "❓"
-    else:
-        return "  "
+    return {
+        "ok": "✅",
+        "warning": "⚠️ ",
+        "error": "❌",
+        "unknown": "❓",
+    }.get(status, "  ")
 
 # ============================================================================
 # BACKGROUND CHECKS
@@ -216,9 +212,7 @@ def check_permissions_silent() -> dict:
             'error': 'No AWS credentials configured'
         }
 
-    partition = identity['partition']
     test_region = identity['default_region']
-    is_govcloud = partition == 'aws-us-gov'
 
     # Simplified permission tests (subset for speed)
     permission_tests = {
@@ -1079,7 +1073,7 @@ def install_dependencies(missing_packages: list[dict]) -> bool:
     for package in missing_packages:
         print(f"\n[INSTALLING] {package['name']}...")
         try:
-            result = subprocess.run([
+            subprocess.run([
                 sys.executable, "-m", "pip", "install", package['name']
             ], capture_output=True, text=True, check=True)
 
