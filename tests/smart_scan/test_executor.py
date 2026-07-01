@@ -205,11 +205,10 @@ class TestScriptExecutorMethods:
         output/ directory being empty (which leaks state between runs).
         """
         import utils
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(utils, "get_output_dir", return_value=Path(tmpdir)):
-                executor = ScriptExecutor({"ec2_export.py"})
-                result = executor._find_output_file("ec2_export")
-                assert result is None
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(utils, "get_output_dir", return_value=Path(tmpdir)):
+            executor = ScriptExecutor({"ec2_export.py"})
+            result = executor._find_output_file("ec2_export")
+            assert result is None
 
     def test_find_output_file_not_found(self):
         """A pre-existing file present before the run is not attributed to it.

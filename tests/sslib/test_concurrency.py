@@ -98,14 +98,13 @@ class TestScanRegionsConcurrent:
     def test_disabled_config_falls_back_to_sequential(self):
         config_with_disabled = {"advanced_settings": {"concurrent_scanning": {"enabled": False}}}
 
-        with patch("utils.get_config", return_value=({}, config_with_disabled)):
-            with patch("utils._scan_regions_sequential", side_effect=lambda r, f, p: []) as mock_seq:
-                scan_regions_concurrent(
-                    ["us-east-1"],
-                    lambda r: r,
-                    show_progress=False,
-                )
-                mock_seq.assert_called_once()
+        with patch("utils.get_config", return_value=({}, config_with_disabled)), patch("utils._scan_regions_sequential", side_effect=lambda r, f, p: []) as mock_seq:
+            scan_regions_concurrent(
+                ["us-east-1"],
+                lambda r: r,
+                show_progress=False,
+            )
+            mock_seq.assert_called_once()
 
     def test_fallback_on_all_errors(self):
         """If every worker fails, fallback_on_error triggers sequential."""

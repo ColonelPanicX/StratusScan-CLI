@@ -278,7 +278,7 @@ def prompt_menu(
         except KeyboardInterrupt:
             print()
             if allow_exit:
-                raise QuitSignal
+                raise QuitSignal from None
             continue
 
         if choice in valid:
@@ -2588,7 +2588,9 @@ def scan_regions_concurrent(
                         logging.getLogger(__name__).warning(
                             "Multiple concurrent scanning errors detected (%d errors)", error_count
                         )
-                        raise ConcurrentScanningError(f"Too many concurrent errors: {error_count}")
+                        raise ConcurrentScanningError(
+                            f"Too many concurrent errors: {error_count}"
+                        ) from e
 
                     completed += 1
 

@@ -181,7 +181,7 @@ class TestBoto3ClientCreation:
         mock_session.return_value = mock_boto_session
 
         # Test
-        client = utils.get_boto3_client('ec2', region_name='us-east-1')
+        utils.get_boto3_client('ec2', region_name='us-east-1')
 
         # Verify
         mock_boto_session.client.assert_called_once()
@@ -203,7 +203,7 @@ class TestBoto3ClientCreation:
         mock_session.return_value = mock_boto_session
 
         # Test
-        client = utils.get_boto3_client('s3')
+        utils.get_boto3_client('s3')
 
         # Verify config was created with retries
         call_args = mock_boto_session.client.call_args
@@ -527,7 +527,7 @@ class TestParseScriptArgs:
     def test_sets_module_global(self, monkeypatch):
         """parse_script_args() must populate utils._SCRIPT_ARGS."""
         utils._SCRIPT_ARGS = None
-        args = self._parse(["--region", "eu-west-1"], monkeypatch)
+        self._parse(["--region", "eu-west-1"], monkeypatch)
         assert utils._SCRIPT_ARGS is not None
         assert utils._SCRIPT_ARGS.region == "eu-west-1"
         assert utils.get_script_args() is utils._SCRIPT_ARGS
@@ -539,13 +539,13 @@ class TestParseScriptArgs:
 
     def test_prompt_region_selection_respects_region_flag(self, monkeypatch):
         """prompt_region_selection() must return single-item list when --region set."""
-        args = self._parse(["--region", "ap-southeast-1"], monkeypatch)
+        self._parse(["--region", "ap-southeast-1"], monkeypatch)
         result = utils.prompt_region_selection()
         assert result == ["ap-southeast-1"]
 
     def test_prompt_region_selection_respects_regions_flag(self, monkeypatch):
         """prompt_region_selection() must return list when --regions set."""
-        args = self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
+        self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
         result = utils.prompt_region_selection()
         assert result == ["us-east-1", "eu-west-1"]
 

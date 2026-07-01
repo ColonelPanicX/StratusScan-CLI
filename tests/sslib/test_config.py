@@ -98,11 +98,10 @@ class TestLoadConfig:
             call_count["n"] += 1
             return original_load()
 
-        with patch.object(cfg_mod, "_config_path", return_value=cfg_file):
-            with patch.object(cfg_mod, "load_config", side_effect=counting_load):
-                get_config()
-                get_config()
-                get_config()
+        with patch.object(cfg_mod, "_config_path", return_value=cfg_file), patch.object(cfg_mod, "load_config", side_effect=counting_load):
+            get_config()
+            get_config()
+            get_config()
 
         assert call_count["n"] == 1, "load_config should only be called once"
 
@@ -155,9 +154,8 @@ class TestGetResourcePreference:
 
 class TestGetAccountName:
     def test_returns_mapped_name(self):
-        with patch.object(cfg_mod, "ACCOUNT_MAPPINGS", {"123456789012": "PROD"}):
-            with patch.object(cfg_mod, "get_config", return_value=({"123456789012": "PROD"}, {})):
-                assert get_account_name("123456789012") == "PROD"
+        with patch.object(cfg_mod, "ACCOUNT_MAPPINGS", {"123456789012": "PROD"}), patch.object(cfg_mod, "get_config", return_value=({"123456789012": "PROD"}, {})):
+            assert get_account_name("123456789012") == "PROD"
 
     def test_returns_default_when_unmapped(self):
         with patch.object(cfg_mod, "get_config", return_value=({}, {})):
