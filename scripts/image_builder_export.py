@@ -72,9 +72,17 @@ def collect_image_pipelines(regions: list[str]) -> list[dict[str, Any]]:
 
             # Get image pipelines (paginated)
             pipeline_arns = []
-            paginator = imagebuilder.get_paginator('list_image_pipelines')
-            for page in paginator.paginate():
+            next_token = None
+            while True:
+                params = {}
+                params['maxResults'] = 100
+                if next_token:
+                    params['nextToken'] = next_token
+                page = imagebuilder.list_image_pipelines(**params)
                 pipeline_arns.extend([p['arn'] for p in page.get('imagePipelineList', [])])
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
             print(f"  Found {len(pipeline_arns)} pipelines")
 
@@ -174,10 +182,18 @@ def collect_image_recipes(regions: list[str]) -> list[dict[str, Any]]:
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get image recipes
-            paginator = imagebuilder.get_paginator('list_image_recipes')
             recipe_arns = []
-            for page in paginator.paginate():
+            next_token = None
+            while True:
+                params = {}
+                params['maxResults'] = 100
+                if next_token:
+                    params['nextToken'] = next_token
+                page = imagebuilder.list_image_recipes(**params)
                 recipe_arns.extend([r['arn'] for r in page.get('imageRecipeSummaryList', [])])
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
             for recipe_arn in recipe_arns:
                 try:
@@ -260,10 +276,18 @@ def collect_components(regions: list[str]) -> list[dict[str, Any]]:
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get components (owned by account)
-            paginator = imagebuilder.get_paginator('list_components')
             component_arns = []
-            for page in paginator.paginate(owner='Self'):
+            next_token = None
+            while True:
+                params = {'owner': 'Self'}
+                params['maxResults'] = 100
+                if next_token:
+                    params['nextToken'] = next_token
+                page = imagebuilder.list_components(**params)
                 component_arns.extend([c['arn'] for c in page.get('componentVersionList', [])])
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
             for component_arn in component_arns:
                 try:
@@ -339,10 +363,18 @@ def collect_infrastructure_configurations(regions: list[str]) -> list[dict[str, 
             imagebuilder = utils.get_boto3_client('imagebuilder', region_name=region)
 
             # Get infrastructure configurations
-            paginator = imagebuilder.get_paginator('list_infrastructure_configurations')
             config_arns = []
-            for page in paginator.paginate():
+            next_token = None
+            while True:
+                params = {}
+                params['maxResults'] = 100
+                if next_token:
+                    params['nextToken'] = next_token
+                page = imagebuilder.list_infrastructure_configurations(**params)
                 config_arns.extend([c['arn'] for c in page.get('infrastructureConfigurationSummaryList', [])])
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
             for config_arn in config_arns:
                 try:

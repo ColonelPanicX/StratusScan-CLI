@@ -36,8 +36,13 @@ def _scan_apprunner_services_region(region: str) -> list[dict[str, Any]]:
 
     try:
         apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-        paginator = apprunner_client.get_paginator('list_services')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = apprunner_client.list_services(**params)
             service_summaries = page.get('ServiceSummaryList', [])
 
             for service_summary in service_summaries:
@@ -149,6 +154,10 @@ def _scan_apprunner_services_region(region: str) -> list[dict[str, Any]]:
                     utils.log_warning(f"Could not get details for service {service_name}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_error(f"Error collecting App Runner services in {region}", e)
 
@@ -171,8 +180,13 @@ def _scan_auto_scaling_configs_region(region: str) -> list[dict[str, Any]]:
 
     try:
         apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-        paginator = apprunner_client.get_paginator('list_auto_scaling_configurations')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = apprunner_client.list_auto_scaling_configurations(**params)
             config_summaries = page.get('AutoScalingConfigurationSummaryList', [])
 
             for config_summary in config_summaries:
@@ -215,6 +229,10 @@ def _scan_auto_scaling_configs_region(region: str) -> list[dict[str, Any]]:
                     utils.log_warning(f"Could not get details for auto scaling config {config_name}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_error(f"Error collecting App Runner auto scaling configs in {region}", e)
 
@@ -237,8 +255,13 @@ def _scan_vpc_connectors_region(region: str) -> list[dict[str, Any]]:
 
     try:
         apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-        paginator = apprunner_client.get_paginator('list_vpc_connectors')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = apprunner_client.list_vpc_connectors(**params)
             connector_summaries = page.get('VpcConnectors', [])
 
             for connector_summary in connector_summaries:
@@ -281,6 +304,10 @@ def _scan_vpc_connectors_region(region: str) -> list[dict[str, Any]]:
                 except Exception as e:
                     utils.log_warning(f"Could not get details for VPC connector {connector_name}: {str(e)}")
                     continue
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
     except Exception as e:
         utils.log_error(f"Error collecting App Runner VPC connectors in {region}", e)

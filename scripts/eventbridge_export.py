@@ -51,9 +51,12 @@ def _scan_event_buses_region(region: str) -> list[dict[str, Any]]:
 
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
-        paginator = events_client.get_paginator('list_event_buses')
-
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = events_client.list_event_buses(**params)
             for bus in page.get('EventBuses', []):
                 buses_data.append({
                     'Region': region,
@@ -61,6 +64,10 @@ def _scan_event_buses_region(region: str) -> list[dict[str, Any]]:
                     'Event Bus ARN': bus.get('Arn', 'N/A'),
                     'Has Policy': 'Yes' if bus.get('Policy') else 'No'
                 })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception as e:
         utils.log_error(f"Error scanning event buses in {region}", e)
 
@@ -86,9 +93,16 @@ def _scan_event_rules_region(region: str) -> list[dict[str, Any]]:
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
         buses = []
-        buses_paginator = events_client.get_paginator('list_event_buses')
-        for page in buses_paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = events_client.list_event_buses(**params)
             buses.extend(page.get('EventBuses', []))
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
         for bus in buses:
             bus_name = bus.get('Name', 'default')
@@ -140,9 +154,16 @@ def _scan_rule_targets_region(region: str) -> list[dict[str, Any]]:
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
         buses = []
-        buses_paginator = events_client.get_paginator('list_event_buses')
-        for page in buses_paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = events_client.list_event_buses(**params)
             buses.extend(page.get('EventBuses', []))
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
         for bus in buses:
             bus_name = bus.get('Name', 'default')

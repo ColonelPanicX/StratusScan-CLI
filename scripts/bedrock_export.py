@@ -38,50 +38,50 @@ def collect_foundation_models(regions: list[str]) -> list[dict[str, Any]]:
         bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
 
         try:
-            paginator = bedrock_client.get_paginator('list_foundation_models')
-            for page in paginator.paginate():
-                models = page.get('modelSummaries', [])
+            # list_foundation_models is not paginated (no token) — single call.
+            response = bedrock_client.list_foundation_models()
+            models = response.get('modelSummaries', [])
 
-                for model in models:
-                    model_id = model.get('modelId', 'N/A')
-                    model_arn = model.get('modelArn', 'N/A')
-                    model_name = model.get('modelName', 'N/A')
-                    provider_name = model.get('providerName', 'N/A')
+            for model in models:
+                model_id = model.get('modelId', 'N/A')
+                model_arn = model.get('modelArn', 'N/A')
+                model_name = model.get('modelName', 'N/A')
+                provider_name = model.get('providerName', 'N/A')
 
-                    # Input/output modalities
-                    input_modalities = model.get('inputModalities', [])
-                    output_modalities = model.get('outputModalities', [])
-                    input_str = ', '.join(input_modalities) if input_modalities else 'N/A'
-                    output_str = ', '.join(output_modalities) if output_modalities else 'N/A'
+                # Input/output modalities
+                input_modalities = model.get('inputModalities', [])
+                output_modalities = model.get('outputModalities', [])
+                input_str = ', '.join(input_modalities) if input_modalities else 'N/A'
+                output_str = ', '.join(output_modalities) if output_modalities else 'N/A'
 
-                    # Response streaming
-                    response_streaming = model.get('responseStreamingSupported', False)
+                # Response streaming
+                response_streaming = model.get('responseStreamingSupported', False)
 
-                    # Customization supported
-                    customization_supported = model.get('customizationsSupported', [])
-                    customization_str = ', '.join(customization_supported) if customization_supported else 'None'
+                # Customization supported
+                customization_supported = model.get('customizationsSupported', [])
+                customization_str = ', '.join(customization_supported) if customization_supported else 'None'
 
-                    # Inference types
-                    inference_types = model.get('inferenceTypesSupported', [])
-                    inference_str = ', '.join(inference_types) if inference_types else 'N/A'
+                # Inference types
+                inference_types = model.get('inferenceTypesSupported', [])
+                inference_str = ', '.join(inference_types) if inference_types else 'N/A'
 
-                    # Model lifecycle status
-                    model_lifecycle = model.get('modelLifecycle', {})
-                    lifecycle_status = model_lifecycle.get('status', 'N/A')
+                # Model lifecycle status
+                model_lifecycle = model.get('modelLifecycle', {})
+                lifecycle_status = model_lifecycle.get('status', 'N/A')
 
-                    all_models.append({
-                        'Region': region,
-                        'Model ID': model_id,
-                        'Model Name': model_name,
-                        'Provider': provider_name,
-                        'ARN': model_arn,
-                        'Lifecycle Status': lifecycle_status,
-                        'Input Modalities': input_str,
-                        'Output Modalities': output_str,
-                        'Response Streaming': response_streaming,
-                        'Customization Supported': customization_str,
-                        'Inference Types': inference_str
-                    })
+                all_models.append({
+                    'Region': region,
+                    'Model ID': model_id,
+                    'Model Name': model_name,
+                    'Provider': provider_name,
+                    'ARN': model_arn,
+                    'Lifecycle Status': lifecycle_status,
+                    'Input Modalities': input_str,
+                    'Output Modalities': output_str,
+                    'Response Streaming': response_streaming,
+                    'Customization Supported': customization_str,
+                    'Inference Types': inference_str
+                })
 
         except Exception as e:
             utils.log_warning(f"Error listing foundation models in {region}: {str(e)}")
@@ -202,8 +202,18 @@ def collect_guardrails(regions: list[str]) -> list[dict[str, Any]]:
         bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
 
         try:
-            paginator = bedrock_client.get_paginator('list_guardrails')
-            for page in paginator.paginate():
+            # list_guardrails is absent in older botocore and unpaginated in newer —
+            # probe for the operation, then page manually via nextToken.
+            if 'list_guardrails' not in bedrock_client.meta.service_model.operation_names:
+                utils.log_info(f"Bedrock guardrails API unavailable in this SDK ({region}); skipping.")
+                continue
+
+            next_token = None
+            while True:
+                params: dict[str, Any] = {'maxResults': 100}
+                if next_token:
+                    params['nextToken'] = next_token
+                page = bedrock_client.list_guardrails(**params)
                 guardrails = page.get('guardrails', [])
 
                 for guardrail in guardrails:
@@ -233,6 +243,10 @@ def collect_guardrails(regions: list[str]) -> list[dict[str, Any]]:
                         'Created': created_at,
                         'Updated': updated_at
                     })
+
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
         except Exception as e:
             utils.log_warning(f"Error listing guardrails in {region}: {str(e)}")

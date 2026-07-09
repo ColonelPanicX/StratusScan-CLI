@@ -186,8 +186,13 @@ def _scan_athena_workgroups_region(region: str) -> list[dict[str, Any]]:
     regional_workgroups = []
     try:
         athena_client = utils.get_boto3_client('athena', region_name=region)
-        paginator = athena_client.get_paginator('list_work_groups')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = athena_client.list_work_groups(**params)
             for wg_summary in page.get('WorkGroups', []):
                 workgroup_name = wg_summary.get('Name', 'N/A')
                 try:
@@ -202,6 +207,9 @@ def _scan_athena_workgroups_region(region: str) -> list[dict[str, Any]]:
                     regional_workgroups.append({'Region': region, 'Workgroup Name': workgroup_name, 'State': wg.get('State', 'N/A'), 'Description': wg.get('Description', 'N/A'), 'Output Location': result_config.get('OutputLocation', 'N/A'), 'Encryption': encryption_option, 'KMS Key': encryption_config.get('KmsKey', 'N/A') if encryption_option != 'None' else 'N/A', 'Bytes Scanned Cutoff': configuration.get('BytesScannedCutoffPerQuery', 'N/A'), 'Enforce Config': 'Yes' if configuration.get('EnforceWorkGroupConfiguration', False) else 'No', 'CloudWatch Metrics': 'Yes' if configuration.get('PublishCloudWatchMetricsEnabled', False) else 'No', 'Requester Pays': 'Yes' if configuration.get('RequesterPaysEnabled', False) else 'No', 'Engine Version': engine_version.get('SelectedEngineVersion', 'N/A') if engine_version else 'N/A', 'Created': creation_time.strftime('%Y-%m-%d %H:%M:%S') if creation_time else 'N/A'})
                 except Exception as e:
                     utils.log_warning(f"Could not get details for workgroup {workgroup_name}: {str(e)}")
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception as e:
         utils.log_error(f"Error collecting Athena workgroups in {region}", e)
     return regional_workgroups

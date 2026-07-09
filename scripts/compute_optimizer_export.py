@@ -96,9 +96,13 @@ def get_ec2_recommendations(region):
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ec2_instance_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ec2_instance_recommendations(**params)
         for recommendation in page.get('instanceRecommendations', []):
             current_instance = recommendation.get('currentInstanceType', 'Unknown')
             instance_id = recommendation.get('instanceArn', 'Unknown').split('/')[-1]
@@ -140,6 +144,10 @@ def get_ec2_recommendations(region):
 
             recommendations.append(rec_entry)
 
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
+
     utils.log_success(f"Found {len(recommendations)} EC2 instance recommendations in {region}")
     return recommendations
 
@@ -160,9 +168,13 @@ def get_asg_recommendations(region):
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_auto_scaling_group_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_auto_scaling_group_recommendations(**params)
         for recommendation in page.get('autoScalingGroupRecommendations', []):
             asg_name = recommendation.get('autoScalingGroupName', 'Unknown')
             current_instances = recommendation.get('currentInstanceType', ['Unknown'])
@@ -201,6 +213,10 @@ def get_asg_recommendations(region):
 
             recommendations.append(rec_entry)
 
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
+
     utils.log_success(f"Found {len(recommendations)} Auto Scaling Group recommendations in {region}")
     return recommendations
 
@@ -221,9 +237,13 @@ def get_ebs_recommendations(region):
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ebs_volume_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ebs_volume_recommendations(**params)
         for recommendation in page.get('volumeRecommendations', []):
             volume_arn = recommendation.get('volumeArn', 'Unknown')
             volume_id = volume_arn.split('/')[-1]
@@ -278,6 +298,10 @@ def get_ebs_recommendations(region):
             }
 
             recommendations.append(rec_entry)
+
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} EBS volume recommendations in {region}")
     return recommendations
@@ -363,9 +387,13 @@ def get_ecs_recommendations(region):
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ecs_service_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ecs_service_recommendations(**params)
         for recommendation in page.get('ecsServiceRecommendations', []):
             service_arn = recommendation.get('serviceArn', 'Unknown')
             service_name = service_arn.split('/')[-1]
@@ -415,6 +443,10 @@ def get_ecs_recommendations(region):
             }
 
             recommendations.append(rec_entry)
+
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} ECS service recommendations in {region}")
     return recommendations

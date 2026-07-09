@@ -38,10 +38,8 @@ def collect_applications_from_region(region: str) -> list[dict[str, Any]]:
     applications = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
-    paginator = eb_client.get_paginator('describe_applications')
-    apps = []
-    for page in paginator.paginate():
-        apps.extend(page.get('Applications', []))
+    response = eb_client.describe_applications()
+    apps = response.get('Applications', [])
 
     for app in apps:
         app_name = app.get('ApplicationName', 'N/A')
@@ -230,10 +228,8 @@ def collect_application_versions_from_region(region: str) -> list[dict[str, Any]
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
     # First get all applications
-    apps_paginator = eb_client.get_paginator('describe_applications')
-    applications = []
-    for page in apps_paginator.paginate():
-        applications.extend(page.get('Applications', []))
+    response = eb_client.describe_applications()
+    applications = response.get('Applications', [])
 
     for app in applications:
         app_name = app.get('ApplicationName', '')
@@ -318,10 +314,8 @@ def collect_configuration_templates_from_region(region: str) -> list[dict[str, A
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
     # First get all applications
-    apps_paginator = eb_client.get_paginator('describe_applications')
-    applications = []
-    for page in apps_paginator.paginate():
-        applications.extend(page.get('Applications', []))
+    response = eb_client.describe_applications()
+    applications = response.get('Applications', [])
 
     for app in applications:
         app_name = app.get('ApplicationName', '')

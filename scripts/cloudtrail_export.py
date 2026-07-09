@@ -405,8 +405,13 @@ def collect_event_data_stores_from_region(region: str) -> list[dict[str, Any]]:
 
     ct_client = utils.get_boto3_client('cloudtrail', region_name=region)
 
-    paginator = ct_client.get_paginator('list_event_data_stores')
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['MaxResults'] = 50
+        if next_token:
+            params['NextToken'] = next_token
+        page = ct_client.list_event_data_stores(**params)
         for store in page.get('EventDataStores', []):
             stores_data.append({
                 'Region': region,
@@ -420,6 +425,9 @@ def collect_event_data_stores_from_region(region: str) -> list[dict[str, Any]]:
                 'Created': str(store.get('CreatedTimestamp', '')),
                 'Updated': str(store.get('UpdatedTimestamp', '')),
             })
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
 
     utils.log_info(f"Found {len(stores_data)} event data store(s) in {region}")
     return stores_data

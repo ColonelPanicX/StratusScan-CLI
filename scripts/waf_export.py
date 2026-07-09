@@ -67,9 +67,13 @@ def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> list[d
     wafv2_client = utils.get_boto3_client('wafv2', region_name=region)
 
     # List web ACLs
-    paginator = wafv2_client.get_paginator('list_web_acls')
-
-    for page in paginator.paginate(Scope=scope):
+    next_marker = None
+    while True:
+        params = {'Scope': scope}
+        params['Limit'] = 100
+        if next_marker:
+            params['NextMarker'] = next_marker
+        page = wafv2_client.list_web_acls(**params)
         web_acls = page.get('WebACLs', [])
 
         for acl_summary in web_acls:
@@ -138,6 +142,10 @@ def collect_web_acls_from_region(region: str, scope: str = 'REGIONAL') -> list[d
             except Exception as e:
                 utils.log_warning(f"Could not get details for web ACL {acl_name}: {e}")
 
+        next_marker = page.get('NextMarker')
+        if not next_marker:
+            break
+
     utils.log_info(f"Found {len(web_acls_data)} web ACLs ({scope}) in {region}")
     return web_acls_data
 
@@ -198,9 +206,13 @@ def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> list[
     wafv2_client = utils.get_boto3_client('wafv2', region_name=region)
 
     # List web ACLs first
-    acl_paginator = wafv2_client.get_paginator('list_web_acls')
-
-    for acl_page in acl_paginator.paginate(Scope=scope):
+    next_marker = None
+    while True:
+        params = {'Scope': scope}
+        params['Limit'] = 100
+        if next_marker:
+            params['NextMarker'] = next_marker
+        acl_page = wafv2_client.list_web_acls(**params)
         web_acls = acl_page.get('WebACLs', [])
 
         for acl_summary in web_acls:
@@ -295,6 +307,10 @@ def collect_waf_rules_from_region(region: str, scope: str = 'REGIONAL') -> list[
             except Exception as e:
                 utils.log_warning(f"Could not get rules for web ACL {acl_name}: {e}")
 
+        next_marker = acl_page.get('NextMarker')
+        if not next_marker:
+            break
+
     utils.log_info(f"Found {len(rules_data)} rules ({scope}) in {region}")
     return rules_data
 
@@ -355,9 +371,13 @@ def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> list[di
     wafv2_client = utils.get_boto3_client('wafv2', region_name=region)
 
     # List IP sets
-    paginator = wafv2_client.get_paginator('list_ip_sets')
-
-    for page in paginator.paginate(Scope=scope):
+    next_marker = None
+    while True:
+        params = {'Scope': scope}
+        params['Limit'] = 100
+        if next_marker:
+            params['NextMarker'] = next_marker
+        page = wafv2_client.list_ip_sets(**params)
         ip_sets = page.get('IPSets', [])
 
         for ip_set_summary in ip_sets:
@@ -399,6 +419,10 @@ def collect_ip_sets_from_region(region: str, scope: str = 'REGIONAL') -> list[di
 
             except Exception as e:
                 utils.log_warning(f"Could not get IP set {ip_set_name}: {e}")
+
+        next_marker = page.get('NextMarker')
+        if not next_marker:
+            break
 
     utils.log_info(f"Found {len(ip_sets_data)} IP sets ({scope}) in {region}")
     return ip_sets_data
@@ -459,9 +483,13 @@ def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> lis
     rule_groups_data = []
     wafv2_client = utils.get_boto3_client('wafv2', region_name=region)
 
-    paginator = wafv2_client.get_paginator('list_rule_groups')
-
-    for page in paginator.paginate(Scope=scope):
+    next_marker = None
+    while True:
+        params = {'Scope': scope}
+        params['Limit'] = 100
+        if next_marker:
+            params['NextMarker'] = next_marker
+        page = wafv2_client.list_rule_groups(**params)
         rule_groups = page.get('RuleGroups', [])
 
         for rg_summary in rule_groups:
@@ -501,6 +529,10 @@ def collect_rule_groups_from_region(region: str, scope: str = 'REGIONAL') -> lis
 
             except Exception as e:
                 utils.log_warning(f"Could not get rule group {rg_name}: {e}")
+
+        next_marker = page.get('NextMarker')
+        if not next_marker:
+            break
 
     utils.log_info(f"Found {len(rule_groups_data)} rule groups ({scope}) in {region}")
     return rule_groups_data

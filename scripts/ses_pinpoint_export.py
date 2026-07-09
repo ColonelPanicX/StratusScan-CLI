@@ -48,8 +48,12 @@ def collect_ses_identities(region: str) -> list[dict[str, Any]]:
     identities = []
 
     try:
-        paginator = sesv2.get_paginator('list_email_identities')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = sesv2.list_email_identities(**params)
             for identity in page.get('EmailIdentities', []):
                 identity_name = identity.get('IdentityName', 'N/A')
 
@@ -89,6 +93,10 @@ def collect_ses_identities(region: str) -> list[dict[str, Any]]:
                         'MailFromStatus': 'N/A',
                         'FeedbackForwardingEnabled': 'N/A',
                     })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception as e:
         utils.log_warning(f"Error collecting SES identities in region {region}: {e}")
 
@@ -102,8 +110,12 @@ def collect_ses_config_sets(region: str) -> list[dict[str, Any]]:
     config_sets = []
 
     try:
-        paginator = sesv2.get_paginator('list_configuration_sets')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = sesv2.list_configuration_sets(**params)
             for config_set_name in page.get('ConfigurationSets', []):
                 # Get detailed configuration set information
                 try:
@@ -138,6 +150,10 @@ def collect_ses_config_sets(region: str) -> list[dict[str, Any]]:
                         'LastFreshStart': 'N/A',
                         'SuppressionListReasons': 'N/A',
                     })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -183,8 +199,12 @@ def collect_ses_templates(region: str) -> list[dict[str, Any]]:
     templates = []
 
     try:
-        paginator = sesv2.get_paginator('list_email_templates')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = sesv2.list_email_templates(**params)
             for template in page.get('TemplatesMetadata', []):
                 template_name = template.get('TemplateName', 'N/A')
 
@@ -193,6 +213,10 @@ def collect_ses_templates(region: str) -> list[dict[str, Any]]:
                     'TemplateName': template_name,
                     'CreatedTimestamp': template.get('CreatedTimestamp', 'N/A'),
                 })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
