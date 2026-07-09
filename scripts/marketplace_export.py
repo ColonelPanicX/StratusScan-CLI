@@ -37,10 +37,14 @@ def collect_agreements() -> list[dict[str, Any]]:
 
     try:
         # Search for all agreements (active and expired)
-        paginator = mp_client.get_paginator('search_agreements')
-
         # Search without filters to get all agreements
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['maxResults'] = 100
+            if next_token:
+                params['nextToken'] = next_token
+            page = mp_client.search_agreements(**params)
             agreements = page.get('agreementViewSummaries', [])
 
             for agreement_summary in agreements:
@@ -93,6 +97,10 @@ def collect_agreements() -> list[dict[str, Any]]:
                     utils.log_warning(f"Could not get details for agreement {agreement_id}: {str(e)}")
                     continue
 
+            next_token = page.get('nextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_warning(f"Error searching agreements: {str(e)}")
 
@@ -116,8 +124,13 @@ def collect_agreement_terms(agreements: list[dict[str, Any]]) -> list[dict[str, 
 
         try:
             # Get agreement terms
-            paginator = mp_client.get_paginator('get_agreement_terms')
-            for page in paginator.paginate(agreementId=agreement_id):
+            next_token = None
+            while True:
+                params = {'agreementId': agreement_id}
+                params['maxResults'] = 100
+                if next_token:
+                    params['nextToken'] = next_token
+                page = mp_client.get_agreement_terms(**params)
                 accepted_terms = page.get('acceptedTerms', [])
 
                 for term in accepted_terms:
@@ -163,6 +176,10 @@ def collect_agreement_terms(agreements: list[dict[str, Any]]) -> list[dict[str, 
                         'Support Details': support_info,
                         'Renewal Details': renewal_info
                     })
+
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
         except Exception as e:
             utils.log_warning(f"Could not get terms for agreement {agreement_id}: {str(e)}")

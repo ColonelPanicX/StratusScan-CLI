@@ -37,8 +37,12 @@ def _scan_email_identities_region(region: str) -> list[dict[str, Any]]:
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
     try:
-        paginator = ses_client.get_paginator('list_email_identities')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = ses_client.list_email_identities(**params)
             identities = page.get('EmailIdentities', [])
 
             for identity_summary in identities:
@@ -102,6 +106,10 @@ def _scan_email_identities_region(region: str) -> list[dict[str, Any]]:
                     utils.log_warning(f"Could not get details for identity {identity_name} in {region}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_warning(f"Error listing email identities in {region}: {str(e)}")
 
@@ -124,8 +132,12 @@ def _scan_configuration_sets_region(region: str) -> list[dict[str, Any]]:
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
     try:
-        paginator = ses_client.get_paginator('list_configuration_sets')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = ses_client.list_configuration_sets(**params)
             config_sets = page.get('ConfigurationSets', [])
 
             for config_set_name in config_sets:
@@ -190,6 +202,10 @@ def _scan_configuration_sets_region(region: str) -> list[dict[str, Any]]:
                     utils.log_warning(f"Could not get details for configuration set {config_set_name} in {region}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_warning(f"Error listing configuration sets in {region}: {str(e)}")
 
@@ -212,8 +228,12 @@ def _scan_email_templates_region(region: str) -> list[dict[str, Any]]:
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
     try:
-        paginator = ses_client.get_paginator('list_email_templates')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = ses_client.list_email_templates(**params)
             templates = page.get('TemplatesMetadata', [])
 
             for template_metadata in templates:
@@ -251,6 +271,10 @@ def _scan_email_templates_region(region: str) -> list[dict[str, Any]]:
                 except Exception as e:
                     utils.log_warning(f"Could not get details for template {template_name} in {region}: {str(e)}")
                     continue
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
     except Exception as e:
         utils.log_warning(f"Error listing email templates in {region}: {str(e)}")

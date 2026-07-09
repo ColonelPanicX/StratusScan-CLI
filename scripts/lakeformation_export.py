@@ -35,8 +35,13 @@ def _scan_lakeformation_resources_region(region: str) -> list[dict[str, Any]]:
     regional_resources = []
     try:
         lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        paginator = lf_client.get_paginator('list_resources')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lf_client.list_resources(**params)
             resources = page.get('ResourceInfoList', [])
 
             for resource in resources:
@@ -69,6 +74,9 @@ def _scan_lakeformation_resources_region(region: str) -> list[dict[str, Any]]:
                     'Role ARN': role_arn,
                     'Last Modified': last_modified_str,
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception as e:
         utils.log_error(f"Error collecting Lake Formation resources in {region}", e)
     return regional_resources
@@ -79,8 +87,13 @@ def _scan_lakeformation_permissions_region(region: str) -> list[dict[str, Any]]:
     regional_permissions = []
     try:
         lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        paginator = lf_client.get_paginator('list_permissions')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lf_client.list_permissions(**params)
             permissions = page.get('PrincipalResourcePermissions', [])
 
             for perm in permissions:
@@ -162,6 +175,9 @@ def _scan_lakeformation_permissions_region(region: str) -> list[dict[str, Any]]:
                     'Permissions': permissions_str,
                     'Grant Permissions': grant_permissions_str,
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception as e:
         utils.log_error(f"Error collecting Lake Formation permissions in {region}", e)
     return regional_permissions

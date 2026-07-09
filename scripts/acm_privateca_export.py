@@ -170,100 +170,24 @@ def collect_private_cas(regions: list[str]) -> list[dict[str, Any]]:
     return all_cas
 
 
-def _scan_issued_certificates_region(region: str) -> list[dict[str, Any]]:
-    """Scan issued certificates in a single region."""
-    regional_certificates = []
-    acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
-
-    try:
-        # First get all CAs
-        ca_paginator = acmpca_client.get_paginator('list_certificate_authorities')
-        for ca_page in ca_paginator.paginate():
-            cas = ca_page.get('CertificateAuthorities', [])
-
-            for ca in cas:
-                ca_arn = ca.get('Arn', 'N/A')
-                ca_status = ca.get('Status', 'N/A')
-
-                # Skip if CA is not active
-                if ca_status != 'ACTIVE':
-                    continue
-
-                try:
-                    # List certificates for this CA (limit to first 50)
-                    cert_count = 0
-                    cert_paginator = acmpca_client.get_paginator('list_certificates')
-                    for cert_page in cert_paginator.paginate(
-                        CertificateAuthorityArn=ca_arn,
-                        PaginationConfig={'MaxItems': 50}
-                    ):
-                        certificates = cert_page.get('Certificates', [])
-
-                        for cert in certificates:
-                            cert_arn = cert.get('CertificateArn', 'N/A')
-                            serial = cert.get('Serial', 'N/A')
-                            status = cert.get('Status', 'N/A')
-
-                            created_at = cert.get('CreatedAt', 'N/A')
-                            if created_at != 'N/A':
-                                created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
-
-                            not_before = cert.get('NotBefore', 'N/A')
-                            if not_before != 'N/A':
-                                not_before = not_before.strftime('%Y-%m-%d %H:%M:%S')
-
-                            not_after = cert.get('NotAfter', 'N/A')
-                            if not_after != 'N/A':
-                                not_after = not_after.strftime('%Y-%m-%d %H:%M:%S')
-
-                            # Try to get certificate details
-                            try:
-                                cert_response = acmpca_client.get_certificate(
-                                    CertificateAuthorityArn=ca_arn,
-                                    CertificateArn=cert_arn
-                                )
-                                certificate_pem = cert_response.get('Certificate', 'N/A')
-                                # Truncate PEM for display
-                                if certificate_pem != 'N/A':
-                                    certificate_pem = 'Present (PEM truncated)'
-                            except Exception:
-                                certificate_pem = 'N/A'
-
-                            regional_certificates.append({
-                                'Region': region,
-                                'CA ARN': ca_arn,
-                                'Certificate ARN': cert_arn,
-                                'Serial Number': serial,
-                                'Status': status,
-                                'Created At': created_at,
-                                'Not Before': not_before,
-                                'Not After': not_after,
-                                'Certificate': certificate_pem
-                            })
-
-                            cert_count += 1
-
-                        if cert_count >= 50:
-                            break
-
-                except Exception as e:
-                    utils.log_warning(f"Could not list certificates for CA {ca_arn}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error collecting certificates in {region}: {str(e)}")
-
-    return regional_certificates
-
-
 @utils.aws_error_handler("Collecting issued certificates", default_return=[])
 def collect_issued_certificates(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect issued certificates from Private CAs (limited sample)."""
+    """Collect issued certificates from Private CAs.
+
+    NOTE: ACM Private CA exposes no API to enumerate the certificates a CA has
+    issued — there is no ``list_certificates`` operation. The only supported way
+    to obtain issued-certificate inventory is an asynchronous audit report
+    (``CreateCertificateAuthorityAuditReport``) delivered to a caller-supplied S3
+    bucket, which requires write access and is out of scope for this read-only
+    export. This collector therefore returns nothing; CA-level detail is captured
+    by the Private CA collector instead.
+    """
     print("\n=== COLLECTING ISSUED CERTIFICATES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_issued_certificates_region)
-    all_certificates = [cert for result in results for cert in result]
-    utils.log_success(f"Total certificates collected: {len(all_certificates)} (sample limited to 50 per CA)")
-    return all_certificates
+    utils.log_warning(
+        "ACM-PCA has no API to list issued certificates; skipping this sheet. "
+        "Use CreateCertificateAuthorityAuditReport for issued-certificate inventory."
+    )
+    return []
 
 
 

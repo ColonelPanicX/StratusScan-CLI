@@ -120,8 +120,13 @@ def collect_grants(region: str) -> list[dict[str, Any]]:
     grants = []
 
     try:
-        paginator = lm.get_paginator('list_received_grants')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_received_grants(**params)
             for grant in page.get('Grants', []):
                 grants.append({
                     'Region': region,
@@ -135,12 +140,20 @@ def collect_grants(region: str) -> list[dict[str, Any]]:
                     'Version': grant.get('Version', 'N/A'),
                     'StatusReason': grant.get('StatusReason', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
     try:
-        paginator = lm.get_paginator('list_distributed_grants')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_distributed_grants(**params)
             for grant in page.get('Grants', []):
                 grants.append({
                     'Region': region,
@@ -154,6 +167,9 @@ def collect_grants(region: str) -> list[dict[str, Any]]:
                     'Version': grant.get('Version', 'N/A'),
                     'StatusReason': grant.get('StatusReason', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -167,8 +183,13 @@ def collect_licenses(region: str) -> list[dict[str, Any]]:
     licenses = []
 
     try:
-        paginator = lm.get_paginator('list_licenses')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_licenses(**params)
             for license_obj in page.get('Licenses', []):
                 # Extract entitlements
                 entitlements = []
@@ -190,6 +211,9 @@ def collect_licenses(region: str) -> list[dict[str, Any]]:
                     'ConsumptionConfiguration': str(license_obj.get('ConsumptionConfiguration', {})),
                     'Version': license_obj.get('Version', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 

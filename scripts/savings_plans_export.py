@@ -69,10 +69,14 @@ def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
         print(f"\nProcessing state: {state}")
 
         try:
-            paginator = sp_client.get_paginator('describe_savings_plans')
-            page_iterator = paginator.paginate(states=[state])
+            # describe_savings_plans has no boto3 paginator; page manually via nextToken.
+            next_token = None
+            while True:
+                params: dict[str, Any] = {'states': [state], 'maxResults': 100}
+                if next_token:
+                    params['nextToken'] = next_token
 
-            for page in page_iterator:
+                page = sp_client.describe_savings_plans(**params)
                 savings_plans = page.get('savingsPlans', [])
 
                 for plan in savings_plans:
@@ -149,6 +153,10 @@ def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
                         'Tags': tags_str,
                         'Savings Plan ARN': plan_arn
                     })
+
+                next_token = page.get('nextToken')
+                if not next_token:
+                    break
 
         except Exception as e:
             utils.log_error(f"Error collecting savings plans in state {state}", e)

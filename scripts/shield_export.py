@@ -291,9 +291,13 @@ def collect_protection_groups() -> list[dict[str, Any]]:
 
     try:
         # List protection groups
-        paginator = client.get_paginator('list_protection_groups')
-
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = client.list_protection_groups(**params)
             groups = page.get('ProtectionGroups', [])
 
             for group in groups:
@@ -308,6 +312,10 @@ def collect_protection_groups() -> list[dict[str, Any]]:
                 }
 
                 groups_data.append(group_info)
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
         if groups_data:
             utils.log_info(f"Found {len(groups_data)} protection group(s)")

@@ -121,9 +121,13 @@ def collect_members(region: str, graph_arn: str) -> list[dict[str, Any]]:
 
     try:
         # List members using paginator
-        paginator = client.get_paginator('list_members')
-
-        for page in paginator.paginate(GraphArn=graph_arn):
+        next_token = None
+        while True:
+            params = {'GraphArn': graph_arn}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = client.list_members(**params)
             members = page.get('MemberDetails', [])
 
             for member in members:
@@ -143,6 +147,10 @@ def collect_members(region: str, graph_arn: str) -> list[dict[str, Any]]:
                 }
 
                 members_data.append(member_info)
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
     except Exception as e:
         utils.log_error(f"Error collecting members for graph {graph_arn}", e)
