@@ -56,3 +56,9 @@ build/
 
 # Generated Smart Scan reports (Markdown — keep .gitkeep but not report content)
 reports/*.md
+
+# Generated resource exports
+output/
+
+# Syncthing conflict artifacts
+*.sync-conflict-*
