@@ -24,7 +24,6 @@ Usage:
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -111,6 +110,14 @@ def get_aws_identity() -> Optional[dict]:
 # ============================================================================
 # VISUAL HELPERS
 # ============================================================================
+
+def clear_screen():
+    """
+    Clear the terminal screen using ANSI escape codes (avoids os.system shell call).
+    Works on Windows 10+, Linux, and macOS terminals.
+    """
+    print('\033[2J\033[H', end='', flush=True)
+
 
 def print_box(title: str, width: int = 70):
     """Print a box with title."""
@@ -395,7 +402,7 @@ def print_dashboard(config: dict, config_path: Path):
         config (dict): Configuration dictionary
         config_path (Path): Path to config file
     """
-    os.system('cls' if os.name == 'nt' else 'clear')
+    clear_screen()
     identity = get_aws_identity()
 
     # Header
@@ -543,7 +550,7 @@ def config_wizard(config: dict):
     Re-entrant — safe to run on an already-configured system.
     """
     def _clr():
-        return os.system('cls' if os.name == 'nt' else 'clear')
+        return clear_screen()
 
     _clr()
     print_section("CONFIG WIZARD")
@@ -690,7 +697,7 @@ def manage_account_mappings(config: dict):
     global _config_modified
 
     while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
+        clear_screen()
         print_section("MANAGE ACCOUNT MAPPINGS")
 
         mappings = config.get('account_mappings', {})
