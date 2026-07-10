@@ -284,6 +284,24 @@ def execute_script(script_path):
     start_time = datetime.datetime.now()
     script_name = script_path.name
 
+    # Security guard (CWE-78 containment): script_path is built from a static
+    # menu of hardcoded exporter filenames, but validate positively before it
+    # ever reaches subprocess. Only an existing .py file located directly in
+    # this project's scripts/ directory may be executed — anything else is
+    # refused. Downstream execution uses the validated `resolved_path`.
+    scripts_dir = (Path(__file__).parent / "scripts").resolve()
+    resolved_path = Path(script_path).resolve()
+    if (
+        resolved_path.parent != scripts_dir
+        or resolved_path.suffix != ".py"
+        or not resolved_path.is_file()
+    ):
+        utils.log_error(
+            f"Refused to execute script outside exporter directory: {script_path}"
+        )
+        print(f"Error: '{script_name}' is not a recognized exporter script; refusing to run.")
+        return False
+
     try:
         # Log script execution start
         utils.log_section(f"EXECUTING SCRIPT: {script_name}")
@@ -296,8 +314,8 @@ def execute_script(script_path):
         print(f"Executing: {script_path.name}")
         print("─" * 70)
 
-        # Execute the script as a subprocess
-        result = subprocess.run([sys.executable, str(script_path)],
+        # Execute the script as a subprocess (validated path only)
+        result = subprocess.run([sys.executable, str(resolved_path)],
                               check=True,
                               timeout=1800)  # 30-minute timeout, consistent with smart_scan/executor.py
 
