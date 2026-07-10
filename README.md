@@ -2,7 +2,7 @@
 
 [![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![AWS Commercial](https://img.shields.io/badge/AWS-Commercial-orange.svg)](https://aws.amazon.com/)
 [![AWS GovCloud](https://img.shields.io/badge/AWS-GovCloud%20(US)-blue.svg)](https://aws.amazon.com/govcloud-us/)
@@ -80,7 +80,7 @@ Built-in cost reference data stored as static JSON files in `reference/`. No liv
 
 ### Requirements
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - AWS credentials configured (CLI, environment variables, or IAM instance profile)
 - Read-only AWS permissions ([see details](#aws-permissions))
 

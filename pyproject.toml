@@ -7,7 +7,7 @@ name = "stratusscancli-aws"
 version = "0.5.0-beta"
 description = "AWS defensive security scanning and auditing tool for resource exports"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "GPL-3.0"}
 
 authors = [
@@ -32,7 +32,6 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -98,7 +97,7 @@ include-package-data = true
 # Black - Code formatter
 [tool.black]
 line-length = 100
-target-version = ['py39', 'py310', 'py311']
+target-version = ['py310', 'py311', 'py312']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -117,7 +116,7 @@ exclude = '''
 # Ruff - Fast linter (replaces flake8, isort, etc.)
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 # Exclude directories
 exclude = [
@@ -162,7 +161,7 @@ ignore = [
 
 # Mypy - Static type checker
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Start false, enable gradually
