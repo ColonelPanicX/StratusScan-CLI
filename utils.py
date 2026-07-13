@@ -182,8 +182,8 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
             logger.addHandler(file_handler)
 
             # Log the initialization
-            logger.info(f"StratusScan logging initialized - Log file: {log_filepath}")
-            logger.info(f"Script: {script_name}")
+            logger.info(_scrub_log(f"StratusScan logging initialized - Log file: {log_filepath}"))
+            logger.info(_scrub_log(f"Script: {script_name}"))
             logger.info(f"Timestamp: {timestamp}")
             logger.info("=" * 80)
 
@@ -434,6 +434,16 @@ def get_aws_environment() -> str:
     _, cfg = get_config()
     return cfg.get('aws_environment', 'production')
 
+def _scrub_log(value: object) -> str:
+    """
+    Sanitize a value for safe logging (CWE-117 / log-forging prevention).
+
+    Collapses carriage returns and line feeds to spaces so untrusted data
+    (e.g. an invalid account ID or ARN) cannot inject forged log lines.
+    Messages without CR/LF are returned unchanged.
+    """
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 def log_error(error_message: str, error_obj: Optional[Exception] = None) -> None:
     """
     Log an error message to both console and file.
@@ -444,11 +454,11 @@ def log_error(error_message: str, error_obj: Optional[Exception] = None) -> None
     """
     current_logger = get_logger()
     if error_obj:
-        current_logger.error(f"{error_message}: {str(error_obj)}")
+        current_logger.error(_scrub_log(f"{error_message}: {str(error_obj)}"))
         # Log stack trace for debugging
         current_logger.debug(f"Exception details: {error_obj}", exc_info=True)
     else:
-        current_logger.error(error_message)
+        current_logger.error(_scrub_log(error_message))
 
 def log_warning(warning_message: str) -> None:
     """
@@ -458,7 +468,7 @@ def log_warning(warning_message: str) -> None:
         warning_message: The warning message to display
     """
     current_logger = get_logger()
-    current_logger.warning(warning_message)
+    current_logger.warning(_scrub_log(warning_message))
 
 def log_info(info_message: str) -> None:
     """
@@ -468,7 +478,7 @@ def log_info(info_message: str) -> None:
         info_message: The information message to display
     """
     current_logger = get_logger()
-    current_logger.info(info_message)
+    current_logger.info(_scrub_log(info_message))
 
 def log_debug(debug_message: str) -> None:
     """
@@ -478,7 +488,7 @@ def log_debug(debug_message: str) -> None:
         debug_message: The debug message to log
     """
     current_logger = get_logger()
-    current_logger.debug(debug_message)
+    current_logger.debug(_scrub_log(debug_message))
 
 def log_success(success_message: str) -> None:
     """
@@ -488,7 +498,7 @@ def log_success(success_message: str) -> None:
         success_message: The success message to display
     """
     current_logger = get_logger()
-    current_logger.info(f"SUCCESS: {success_message}")
+    current_logger.info(_scrub_log(f"SUCCESS: {success_message}"))
     print(f"[✓] {success_message}", flush=True)
 
 def log_aws_info(message: str) -> None:
@@ -511,7 +521,7 @@ def log_partition_info(partition: str, regions: list[str]) -> None:
     """
     current_logger = get_logger()
     partition_name = "AWS GovCloud" if partition == 'aws-us-gov' else "AWS Commercial"
-    current_logger.info(f"AWS PARTITION: {partition_name} ({partition})")
+    current_logger.info(_scrub_log(f"AWS PARTITION: {partition_name} ({partition})"))
     current_logger.info(f"REGIONS: {', '.join(regions)}")
 
     if partition == 'aws-us-gov':
@@ -527,7 +537,7 @@ def log_script_start(script_name: str, description: str = "") -> None:
     """
     current_logger = get_logger()
     current_logger.info("=" * 80)
-    current_logger.info(f"SCRIPT START: {script_name}")
+    current_logger.info(_scrub_log(f"SCRIPT START: {script_name}"))
     if description:
         current_logger.info(f"DESCRIPTION: {description}")
     current_logger.info(f"START TIME: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -545,7 +555,7 @@ def log_script_end(script_name: str, start_time: Optional[datetime.datetime] = N
     end_time = datetime.datetime.now()
 
     current_logger.info("=" * 80)
-    current_logger.info(f"SCRIPT END: {script_name}")
+    current_logger.info(_scrub_log(f"SCRIPT END: {script_name}"))
     current_logger.info(f"END TIME: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     if start_time:
@@ -563,7 +573,7 @@ def log_section(section_name: str) -> None:
     """
     current_logger = get_logger()
     current_logger.info("-" * 50)
-    current_logger.info(f"SECTION: {section_name}")
+    current_logger.info(_scrub_log(f"SECTION: {section_name}"))
     current_logger.info("-" * 50)
 
 def log_aws_operation(operation_name: str, service: str, region: Optional[str] = None, details: str = "") -> None:
@@ -615,7 +625,7 @@ def log_menu_selection(menu_path: str, selection_name: str) -> None:
         selection_name: Name of the selected option
     """
     current_logger = get_logger()
-    current_logger.info(f"MENU SELECTION: {menu_path} - {selection_name}")
+    current_logger.info(_scrub_log(f"MENU SELECTION: {menu_path} - {selection_name}"))
 
 def get_current_log_file() -> Optional[str]:
     """
@@ -846,8 +856,20 @@ def get_output_filepath(filename: str) -> Path:
 
     Returns:
         Path: Full path to the file in the output directory
+
+    Raises:
+        ValueError: If the name would resolve outside the output directory.
     """
-    return get_output_dir() / filename
+    output_dir = get_output_dir().resolve()
+    # Containment (CWE-73): reduce to a bare filename and confirm it resolves to
+    # a direct child of the output directory, so a crafted name containing path
+    # separators or '..' cannot escape it. Standard export filenames are already
+    # bare and pass through unchanged.
+    safe_name = os.path.basename(filename)
+    resolved = (output_dir / safe_name).resolve()
+    if safe_name in ("", ".", "..") or resolved.parent != output_dir:
+        raise ValueError(f"Refusing output path outside output directory: {filename!r}")
+    return output_dir / safe_name
 
 def create_export_filename(
     account_name: str,
@@ -943,7 +965,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             output_path = get_output_filepath(filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             df.to_csv(output_path, index=False)
-            logger.info(f"Data successfully exported to: {output_path}")
+            logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
             return str(output_path)
 
         # --- xlsx path ---
@@ -965,7 +987,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             # Save directly without adjusting columns
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
 
-        logger.info(f"Data successfully exported to: {output_path}")
+        logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
         return str(output_path)
 
     except Exception as e:
@@ -1026,7 +1048,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                 csv_filename = f"{base_stem}-{slug}.csv"
                 csv_path = output_dir / csv_filename
                 df.to_csv(csv_path, index=False)
-                logger.info(f"Data successfully exported to: {csv_path}")
+                logger.info(_scrub_log(f"Data successfully exported to: {csv_path}"))
                 if first_path is None:
                     first_path = str(csv_path)
 
@@ -1061,7 +1083,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                 if not df.empty:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
 
-        logger.info(f"Data successfully exported to: {output_path}")
+        logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
         return str(output_path)
 
     except Exception as e:
@@ -2376,13 +2398,13 @@ def add_cross_account_role(account_id: str, role_arn: str) -> bool:
     log = logging.getLogger(__name__)
 
     if not is_valid_aws_account_id(account_id):
-        log.error("Invalid AWS account ID: %s", account_id)
+        log.error("Invalid AWS account ID: %s", _scrub_log(account_id))
         return False
 
     if not _ROLE_ARN_RE.match(role_arn):
         log.error(
             "Invalid role ARN format: %s — expected arn:(aws|aws-us-gov):iam::<12-digit-id>:role/<name>",
-            role_arn,
+            _scrub_log(role_arn),
         )
         return False
 
@@ -2413,7 +2435,7 @@ def add_cross_account_role(account_id: str, role_arn: str) -> bool:
             # Update in-memory cache after successful write
             CONFIG_DATA.setdefault("cross_account_roles", {})[account_id] = role_arn
 
-        log.info("Added cross-account role: %s → %s", account_id, role_arn)
+        log.info("Added cross-account role: %s → %s", _scrub_log(account_id), _scrub_log(role_arn))
         return True
 
     except Exception as e:
@@ -2436,7 +2458,7 @@ def remove_cross_account_role(account_id: str) -> bool:
     log = logging.getLogger(__name__)
 
     if not is_valid_aws_account_id(account_id):
-        log.error("Invalid AWS account ID: %s", account_id)
+        log.error("Invalid AWS account ID: %s", _scrub_log(account_id))
         return False
 
     try:
@@ -2454,7 +2476,7 @@ def remove_cross_account_role(account_id: str) -> bool:
 
             roles = config.get("cross_account_roles", {})
             if account_id not in roles:
-                log.warning("No cross-account role found for account %s", account_id)
+                log.warning("No cross-account role found for account %s", _scrub_log(account_id))
                 return False
 
             del roles[account_id]
@@ -2468,7 +2490,7 @@ def remove_cross_account_role(account_id: str) -> bool:
             # Update in-memory cache
             CONFIG_DATA.get("cross_account_roles", {}).pop(account_id, None)
 
-        log.info("Removed cross-account role for account %s", account_id)
+        log.info("Removed cross-account role for account %s", _scrub_log(account_id))
         return True
 
     except Exception as e:
