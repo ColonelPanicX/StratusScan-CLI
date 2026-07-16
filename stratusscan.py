@@ -271,6 +271,13 @@ def ensure_directory_structure():
 
     return scripts_dir, output_dir
 
+
+# Root-level scripts (siblings of stratusscan.py, not under scripts/) that the
+# main menu is allowed to launch. Kept as an explicit allowlist so the CWE-78
+# containment guard in execute_script() can positively validate them by name.
+ROOT_ENTRY_POINT_SCRIPTS = frozenset({"configure.py", "smart_scan.py"})
+
+
 def execute_script(script_path):
     """
     Execute the selected export script.
@@ -285,21 +292,28 @@ def execute_script(script_path):
     script_name = script_path.name
 
     # Security guard (CWE-78 containment): script_path is built from a static
-    # menu of hardcoded exporter filenames, but validate positively before it
-    # ever reaches subprocess. Only an existing .py file located directly in
-    # this project's scripts/ directory may be executed — anything else is
-    # refused. Downstream execution uses the validated `resolved_path`.
-    scripts_dir = (Path(__file__).parent / "scripts").resolve()
+    # menu of hardcoded filenames, but validate positively before it ever
+    # reaches subprocess. Permit only (a) an existing .py file located directly
+    # in this project's scripts/ directory, or (b) one of the known root-level
+    # entry-point scripts the main menu launches (Configure, Service Discovery).
+    # Anything else is refused. Downstream execution uses `resolved_path`.
+    project_root = Path(__file__).parent.resolve()
+    scripts_dir = (project_root / "scripts").resolve()
     resolved_path = Path(script_path).resolve()
+    in_scripts_dir = resolved_path.parent == scripts_dir
+    is_root_entry_point = (
+        resolved_path.parent == project_root
+        and resolved_path.name in ROOT_ENTRY_POINT_SCRIPTS
+    )
     if (
-        resolved_path.parent != scripts_dir
+        not (in_scripts_dir or is_root_entry_point)
         or resolved_path.suffix != ".py"
         or not resolved_path.is_file()
     ):
         utils.log_error(
-            f"Refused to execute script outside exporter directory: {script_path}"
+            f"Refused to execute script outside the allowed set: {script_path}"
         )
-        print(f"Error: '{script_name}' is not a recognized exporter script; refusing to run.")
+        print(f"Error: '{script_name}' is not a recognized StratusScan script; refusing to run.")
         return False
 
     try:
