@@ -50,130 +50,160 @@ except ImportError:
 args = utils.parse_script_args("Export Auto Scaling Groups to Excel")
 
 
-@utils.aws_error_handler("Collecting Auto Scaling Groups", default_return=[])
-def collect_autoscaling_groups(regions: list[str]) -> list[dict[str, Any]]:
+def _scan_asgs_region(region: str) -> list[dict[str, Any]]:
     """
-    Collect Auto Scaling Group information from AWS regions.
+    Collect Auto Scaling Groups from a single region.
 
-    Args:
-        regions: List of AWS regions to scan
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Auto Scaling Groups" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed ASGs are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    paginator = asg_client.get_paginator('describe_auto_scaling_groups')
+    region_asgs = []
+    asg_count = 0
+
+    for page in paginator.paginate():
+        asgs = page.get('AutoScalingGroups', [])
+        asg_count += len(asgs)
+
+        for asg in asgs:
+            try:
+                region_asgs.append(_build_asg_row(asg, region))
+            except Exception as e:
+                # One malformed ASG is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Auto Scaling Group in {region}: "
+                    f"{asg.get('AutoScalingGroupName', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    print(f"  Found {asg_count} Auto Scaling Groups")
+    return region_asgs
+
+
+def _build_asg_row(asg: dict, region: str) -> dict[str, Any]:
+    """Build a single Auto Scaling Group export row from a describe response."""
+    asg_name = asg.get('AutoScalingGroupName', '')
+    print(f"  Processing ASG: {asg_name}")
+
+    # Basic information
+    asg_arn = asg.get('AutoScalingGroupARN', '')
+    min_size = asg.get('MinSize', 0)
+    max_size = asg.get('MaxSize', 0)
+    desired_capacity = asg.get('DesiredCapacity', 0)
+    default_cooldown = asg.get('DefaultCooldown', 0)
+    health_check_type = asg.get('HealthCheckType', 'N/A')
+    health_check_grace_period = asg.get('HealthCheckGracePeriod', 0)
+
+    # Launch configuration or template
+    launch_config_name = asg.get('LaunchConfigurationName', 'N/A')
+    launch_template = asg.get('LaunchTemplate', {})
+    mixed_instances_policy = asg.get('MixedInstancesPolicy', {})
+
+    if launch_template:
+        launch_source = f"LT: {launch_template.get('LaunchTemplateName', '')} ({launch_template.get('Version', '')})"
+    elif mixed_instances_policy:
+        lt_spec = mixed_instances_policy.get('LaunchTemplate', {}).get('LaunchTemplateSpecification', {})
+        launch_source = f"Mixed: {lt_spec.get('LaunchTemplateName', '')} ({lt_spec.get('Version', '')})"
+    else:
+        launch_source = f"LC: {launch_config_name}"
+
+    # VPC and subnets
+    vpc_zone_identifier = asg.get('VPCZoneIdentifier', '')
+    subnet_ids = vpc_zone_identifier.split(',') if vpc_zone_identifier else []
+    subnet_count = len(subnet_ids)
+    availability_zones = asg.get('AvailabilityZones', [])
+    az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
+
+    # Load balancers
+    load_balancer_names = asg.get('LoadBalancerNames', [])
+    target_group_arns = asg.get('TargetGroupARNs', [])
+    lb_count = len(load_balancer_names) + len(target_group_arns)
+
+    # Instance information
+    instances = asg.get('Instances', [])
+    instance_count = len(instances)
+    healthy_count = sum(1 for i in instances if i.get('HealthStatus') == 'Healthy')
+    unhealthy_count = instance_count - healthy_count
+
+    # Service-linked role
+    service_linked_role_arn = asg.get('ServiceLinkedRoleARN', 'N/A')
+
+    # New instances protected from scale in
+    new_instances_protected = asg.get('NewInstancesProtectedFromScaleIn', False)
+
+    # Capacity rebalance
+    capacity_rebalance = asg.get('CapacityRebalance', False)
+
+    # Creation time
+    created_time = asg.get('CreatedTime', '')
+    if created_time:
+        created_time = created_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_time, datetime.datetime) else str(created_time)
+
+    # Tags
+    tags = asg.get('Tags', [])
+    tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    return {
+        'Region': region,
+        'ASG Name': asg_name,
+        'Min Size': min_size,
+        'Max Size': max_size,
+        'Desired Capacity': desired_capacity,
+        'Current Instances': instance_count,
+        'Healthy Instances': healthy_count,
+        'Unhealthy Instances': unhealthy_count,
+        'Launch Source': launch_source,
+        'Availability Zones': az_list,
+        'Subnet Count': subnet_count,
+        'Load Balancer Count': lb_count,
+        'Health Check Type': health_check_type,
+        'Health Check Grace Period (s)': health_check_grace_period,
+        'Default Cooldown (s)': default_cooldown,
+        'New Instance Protection': new_instances_protected,
+        'Capacity Rebalance': capacity_rebalance,
+        'Service Linked Role': service_linked_role_arn,
+        'Created Time': created_time,
+        'Tags': tags_str,
+        'ASG ARN': asg_arn
+    }
+
+
+def collect_autoscaling_groups(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Auto Scaling Group information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Returns:
-        list: List of dictionaries with Auto Scaling Group information
+        tuple: ``(asgs, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
     """
-    all_asgs = []
-
-    for region in regions:
-        if not utils.is_aws_region(region):
-            utils.log_error(f"Skipping invalid AWS region: {region}")
-            continue
-
-        print(f"\nProcessing region: {region}")
-
-        try:
-            asg_client = utils.get_boto3_client('autoscaling', region_name=region)
-
-            # Get Auto Scaling Groups
-            paginator = asg_client.get_paginator('describe_auto_scaling_groups')
-            asg_count = 0
-
-            for page in paginator.paginate():
-                asgs = page.get('AutoScalingGroups', [])
-                asg_count += len(asgs)
-
-                for asg in asgs:
-                    asg_name = asg.get('AutoScalingGroupName', '')
-                    print(f"  Processing ASG: {asg_name}")
-
-                    # Basic information
-                    asg_arn = asg.get('AutoScalingGroupARN', '')
-                    min_size = asg.get('MinSize', 0)
-                    max_size = asg.get('MaxSize', 0)
-                    desired_capacity = asg.get('DesiredCapacity', 0)
-                    default_cooldown = asg.get('DefaultCooldown', 0)
-                    health_check_type = asg.get('HealthCheckType', 'N/A')
-                    health_check_grace_period = asg.get('HealthCheckGracePeriod', 0)
-
-                    # Launch configuration or template
-                    launch_config_name = asg.get('LaunchConfigurationName', 'N/A')
-                    launch_template = asg.get('LaunchTemplate', {})
-                    mixed_instances_policy = asg.get('MixedInstancesPolicy', {})
-
-                    if launch_template:
-                        launch_source = f"LT: {launch_template.get('LaunchTemplateName', '')} ({launch_template.get('Version', '')})"
-                    elif mixed_instances_policy:
-                        lt_spec = mixed_instances_policy.get('LaunchTemplate', {}).get('LaunchTemplateSpecification', {})
-                        launch_source = f"Mixed: {lt_spec.get('LaunchTemplateName', '')} ({lt_spec.get('Version', '')})"
-                    else:
-                        launch_source = f"LC: {launch_config_name}"
-
-                    # VPC and subnets
-                    vpc_zone_identifier = asg.get('VPCZoneIdentifier', '')
-                    subnet_ids = vpc_zone_identifier.split(',') if vpc_zone_identifier else []
-                    subnet_count = len(subnet_ids)
-                    availability_zones = asg.get('AvailabilityZones', [])
-                    az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
-
-                    # Load balancers
-                    load_balancer_names = asg.get('LoadBalancerNames', [])
-                    target_group_arns = asg.get('TargetGroupARNs', [])
-                    lb_count = len(load_balancer_names) + len(target_group_arns)
-
-                    # Instance information
-                    instances = asg.get('Instances', [])
-                    instance_count = len(instances)
-                    healthy_count = sum(1 for i in instances if i.get('HealthStatus') == 'Healthy')
-                    unhealthy_count = instance_count - healthy_count
-
-                    # Service-linked role
-                    service_linked_role_arn = asg.get('ServiceLinkedRoleARN', 'N/A')
-
-                    # New instances protected from scale in
-                    new_instances_protected = asg.get('NewInstancesProtectedFromScaleIn', False)
-
-                    # Capacity rebalance
-                    capacity_rebalance = asg.get('CapacityRebalance', False)
-
-                    # Creation time
-                    created_time = asg.get('CreatedTime', '')
-                    if created_time:
-                        created_time = created_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_time, datetime.datetime) else str(created_time)
-
-                    # Tags
-                    tags = asg.get('Tags', [])
-                    tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
-                    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-                    all_asgs.append({
-                        'Region': region,
-                        'ASG Name': asg_name,
-                        'Min Size': min_size,
-                        'Max Size': max_size,
-                        'Desired Capacity': desired_capacity,
-                        'Current Instances': instance_count,
-                        'Healthy Instances': healthy_count,
-                        'Unhealthy Instances': unhealthy_count,
-                        'Launch Source': launch_source,
-                        'Availability Zones': az_list,
-                        'Subnet Count': subnet_count,
-                        'Load Balancer Count': lb_count,
-                        'Health Check Type': health_check_type,
-                        'Health Check Grace Period (s)': health_check_grace_period,
-                        'Default Cooldown (s)': default_cooldown,
-                        'New Instance Protection': new_instances_protected,
-                        'Capacity Rebalance': capacity_rebalance,
-                        'Service Linked Role': service_linked_role_arn,
-                        'Created Time': created_time,
-                        'Tags': tags_str,
-                        'ASG ARN': asg_arn
-                    })
-
-            print(f"  Found {asg_count} Auto Scaling Groups")
-
-        except Exception as e:
-            utils.log_error(f"Error processing region {region} for Auto Scaling Groups", e)
-
-    return all_asgs
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_asgs_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_asgs = [asg for result in region_results for asg in result]
+    return all_asgs, failed_regions
 
 
 @utils.aws_error_handler("Collecting ASG instances", default_return=[])
@@ -388,16 +418,10 @@ def export_autoscaling_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Auto Scaling Groups (Phase 4B: concurrent)
+    # STEP 1: Collect Auto Scaling Groups (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
     print("\n=== COLLECTING AUTO SCALING GROUPS ===")
-    asg_results = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=lambda r: collect_autoscaling_groups([r]),
-        show_progress=True
-    )
-    asgs = []
-    for result in asg_results:
-        asgs.extend(result)
+    asgs, failed_regions = collect_autoscaling_groups(regions)
     utils.log_success(f"Total Auto Scaling Groups collected: {len(asgs)}")
     if asgs:
         data_frames['Auto Scaling Groups'] = pd.DataFrame(asgs)
@@ -435,43 +459,55 @@ def export_autoscaling_data(account_id: str, account_name: str):
     if hooks:
         data_frames['Lifecycle Hooks'] = pd.DataFrame(hooks)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even when
+    # some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'autoscaling',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Auto Scaling data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Auto Scaling Group data was collected. Nothing to export.")
         print("\nNo Auto Scaling Groups found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'autoscaling',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Auto Scaling data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary ASG scope collection, make it loud:
+    # write a marker and exit non-zero, even if some data was exported. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'autoscaling', failed_regions)
+        print(
+            "\nERROR: Auto Scaling export completed with failures — data is incomplete. "
+            "See the *-autoscaling-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
