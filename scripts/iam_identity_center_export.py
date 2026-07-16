@@ -50,13 +50,26 @@ args = utils.parse_script_args("Export IAM Identity Center (SSO) configuration t
 # Instance discovery
 # ---------------------------------------------------------------------------
 
-@utils.aws_error_handler("Getting IAM Identity Center instance", default_return=(None, None))
 def get_identity_center_instance():
     """
     Get the IAM Identity Center instance ARN and Identity Store ID.
 
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    (None, None), which is indistinguishable from IAM Identity Center being
+    genuinely disabled in this account. The empty-instances case (a clean,
+    valid API response with zero instances) is a legitimate account state and
+    is handled explicitly below without raising. Any other failure
+    (throttling, access denied, malformed response, etc.) is allowed to
+    propagate so the caller can record it as a FAILED scope rather than
+    silently treating it as "not enabled."
+
     Returns:
-        tuple: (instance_arn, identity_store_id) or (None, None) if not configured
+        tuple: (instance_arn, identity_store_id), or (None, None) if IAM
+            Identity Center is not enabled/configured in this account.
+
+    Raises:
+        Exception: Any AWS API error other than a legitimately empty instance
+            list (never masked as "not enabled").
     """
     home_region = utils.get_partition_default_region()
     sso_admin_client = utils.get_boto3_client('sso-admin', region_name=home_region)
@@ -70,8 +83,13 @@ def get_identity_center_instance():
         return None, None
 
     instance = instances[0]
-    instance_arn = instance['InstanceArn']
-    identity_store_id = instance['IdentityStoreId']
+    instance_arn = instance.get('InstanceArn')
+    identity_store_id = instance.get('IdentityStoreId')
+
+    if not instance_arn or not identity_store_id:
+        raise ValueError(
+            f"IAM Identity Center instance response is missing InstanceArn/IdentityStoreId: {instance}"
+        )
 
     utils.log_success(f"Found IAM Identity Center instance: {instance_arn}")
     return instance_arn, identity_store_id
@@ -240,10 +258,55 @@ def get_user_application_assignments(sso_admin_client, instance_arn, user_id):
     return ', '.join(user_applications) if user_applications else 'None'
 
 
-@utils.aws_error_handler("Collecting Identity Center users", default_return=[])
+def _build_identity_center_user_row(identitystore_client, sso_admin_client, identity_store_id, instance_arn, user):
+    """
+    Build the export row for a single Identity Center user (combined export).
+
+    Extracted so per-user processing can be wrapped in try/except by the
+    caller: a malformed user record must not sink the whole account's
+    collection. UserId is read via .get() and validated explicitly — the
+    group/account/application lookups all require it, so a record missing it
+    is treated as malformed and raised for the caller's per-item guard to
+    catch and skip.
+
+    Raises:
+        ValueError: If the user record is missing UserId.
+    """
+    user_id = user.get('UserId')
+    if not user_id:
+        raise ValueError(f"Identity Center user record missing UserId: {user}")
+
+    group_memberships = get_user_group_memberships(identitystore_client, identity_store_id, user_id)
+    account_assignments = get_user_account_assignments(sso_admin_client, instance_arn, user_id)
+    application_assignments = get_user_application_assignments(sso_admin_client, instance_arn, user_id)
+
+    return {
+        'User ID': user_id,
+        'User Name': user.get('UserName', 'N/A'),
+        'Display Name': user.get('DisplayName', 'N/A'),
+        'Given Name': user.get('Name', {}).get('GivenName', 'N/A'),
+        'Family Name': user.get('Name', {}).get('FamilyName', 'N/A'),
+        'Email': get_user_email(user),
+        'Status': 'Active' if user.get('Active', True) else 'Inactive',
+        'External ID': get_user_external_id(user),
+        'Groups': group_memberships,
+        'AWS Accounts': account_assignments,
+        'Applications': application_assignments,
+        'Created Date': user.get('Meta', {}).get('Created', 'N/A'),
+        'Last Modified': user.get('Meta', {}).get('LastModified', 'N/A')
+    }
+
+
 def collect_identity_center_users(identity_store_id, instance_arn):
     """
     Collect IAM Identity Center users (combined export).
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    users, producing silent data loss. Account-scope API failures (listing,
+    pagination, throttling, access denied) are allowed to raise so the
+    caller can record this scope as FAILED. Per-user errors are contained
+    internally (logged and skipped) via _build_identity_center_user_row.
 
     Args:
         identity_store_id: The Identity Store ID
@@ -251,6 +314,9 @@ def collect_identity_center_users(identity_store_id, instance_arn):
 
     Returns:
         list: List of user information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not identity_store_id:
         return []
@@ -271,6 +337,7 @@ def collect_identity_center_users(identity_store_id, instance_arn):
 
     paginator = identitystore_client.get_paginator('list_users')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(IdentityStoreId=identity_store_id):
         users = page.get('Users', [])
@@ -282,27 +349,24 @@ def collect_identity_center_users(identity_store_id, instance_arn):
 
             utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {user_name}")
 
-            group_memberships = get_user_group_memberships(identitystore_client, identity_store_id, user['UserId'])
-            account_assignments = get_user_account_assignments(sso_admin_client, instance_arn, user['UserId'])
-            application_assignments = get_user_application_assignments(sso_admin_client, instance_arn, user['UserId'])
-
-            user_info = {
-                'User ID': user.get('UserId', 'N/A'),
-                'User Name': user.get('UserName', 'N/A'),
-                'Display Name': user.get('DisplayName', 'N/A'),
-                'Given Name': user.get('Name', {}).get('GivenName', 'N/A'),
-                'Family Name': user.get('Name', {}).get('FamilyName', 'N/A'),
-                'Email': get_user_email(user),
-                'Status': 'Active' if user.get('Active', True) else 'Inactive',
-                'External ID': get_user_external_id(user),
-                'Groups': group_memberships,
-                'AWS Accounts': account_assignments,
-                'Applications': application_assignments,
-                'Created Date': user.get('Meta', {}).get('Created', 'N/A'),
-                'Last Modified': user.get('Meta', {}).get('LastModified', 'N/A')
-            }
+            try:
+                user_info = _build_identity_center_user_row(
+                    identitystore_client, sso_admin_client, identity_store_id, instance_arn, user
+                )
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Identity Center user '{user.get('UserId', user_name)}' due to a processing error", e
+                )
+                continue
 
             users_data.append(user_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_users} Identity Center user(s) were skipped due to processing errors "
+            "(see log above); the remaining users were still collected."
+        )
 
     return users_data
 
@@ -344,16 +408,52 @@ def get_group_member_count(identitystore_client, identity_store_id, group_id):
     return member_count
 
 
-@utils.aws_error_handler("Collecting Identity Center groups", default_return=[])
+def _build_identity_center_group_row(identitystore_client, identity_store_id, group):
+    """
+    Build the export row for a single Identity Center group (simple version).
+
+    Extracted so per-group processing can be wrapped in try/except by the
+    caller: a malformed group record must not sink the whole account's
+    collection.
+
+    Raises:
+        ValueError: If the group record is missing GroupId.
+    """
+    group_id = group.get('GroupId')
+    if not group_id:
+        raise ValueError(f"Identity Center group record missing GroupId: {group}")
+
+    member_count = get_group_member_count(identitystore_client, identity_store_id, group_id)
+
+    return {
+        'Group ID': group_id,
+        'Group Name': group.get('DisplayName', 'N/A'),
+        'Description': group.get('Description', 'N/A'),
+        'External ID': get_group_external_id(group),
+        'Member Count': member_count,
+        'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
+        'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A')
+    }
+
+
 def collect_identity_center_groups(identity_store_id):
     """
     Collect IAM Identity Center groups (simple version, for combined export option 1).
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    groups. Account-scope API failures are allowed to raise so the caller can
+    record this scope as FAILED. Per-group errors are contained internally
+    (logged and skipped) via _build_identity_center_group_row.
 
     Args:
         identity_store_id: The Identity Store ID
 
     Returns:
         list: List of group information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not identity_store_id:
         return []
@@ -373,6 +473,7 @@ def collect_identity_center_groups(identity_store_id):
 
     paginator = identitystore_client.get_paginator('list_groups')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(IdentityStoreId=identity_store_id):
         groups = page.get('Groups', [])
@@ -384,19 +485,22 @@ def collect_identity_center_groups(identity_store_id):
 
             utils.log_info(f"[{progress:.1f}%] Processing group {processed}/{total_groups}: {group_name}")
 
-            member_count = get_group_member_count(identitystore_client, identity_store_id, group['GroupId'])
-
-            group_info = {
-                'Group ID': group.get('GroupId', 'N/A'),
-                'Group Name': group.get('DisplayName', 'N/A'),
-                'Description': group.get('Description', 'N/A'),
-                'External ID': get_group_external_id(group),
-                'Member Count': member_count,
-                'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
-                'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A')
-            }
+            try:
+                group_info = _build_identity_center_group_row(identitystore_client, identity_store_id, group)
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Identity Center group '{group.get('GroupId', group_name)}' due to a processing error", e
+                )
+                continue
 
             groups_data.append(group_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_groups} Identity Center group(s) were skipped due to processing errors "
+            "(see log above); the remaining groups were still collected."
+        )
 
     return groups_data
 
@@ -465,17 +569,68 @@ def _get_group_members_detailed(identitystore_client, identity_store_id, group_i
     return members
 
 
-@utils.aws_error_handler("Collecting Identity Center groups (detailed)", default_return=[])
+def _build_identity_center_group_detailed_row(identitystore_client, identity_store_id, group):
+    """
+    Build the export row for a single Identity Center group (detailed version).
+
+    Extracted so per-group processing can be wrapped in try/except by the
+    caller: a malformed group record must not sink the whole account's
+    collection.
+
+    Raises:
+        ValueError: If the group record is missing GroupId.
+    """
+    group_id = group.get('GroupId')
+    if not group_id:
+        raise ValueError(f"Identity Center group record missing GroupId: {group}")
+
+    members = _get_group_members_detailed(identitystore_client, identity_store_id, group_id)
+
+    member_names = [m['name'] for m in members]
+    user_members = [m['name'] for m in members if m['type'] == 'User']
+    group_members = [m['name'] for m in members if m['type'] == 'Group']
+
+    external_ids = group.get('ExternalIds', [])
+    external_id = external_ids[0].get('Id', 'N/A') if external_ids else 'N/A'
+
+    return {
+        'Group ID': group_id,
+        'Group Name': group.get('DisplayName', 'N/A'),
+        'Description': group.get('Description', 'N/A'),
+        'External ID': external_id,
+        'Total Members': len(members),
+        'User Members': len(user_members),
+        'Group Members': len(group_members),
+        'Member Names': ', '.join(member_names) if member_names else 'None',
+        'User Member Names': ', '.join(user_members) if user_members else 'None',
+        'Group Member Names': ', '.join(group_members) if group_members else 'None',
+        'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
+        'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A'),
+        'Resource Version': group.get('Meta', {}).get('ResourceType', 'N/A')
+    }
+
+
 def collect_identity_center_groups_detailed(identity_store_id):
     """
     Collect IAM Identity Center groups with detailed member information.
     Used for Groups-only export (option 2).
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    groups. Account-scope API failures are allowed to raise so the caller can
+    record this scope as FAILED. Per-group errors are contained internally
+    (logged and skipped) via _build_identity_center_group_detailed_row. The
+    zero-groups case below is a legitimate, non-error account state and
+    returns [] without raising.
 
     Args:
         identity_store_id: The Identity Store ID
 
     Returns:
         list: List of group information dictionaries with member details
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not identity_store_id:
         return []
@@ -498,6 +653,7 @@ def collect_identity_center_groups_detailed(identity_store_id):
 
     paginator = identitystore_client.get_paginator('list_groups')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(IdentityStoreId=identity_store_id):
         groups = page.get('Groups', [])
@@ -509,32 +665,24 @@ def collect_identity_center_groups_detailed(identity_store_id):
 
             utils.log_info(f"[{progress:.1f}%] Processing group {processed}/{total_groups}: {group_name}")
 
-            members = _get_group_members_detailed(identitystore_client, identity_store_id, group['GroupId'])
-
-            member_names = [m['name'] for m in members]
-            user_members = [m['name'] for m in members if m['type'] == 'User']
-            group_members = [m['name'] for m in members if m['type'] == 'Group']
-
-            external_ids = group.get('ExternalIds', [])
-            external_id = external_ids[0].get('Id', 'N/A') if external_ids else 'N/A'
-
-            group_info = {
-                'Group ID': group.get('GroupId', 'N/A'),
-                'Group Name': group.get('DisplayName', 'N/A'),
-                'Description': group.get('Description', 'N/A'),
-                'External ID': external_id,
-                'Total Members': len(members),
-                'User Members': len(user_members),
-                'Group Members': len(group_members),
-                'Member Names': ', '.join(member_names) if member_names else 'None',
-                'User Member Names': ', '.join(user_members) if user_members else 'None',
-                'Group Member Names': ', '.join(group_members) if group_members else 'None',
-                'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
-                'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A'),
-                'Resource Version': group.get('Meta', {}).get('ResourceType', 'N/A')
-            }
+            try:
+                group_info = _build_identity_center_group_detailed_row(
+                    identitystore_client, identity_store_id, group
+                )
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Identity Center group '{group.get('GroupId', group_name)}' due to a processing error", e
+                )
+                continue
 
             groups_data.append(group_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_groups} Identity Center group(s) were skipped due to processing errors "
+            "(see log above); the remaining groups were still collected."
+        )
 
     return groups_data
 
@@ -596,16 +744,25 @@ def get_permission_set_tags(sso_admin_client, instance_arn, permission_set_arn):
     return ', '.join(tag_strings) if tag_strings else 'None'
 
 
-@utils.aws_error_handler("Collecting permission sets", default_return=[])
 def collect_permission_sets(instance_arn):
     """
     Collect IAM Identity Center permission sets.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    permission sets. Account-scope API failures (listing, pagination) are
+    allowed to raise so the caller can record this scope as FAILED. Per-item
+    errors (a single permission set failing to describe) are contained
+    internally (logged and skipped) below.
 
     Args:
         instance_arn: IAM Identity Center instance ARN
 
     Returns:
         list: List of permission set information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not instance_arn:
         return []
@@ -625,6 +782,7 @@ def collect_permission_sets(instance_arn):
 
     paginator = sso_admin_client.get_paginator('list_permission_sets')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(InstanceArn=instance_arn):
         permission_sets = page.get('PermissionSets', [])
@@ -641,7 +799,7 @@ def collect_permission_sets(instance_arn):
                     PermissionSetArn=permission_set_arn
                 )
 
-                permission_set = ps_response['PermissionSet']
+                permission_set = ps_response.get('PermissionSet', {})
 
                 managed_policies = get_permission_set_managed_policies(sso_admin_client, instance_arn, permission_set_arn)
                 inline_policy = get_permission_set_inline_policy(sso_admin_client, instance_arn, permission_set_arn)
@@ -663,7 +821,14 @@ def collect_permission_sets(instance_arn):
                 permission_sets_data.append(permission_set_info)
 
             except Exception as e:
-                utils.log_warning(f"Error processing permission set {permission_set_arn}: {e}")
+                skipped += 1
+                utils.log_error(f"Skipping permission set '{permission_set_arn}' due to a processing error", e)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_permission_sets} permission set(s) were skipped due to processing errors "
+            "(see log above); the remaining permission sets were still collected."
+        )
 
     return permission_sets_data
 
@@ -672,10 +837,94 @@ def collect_permission_sets(instance_arn):
 # Comprehensive collection functions (from iam_identity_center_comprehensive_export.py)
 # ---------------------------------------------------------------------------
 
-@utils.aws_error_handler("Collecting comprehensive Identity Center users", default_return=[])
+def _build_comprehensive_user_row(identitystore_client, sso_admin_client, identity_store_id, instance_arn, user):
+    """
+    Build the export row for a single Identity Center user (comprehensive export).
+
+    Extracted so per-user processing can be wrapped in try/except by the
+    caller: a malformed user record must not sink the whole account's
+    collection. UserId is read via .get() and validated explicitly — the
+    group/account/application lookups all require it.
+
+    Raises:
+        ValueError: If the user record is missing UserId.
+    """
+    user_id = user.get('UserId')
+    if not user_id:
+        raise ValueError(f"Identity Center user record missing UserId: {user}")
+
+    group_memberships = get_user_group_memberships(identitystore_client, identity_store_id, user_id)
+    account_assignments = get_user_account_assignments(sso_admin_client, instance_arn, user_id)
+    application_assignments = get_user_application_assignments(sso_admin_client, instance_arn, user_id)
+
+    addresses = user.get('Addresses', [])
+    phone_numbers = user.get('PhoneNumbers', [])
+
+    primary_address = 'N/A'
+    if addresses:
+        primary_addr = next((addr for addr in addresses if addr.get('Primary', False)), addresses[0])
+        if primary_addr:
+            addr_parts = []
+            if primary_addr.get('StreetAddress'):
+                addr_parts.append(primary_addr['StreetAddress'])
+            if primary_addr.get('Locality'):
+                addr_parts.append(primary_addr['Locality'])
+            if primary_addr.get('Region'):
+                addr_parts.append(primary_addr['Region'])
+            if primary_addr.get('PostalCode'):
+                addr_parts.append(primary_addr['PostalCode'])
+            primary_address = ', '.join(addr_parts)
+
+    primary_phone = 'N/A'
+    if phone_numbers:
+        primary_ph = next((phone for phone in phone_numbers if phone.get('Primary', False)), phone_numbers[0])
+        if primary_ph:
+            primary_phone = primary_ph.get('Value', 'N/A')
+
+    return {
+        'User ID': user_id,
+        'User Name': user.get('UserName', 'N/A'),
+        'Display Name': user.get('DisplayName', 'N/A'),
+        'Nick Name': user.get('NickName', 'N/A'),
+        'Profile URL': user.get('ProfileUrl', 'N/A'),
+        'Given Name': user.get('Name', {}).get('GivenName', 'N/A'),
+        'Middle Name': user.get('Name', {}).get('MiddleName', 'N/A'),
+        'Family Name': user.get('Name', {}).get('FamilyName', 'N/A'),
+        'Formatted Name': user.get('Name', {}).get('Formatted', 'N/A'),
+        'Honorific Prefix': user.get('Name', {}).get('HonorificPrefix', 'N/A'),
+        'Honorific Suffix': user.get('Name', {}).get('HonorificSuffix', 'N/A'),
+        'Email': get_user_email(user),
+        'Email Verified': 'Yes' if get_user_email_verified(user) else 'No',
+        'Primary Phone': primary_phone,
+        'Primary Address': primary_address[:200],
+        'User Type': user.get('UserType', 'N/A'),
+        'Title': user.get('Title', 'N/A'),
+        'Preferred Language': user.get('PreferredLanguage', 'N/A'),
+        'Locale': user.get('Locale', 'N/A'),
+        'Timezone': user.get('Timezone', 'N/A'),
+        'Status': 'Active' if user.get('Active', True) else 'Inactive',
+        'External ID': get_user_external_id(user),
+        'Groups': group_memberships,
+        'AWS Accounts': account_assignments,
+        'Applications': application_assignments,
+        'Group Count': len(group_memberships.split(', ')) if group_memberships != 'None' else 0,
+        'Account Assignment Count': len(account_assignments.split(', ')) if account_assignments not in ['None', 'Unknown'] else 0,
+        'Application Assignment Count': len(application_assignments.split(', ')) if application_assignments not in ['None', 'Unknown', 'Service Not Available'] else 0,
+        'Created Date': user.get('Meta', {}).get('Created', 'N/A'),
+        'Last Modified': user.get('Meta', {}).get('LastModified', 'N/A'),
+        'Resource Type': user.get('Meta', {}).get('ResourceType', 'N/A')
+    }
+
+
 def collect_comprehensive_users(identity_store_id, instance_arn):
     """
     Collect comprehensive IAM Identity Center user information.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    users. Account-scope API failures are allowed to raise so the caller can
+    record this scope as FAILED. Per-user errors are contained internally
+    (logged and skipped) via _build_comprehensive_user_row.
 
     Args:
         identity_store_id: The Identity Store ID
@@ -683,6 +932,9 @@ def collect_comprehensive_users(identity_store_id, instance_arn):
 
     Returns:
         list: List of comprehensive user information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not identity_store_id:
         return []
@@ -703,6 +955,7 @@ def collect_comprehensive_users(identity_store_id, instance_arn):
 
     paginator = identitystore_client.get_paginator('list_users')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(IdentityStoreId=identity_store_id):
         users = page.get('Users', [])
@@ -714,69 +967,24 @@ def collect_comprehensive_users(identity_store_id, instance_arn):
 
             utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {user_name}")
 
-            group_memberships = get_user_group_memberships(identitystore_client, identity_store_id, user['UserId'])
-            account_assignments = get_user_account_assignments(sso_admin_client, instance_arn, user['UserId'])
-            application_assignments = get_user_application_assignments(sso_admin_client, instance_arn, user['UserId'])
-
-            addresses = user.get('Addresses', [])
-            phone_numbers = user.get('PhoneNumbers', [])
-
-            primary_address = 'N/A'
-            if addresses:
-                primary_addr = next((addr for addr in addresses if addr.get('Primary', False)), addresses[0])
-                if primary_addr:
-                    addr_parts = []
-                    if primary_addr.get('StreetAddress'):
-                        addr_parts.append(primary_addr['StreetAddress'])
-                    if primary_addr.get('Locality'):
-                        addr_parts.append(primary_addr['Locality'])
-                    if primary_addr.get('Region'):
-                        addr_parts.append(primary_addr['Region'])
-                    if primary_addr.get('PostalCode'):
-                        addr_parts.append(primary_addr['PostalCode'])
-                    primary_address = ', '.join(addr_parts)
-
-            primary_phone = 'N/A'
-            if phone_numbers:
-                primary_ph = next((phone for phone in phone_numbers if phone.get('Primary', False)), phone_numbers[0])
-                if primary_ph:
-                    primary_phone = primary_ph.get('Value', 'N/A')
-
-            user_info = {
-                'User ID': user.get('UserId', 'N/A'),
-                'User Name': user.get('UserName', 'N/A'),
-                'Display Name': user.get('DisplayName', 'N/A'),
-                'Nick Name': user.get('NickName', 'N/A'),
-                'Profile URL': user.get('ProfileUrl', 'N/A'),
-                'Given Name': user.get('Name', {}).get('GivenName', 'N/A'),
-                'Middle Name': user.get('Name', {}).get('MiddleName', 'N/A'),
-                'Family Name': user.get('Name', {}).get('FamilyName', 'N/A'),
-                'Formatted Name': user.get('Name', {}).get('Formatted', 'N/A'),
-                'Honorific Prefix': user.get('Name', {}).get('HonorificPrefix', 'N/A'),
-                'Honorific Suffix': user.get('Name', {}).get('HonorificSuffix', 'N/A'),
-                'Email': get_user_email(user),
-                'Email Verified': 'Yes' if get_user_email_verified(user) else 'No',
-                'Primary Phone': primary_phone,
-                'Primary Address': primary_address[:200],
-                'User Type': user.get('UserType', 'N/A'),
-                'Title': user.get('Title', 'N/A'),
-                'Preferred Language': user.get('PreferredLanguage', 'N/A'),
-                'Locale': user.get('Locale', 'N/A'),
-                'Timezone': user.get('Timezone', 'N/A'),
-                'Status': 'Active' if user.get('Active', True) else 'Inactive',
-                'External ID': get_user_external_id(user),
-                'Groups': group_memberships,
-                'AWS Accounts': account_assignments,
-                'Applications': application_assignments,
-                'Group Count': len(group_memberships.split(', ')) if group_memberships != 'None' else 0,
-                'Account Assignment Count': len(account_assignments.split(', ')) if account_assignments not in ['None', 'Unknown'] else 0,
-                'Application Assignment Count': len(application_assignments.split(', ')) if application_assignments not in ['None', 'Unknown', 'Service Not Available'] else 0,
-                'Created Date': user.get('Meta', {}).get('Created', 'N/A'),
-                'Last Modified': user.get('Meta', {}).get('LastModified', 'N/A'),
-                'Resource Type': user.get('Meta', {}).get('ResourceType', 'N/A')
-            }
+            try:
+                user_info = _build_comprehensive_user_row(
+                    identitystore_client, sso_admin_client, identity_store_id, instance_arn, user
+                )
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Identity Center user '{user.get('UserId', user_name)}' due to a processing error", e
+                )
+                continue
 
             users_data.append(user_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_users} Identity Center user(s) were skipped due to processing errors "
+            "(see log above); the remaining users were still collected."
+        )
 
     return users_data
 
@@ -855,10 +1063,49 @@ def get_group_account_assignments(sso_admin_client, instance_arn, group_id):
     return ', '.join(assignments) if assignments else 'None'
 
 
-@utils.aws_error_handler("Collecting comprehensive Identity Center groups", default_return=[])
+def _build_comprehensive_group_row(identitystore_client, sso_admin_client, identity_store_id, instance_arn, group):
+    """
+    Build the export row for a single Identity Center group (comprehensive export).
+
+    Extracted so per-group processing can be wrapped in try/except by the
+    caller: a malformed group record must not sink the whole account's
+    collection.
+
+    Raises:
+        ValueError: If the group record is missing GroupId.
+    """
+    group_id = group.get('GroupId')
+    if not group_id:
+        raise ValueError(f"Identity Center group record missing GroupId: {group}")
+
+    member_count = get_group_member_count(identitystore_client, identity_store_id, group_id)
+    member_details = get_group_member_details(identitystore_client, identity_store_id, group_id)
+    account_assignments = get_group_account_assignments(sso_admin_client, instance_arn, group_id)
+
+    return {
+        'Group ID': group_id,
+        'Group Name': group.get('DisplayName', 'N/A'),
+        'Description': group.get('Description', 'N/A'),
+        'External ID': get_group_external_id(group),
+        'Member Count': member_count,
+        'Member Details': member_details[:500],
+        'Account Assignments': account_assignments,
+        'Assignment Count': len(account_assignments.split(', ')) if account_assignments not in ['None', 'Unknown'] else 0,
+        'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
+        'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A'),
+        'Resource Type': group.get('Meta', {}).get('ResourceType', 'N/A')
+    }
+
+
 def collect_comprehensive_groups(identity_store_id, instance_arn):
     """
     Collect comprehensive IAM Identity Center group information.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    groups. Account-scope API failures are allowed to raise so the caller can
+    record this scope as FAILED. Per-group errors are contained internally
+    (logged and skipped) via _build_comprehensive_group_row.
 
     Args:
         identity_store_id: The Identity Store ID
@@ -866,6 +1113,9 @@ def collect_comprehensive_groups(identity_store_id, instance_arn):
 
     Returns:
         list: List of comprehensive group information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not identity_store_id:
         return []
@@ -886,6 +1136,7 @@ def collect_comprehensive_groups(identity_store_id, instance_arn):
 
     paginator = identitystore_client.get_paginator('list_groups')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(IdentityStoreId=identity_store_id):
         groups = page.get('Groups', [])
@@ -897,25 +1148,24 @@ def collect_comprehensive_groups(identity_store_id, instance_arn):
 
             utils.log_info(f"[{progress:.1f}%] Processing group {processed}/{total_groups}: {group_name}")
 
-            member_count = get_group_member_count(identitystore_client, identity_store_id, group['GroupId'])
-            member_details = get_group_member_details(identitystore_client, identity_store_id, group['GroupId'])
-            account_assignments = get_group_account_assignments(sso_admin_client, instance_arn, group['GroupId'])
-
-            group_info = {
-                'Group ID': group.get('GroupId', 'N/A'),
-                'Group Name': group.get('DisplayName', 'N/A'),
-                'Description': group.get('Description', 'N/A'),
-                'External ID': get_group_external_id(group),
-                'Member Count': member_count,
-                'Member Details': member_details[:500],
-                'Account Assignments': account_assignments,
-                'Assignment Count': len(account_assignments.split(', ')) if account_assignments not in ['None', 'Unknown'] else 0,
-                'Created Date': group.get('Meta', {}).get('Created', 'N/A'),
-                'Last Modified': group.get('Meta', {}).get('LastModified', 'N/A'),
-                'Resource Type': group.get('Meta', {}).get('ResourceType', 'N/A')
-            }
+            try:
+                group_info = _build_comprehensive_group_row(
+                    identitystore_client, sso_admin_client, identity_store_id, instance_arn, group
+                )
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Identity Center group '{group.get('GroupId', group_name)}' due to a processing error", e
+                )
+                continue
 
             groups_data.append(group_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_groups} Identity Center group(s) were skipped due to processing errors "
+            "(see log above); the remaining groups were still collected."
+        )
 
     return groups_data
 
@@ -1126,16 +1376,25 @@ def get_average_session_duration(permission_sets_data):
         return 'N/A'
 
 
-@utils.aws_error_handler("Collecting comprehensive permission sets", default_return=[])
 def collect_comprehensive_permission_sets(instance_arn):
     """
     Collect comprehensive IAM Identity Center permission set information.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list indistinguishable from an account genuinely having zero
+    permission sets. Account-scope API failures (listing, pagination) are
+    allowed to raise so the caller can record this scope as FAILED. Per-item
+    errors (a single permission set failing to describe) are contained
+    internally (logged and skipped) below.
 
     Args:
         instance_arn: IAM Identity Center instance ARN
 
     Returns:
         list: List of comprehensive permission set information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for this scope.
     """
     if not instance_arn:
         return []
@@ -1155,6 +1414,7 @@ def collect_comprehensive_permission_sets(instance_arn):
 
     paginator = sso_admin_client.get_paginator('list_permission_sets')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate(InstanceArn=instance_arn):
         permission_sets = page.get('PermissionSets', [])
@@ -1171,7 +1431,7 @@ def collect_comprehensive_permission_sets(instance_arn):
                     PermissionSetArn=permission_set_arn
                 )
 
-                permission_set = ps_response['PermissionSet']
+                permission_set = ps_response.get('PermissionSet', {})
 
                 managed_policies = get_permission_set_managed_policies_detailed(sso_admin_client, instance_arn, permission_set_arn)
                 inline_policy = get_permission_set_inline_policy_detailed(sso_admin_client, instance_arn, permission_set_arn)
@@ -1208,7 +1468,14 @@ def collect_comprehensive_permission_sets(instance_arn):
                 permission_sets_data.append(permission_set_info)
 
             except Exception as e:
-                utils.log_warning(f"Error processing permission set {permission_set_arn}: {e}")
+                skipped += 1
+                utils.log_error(f"Skipping permission set '{permission_set_arn}' due to a processing error", e)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_permission_sets} permission set(s) were skipped due to processing errors "
+            "(see log above); the remaining permission sets were still collected."
+        )
 
     return permission_sets_data
 
@@ -1629,101 +1896,193 @@ def _export_comprehensive_to_excel(users_data, groups_data, permission_sets_data
 # Run functions
 # ---------------------------------------------------------------------------
 
+def _report_and_exit_if_failed(account_name, resource_type, failed_scopes):
+    """
+    If any account-scope collector failed, write a failure marker and exit(1).
+
+    Shared by all _run_*_export functions so a failed collection is never
+    silently indistinguishable from a genuinely empty (or not-enabled)
+    account. Does nothing if failed_scopes is empty.
+    """
+    if not failed_scopes:
+        return
+    utils.report_collection_failures(account_name, resource_type, failed_scopes)
+    print(
+        "\nERROR: IAM Identity Center export completed with failures — data is incomplete. "
+        f"See the *-{resource_type}-FAILED-*.txt marker in the output directory."
+    )
+    sys.exit(1)
+
+
 def _run_users_export(account_id, account_name):
     """Collect Identity Center users; export users-only workbook."""
-    instance_arn, identity_store_id = get_identity_center_instance()
-    if not identity_store_id:
-        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
-        return
+    failed_scopes = []
+    resource_type = "iam-identity-center-users"
 
-    utils.log_info("Collecting Identity Center users...")
-    users_data = collect_identity_center_users(identity_store_id, instance_arn)
+    try:
+        instance_arn, identity_store_id = get_identity_center_instance()
+    except Exception as e:
+        failed_scopes.append(("Identity Center Instance Discovery", str(e)))
+        instance_arn, identity_store_id = None, None
 
-    if not users_data:
+    users_data = []
+    if identity_store_id:
+        utils.log_info("Collecting Identity Center users...")
+        try:
+            users_data = collect_identity_center_users(identity_store_id, instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Users", str(e)))
+    elif not failed_scopes:
+        utils.log_warning("IAM Identity Center is not enabled/configured in this account. Nothing to export.")
+
+    if users_data:
+        _export_users_to_excel(users_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No Identity Center users collected.")
-        return
 
-    _export_users_to_excel(users_data, account_id, account_name)
+    _report_and_exit_if_failed(account_name, resource_type, failed_scopes)
 
 
 def _run_combined_export(account_id, account_name):
     """Collect Identity Center users, groups, and permission sets; export combined workbook."""
-    instance_arn, identity_store_id = get_identity_center_instance()
-    if not instance_arn:
-        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
-        return
+    failed_scopes = []
+    resource_type = "iam-identity-center"
 
-    utils.log_info("Collecting Identity Center users...")
-    users_data = collect_identity_center_users(identity_store_id, instance_arn)
+    try:
+        instance_arn, identity_store_id = get_identity_center_instance()
+    except Exception as e:
+        failed_scopes.append(("Identity Center Instance Discovery", str(e)))
+        instance_arn, identity_store_id = None, None
 
-    utils.log_info("Collecting Identity Center groups...")
-    groups_data = collect_identity_center_groups(identity_store_id)
+    users_data, groups_data, permission_sets_data = [], [], []
 
-    utils.log_info("Collecting permission sets...")
-    permission_sets_data = collect_permission_sets(instance_arn)
+    if instance_arn:
+        utils.log_info("Collecting Identity Center users...")
+        try:
+            users_data = collect_identity_center_users(identity_store_id, instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Users", str(e)))
 
-    if not users_data and not groups_data and not permission_sets_data:
+        utils.log_info("Collecting Identity Center groups...")
+        try:
+            groups_data = collect_identity_center_groups(identity_store_id)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Groups", str(e)))
+
+        utils.log_info("Collecting permission sets...")
+        try:
+            permission_sets_data = collect_permission_sets(instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Permission Sets", str(e)))
+    elif not failed_scopes:
+        utils.log_warning("IAM Identity Center is not enabled/configured in this account. Nothing to export.")
+
+    if users_data or groups_data or permission_sets_data:
+        _export_combined_to_excel(users_data, groups_data, permission_sets_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No Identity Center data collected.")
-        return
 
-    _export_combined_to_excel(users_data, groups_data, permission_sets_data, account_id, account_name)
+    _report_and_exit_if_failed(account_name, resource_type, failed_scopes)
 
 
 def _run_groups_export(account_id, account_name):
     """Collect Identity Center groups with detailed member info; export groups workbook."""
-    instance_arn, identity_store_id = get_identity_center_instance()
-    if not identity_store_id:
-        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
-        return
+    failed_scopes = []
+    resource_type = "iam-identity-center-groups"
 
-    utils.log_info("Collecting Identity Center groups (detailed)...")
-    groups_data = collect_identity_center_groups_detailed(identity_store_id)
+    try:
+        _instance_arn, identity_store_id = get_identity_center_instance()
+    except Exception as e:
+        failed_scopes.append(("Identity Center Instance Discovery", str(e)))
+        identity_store_id = None
 
-    if not groups_data:
+    groups_data = []
+    if identity_store_id:
+        utils.log_info("Collecting Identity Center groups (detailed)...")
+        try:
+            groups_data = collect_identity_center_groups_detailed(identity_store_id)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Groups", str(e)))
+    elif not failed_scopes:
+        utils.log_warning("IAM Identity Center is not enabled/configured in this account. Nothing to export.")
+
+    if groups_data:
+        _export_groups_to_excel(groups_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No Identity Center groups collected.")
-        return
 
-    _export_groups_to_excel(groups_data, account_id, account_name)
+    _report_and_exit_if_failed(account_name, resource_type, failed_scopes)
 
 
 def _run_permission_sets_export(account_id, account_name):
     """Collect Identity Center permission sets; export permission sets workbook."""
-    instance_arn, identity_store_id = get_identity_center_instance()
-    if not instance_arn:
-        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
-        return
+    failed_scopes = []
+    resource_type = "iam-identity-center-permission-sets"
 
-    utils.log_info("Collecting permission sets...")
-    permission_sets_data = collect_permission_sets(instance_arn)
+    try:
+        instance_arn, identity_store_id = get_identity_center_instance()
+    except Exception as e:
+        failed_scopes.append(("Identity Center Instance Discovery", str(e)))
+        instance_arn = None
 
-    if not permission_sets_data:
+    permission_sets_data = []
+    if instance_arn:
+        utils.log_info("Collecting permission sets...")
+        try:
+            permission_sets_data = collect_permission_sets(instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Permission Sets", str(e)))
+    elif not failed_scopes:
+        utils.log_warning("IAM Identity Center is not enabled/configured in this account. Nothing to export.")
+
+    if permission_sets_data:
+        _export_permission_sets_to_excel(permission_sets_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No permission sets collected.")
-        return
 
-    _export_permission_sets_to_excel(permission_sets_data, account_id, account_name)
+    _report_and_exit_if_failed(account_name, resource_type, failed_scopes)
 
 
 def _run_comprehensive_export(account_id, account_name):
     """Collect all Identity Center resources; export comprehensive workbook."""
-    instance_arn, identity_store_id = get_identity_center_instance()
-    if not instance_arn:
-        utils.log_error("Could not find IAM Identity Center instance. Exiting.")
-        return
+    failed_scopes = []
+    resource_type = "iam-identity-center-comprehensive"
 
-    utils.log_info("Collecting comprehensive Identity Center users...")
-    users_data = collect_comprehensive_users(identity_store_id, instance_arn)
+    try:
+        instance_arn, identity_store_id = get_identity_center_instance()
+    except Exception as e:
+        failed_scopes.append(("Identity Center Instance Discovery", str(e)))
+        instance_arn, identity_store_id = None, None
 
-    utils.log_info("Collecting comprehensive Identity Center groups...")
-    groups_data = collect_comprehensive_groups(identity_store_id, instance_arn)
+    users_data, groups_data, permission_sets_data = [], [], []
 
-    utils.log_info("Collecting comprehensive permission sets...")
-    permission_sets_data = collect_comprehensive_permission_sets(instance_arn)
+    if instance_arn:
+        utils.log_info("Collecting comprehensive Identity Center users...")
+        try:
+            users_data = collect_comprehensive_users(identity_store_id, instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Users", str(e)))
 
-    if not users_data and not groups_data and not permission_sets_data:
+        utils.log_info("Collecting comprehensive Identity Center groups...")
+        try:
+            groups_data = collect_comprehensive_groups(identity_store_id, instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Groups", str(e)))
+
+        utils.log_info("Collecting comprehensive permission sets...")
+        try:
+            permission_sets_data = collect_comprehensive_permission_sets(instance_arn)
+        except Exception as e:
+            failed_scopes.append(("Identity Center Permission Sets", str(e)))
+    elif not failed_scopes:
+        utils.log_warning("IAM Identity Center is not enabled/configured in this account. Nothing to export.")
+
+    if users_data or groups_data or permission_sets_data:
+        _export_comprehensive_to_excel(users_data, groups_data, permission_sets_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No Identity Center data collected.")
-        return
 
-    _export_comprehensive_to_excel(users_data, groups_data, permission_sets_data, account_id, account_name)
+    _report_and_exit_if_failed(account_name, resource_type, failed_scopes)
 
 
 # ---------------------------------------------------------------------------

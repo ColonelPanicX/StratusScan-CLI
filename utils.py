@@ -2524,7 +2524,8 @@ def scan_regions_concurrent(
     max_workers: Optional[int] = None,
     show_progress: Optional[bool] = True,
     fallback_on_error: Optional[bool] = None,
-) -> list[Any]:
+    collect_failures: bool = False,
+) -> Any:
     """
     Scan multiple AWS regions concurrently with automatic fallback to sequential.
 
@@ -2540,15 +2541,31 @@ def scan_regions_concurrent(
         max_workers: Maximum concurrent workers (default: from config or 4)
         show_progress: Show progress as regions complete (default: True)
         fallback_on_error: Fallback to sequential on errors (default: from config or True)
+        collect_failures: When True, also return the list of regions whose
+                      scan_function raised. **Requires scan_function to raise on
+                      failure** rather than swallow-and-return-empty — otherwise a
+                      failed region is silently indistinguishable from an empty one
+                      (the silent-data-loss bug; see Issue #233). Default False
+                      preserves the legacy return type for existing callers.
 
     Returns:
-        list: List of results from all regions
+        - When ``collect_failures`` is False (default): ``list`` of results from
+          all regions (legacy behavior, unchanged).
+        - When ``collect_failures`` is True: a ``(results, failed_regions)`` tuple,
+          where ``failed_regions`` is a list of ``(region, error_message)`` tuples
+          for regions whose scan raised. ``results`` holds only the regions that
+          succeeded.
 
     Example:
         >>> def collect_region_instances(region):
         ...     ec2 = get_boto3_client('ec2', region_name=region)
         ...     return ec2.describe_instances()['Reservations']
         >>> results = scan_regions_concurrent(regions, collect_region_instances)
+        >>> # Failure-aware form (scan_function must raise on error):
+        >>> results, failed = scan_regions_concurrent(
+        ...     regions, collect_region_instances, collect_failures=True)
+        >>> if failed:
+        ...     utils.report_collection_failures(account, "ec2", failed)
 
     Note:
         - Automatically loads settings from config.json (advanced_settings)
@@ -2570,7 +2587,9 @@ def scan_regions_concurrent(
         logging.getLogger(__name__).info(
             "Concurrent scanning disabled in config, using sequential scanning"
         )
-        return _scan_regions_sequential(regions, scan_function, show_progress)
+        return _scan_regions_sequential(
+            regions, scan_function, show_progress, collect_failures=collect_failures
+        )
 
     try:
         logging.getLogger(__name__).info(
@@ -2578,6 +2597,7 @@ def scan_regions_concurrent(
         )
 
         results = []
+        failed: list[tuple[str, str]] = []
         completed = 0
         total = len(regions)
         error_count = 0
@@ -2604,6 +2624,7 @@ def scan_regions_concurrent(
 
                 except Exception as e:
                     error_count += 1
+                    failed.append((region, str(e)))
                     logging.getLogger(__name__).error("Error scanning region %s: %s", region, e)
 
                     if fallback_on_error and error_count >= max(2, total // 2):
@@ -2616,7 +2637,7 @@ def scan_regions_concurrent(
 
                     completed += 1
 
-        return results
+        return (results, failed) if collect_failures else results
 
     except ConcurrentScanningError:
         if fallback_on_error:
@@ -2629,7 +2650,11 @@ def scan_regions_concurrent(
             logging.getLogger(__name__).warning(
                 "To disable concurrent scanning, run: python advanced_settings.py"
             )
-            return _scan_regions_sequential(regions, scan_function, show_progress)
+            # The sequential retry re-runs every region, so its (results, failed)
+            # supersede the partial concurrent tallies above.
+            return _scan_regions_sequential(
+                regions, scan_function, show_progress, collect_failures=collect_failures
+            )
         else:
             raise
 
@@ -2641,7 +2666,9 @@ def scan_regions_concurrent(
             logging.getLogger(__name__).warning(
                 "To disable concurrent scanning, run: python advanced_settings.py"
             )
-            return _scan_regions_sequential(regions, scan_function, show_progress)
+            return _scan_regions_sequential(
+                regions, scan_function, show_progress, collect_failures=collect_failures
+            )
         else:
             raise
 
@@ -2650,7 +2677,8 @@ def _scan_regions_sequential(
     regions: list[str],
     scan_function: Callable[[str], Any],
     show_progress: bool = True,
-) -> list[Any]:
+    collect_failures: bool = False,
+) -> Any:
     """
     Fallback: Scan regions sequentially (one at a time).
 
@@ -2661,13 +2689,16 @@ def _scan_regions_sequential(
         regions: List of AWS regions to scan
         scan_function: Function that takes a region and returns data
         show_progress: Show progress as regions complete
+        collect_failures: When True, return ``(results, failed_regions)`` instead
+            of just ``results``; see :func:`scan_regions_concurrent`.
 
     Returns:
-        list: List of results from all regions
+        list, or ``(results, failed_regions)`` when ``collect_failures`` is True.
     """
     logging.getLogger(__name__).info("Scanning %d region(s) sequentially", len(regions))
 
     results = []
+    failed: list[tuple[str, str]] = []
     total = len(regions)
 
     for i, region in enumerate(regions, 1):
@@ -2679,9 +2710,92 @@ def _scan_regions_sequential(
             results.append(result)
 
         except Exception as e:
+            failed.append((region, str(e)))
             logging.getLogger(__name__).error("Error scanning region %s: %s", region, e)
 
-    return results
+    return (results, failed) if collect_failures else results
+
+
+def write_failure_marker(
+    account_name: str,
+    resource_type: str,
+    failed_scopes: list,
+) -> Optional[str]:
+    """
+    Write a ``{ACCOUNT}-{resource_type}-FAILED-{date}.txt`` marker into the output
+    directory recording which scopes (regions or account-level steps) failed to
+    collect.
+
+    This is the visible signal a downstream consumer needs to tell a *failed*
+    export apart from a *genuinely empty* account. Without it, a scope that errors
+    is indistinguishable from a scope that legitimately has no resources — the
+    silent-data-loss bug (Issue #231 / #233).
+
+    Args:
+        account_name: AWS account name (used in the filename).
+        resource_type: Resource slug matching the export filename (e.g.
+            ``"rds-instances"``, ``"ec2"``, ``"vpc"``).
+        failed_scopes: List of ``(scope, error_message)`` tuples, where ``scope``
+            is a region name or a logical collection step.
+
+    Returns:
+        Path to the marker file as a string, or ``None`` if it could not be
+        written (marker-writing never masks the underlying failure).
+    """
+    try:
+        today = get_export_date()
+        marker_name = f"{account_name}-{resource_type}-FAILED-{today}.txt"
+        marker_path = get_output_filepath(marker_name)
+        lines = [
+            f"{resource_type.upper()} EXPORT FAILED FOR ONE OR MORE SCOPES",
+            f"Account: {account_name}",
+            f"Timestamp: {get_log_timestamp()}",
+            "",
+            "The scopes below raised an error during collection. Their data is "
+            "MISSING or INCOMPLETE in any exported spreadsheet. Do NOT treat a "
+            "missing file/rows for these scopes as 'no resources' — re-run the export.",
+            "",
+        ]
+        for scope, error in failed_scopes:
+            lines.append(f"  - {scope}: {error}")
+        marker_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        log_error(f"Wrote failure marker: {marker_path}")
+        return str(marker_path)
+    except Exception as e:
+        # Never let marker-writing itself mask the underlying failure.
+        log_error("Could not write failure marker", e)
+        return None
+
+
+def report_collection_failures(
+    account_name: str,
+    resource_type: str,
+    failed_scopes: list,
+) -> Optional[str]:
+    """
+    Log a failure summary and write a failure marker for a partially-failed export.
+
+    Shared by exporters so a *failed* collection is never silently collapsed into
+    "no resources." Does NOT ``sys.exit`` or ``print`` — deciding the process exit
+    code and any user-facing message is the caller's (CLI-layer) responsibility.
+
+    Args:
+        account_name: AWS account name.
+        resource_type: Resource slug matching the export filename.
+        failed_scopes: List of ``(scope, error_message)`` tuples.
+
+    Returns:
+        The marker path (str) if failures were reported, else ``None`` when
+        ``failed_scopes`` is empty.
+    """
+    if not failed_scopes:
+        return None
+    scopes = ", ".join(str(scope) for scope, _ in failed_scopes)
+    log_error(
+        f"{resource_type}: collection FAILED for {len(failed_scopes)} scope(s): "
+        f"{scopes}. Exported data is INCOMPLETE."
+    )
+    return write_failure_marker(account_name, resource_type, failed_scopes)
 
 
 # ---------------------------------------------------------------------------
