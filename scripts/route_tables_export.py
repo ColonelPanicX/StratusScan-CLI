@@ -199,92 +199,144 @@ def get_route_destination(route):
     else:
         return "N/A"
 
+def _build_route_entries(route_table, region):
+    """
+    Build the export row(s) for a single route table.
+
+    Extracted so per-route-table processing can be wrapped in try/except by the
+    caller: a malformed route table must not discard the whole region's results.
+    Every required field is read with ``.get()`` and a safe default so a missing
+    field yields 'N/A', not a KeyError that would sink the entire region.
+
+    Args:
+        route_table (dict): A single RouteTables entry from describe_route_tables.
+        region (str): AWS region name.
+
+    Returns:
+        list: One or more route entry dictionaries for this route table.
+    """
+    rt_id = route_table.get('RouteTableId', 'N/A')
+    vpc_id = route_table.get('VpcId', 'N/A')
+
+    # Get routes
+    routes = route_table.get('Routes', [])
+
+    # Get subnet associations
+    subnet_associations = []
+    for association in route_table.get('Associations', []):
+        if 'SubnetId' in association:
+            subnet_associations.append(association['SubnetId'])
+
+    # Get edge associations (like gateways)
+    edge_associations = []
+    for association in route_table.get('Associations', []):
+        if 'GatewayId' in association:
+            edge_associations.append(association['GatewayId'])
+
+    # Get tags
+    tags = format_tags(route_table.get('Tags', []))
+
+    entries = []
+
+    # For each route, create a separate entry
+    if routes:
+        for route in routes:
+            route_destination = get_route_destination(route)
+            route_target = get_route_target(route)
+            route_state = route.get('State', 'N/A')
+            route_type = get_route_type(route)
+            propagated = route.get('Origin', '') == 'EnableVgwRoutePropagation'
+
+            # Create entry for this route
+            entries.append({
+                'Region': region,
+                'Route Table ID': rt_id,
+                'VPC ID': vpc_id,
+                'Route Destination': route_destination,
+                'Target': route_target,
+                'Route State': route_state,
+                'Route Type': route_type,
+                'Propagated': 'Yes' if propagated else 'No',
+                'Subnet Association': '; '.join(subnet_associations) if subnet_associations else 'N/A',
+                'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
+                'Tags': tags
+            })
+    else:
+        # Create an entry for the route table with no routes
+        entries.append({
+            'Region': region,
+            'Route Table ID': rt_id,
+            'VPC ID': vpc_id,
+            'Route Destination': 'N/A',
+            'Target': 'N/A',
+            'Route State': 'N/A',
+            'Route Type': 'N/A',
+            'Propagated': 'N/A',
+            'Subnet Association': '; '.join(subnet_associations) if subnet_associations else 'N/A',
+            'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
+            'Tags': tags
+        })
+
+    return entries
+
+
 def get_route_tables(region):
     """
     Get all route tables in a specific region.
+
+    Not wrapped in a broad try/except: a swallowed error here would return an
+    empty list that the caller cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written, or a zero-row sheet).
+    Region-level failures are allowed to raise so the caller can record the
+    region as *failed* rather than *empty*. Per-route-table errors are
+    contained internally (logged and skipped).
 
     Args:
         region (str): AWS region name
 
     Returns:
         list: List of dictionaries with route table information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     route_table_data = []
 
-    try:
-        # Create EC2 client for the region
-        ec2_client = utils.get_boto3_client('ec2', region_name=region)
+    # Create EC2 client for the region
+    ec2_client = utils.get_boto3_client('ec2', region_name=region)
 
-        # Get all route tables in the region
-        paginator = ec2_client.get_paginator('describe_route_tables')
-        for page in paginator.paginate():
-            for route_table in page['RouteTables']:
-                rt_id = route_table['RouteTableId']
-                vpc_id = route_table.get('VpcId', 'N/A')
+    # Get all route tables in the region
+    paginator = ec2_client.get_paginator('describe_route_tables')
+    all_route_tables = []
+    for page in paginator.paginate():
+        all_route_tables.extend(page['RouteTables'])
 
-                # Get routes
-                routes = route_table.get('Routes', [])
+    total_route_tables = len(all_route_tables)
+    if total_route_tables > 0:
+        utils.log_info(f"Found {total_route_tables} route tables in {region} to process")
 
-                # Get subnet associations
-                subnet_associations = []
-                for association in route_table.get('Associations', []):
-                    if 'SubnetId' in association:
-                        subnet_associations.append(association['SubnetId'])
+    # Process each route table. One malformed route table must not sink the
+    # region, so each is built inside try/except; failures are logged and skipped.
+    skipped = 0
+    for route_table in all_route_tables:
+        rt_id = route_table.get('RouteTableId', 'Unknown')
+        try:
+            entries = _build_route_entries(route_table, region)
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping route table '{rt_id}' in {region} due to a processing error", e
+            )
+            continue
 
-                # Get edge associations (like gateways)
-                edge_associations = []
-                for association in route_table.get('Associations', []):
-                    if 'GatewayId' in association:
-                        edge_associations.append(association['GatewayId'])
+        route_table_data.extend(entries)
 
-                # Get tags
-                tags = format_tags(route_table.get('Tags', []))
-
-                # For each route, create a separate entry
-                if routes:
-                    for route in routes:
-                        route_destination = get_route_destination(route)
-                        route_target = get_route_target(route)
-                        route_state = route.get('State', 'N/A')
-                        route_type = get_route_type(route)
-                        propagated = route.get('Origin', '') == 'EnableVgwRoutePropagation'
-
-                        # Create entry for this route
-                        route_entry = {
-                            'Region': region,
-                            'Route Table ID': rt_id,
-                            'VPC ID': vpc_id,
-                            'Route Destination': route_destination,
-                            'Target': route_target,
-                            'Route State': route_state,
-                            'Route Type': route_type,
-                            'Propagated': 'Yes' if propagated else 'No',
-                            'Subnet Association': '; '.join(subnet_associations) if subnet_associations else 'N/A',
-                            'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
-                            'Tags': tags
-                        }
-
-                        route_table_data.append(route_entry)
-                else:
-                    # Create an entry for the route table with no routes
-                    route_entry = {
-                        'Region': region,
-                        'Route Table ID': rt_id,
-                        'VPC ID': vpc_id,
-                        'Route Destination': 'N/A',
-                        'Target': 'N/A',
-                        'Route State': 'N/A',
-                        'Route Type': 'N/A',
-                        'Propagated': 'N/A',
-                        'Subnet Association': '; '.join(subnet_associations) if subnet_associations else 'N/A',
-                        'Edge Association': '; '.join(edge_associations) if edge_associations else 'N/A',
-                        'Tags': tags
-                    }
-
-                    route_table_data.append(route_entry)
-
-    except Exception as e:
-        print(f"Error getting route tables in region {region}: {e}")
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_route_tables} route table(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining route tables were still collected."
+        )
 
     return route_table_data
 
@@ -298,7 +350,9 @@ def export_route_tables(account_name, regions, region_suffix=""):
         region_suffix (str): Suffix to add to filename (e.g., "-us-east-1")
 
     Returns:
-        str: Path to the exported file
+        tuple: (output_path or None, failed_regions) where failed_regions is a
+            list of (region, error_str) tuples for regions whose collection
+            raised. Partial data is exported even when some regions failed.
     """
     import pandas as pd
 
@@ -314,42 +368,47 @@ def export_route_tables(account_name, regions, region_suffix=""):
     # Collect route table data from all regions (Phase 4B: concurrent)
     all_route_tables = []
 
-    # Define region scan function
+    # Define region scan function. It lets get_route_tables raise on a
+    # region-level failure so the scanner records that region as FAILED — a
+    # failed region must never be collapsed into "empty," which is the
+    # silent-data-loss bug (07.15.2026 audit / Issue #231).
     def scan_region_route_tables(region):
         print(f"  Collecting route tables from {region}...")
         region_route_tables = get_route_tables(region)
         print(f"  Found {len(region_route_tables)} route entries in {region}")
         return region_route_tables
 
-    # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
+    # Use concurrent region scanning (with automatic fallback to sequential on
+    # errors). collect_failures=True returns the regions that raised so a
+    # failed collection is distinguishable from a genuinely empty account.
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions_to_process,
         scan_function=scan_region_route_tables,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
     for route_tables in region_results:
         all_route_tables.extend(route_tables)
 
-    # Check if we found any route tables
-    if not all_route_tables:
+    # Export whatever succeeded — a partial export is required, not optional.
+    output_path = None
+    if all_route_tables:
+        # Create DataFrame
+        df = pd.DataFrame(all_route_tables)
+
+        # Generate file name
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        filename = utils.create_export_filename(account_name, "route-tables", region_suffix, current_date)
+
+        # Export to Excel
+        output_path = utils.save_dataframe_to_excel(df, filename)
+    elif not failed_regions:
+        # Genuinely empty: every region succeeded and returned nothing.
         print("No route tables found.")
-        return None
 
-    # Create DataFrame
-    df = pd.DataFrame(all_route_tables)
-
-    # Generate file name
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    filename = utils.create_export_filename(account_name, "route-tables", region_suffix, current_date)
-
-    # Export to Excel
-    output_path = utils.save_dataframe_to_excel(df, filename)
-
-    if output_path:
-        return output_path
-    return None
+    return output_path, failed_regions
 
 def main():
     """
@@ -369,14 +428,25 @@ def main():
         # Detect partition and set partition-aware example regions
         regions = utils.prompt_region_selection()
 
-        output_file = export_route_tables(account_name, regions)
+        output_file, failed_regions = export_route_tables(account_name, regions)
 
         # Report results
         if output_file:
             print("\nExport completed successfully!")
             print(f"Output file: {output_file}")
-        else:
+        elif not failed_regions:
             print("\nExport failed or no data was found.")
+
+        # If ANY region failed, make it loud: write a marker and exit non-zero,
+        # even if some data was exported. A partial export that looks complete
+        # is exactly the failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, "route-tables", failed_regions)
+            print(
+                "\nERROR: Route Tables export completed with failures — data is incomplete. "
+                "See the *-route-tables-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

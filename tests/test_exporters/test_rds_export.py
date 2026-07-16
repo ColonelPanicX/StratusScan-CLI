@@ -153,22 +153,3 @@ class TestSilentCollectionFailureRegression:
 
         with pytest.raises(botocore.exceptions.ClientError):
             get_rds_instances(REGION)
-
-    def test_write_failure_marker_records_failed_regions(self, monkeypatch, tmp_path):
-        """The failure marker names each failed region and warns against treating
-        the export as complete."""
-
-        monkeypatch.setattr(
-            rds_export.utils, "get_output_filepath", lambda name: tmp_path / name
-        )
-
-        marker = rds_export.write_failure_marker(
-            "ACME-PROD",
-            [("us-east-1", "Throttling: Rate exceeded"), ("us-gov-west-1", "KeyError")],
-        )
-
-        assert marker is not None
-        content = (tmp_path / Path(marker).name).read_text()
-        assert "us-east-1" in content
-        assert "us-gov-west-1" in content
-        assert "FAILED" in content

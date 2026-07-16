@@ -25,7 +25,6 @@ import datetime
 import json
 import re
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -608,47 +607,6 @@ def export_to_excel(data, account_name, region_filter=None):
             utils.log_error("CSV export also failed", csv_error)
             return None
 
-def write_failure_marker(account_name, failed_regions):
-    """
-    Write a ``*-rds-instances-FAILED-<date>.txt`` marker into the output
-    directory recording which regions failed to collect.
-
-    This is the visible signal a downstream consumer needs to tell a *failed*
-    RDS pull apart from a genuinely empty account. Without it, a region that
-    errors is indistinguishable from a region with no databases.
-
-    Args:
-        account_name (str): AWS account name (for the filename).
-        failed_regions (list): List of (region, error_message) tuples.
-
-    Returns:
-        str or None: Path to the marker file, or None if it could not be written.
-    """
-    try:
-        today = datetime.datetime.now().strftime("%m.%d.%Y")
-        marker_name = f"{account_name}-rds-instances-FAILED-{today}.txt"
-        marker_path = utils.get_output_filepath(marker_name)
-        lines = [
-            "RDS EXPORT FAILED FOR ONE OR MORE REGIONS",
-            f"Account: {account_name}",
-            f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "",
-            "The regions below raised an error during collection. Their RDS data is "
-            "MISSING or INCOMPLETE in any exported spreadsheet. Do NOT treat a missing "
-            "RDS file/rows for these regions as 'no databases' — re-run the export.",
-            "",
-        ]
-        for region, error in failed_regions:
-            lines.append(f"  - {region}: {error}")
-        marker_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        utils.log_error(f"Wrote RDS failure marker: {marker_path}")
-        return str(marker_path)
-    except Exception as e:
-        # Never let marker-writing itself mask the underlying failure.
-        utils.log_error("Could not write RDS failure marker", e)
-        return None
-
-
 def main():
     """
     Main function to coordinate the AWS RDS instance export process.
@@ -675,33 +633,24 @@ def main():
 
     utils.log_info(f"Collecting RDS instance data across {len(regions)} AWS region(s)...")
 
-    # Track regions whose collection raised. A failed region must never be
-    # collapsed into "empty" — that is the silent-data-loss bug (07.15.2026
-    # audit). The concurrent scanner runs scan_region_rds across threads, so the
-    # shared list is guarded by a lock.
-    failed_regions = []
-    failed_lock = threading.Lock()
-
-    # Define region scan function for concurrent execution (Phase 4B)
+    # Define region scan function for concurrent execution (Phase 4B). It lets
+    # get_rds_instances raise on a region-level failure so the scanner records
+    # that region as FAILED — a failed region must never be collapsed into
+    # "empty," which is the silent-data-loss bug (07.15.2026 audit / Issue #231).
     def scan_region_rds(region):
         utils.log_info(f"Searching for RDS instances in AWS region: {region}")
-        try:
-            region_instances = get_rds_instances(region)
-        except Exception as e:
-            # Record the failure so main() can surface it; return no rows for
-            # this region (partial data from other regions is still exported).
-            with failed_lock:
-                failed_regions.append((region, str(e)))
-            utils.log_error(f"RDS collection FAILED for region {region}", e)
-            return []
+        region_instances = get_rds_instances(region)
         utils.log_info(f"Found {len(region_instances)} RDS instances in {region}")
         return region_instances
 
-    # Use concurrent region scanning (with automatic fallback to sequential on errors)
-    region_results = utils.scan_regions_concurrent(
+    # Use concurrent region scanning (with automatic fallback to sequential on
+    # errors). collect_failures=True returns the regions that raised so a failed
+    # collection is distinguishable from a genuinely empty account.
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_region_rds,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -728,12 +677,7 @@ def main():
     # if some data was exported. A partial export that looks complete is exactly
     # the failure mode this guards against.
     if failed_regions:
-        region_names = ", ".join(r for r, _ in failed_regions)
-        utils.log_error(
-            f"RDS collection failed for {len(failed_regions)} of {len(regions)} region(s): "
-            f"{region_names}. Exported data is INCOMPLETE."
-        )
-        write_failure_marker(account_name, failed_regions)
+        utils.report_collection_failures(account_name, "rds-instances", failed_regions)
         print(
             "\nERROR: RDS export completed with failures — data is incomplete. "
             "See the *-rds-instances-FAILED-*.txt marker in the output directory."

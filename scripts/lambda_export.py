@@ -51,16 +51,132 @@ except ImportError:
 args = utils.parse_script_args("Export Lambda functions to Excel")
 
 
-@utils.aws_error_handler("Collecting Lambda functions for region", default_return=[])
+def _build_function_row(func: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single Lambda function.
+
+    Extracted so the per-function processing can be wrapped in try/except by
+    the caller: a malformed function entry is logged and skipped rather than
+    discarding the whole region's results. Every field is read with ``.get()``
+    and a safe default for the same reason.
+
+    Args:
+        func: A single Functions entry from list_functions.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled function row.
+    """
+    function_name = func.get('FunctionName', 'Unknown')
+
+    # Basic information
+    function_arn = func.get('FunctionArn', 'N/A')
+    runtime = func.get('Runtime', 'N/A')
+    handler = func.get('Handler', 'N/A')
+    code_size = func.get('CodeSize', 0)
+    description = func.get('Description', 'N/A')
+    timeout = func.get('Timeout', 0)
+    memory_size = func.get('MemorySize', 0)
+    last_modified = func.get('LastModified', 'N/A')
+    version = func.get('Version', '$LATEST')
+
+    # Role
+    role = func.get('Role', 'N/A')
+
+    # VPC configuration
+    vpc_config = func.get('VpcConfig', {}) or {}
+    vpc_id = vpc_config.get('VpcId', 'N/A')
+    subnet_ids = vpc_config.get('SubnetIds', [])
+    security_group_ids = vpc_config.get('SecurityGroupIds', [])
+    subnet_count = len(subnet_ids)
+    sg_count = len(security_group_ids)
+
+    # Environment variables (count only for security)
+    env_vars = (func.get('Environment', {}) or {}).get('Variables', {}) or {}
+    env_var_count = len(env_vars)
+
+    # Layers
+    layers = func.get('Layers', []) or []
+    layer_count = len(layers)
+    layer_arns = [layer.get('Arn', '') for layer in layers]
+    layers_str = ', '.join(layer_arns) if layer_arns else 'N/A'
+
+    # Dead letter config
+    dead_letter_config = func.get('DeadLetterConfig', {}) or {}
+    dlq_arn = dead_letter_config.get('TargetArn', 'N/A')
+
+    # Tracing config
+    tracing_config = func.get('TracingConfig', {}) or {}
+    tracing_mode = tracing_config.get('Mode', 'PassThrough')
+
+    # Architecture
+    architectures = func.get('Architectures', ['x86_64']) or ['x86_64']
+    architecture = ', '.join(architectures)
+
+    # Package type
+    package_type = func.get('PackageType', 'Zip')
+
+    # Ephemeral storage
+    ephemeral_storage = func.get('EphemeralStorage', {}) or {}
+    ephemeral_storage_size = ephemeral_storage.get('Size', 512)
+
+    # Code repository
+    code_sha256 = func.get('CodeSha256', 'N/A')
+
+    # State and state reason
+    state = func.get('State', 'N/A')
+    state_reason = func.get('StateReason', 'N/A')
+
+    return {
+        'Region': region,
+        'Function Name': function_name,
+        'Runtime': runtime,
+        'Handler': handler,
+        'State': state,
+        'Memory (MB)': memory_size,
+        'Timeout (s)': timeout,
+        'Code Size (bytes)': code_size,
+        'Package Type': package_type,
+        'Architecture': architecture,
+        'Ephemeral Storage (MB)': ephemeral_storage_size,
+        'VPC ID': vpc_id,
+        'Subnet Count': subnet_count,
+        'Security Group Count': sg_count,
+        'Environment Variables': env_var_count,
+        'Layer Count': layer_count,
+        'Layers': layers_str,
+        'DLQ ARN': dlq_arn,
+        'Tracing Mode': tracing_mode,
+        'Role ARN': role,
+        'Version': version,
+        'Last Modified': last_modified,
+        'Code SHA256': code_sha256,
+        'State Reason': state_reason,
+        'Description': description,
+        'Function ARN': function_arn
+    }
+
+
 def collect_lambda_functions_for_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Lambda function information from a single AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that the caller cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so ``scan_regions_concurrent`` can record
+    the region as FAILED rather than empty. Per-function errors are
+    contained internally (logged and skipped) via ``_build_function_row``.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with Lambda function information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     functions = []
 
@@ -75,122 +191,61 @@ def collect_lambda_functions_for_region(region: str) -> list[dict[str, Any]]:
     # Get Lambda functions
     paginator = lambda_client.get_paginator('list_functions')
     function_count = 0
+    skipped = 0
 
     for page in paginator.paginate():
         page_functions = page.get('Functions', [])
         function_count += len(page_functions)
 
+        # Process each function. One malformed function must not sink the
+        # region, so each is built inside try/except; failures are logged
+        # and skipped.
         for func in page_functions:
-            function_name = func.get('FunctionName', '')
+            function_name = func.get('FunctionName', 'Unknown')
             print(f"  Processing function: {function_name}")
 
-            # Basic information
-            function_arn = func.get('FunctionArn', '')
-            runtime = func.get('Runtime', 'N/A')
-            handler = func.get('Handler', 'N/A')
-            code_size = func.get('CodeSize', 0)
-            description = func.get('Description', 'N/A')
-            timeout = func.get('Timeout', 0)
-            memory_size = func.get('MemorySize', 0)
-            last_modified = func.get('LastModified', 'N/A')
-            version = func.get('Version', '$LATEST')
+            try:
+                functions.append(_build_function_row(func, region))
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping Lambda function '{function_name}' in {region} due to a processing error", e
+                )
+                continue
 
-            # Role
-            role = func.get('Role', 'N/A')
-
-            # VPC configuration
-            vpc_config = func.get('VpcConfig', {})
-            vpc_id = vpc_config.get('VpcId', 'N/A')
-            subnet_ids = vpc_config.get('SubnetIds', [])
-            security_group_ids = vpc_config.get('SecurityGroupIds', [])
-            subnet_count = len(subnet_ids)
-            sg_count = len(security_group_ids)
-
-            # Environment variables (count only for security)
-            env_vars = func.get('Environment', {}).get('Variables', {})
-            env_var_count = len(env_vars)
-
-            # Layers
-            layers = func.get('Layers', [])
-            layer_count = len(layers)
-            layer_arns = [layer.get('Arn', '') for layer in layers]
-            layers_str = ', '.join(layer_arns) if layer_arns else 'N/A'
-
-            # Dead letter config
-            dead_letter_config = func.get('DeadLetterConfig', {})
-            dlq_arn = dead_letter_config.get('TargetArn', 'N/A')
-
-            # Tracing config
-            tracing_config = func.get('TracingConfig', {})
-            tracing_mode = tracing_config.get('Mode', 'PassThrough')
-
-            # Architecture
-            architectures = func.get('Architectures', ['x86_64'])
-            architecture = ', '.join(architectures)
-
-            # Package type
-            package_type = func.get('PackageType', 'Zip')
-
-            # Ephemeral storage
-            ephemeral_storage = func.get('EphemeralStorage', {})
-            ephemeral_storage_size = ephemeral_storage.get('Size', 512)
-
-            # Code repository
-            code_sha256 = func.get('CodeSha256', 'N/A')
-
-            # State and state reason
-            state = func.get('State', 'N/A')
-            state_reason = func.get('StateReason', 'N/A')
-
-            functions.append({
-                'Region': region,
-                'Function Name': function_name,
-                'Runtime': runtime,
-                'Handler': handler,
-                'State': state,
-                'Memory (MB)': memory_size,
-                'Timeout (s)': timeout,
-                'Code Size (bytes)': code_size,
-                'Package Type': package_type,
-                'Architecture': architecture,
-                'Ephemeral Storage (MB)': ephemeral_storage_size,
-                'VPC ID': vpc_id,
-                'Subnet Count': subnet_count,
-                'Security Group Count': sg_count,
-                'Environment Variables': env_var_count,
-                'Layer Count': layer_count,
-                'Layers': layers_str,
-                'DLQ ARN': dlq_arn,
-                'Tracing Mode': tracing_mode,
-                'Role ARN': role,
-                'Version': version,
-                'Last Modified': last_modified,
-                'Code SHA256': code_sha256,
-                'State Reason': state_reason,
-                'Description': description,
-                'Function ARN': function_arn
-            })
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {function_count} Lambda function(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining functions were still collected."
+        )
 
     print(f"  Found {function_count} Lambda functions")
     return functions
 
-def collect_lambda_functions(regions: list[str]) -> list[dict[str, Any]]:
+def collect_lambda_functions(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
     """
     Collect Lambda function information from AWS regions (Phase 4B: concurrent).
+
+    Uses ``collect_failures=True``: ``collect_lambda_functions_for_region``
+    raises on a region-level failure so that failure is recorded and
+    surfaced by the caller, never silently collapsed into "no functions"
+    (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with Lambda function information
+        tuple: (functions, failed_regions) where failed_regions is a list of
+            (region, error_message) tuples for regions whose scan raised.
     """
     print("\n=== COLLECTING LAMBDA FUNCTIONS ===")
 
     # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_lambda_functions_for_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -199,7 +254,7 @@ def collect_lambda_functions(regions: list[str]) -> list[dict[str, Any]]:
         all_functions.extend(funcs)
 
     utils.log_success(f"Total Lambda functions collected: {len(all_functions)}")
-    return all_functions
+    return all_functions, failed_regions
 
 
 @utils.aws_error_handler("Collecting event source mappings for region", default_return=[])
@@ -420,64 +475,80 @@ def export_lambda_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Lambda functions
-    functions = collect_lambda_functions(regions)
+    # STEP 1: Collect Lambda functions (scope collection — region failures
+    # must propagate as failed_regions, never collapse into "empty").
+    functions, failed_regions = collect_lambda_functions(regions)
     if functions:
         data_frames['Lambda Functions'] = pd.DataFrame(functions)
 
-    # STEP 2: Collect event source mappings
+    # STEP 2: Collect event source mappings (enrichment — degrades
+    # gracefully; a region-level failure here does not fail the whole export).
     mappings = collect_event_source_mappings(regions)
     if mappings:
         data_frames['Event Source Mappings'] = pd.DataFrame(mappings)
 
-    # STEP 3: Collect concurrency configurations
+    # STEP 3: Collect concurrency configurations (enrichment — degrades
+    # gracefully; a region-level failure here does not fail the whole export).
     concurrency_configs = collect_concurrency_configs(regions)
     if concurrency_configs:
         data_frames['Concurrency Configurations'] = pd.DataFrame(concurrency_configs)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see .collab/audit/07.16.2026-...).
+    if data_frames:
+        # STEP 4: Prepare and sanitize all DataFrames for export
+        for sheet_name in data_frames:
+            # Apply sanitization to functions sheet (may contain env vars in description)
+            if sheet_name == 'Lambda Functions':
+                data_frames[sheet_name] = utils.sanitize_for_export(
+                    utils.prepare_dataframe_for_export(data_frames[sheet_name])
+                )
+            else:
+                data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'lambda',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Lambda data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Lambda function data was collected. Nothing to export.")
         print("\nNo Lambda functions found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare and sanitize all DataFrames for export
-    for sheet_name in data_frames:
-        # Apply sanitization to functions sheet (may contain env vars in description)
-        if sheet_name == 'Lambda Functions':
-            data_frames[sheet_name] = utils.sanitize_for_export(
-                utils.prepare_dataframe_for_export(data_frames[sheet_name])
-            )
-        else:
-            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'lambda',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Lambda data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the Lambda Functions scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data (from this
+    # scope or the enrichment sheets) was exported. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'lambda', failed_regions)
+        print(
+            "\nERROR: Lambda export completed with failures — data is incomplete. "
+            "See the *-lambda-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
