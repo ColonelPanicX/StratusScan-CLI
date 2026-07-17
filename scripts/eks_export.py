@@ -104,9 +104,18 @@ def get_available_regions():
     return available_regions if available_regions else aws_regions  # Fallback to all partition regions
 
 @utils.aws_error_handler("Collecting cluster details", default_return=None)
-def collect_cluster_details(client, cluster_name, region):
+def _build_cluster_row(client, cluster_name, region):
     """
-    Collect detailed information about an EKS cluster.
+    Build a single EKS cluster export row via ``describe_cluster``.
+
+    This is per-item enrichment on top of the primary ``list_clusters`` scan:
+    a single cluster's describe call failing (throttling, a cluster deleted
+    mid-scan, etc.) is caught by ``@utils.aws_error_handler`` and returns
+    ``None`` rather than aborting the whole region — the caller skips a
+    ``None`` result and continues with the remaining clusters. This is
+    intentionally graceful (unlike the region-level ``list_clusters`` call in
+    ``_scan_eks_clusters_region``, which must raise — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
     Args:
         client: boto3 EKS client
@@ -114,7 +123,8 @@ def collect_cluster_details(client, cluster_name, region):
         region: AWS region
 
     Returns:
-        dict: Dictionary containing cluster details
+        dict: Dictionary containing cluster details, or None if the describe
+            call failed.
     """
     # Get cluster details
     response = client.describe_cluster(name=cluster_name)
@@ -404,44 +414,126 @@ def collect_cluster_addons(client, cluster_name, region):
 
     return addons_data
 
-def collect_eks_clusters(region):
+def _scan_eks_clusters_region(region):
     """
-    Collect EKS cluster information from a specific region.
+    Collect EKS cluster information from a single region.
+
+    This is the primary-scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure from ``list_clusters`` must propagate
+    so ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no EKS clusters" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Per-cluster ``describe_cluster`` failures are handled gracefully by
+    ``_build_cluster_row`` (decorated with ``default_return=None``) — one
+    malformed/inaccessible cluster does not sink the whole region.
 
     Args:
         region: AWS region to collect clusters from
 
     Returns:
-        tuple: (clusters_data, node_groups_data, addons_data)
+        list: List of cluster info dictionaries for this region.
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    client = utils.get_boto3_client('eks', region_name=region)
+
+    # List all EKS clusters in the region
+    paginator = client.get_paginator('list_clusters')
+    cluster_names = []
+    for page in paginator.paginate():
+        cluster_names.extend(page.get('clusters', []))
+
+    if not cluster_names:
+        utils.log_info(f"No EKS clusters found in {region}")
+        return []
+
+    utils.log_info(f"Found {len(cluster_names)} EKS clusters in {region} to process")
+
     clusters_data = []
+    for i, cluster_name in enumerate(cluster_names, 1):
+        progress = (i / len(cluster_names)) * 100
+        utils.log_info(f"[{progress:.1f}%] Processing cluster {i}/{len(cluster_names)}: {cluster_name}")
+
+        # Collect cluster details. One malformed/inaccessible cluster is
+        # skipped, not fatal to the region (_build_cluster_row already
+        # returns None gracefully via its own decorator, but the explicit
+        # try/except here also protects against unexpected raises).
+        try:
+            cluster_info = _build_cluster_row(client, cluster_name, region)
+        except Exception as e:
+            utils.log_error(
+                f"Skipping EKS cluster '{cluster_name}' in {region} due to a processing error", e
+            )
+            continue
+
+        if cluster_info:
+            clusters_data.append(cluster_info)
+
+    print(f"  Found {len(clusters_data)} EKS clusters")
+    return clusters_data
+
+
+def collect_eks_clusters(regions):
+    """
+    Collect EKS cluster information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        tuple: ``(clusters_data, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_eks_clusters_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_clusters = [cluster for result in region_results for cluster in result]
+    return all_clusters, failed_regions
+
+
+def _scan_node_groups_and_addons_region(region):
+    """
+    Collect EKS node groups and add-ons for a single region (enrichment).
+
+    Kept graceful — unlike ``_scan_eks_clusters_region`` — since node groups
+    and add-ons are secondary detail relative to the primary cluster
+    inventory; a region-level failure here degrades to an empty result
+    instead of failing the whole export.
+
+    Args:
+        region: AWS region to scan
+
+    Returns:
+        tuple: (node_groups_data, addons_data) for this region.
+    """
     node_groups_data = []
     addons_data = []
+
+    if not utils.is_aws_region(region):
+        return node_groups_data, addons_data
 
     try:
         client = utils.get_boto3_client('eks', region_name=region)
 
-        # List all EKS clusters in the region
         paginator = client.get_paginator('list_clusters')
         cluster_names = []
         for page in paginator.paginate():
             cluster_names.extend(page.get('clusters', []))
 
-        if not cluster_names:
-            utils.log_info(f"No EKS clusters found in {region}")
-            return clusters_data, node_groups_data, addons_data
-
-        utils.log_info(f"Found {len(cluster_names)} EKS clusters in {region} to process")
-
-        for i, cluster_name in enumerate(cluster_names, 1):
-            progress = (i / len(cluster_names)) * 100
-            utils.log_info(f"[{progress:.1f}%] Processing cluster {i}/{len(cluster_names)}: {cluster_name}")
-
-            # Collect cluster details
-            cluster_info = collect_cluster_details(client, cluster_name, region)
-            if cluster_info:
-                clusters_data.append(cluster_info)
-
+        for cluster_name in cluster_names:
             # Collect node groups for this cluster
             cluster_node_groups = collect_node_groups(client, cluster_name, region)
             node_groups_data.extend(cluster_node_groups)
@@ -457,9 +549,32 @@ def collect_eks_clusters(region):
         else:
             utils.log_error(f"Error accessing EKS in {region}: {e}")
     except Exception as e:
-        utils.log_error(f"Error collecting EKS clusters from {region}", e)
+        utils.log_error(f"Error collecting EKS node groups/add-ons from {region}", e)
 
-    return clusters_data, node_groups_data, addons_data
+    return node_groups_data, addons_data
+
+
+def collect_node_groups_and_addons(regions):
+    """
+    Collect EKS node group and add-on information across regions (enrichment).
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        tuple: (node_groups_data, addons_data)
+    """
+    results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_node_groups_and_addons_region,
+        show_progress=True,
+    )
+    node_groups_data = []
+    addons_data = []
+    for region_node_groups, region_addons in results:
+        node_groups_data.extend(region_node_groups)
+        addons_data.extend(region_addons)
+    return node_groups_data, addons_data
 
 def format_timestamp(timestamp):
     """
@@ -669,26 +784,17 @@ def main():
 
         utils.log_info(f"Will scan EKS clusters in regions: {', '.join(available_regions)}")
 
-        # Collect EKS data from all available regions
-        all_clusters_data = []
-        all_node_groups_data = []
-        all_addons_data = []
+        # STEP 1: Collect EKS clusters (primary scope — region failures must
+        # propagate as failed_regions, never collapse into "empty").
+        all_clusters_data, failed_regions = collect_eks_clusters(available_regions)
+        utils.log_success(f"Total EKS clusters collected: {len(all_clusters_data)}")
 
-        for region in available_regions:
-            utils.log_info(f"Collecting EKS information from {region}...")
+        # STEP 2: Collect node groups and add-ons (enrichment — degrades
+        # gracefully; a region-level failure here does not fail the whole export).
+        all_node_groups_data, all_addons_data = collect_node_groups_and_addons(available_regions)
 
-            clusters_data, node_groups_data, addons_data = collect_eks_clusters(region)
-
-            all_clusters_data.extend(clusters_data)
-            all_node_groups_data.extend(node_groups_data)
-            all_addons_data.extend(addons_data)
-
-            if clusters_data:
-                utils.log_success(f"Collected {len(clusters_data)} clusters from {region}")
-            else:
-                utils.log_info(f"No EKS clusters found in {region}")
-
-        if not all_clusters_data and not all_node_groups_data and not all_addons_data:
+        if not all_clusters_data and not all_node_groups_data and not all_addons_data and not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
             utils.log_warning("No EKS data collected from any region. Exiting.")
             return
 
@@ -696,7 +802,8 @@ def main():
         print("COLLECTION COMPLETE")
         print("====================================================================")
 
-        # Export to Excel
+        # Export whatever succeeded — a partial export is required even when
+        # some regions failed (see the silent-collection-failure blast-radius audit).
         filename = export_to_excel(all_clusters_data, all_node_groups_data, all_addons_data, account_id, account_name)
 
         if filename:
@@ -714,8 +821,20 @@ def main():
                 utils.log_info(f"Clusters with encryption: {encrypted_clusters}")
 
             print("\nScript execution completed.")
-        else:
+        elif not failed_regions:
             utils.log_error("Export failed. Please check the logs.")
+
+        # If ANY region failed the primary EKS clusters scope collection,
+        # make it loud: write a marker and exit non-zero, even if some data
+        # was exported. A partial export that looks complete is exactly the
+        # failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'eks', failed_regions)
+            print(
+                "\nERROR: EKS export completed with failures — data is incomplete. "
+                "See the *-eks-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")

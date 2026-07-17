@@ -73,6 +73,7 @@ _EXCLUDED = {
     #   codecommit:ListRepositories         -> NotImplementedError
     #   savingsplans:DescribeSavingsPlans   -> 404 "Not yet implemented"
     #   transfer:ListServers                -> NotImplementedError
+    #   apprunner:ListServices              -> 404 "Not yet implemented"
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
@@ -83,6 +84,7 @@ _EXCLUDED = {
     "codecommit_export.py",
     "savings_plans_export.py",
     "transfer_family_export.py",
+    "apprunner_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(

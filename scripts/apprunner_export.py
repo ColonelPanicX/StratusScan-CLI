@@ -30,148 +30,190 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS App Runner services to Excel")
 
+def _build_service_row(service_summary: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single App Runner service.
+
+    Extracted so the per-service processing can be wrapped in try/except by
+    the caller: a malformed service entry is logged and skipped rather than
+    discarding the whole region's results.
+
+    Args:
+        service_summary: A single ServiceSummaryList entry from list_services.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled service row.
+
+    Raises:
+        Exception: Any error building this row (caller logs and skips it).
+    """
+    service_arn = service_summary.get('ServiceArn', 'N/A')
+    service_name = service_summary.get('ServiceName', 'N/A')
+    service_id = service_summary.get('ServiceId', 'N/A')
+    service_url = service_summary.get('ServiceUrl', 'N/A')
+    status = service_summary.get('Status', 'N/A')
+
+    apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
+    service_response = apprunner_client.describe_service(ServiceArn=service_arn)
+    service = service_response.get('Service', {})
+
+    # Source configuration
+    source_config = service.get('SourceConfiguration', {})
+
+    # Image repository or code repository
+    image_repo = source_config.get('ImageRepository', {})
+    code_repo = source_config.get('CodeRepository', {})
+
+    if image_repo:
+        source_type = 'Container Image'
+        image_identifier = image_repo.get('ImageIdentifier', 'N/A')
+        image_repo_type = image_repo.get('ImageRepositoryType', 'N/A')
+        source_details = f"{image_repo_type}: {image_identifier}"
+    elif code_repo:
+        source_type = 'Source Code'
+        source_code_version = code_repo.get('SourceCodeVersion', {})
+        branch = source_code_version.get('Value', 'N/A')
+        source_details = f"Branch: {branch}"
+    else:
+        source_type = 'Unknown'
+        source_details = 'N/A'
+
+    # Auto deployment
+    auto_deploy_enabled = source_config.get('AutoDeploymentsEnabled', False)
+
+    # Instance configuration
+    instance_config = service.get('InstanceConfiguration', {})
+    cpu = instance_config.get('Cpu', 'N/A')
+    memory = instance_config.get('Memory', 'N/A')
+    instance_role_arn = instance_config.get('InstanceRoleArn', 'N/A')
+
+    # Extract role name
+    instance_role = 'N/A'
+    if instance_role_arn != 'N/A' and '/' in instance_role_arn:
+        instance_role = instance_role_arn.split('/')[-1]
+
+    # Health check configuration
+    health_check_config = service.get('HealthCheckConfiguration', {})
+    health_check_protocol = health_check_config.get('Protocol', 'N/A')
+    health_check_path = health_check_config.get('Path', 'N/A')
+    health_check_interval = health_check_config.get('Interval', 'N/A')
+    health_check_timeout = health_check_config.get('Timeout', 'N/A')
+
+    # Auto scaling configuration ARN
+    auto_scaling_config_name = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationName', 'N/A')
+
+    # Network configuration
+    network_config = service.get('NetworkConfiguration', {})
+    egress_config = network_config.get('EgressConfiguration', {})
+    egress_type = egress_config.get('EgressType', 'DEFAULT')  # DEFAULT or VPC
+    vpc_connector_arn = egress_config.get('VpcConnectorArn', 'N/A') if egress_type == 'VPC' else 'N/A'
+
+    # Encryption configuration
+    encryption_config = service.get('EncryptionConfiguration', {})
+    kms_key = encryption_config.get('KmsKey', 'AWS Managed')
+
+    # Created and updated timestamps
+    created_at = service.get('CreatedAt')
+    created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else 'N/A'
+
+    updated_at = service.get('UpdatedAt')
+    updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S') if updated_at else 'N/A'
+
+    return {
+        'Region': region,
+        'Service Name': service_name,
+        'Service ID': service_id,
+        'Status': status,
+        'Service URL': service_url,
+        'Source Type': source_type,
+        'Source Details': source_details,
+        'Auto Deploy': 'Enabled' if auto_deploy_enabled else 'Disabled',
+        'CPU': cpu,
+        'Memory': memory,
+        'Instance Role': instance_role,
+        'Health Check Protocol': health_check_protocol,
+        'Health Check Path': health_check_path,
+        'Health Check Interval (s)': health_check_interval,
+        'Health Check Timeout (s)': health_check_timeout,
+        'Auto Scaling Config': auto_scaling_config_name,
+        'Egress Type': egress_type,
+        'VPC Connector': vpc_connector_arn if egress_type == 'VPC' else 'N/A',
+        'KMS Key': kms_key,
+        'Created': created_at_str,
+        'Updated': updated_at_str,
+        'Service ARN': service_arn,
+    }
+
+
 def _scan_apprunner_services_region(region: str) -> list[dict[str, Any]]:
-    """Scan App Runner services in a single region."""
+    """
+    Scan App Runner services in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    region-level errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no App Runner services" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed services are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_services = []
 
-    try:
-        apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
-        next_token = None
-        while True:
-            params = {}
-            params['MaxResults'] = 50
-            if next_token:
-                params['NextToken'] = next_token
-            page = apprunner_client.list_services(**params)
-            service_summaries = page.get('ServiceSummaryList', [])
+    apprunner_client = utils.get_boto3_client('apprunner', region_name=region)
+    next_token = None
+    while True:
+        params = {}
+        params['MaxResults'] = 50
+        if next_token:
+            params['NextToken'] = next_token
+        page = apprunner_client.list_services(**params)
+        service_summaries = page.get('ServiceSummaryList', [])
 
-            for service_summary in service_summaries:
-                service_arn = service_summary.get('ServiceArn', 'N/A')
-                service_name = service_summary.get('ServiceName', 'N/A')
-                service_id = service_summary.get('ServiceId', 'N/A')
-                service_url = service_summary.get('ServiceUrl', 'N/A')
-                status = service_summary.get('Status', 'N/A')
+        for service_summary in service_summaries:
+            service_name = service_summary.get('ServiceName', 'N/A')
+            try:
+                regional_services.append(_build_service_row(service_summary, region))
+            except Exception as e:
+                # One malformed service is skipped, not fatal to the region.
+                utils.log_warning(f"Could not get details for service {service_name}: {str(e)}")
+                continue
 
-                # Get detailed service information
-                try:
-                    service_response = apprunner_client.describe_service(ServiceArn=service_arn)
-                    service = service_response.get('Service', {})
-
-                    # Source configuration
-                    source_config = service.get('SourceConfiguration', {})
-
-                    # Image repository or code repository
-                    image_repo = source_config.get('ImageRepository', {})
-                    code_repo = source_config.get('CodeRepository', {})
-
-                    if image_repo:
-                        source_type = 'Container Image'
-                        image_identifier = image_repo.get('ImageIdentifier', 'N/A')
-                        image_repo_type = image_repo.get('ImageRepositoryType', 'N/A')
-                        source_details = f"{image_repo_type}: {image_identifier}"
-                    elif code_repo:
-                        source_type = 'Source Code'
-                        source_code_version = code_repo.get('SourceCodeVersion', {})
-                        branch = source_code_version.get('Value', 'N/A')
-                        source_details = f"Branch: {branch}"
-                    else:
-                        source_type = 'Unknown'
-                        source_details = 'N/A'
-
-                    # Auto deployment
-                    auto_deploy_enabled = source_config.get('AutoDeploymentsEnabled', False)
-
-                    # Instance configuration
-                    instance_config = service.get('InstanceConfiguration', {})
-                    cpu = instance_config.get('Cpu', 'N/A')
-                    memory = instance_config.get('Memory', 'N/A')
-                    instance_role_arn = instance_config.get('InstanceRoleArn', 'N/A')
-
-                    # Extract role name
-                    instance_role = 'N/A'
-                    if instance_role_arn != 'N/A' and '/' in instance_role_arn:
-                        instance_role = instance_role_arn.split('/')[-1]
-
-                    # Health check configuration
-                    health_check_config = service.get('HealthCheckConfiguration', {})
-                    health_check_protocol = health_check_config.get('Protocol', 'N/A')
-                    health_check_path = health_check_config.get('Path', 'N/A')
-                    health_check_interval = health_check_config.get('Interval', 'N/A')
-                    health_check_timeout = health_check_config.get('Timeout', 'N/A')
-
-                    # Auto scaling configuration ARN
-                    auto_scaling_config_name = service.get('AutoScalingConfigurationSummary', {}).get('AutoScalingConfigurationName', 'N/A')
-
-                    # Network configuration
-                    network_config = service.get('NetworkConfiguration', {})
-                    egress_config = network_config.get('EgressConfiguration', {})
-                    egress_type = egress_config.get('EgressType', 'DEFAULT')  # DEFAULT or VPC
-                    vpc_connector_arn = egress_config.get('VpcConnectorArn', 'N/A') if egress_type == 'VPC' else 'N/A'
-
-                    # Encryption configuration
-                    encryption_config = service.get('EncryptionConfiguration', {})
-                    kms_key = encryption_config.get('KmsKey', 'AWS Managed')
-
-                    # Created and updated timestamps
-                    created_at = service.get('CreatedAt')
-                    if created_at:
-                        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        created_at_str = 'N/A'
-
-                    updated_at = service.get('UpdatedAt')
-                    if updated_at:
-                        updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        updated_at_str = 'N/A'
-
-                    regional_services.append({
-                        'Region': region,
-                        'Service Name': service_name,
-                        'Service ID': service_id,
-                        'Status': status,
-                        'Service URL': service_url,
-                        'Source Type': source_type,
-                        'Source Details': source_details,
-                        'Auto Deploy': 'Enabled' if auto_deploy_enabled else 'Disabled',
-                        'CPU': cpu,
-                        'Memory': memory,
-                        'Instance Role': instance_role,
-                        'Health Check Protocol': health_check_protocol,
-                        'Health Check Path': health_check_path,
-                        'Health Check Interval (s)': health_check_interval,
-                        'Health Check Timeout (s)': health_check_timeout,
-                        'Auto Scaling Config': auto_scaling_config_name,
-                        'Egress Type': egress_type,
-                        'VPC Connector': vpc_connector_arn if egress_type == 'VPC' else 'N/A',
-                        'KMS Key': kms_key,
-                        'Created': created_at_str,
-                        'Updated': updated_at_str,
-                        'Service ARN': service_arn,
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for service {service_name}: {str(e)}")
-                    continue
-
-            next_token = page.get('NextToken')
-            if not next_token:
-                break
-
-    except Exception as e:
-        utils.log_error(f"Error collecting App Runner services in {region}", e)
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
 
     return regional_services
 
 
-@utils.aws_error_handler("Collecting App Runner services", default_return=[])
-def collect_apprunner_services(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect App Runner service information from AWS regions."""
+def collect_apprunner_services(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect App Runner service information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(services, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING APP RUNNER SERVICES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_apprunner_services_region)
-    all_services = [svc for result in results for svc in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions,
+        _scan_apprunner_services_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_services = [svc for result in region_results for svc in result]
     utils.log_success(f"Total App Runner services collected: {len(all_services)}")
-    return all_services
+    return all_services, failed_regions
 
 
 def _scan_auto_scaling_configs_region(region: str) -> list[dict[str, Any]]:
@@ -474,7 +516,10 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect App Runner data and write the Excel export."""
     # Collect data
     print("\n=== Collecting App Runner Data ===")
-    services = collect_apprunner_services(regions)
+    # PRIMARY scope: region failures must propagate as failed_regions, never
+    # collapse into "empty". Auto-scaling configs / VPC connectors / custom
+    # domains below are enrichment and stay graceful.
+    services, failed_regions = collect_apprunner_services(regions)
     auto_scaling_configs = collect_auto_scaling_configs(regions)
     vpc_connectors = collect_vpc_connectors(regions)
     custom_domains = collect_custom_domains(regions, services)
@@ -516,6 +561,19 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY region failed the App Runner Services scope collection, make it
+    # loud: write a marker and exit non-zero, even though the forced Summary
+    # sheet means a workbook always lands. A complete-looking file hiding
+    # incomplete data is exactly the failure mode this guards against.
+    # Genuinely-empty accounts (no failed_regions) stay exit 0 with no marker.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'apprunner', failed_regions)
+        print(
+            "\nERROR: App Runner export completed with failures — data is incomplete. "
+            "See the *-apprunner-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
