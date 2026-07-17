@@ -69,94 +69,167 @@ def format_json_field(field_value: Any, max_length: int = 200) -> str:
     return str(field_value)
 
 
-@utils.aws_error_handler("Collecting Transfer Family servers", default_return=[])
-def collect_transfer_servers(region: str) -> list[dict[str, Any]]:
+def _build_server_row(item: dict, region: str) -> dict[str, Any]:
     """
-    Collect Transfer Family server information from a specific region.
+    Build a single Transfer Family server export row.
+
+    ``item`` is the ``describe_server`` response's ``Server`` dict, augmented
+    with ``ServerId`` and ``UserCount`` by the caller. Every field is read
+    with ``.get()`` and a safe default so a malformed/divergent server
+    variant is skipped by the caller's try/except rather than raising here
+    with a hard subscript (the RDS-Custom KeyError pattern — see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    """
+    server_id = item.get('ServerId', '')
+
+    return {
+        'Server ID': server_id,
+        'Region': region,
+        'ARN': item.get('Arn', 'N/A'),
+        'State': item.get('State', 'N/A'),
+        'Protocols': format_protocols(item.get('Protocols', [])),
+        'Endpoint Type': item.get('EndpointType', 'N/A'),
+        'Identity Provider Type': item.get('IdentityProviderType', 'N/A'),
+        'Domain': item.get('Domain', 'N/A'),
+        'Logging Role ARN': item.get('LoggingRole', 'None'),
+        'Security Policy': item.get('SecurityPolicyName', 'N/A'),
+        'Custom Hostname': item.get('HostKeyFingerprint', 'None'),
+        'Certificate ARN': item.get('Certificate', 'None'),
+        'VPC Endpoint ID': item.get('EndpointDetails', {}).get('VpcEndpointId', 'None'),
+        'VPC ID': item.get('EndpointDetails', {}).get('VpcId', 'None'),
+        'Subnet IDs': format_list_field(item.get('EndpointDetails', {}).get('SubnetIds', [])),
+        'Security Group IDs': format_list_field(item.get('EndpointDetails', {}).get('SecurityGroupIds', [])),
+        'Address Allocation IDs': format_list_field(item.get('EndpointDetails', {}).get('AddressAllocationIds', [])),
+        'Availability Zone': item.get('EndpointDetails', {}).get('AvailabilityZone', 'N/A'),
+        'User Count': item.get('UserCount', 0),
+        'Workflow Details': format_json_field(item.get('WorkflowDetails', {})),
+        'Structured Availability Zone': item.get('StructuredLogDestinations', 'None'),
+        'Tags': format_list_field([f"{tag.get('Key', '')}={tag.get('Value', '')}" for tag in item.get('Tags', [])])
+    }
+
+
+def _scan_transfer_servers_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Transfer Family server information from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Transfer Family servers" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed servers are skipped (logged) rather than aborting
+    the whole region.
 
     Args:
         region: AWS region name
 
     Returns:
         List of dictionaries containing server information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Collecting Transfer Family servers in {region}...")
 
     transfer_client = utils.get_boto3_client('transfer', region_name=region)
     servers_data = []
 
-    try:
-        # List all servers in the region
-        paginator = transfer_client.get_paginator('list_servers')
-        server_ids = []
+    # List all servers in the region
+    paginator = transfer_client.get_paginator('list_servers')
+    server_ids = []
 
-        for page in paginator.paginate():
-            for server in page.get('Servers', []):
-                server_ids.append(server['ServerId'])
+    for page in paginator.paginate():
+        for server in page.get('Servers', []):
+            sid = server.get('ServerId')
+            if sid:
+                server_ids.append(sid)
 
-        if not server_ids:
-            utils.log_info(f"No Transfer Family servers found in {region}")
-            return []
+    if not server_ids:
+        utils.log_info(f"No Transfer Family servers found in {region}")
+        return []
 
-        utils.log_info(f"Found {len(server_ids)} Transfer Family servers in {region}")
+    utils.log_info(f"Found {len(server_ids)} Transfer Family servers in {region}")
 
-        # Get detailed information for each server
-        for idx, server_id in enumerate(server_ids, 1):
-            progress = (idx / len(server_ids)) * 100
-            utils.log_info(f"[{progress:.1f}%] Processing server {idx}/{len(server_ids)}: {server_id}")
+    # Get detailed information for each server. One malformed server must not
+    # sink the region, so each is built inside try/except; failures are
+    # logged and skipped.
+    skipped = 0
+    for idx, server_id in enumerate(server_ids, 1):
+        progress = (idx / len(server_ids)) * 100
+        utils.log_info(f"[{progress:.1f}%] Processing server {idx}/{len(server_ids)}: {server_id}")
 
+        try:
+            # Get server details
+            response = transfer_client.describe_server(ServerId=server_id)
+            server = dict(response.get('Server', {}))
+            server['ServerId'] = server_id
+
+            # Count users for this server (graceful enrichment — does not
+            # fail the row if it errors)
+            user_count = 0
             try:
-                # Get server details
-                response = transfer_client.describe_server(ServerId=server_id)
-                server = response['Server']
-
-                # Count users for this server
-                user_count = 0
-                try:
-                    user_paginator = transfer_client.get_paginator('list_users')
-                    for user_page in user_paginator.paginate(ServerId=server_id):
-                        user_count += len(user_page.get('Users', []))
-                except Exception as e:
-                    utils.log_warning(f"Could not count users for server {server_id}: {e}")
-
-                # Extract server information
-                server_info = {
-                    'Server ID': server_id,
-                    'Region': region,
-                    'ARN': server.get('Arn', 'N/A'),
-                    'State': server.get('State', 'N/A'),
-                    'Protocols': format_protocols(server.get('Protocols', [])),
-                    'Endpoint Type': server.get('EndpointType', 'N/A'),
-                    'Identity Provider Type': server.get('IdentityProviderType', 'N/A'),
-                    'Domain': server.get('Domain', 'N/A'),
-                    'Logging Role ARN': server.get('LoggingRole', 'None'),
-                    'Security Policy': server.get('SecurityPolicyName', 'N/A'),
-                    'Custom Hostname': server.get('HostKeyFingerprint', 'None'),
-                    'Certificate ARN': server.get('Certificate', 'None'),
-                    'VPC Endpoint ID': server.get('EndpointDetails', {}).get('VpcEndpointId', 'None'),
-                    'VPC ID': server.get('EndpointDetails', {}).get('VpcId', 'None'),
-                    'Subnet IDs': format_list_field(server.get('EndpointDetails', {}).get('SubnetIds', [])),
-                    'Security Group IDs': format_list_field(server.get('EndpointDetails', {}).get('SecurityGroupIds', [])),
-                    'Address Allocation IDs': format_list_field(server.get('EndpointDetails', {}).get('AddressAllocationIds', [])),
-                    'Availability Zone': server.get('EndpointDetails', {}).get('AvailabilityZone', 'N/A'),
-                    'User Count': user_count,
-                    'Workflow Details': format_json_field(server.get('WorkflowDetails', {})),
-                    'Structured Availability Zone': server.get('StructuredLogDestinations', 'None'),
-                    'Tags': format_list_field([f"{tag['Key']}={tag['Value']}" for tag in server.get('Tags', [])])
-                }
-
-                servers_data.append(server_info)
-
+                user_paginator = transfer_client.get_paginator('list_users')
+                for user_page in user_paginator.paginate(ServerId=server_id):
+                    user_count += len(user_page.get('Users', []))
             except Exception as e:
-                utils.log_error(f"Error collecting details for server {server_id} in {region}: {e}")
-                continue
+                utils.log_warning(f"Could not count users for server {server_id}: {e}")
+            server['UserCount'] = user_count
 
-        utils.log_success(f"Collected {len(servers_data)} servers from {region}")
+            servers_data.append(_build_server_row(server, region))
 
-    except Exception as e:
-        utils.log_error(f"Error listing servers in {region}: {e}")
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping malformed Transfer Family server '{server_id}' in {region} due to a "
+                "processing error", e,
+            )
+            continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(server_ids)} Transfer Family server(s) in {region} were skipped due "
+            "to processing errors (see log above); the remaining servers were still collected."
+        )
+
+    utils.log_success(f"Collected {len(servers_data)} servers from {region}")
 
     return servers_data
+
+
+def collect_transfer_servers_all_regions(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Transfer Family server information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        tuple: ``(servers, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    print("\n=== COLLECTING TRANSFER FAMILY SERVERS ===")
+
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_transfer_servers_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_servers = [server for result in region_results for server in result]
+
+    utils.log_success(f"Total Transfer Family servers collected: {len(all_servers)}")
+    return all_servers, failed_regions
 
 
 @utils.aws_error_handler("Collecting Transfer Family users", default_return=[])
@@ -755,8 +828,19 @@ def main():
         # Prompt for region selection
         # Detect partition for region examples
         regions = utils.prompt_region_selection()
-        # Collect data from all regions
-        all_servers = []
+
+        # STEP 1: Collect servers (primary scope — region failures must
+        # propagate as failed_regions, never collapse into "empty"). See
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md.
+        all_servers, failed_regions = collect_transfer_servers_all_regions(regions)
+
+        # Group server IDs by region for the per-region enrichment steps
+        # below (users, agreements). Built from our own row dicts, so
+        # ``.get()`` is used defensively rather than a hard subscript.
+        servers_by_region: dict[str, list[str]] = {}
+        for s in all_servers:
+            servers_by_region.setdefault(s.get('Region', ''), []).append(s.get('Server ID', ''))
+
         all_users = []
         all_connectors = []
         all_workflows = []
@@ -767,14 +851,10 @@ def main():
             utils.log_info(f"\nProcessing region: {region}")
             utils.log_info("=" * 60)
 
-            # Collect servers
-            servers = collect_transfer_servers(region)
-            all_servers.extend(servers)
+            server_ids = [sid for sid in servers_by_region.get(region, []) if sid]
 
-            # Extract server IDs for user and agreement collection
-            server_ids = [s['Server ID'] for s in servers]
-
-            # Collect users for each server
+            # Collect users for each server (enrichment — degrades
+            # gracefully; a failure here does not fail the whole export)
             if server_ids:
                 users = collect_transfer_users(region, server_ids)
                 all_users.extend(users)
@@ -808,33 +888,49 @@ def main():
         utils.log_info(f"Total certificates collected: {len(all_certificates)}")
         utils.log_info(f"Total agreements collected: {len(all_agreements)}")
 
-        if not any([all_servers, all_users, all_connectors, all_workflows, all_certificates, all_agreements]):
-            utils.log_warning("No Transfer Family resources found in selected regions.")
-            return
-
-        # Export to Excel
-        print("\n====================================================================")
-        utils.log_info("Exporting data to Excel...")
-        print("====================================================================\n")
-
-        filename = export_to_excel(
-            all_servers,
-            all_users,
-            all_connectors,
-            all_workflows,
-            all_certificates,
-            all_agreements,
-            account_name
-        )
-
-        if filename:
+        # Export whatever succeeded first — a partial export is required even
+        # when some regions failed (see the silent-collection-failure
+        # blast-radius audit).
+        if any([all_servers, all_users, all_connectors, all_workflows, all_certificates, all_agreements]):
+            # Export to Excel
             print("\n====================================================================")
-            print("EXPORT COMPLETE")
-            print("====================================================================")
-            utils.log_success("Transfer Family export completed successfully!")
-            utils.log_info(f"Output file: {filename}")
-        else:
-            utils.log_error("Export failed. Please check the logs.")
+            utils.log_info("Exporting data to Excel...")
+            print("====================================================================\n")
+
+            filename = export_to_excel(
+                all_servers,
+                all_users,
+                all_connectors,
+                all_workflows,
+                all_certificates,
+                all_agreements,
+                account_name
+            )
+
+            if filename:
+                print("\n====================================================================")
+                print("EXPORT COMPLETE")
+                print("====================================================================")
+                utils.log_success("Transfer Family export completed successfully!")
+                utils.log_info(f"Output file: {filename}")
+            else:
+                utils.log_error("Export failed. Please check the logs.")
+        elif not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
+            utils.log_warning("No Transfer Family resources found in selected regions.")
+            print("\nNo Transfer Family resources found in the selected region(s).")
+
+        # If ANY region failed the Servers scope collection, make it loud:
+        # write a marker and exit non-zero, even if some data was exported. A
+        # partial export that looks complete is exactly the failure mode this
+        # guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'transfer-family', failed_regions)
+            print(
+                "\nERROR: Transfer Family export completed with failures — data is incomplete. "
+                "See the *-transfer-family-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")

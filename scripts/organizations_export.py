@@ -109,9 +109,9 @@ def get_organization_info():
 
         # Describe organization
         org_response = org_client.describe_organization()
-        organization = org_response['Organization']
+        organization = org_response.get('Organization', {})
 
-        utils.log_success(f"Found AWS Organization: {organization['Id']}")
+        utils.log_success(f"Found AWS Organization: {organization.get('Id', 'Unknown')}")
         return organization
 
     except ClientError as e:
@@ -131,53 +131,115 @@ def collect_organizational_units():
     """
     Collect all organizational units (OUs) in the organization.
 
+    This is a PRIMARY, account-scope collector (see
+    scripts/shield_export.py for the account-scope reference pattern). It
+    does not swallow errors to an empty list: a swallowed error here would
+    be indistinguishable from an organization with no child OUs, producing
+    silent data loss (see the 07.15.2026 / 07.16.2026 silent-collection-
+    failure audits). Account-scope failures (client creation, root lookup,
+    pagination) are allowed to raise so the caller (main) can record this
+    scope as *failed* rather than *empty*. Per-OU errors are contained in
+    ``collect_ous_recursive`` (logged and skipped).
+
     Returns:
         list: List of OU information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     ou_data = []
 
-    try:
-        org_client = utils.get_boto3_client('organizations')
+    org_client = utils.get_boto3_client('organizations')
 
-        # Get root first
-        roots = org_client.list_roots()['Roots']
-        if not roots:
-            utils.log_error("No organization root found")
-            return []
+    # Get root first
+    roots = org_client.list_roots().get('Roots', [])
+    if not roots:
+        utils.log_error("No organization root found")
+        return []
 
-        root = roots[0]  # There should only be one root
-        root_id = root['Id']
+    root = roots[0]  # There should only be one root
+    root_id = root.get('Id')
 
-        utils.log_info("Collecting organizational units...")
+    utils.log_info("Collecting organizational units...")
 
-        # Process root as an OU
-        root_info = {
-            'OU ID': root_id,
-            'OU Name': root.get('Name', 'Root'),
-            'OU Type': 'ROOT',
-            'Parent ID': 'N/A',
-            'Parent Name': 'N/A',
-            'Level': 0,
-            'Path': 'Root',
-            'Policy Types': ', '.join([pt['Type'] for pt in root.get('PolicyTypes', [])]),
-            'ARN': root.get('Arn', 'N/A')
-        }
-        ou_data.append(root_info)
+    # Process root as an OU
+    root_info = {
+        'OU ID': root_id or 'N/A',
+        'OU Name': root.get('Name', 'Root'),
+        'OU Type': 'ROOT',
+        'Parent ID': 'N/A',
+        'Parent Name': 'N/A',
+        'Level': 0,
+        'Path': 'Root',
+        'Policy Types': ', '.join([pt.get('Type', 'Unknown') for pt in root.get('PolicyTypes', [])]),
+        'ARN': root.get('Arn', 'N/A')
+    }
+    ou_data.append(root_info)
 
-        # Recursively collect all OUs
-        collected_ous = collect_ous_recursive(org_client, root_id, "Root", 1)
-        ou_data.extend(collected_ous)
+    # Recursively collect all OUs
+    collected_ous = collect_ous_recursive(org_client, root_id, "Root", 1)
+    ou_data.extend(collected_ous)
 
-        utils.log_success(f"Collected {len(ou_data)} organizational units")
-
-    except Exception as e:
-        utils.log_error("Error collecting organizational units", e)
+    utils.log_success(f"Collected {len(ou_data)} organizational units")
 
     return ou_data
+
+def _build_ou_row(org_client, ou, parent_id, parent_path, level):
+    """
+    Build the export row for a single organizational unit.
+
+    Extracted so per-OU processing can be wrapped in try/except by the
+    caller: a malformed OU entry must not sink the whole recursive branch.
+    Required fields are read with ``.get()`` and a safe default for the
+    same reason.
+
+    Args:
+        org_client: boto3 organizations client
+        ou (dict): A single OrganizationalUnits entry.
+        parent_id: Parent OU/root ID.
+        parent_path: Full path to parent.
+        level: Current nesting level.
+
+    Returns:
+        tuple: (ou_info dict, ou_id, ou_path) for the caller to use when
+            recursing into this OU's children.
+    """
+    ou_id = ou.get('Id')
+    ou_name = ou.get('Name', 'Unnamed OU')
+    ou_path = f"{parent_path}/{ou_name}"
+
+    # Get parent name
+    try:
+        if parent_id.startswith('r-'):  # Root
+            parent_name = 'Root'
+        else:
+            parent_response = org_client.describe_organizational_unit(OrganizationalUnitId=parent_id)
+            parent_name = parent_response.get('OrganizationalUnit', {}).get('Name', 'Unknown')
+    except Exception:
+        parent_name = 'Unknown'
+
+    ou_info = {
+        'OU ID': ou_id or 'N/A',
+        'OU Name': ou_name,
+        'OU Type': 'ORGANIZATIONAL_UNIT',
+        'Parent ID': parent_id,
+        'Parent Name': parent_name,
+        'Level': level,
+        'Path': ou_path,
+        'Policy Types': 'N/A',  # Will be filled later if needed
+        'ARN': ou.get('Arn', 'N/A')
+    }
+
+    return ou_info, ou_id, ou_path
 
 def collect_ous_recursive(org_client, parent_id, parent_path, level):
     """
     Recursively collect OUs under a parent.
+
+    Pagination/API errors propagate to the caller (the recursion is part of
+    the ``collect_organizational_units`` PRIMARY scope). A single malformed
+    OU entry is logged and skipped rather than aborting the whole branch.
 
     Args:
         org_client: boto3 organizations client
@@ -187,116 +249,143 @@ def collect_ous_recursive(org_client, parent_id, parent_path, level):
 
     Returns:
         list: List of OU information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error (caller records the parent
+            scope as failed; it is never masked as empty).
     """
     ou_data = []
 
-    try:
-        # Get direct children OUs
-        paginator = org_client.get_paginator('list_organizational_units_for_parent')
+    # Get direct children OUs
+    paginator = org_client.get_paginator('list_organizational_units_for_parent')
 
-        for page in paginator.paginate(ParentId=parent_id):
-            for ou in page.get('OrganizationalUnits', []):
-                ou_id = ou['Id']
-                ou_name = ou.get('Name', 'Unnamed OU')
-                ou_path = f"{parent_path}/{ou_name}"
+    for page in paginator.paginate(ParentId=parent_id):
+        for ou in page.get('OrganizationalUnits', []):
+            try:
+                ou_info, ou_id, ou_path = _build_ou_row(org_client, ou, parent_id, parent_path, level)
+            except Exception as e:
+                ou_ref = ou.get('Id', 'Unknown') if isinstance(ou, dict) else 'Unknown'
+                utils.log_warning(f"Skipping malformed OU '{ou_ref}' under parent {parent_id} due to a processing error: {e}")
+                continue
 
-                # Get parent name
-                try:
-                    if parent_id.startswith('r-'):  # Root
-                        parent_name = 'Root'
-                    else:
-                        parent_response = org_client.describe_organizational_unit(OrganizationalUnitId=parent_id)
-                        parent_name = parent_response['OrganizationalUnit'].get('Name', 'Unknown')
-                except Exception:
-                    parent_name = 'Unknown'
+            ou_data.append(ou_info)
 
-                ou_info = {
-                    'OU ID': ou_id,
-                    'OU Name': ou_name,
-                    'OU Type': 'ORGANIZATIONAL_UNIT',
-                    'Parent ID': parent_id,
-                    'Parent Name': parent_name,
-                    'Level': level,
-                    'Path': ou_path,
-                    'Policy Types': 'N/A',  # Will be filled later if needed
-                    'ARN': ou.get('Arn', 'N/A')
-                }
-                ou_data.append(ou_info)
+            utils.log_info(f"Found OU: {ou_path}")
 
-                utils.log_info(f"Found OU: {ou_path}")
-
-                # Recursively get children
-                children = collect_ous_recursive(org_client, ou_id, ou_path, level + 1)
-                ou_data.extend(children)
-
-    except Exception as e:
-        utils.log_warning(f"Error collecting OUs for parent {parent_id}: {e}")
+            # Recursively get children
+            children = collect_ous_recursive(org_client, ou_id, ou_path, level + 1)
+            ou_data.extend(children)
 
     return ou_data
+
+def _build_account_row(org_client, account, processed, total_accounts):
+    """
+    Build the export row for a single organization account.
+
+    Extracted so per-account processing can be wrapped in try/except by the
+    caller: a malformed account entry must not sink the whole account-scope
+    collection. Required fields are read with ``.get()`` and a safe default
+    for the same reason.
+
+    Args:
+        org_client: boto3 organizations client
+        account (dict): A single Accounts entry from list_accounts.
+        processed: 1-based index of this account within the current run.
+        total_accounts: Total account count, for progress logging.
+
+    Returns:
+        dict: The assembled account row.
+    """
+    progress = (processed / total_accounts) * 100 if total_accounts > 0 else 0
+    account_id = account.get('Id')
+    account_name = account.get('Name', 'Unnamed Account')
+
+    utils.log_info(f"[{progress:.1f}%] Processing account {processed}/{total_accounts}: {account_name}")
+
+    # Get account's parent OU
+    parent_info = get_account_parent(org_client, account_id)
+
+    # Get account tags if available
+    account_tags = get_account_tags(org_client, account_id)
+
+    return {
+        'Account ID': account_id or 'N/A',
+        'Account Name': account_name,
+        'Email': account.get('Email', 'N/A'),
+        'Status': account.get('Status', 'N/A'),
+        'Join Method': account.get('JoinedMethod', 'N/A'),
+        'Joined Date': convert_datetime_to_string(account.get('JoinedTimestamp')),
+        'Parent ID': parent_info['parent_id'],
+        'Parent Name': parent_info['parent_name'],
+        'Parent Type': parent_info['parent_type'],
+        'Full Path': parent_info['full_path'],
+        'ARN': account.get('Arn', 'N/A'),
+        'Tags': account_tags
+    }
 
 def collect_accounts():
     """
     Collect all accounts in the organization.
 
+    This is a PRIMARY, account-scope collector (see
+    scripts/shield_export.py for the account-scope reference pattern). It
+    does not swallow errors to an empty list: a swallowed error here would
+    be indistinguishable from an organization with no member accounts,
+    producing silent data loss (see the 07.15.2026 / 07.16.2026 silent-
+    collection-failure audits). Account-scope failures (client creation,
+    pagination) are allowed to raise so the caller (main) can record this
+    scope as *failed* rather than *empty*. Per-account errors are contained
+    internally (logged and skipped).
+
     Returns:
         list: List of account information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     accounts_data = []
 
-    try:
-        org_client = utils.get_boto3_client('organizations')
+    org_client = utils.get_boto3_client('organizations')
 
-        utils.log_info("Collecting organization accounts...")
+    utils.log_info("Collecting organization accounts...")
 
-        # Get all accounts
-        paginator = org_client.get_paginator('list_accounts')
-        total_accounts = 0
+    # Get all accounts
+    paginator = org_client.get_paginator('list_accounts')
+    total_accounts = 0
 
-        # Count accounts first
-        for page in paginator.paginate():
-            total_accounts += len(page.get('Accounts', []))
+    # Count accounts first
+    for page in paginator.paginate():
+        total_accounts += len(page.get('Accounts', []))
 
-        utils.log_info(f"Found {total_accounts} accounts to process")
+    utils.log_info(f"Found {total_accounts} accounts to process")
 
-        # Reset paginator and process accounts
-        paginator = org_client.get_paginator('list_accounts')
-        processed = 0
+    # Reset paginator and process accounts
+    paginator = org_client.get_paginator('list_accounts')
+    processed = 0
+    skipped = 0
 
-        for page in paginator.paginate():
-            accounts = page.get('Accounts', [])
+    for page in paginator.paginate():
+        accounts = page.get('Accounts', [])
 
-            for account in accounts:
-                processed += 1
-                progress = (processed / total_accounts) * 100 if total_accounts > 0 else 0
-                account_name = account.get('Name', 'Unnamed Account')
+        for account in accounts:
+            processed += 1
 
-                utils.log_info(f"[{progress:.1f}%] Processing account {processed}/{total_accounts}: {account_name}")
+            try:
+                account_info = _build_account_row(org_client, account, processed, total_accounts)
+            except Exception as e:
+                skipped += 1
+                account_ref = account.get('Id', 'Unknown') if isinstance(account, dict) else 'Unknown'
+                utils.log_error(f"Skipping account '{account_ref}' due to a processing error", e)
+                continue
 
-                # Get account's parent OU
-                parent_info = get_account_parent(org_client, account['Id'])
+            accounts_data.append(account_info)
 
-                # Get account tags if available
-                account_tags = get_account_tags(org_client, account['Id'])
-
-                account_info = {
-                    'Account ID': account.get('Id', 'N/A'),
-                    'Account Name': account_name,
-                    'Email': account.get('Email', 'N/A'),
-                    'Status': account.get('Status', 'N/A'),
-                    'Join Method': account.get('JoinedMethod', 'N/A'),
-                    'Joined Date': convert_datetime_to_string(account.get('JoinedTimestamp')),
-                    'Parent ID': parent_info['parent_id'],
-                    'Parent Name': parent_info['parent_name'],
-                    'Parent Type': parent_info['parent_type'],
-                    'Full Path': parent_info['full_path'],
-                    'ARN': account.get('Arn', 'N/A'),
-                    'Tags': account_tags
-                }
-
-                accounts_data.append(account_info)
-
-    except Exception as e:
-        utils.log_error("Error collecting accounts", e)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_accounts} account(s) were skipped due to "
+            "processing errors (see log above); the remaining accounts were still collected."
+        )
 
     return accounts_data
 
@@ -414,7 +503,7 @@ def get_account_tags(org_client, account_id):
         tags = response.get('Tags', [])
 
         if tags:
-            tag_strings = [f"{tag['Key']}={tag['Value']}" for tag in tags]
+            tag_strings = [f"{tag.get('Key', 'Unknown')}={tag.get('Value', 'Unknown')}" for tag in tags]
             return ', '.join(tag_strings)
         else:
             return 'No Tags'
@@ -422,81 +511,123 @@ def get_account_tags(org_client, account_id):
     except Exception:
         return 'Unable to retrieve tags'
 
+def _build_policy_row(org_client, policy, policy_type):
+    """
+    Build the export row for a single policy, including content analysis
+    and attachment targets.
+
+    Extracted so per-policy processing can be wrapped in try/except by the
+    caller: a malformed policy entry (or a transient describe_policy
+    failure) must not sink collection of the remaining policies. Required
+    fields are read with ``.get()`` and a safe default for the same reason.
+
+    Args:
+        org_client: boto3 organizations client
+        policy (dict): A single Policies summary entry from list_policies.
+        policy_type: The policy type being processed (e.g. SERVICE_CONTROL_POLICY).
+
+    Returns:
+        dict: The assembled policy row.
+    """
+    policy_id = policy.get('Id')
+    policy_name = policy.get('Name', 'Unnamed Policy')
+
+    utils.log_info(f"Processing {policy_type}: {policy_name}")
+
+    policy_response = org_client.describe_policy(PolicyId=policy_id)
+    policy_details = policy_response.get('Policy', {})
+
+    # Get policy content if it's an SCP
+    policy_content = ''
+    policy_summary = ''
+    if policy_type == 'SERVICE_CONTROL_POLICY':
+        policy_content = policy_details.get('Content', '')
+        policy_summary = analyze_scp_content(policy_content)
+
+    # Get policy targets (what it's attached to)
+    targets = get_policy_targets(org_client, policy_id)
+
+    return {
+        'Policy ID': policy_id or 'N/A',
+        'Policy Name': policy_name,
+        'Policy Type': policy_type,
+        'Description': policy_details.get('PolicySummary', {}).get('Description', 'N/A'),
+        'AWS Managed': 'Yes' if policy_details.get('PolicySummary', {}).get('AwsManaged', False) else 'No',
+        'Content Size': len(policy_content) if policy_content else 0,
+        'Policy Summary': policy_summary[:500] if policy_summary else 'N/A',
+        'Attached To Count': len(targets),
+        'Attached To': ', '.join(targets)[:500] if targets else 'Not Attached',
+        'ARN': policy_details.get('PolicySummary', {}).get('Arn', 'N/A')
+    }
+
 def collect_policies():
     """
     Collect all service control policies (SCPs) and other policies.
 
+    This is a PRIMARY, account-scope collector (see
+    scripts/shield_export.py for the account-scope reference pattern). It
+    does not swallow errors to an empty list: a swallowed error here would
+    be indistinguishable from an organization with no custom policies,
+    producing silent data loss (see the 07.15.2026 / 07.16.2026 silent-
+    collection-failure audits). ``PolicyTypeNotEnabledException`` for a
+    single policy type is a legitimate, expected condition (that policy
+    type simply is not turned on for this organization) and is skipped
+    gracefully; any other API/pagination error propagates so the caller
+    (main) can record this scope as *failed* rather than *empty*.
+    Per-policy errors are contained internally (logged and skipped).
+
     Returns:
         list: List of policy information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error other than a not-enabled
+            policy type (caller records it as a failed scope; it is never
+            masked as empty).
     """
     policies_data = []
+    skipped = 0
 
-    try:
-        org_client = utils.get_boto3_client('organizations')
+    org_client = utils.get_boto3_client('organizations')
 
-        utils.log_info("Collecting organization policies...")
+    utils.log_info("Collecting organization policies...")
 
-        # Get all policy types
-        policy_types = ['SERVICE_CONTROL_POLICY', 'TAG_POLICY', 'BACKUP_POLICY', 'AISERVICES_OPT_OUT_POLICY']
+    # Get all policy types
+    policy_types = ['SERVICE_CONTROL_POLICY', 'TAG_POLICY', 'BACKUP_POLICY', 'AISERVICES_OPT_OUT_POLICY']
 
-        for policy_type in policy_types:
-            try:
-                paginator = org_client.get_paginator('list_policies')
+    for policy_type in policy_types:
+        try:
+            paginator = org_client.get_paginator('list_policies')
 
-                for page in paginator.paginate(Filter=policy_type):
-                    policies = page.get('Policies', [])
+            for page in paginator.paginate(Filter=policy_type):
+                policies = page.get('Policies', [])
 
-                    for policy in policies:
-                        policy_id = policy['Id']
-                        policy_name = policy.get('Name', 'Unnamed Policy')
+                for policy in policies:
+                    try:
+                        policy_info = _build_policy_row(org_client, policy, policy_type)
+                    except Exception as e:
+                        skipped += 1
+                        policy_ref = policy.get('Id', 'Unknown') if isinstance(policy, dict) else 'Unknown'
+                        utils.log_warning(f"Skipping policy '{policy_ref}' due to a processing error: {e}")
+                        continue
 
-                        utils.log_info(f"Processing {policy_type}: {policy_name}")
+                    policies_data.append(policy_info)
 
-                        # Get detailed policy information
-                        try:
-                            policy_response = org_client.describe_policy(PolicyId=policy_id)
-                            policy_details = policy_response['Policy']
+        except ClientError as e:
+            if 'PolicyTypeNotEnabledException' in str(e):
+                # Legitimate, expected condition: this policy type is not
+                # enabled for the organization. Skip it, keep collecting
+                # the remaining policy types.
+                utils.log_info(f"Policy type {policy_type} is not enabled in this organization")
+            else:
+                raise
 
-                            # Get policy content if it's an SCP
-                            policy_content = ''
-                            policy_summary = ''
-                            if policy_type == 'SERVICE_CONTROL_POLICY':
-                                policy_content = policy_details.get('Content', '')
-                                policy_summary = analyze_scp_content(policy_content)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} policy(ies) were skipped due to processing errors "
+            "(see log above); the remaining policies were still collected."
+        )
 
-                            # Get policy targets (what it's attached to)
-                            targets = get_policy_targets(org_client, policy_id)
-
-                            policy_info = {
-                                'Policy ID': policy_id,
-                                'Policy Name': policy_name,
-                                'Policy Type': policy_type,
-                                'Description': policy_details.get('PolicySummary', {}).get('Description', 'N/A'),
-                                'AWS Managed': 'Yes' if policy_details.get('PolicySummary', {}).get('AwsManaged', False) else 'No',
-                                'Content Size': len(policy_content) if policy_content else 0,
-                                'Policy Summary': policy_summary[:500] if policy_summary else 'N/A',
-                                'Attached To Count': len(targets),
-                                'Attached To': ', '.join(targets)[:500] if targets else 'Not Attached',
-                                'ARN': policy_details.get('PolicySummary', {}).get('Arn', 'N/A')
-                            }
-
-                            policies_data.append(policy_info)
-
-                        except Exception as e:
-                            utils.log_warning(f"Error getting details for policy {policy_id}: {e}")
-
-            except ClientError as e:
-                if 'PolicyTypeNotEnabledException' in str(e):
-                    utils.log_info(f"Policy type {policy_type} is not enabled in this organization")
-                else:
-                    utils.log_warning(f"Error collecting {policy_type} policies: {e}")
-            except Exception as e:
-                utils.log_warning(f"Error collecting {policy_type} policies: {e}")
-
-        utils.log_success(f"Collected {len(policies_data)} policies")
-
-    except Exception as e:
-        utils.log_error("Error collecting policies", e)
+    utils.log_success(f"Collected {len(policies_data)} policies")
 
     return policies_data
 
@@ -576,22 +707,22 @@ def get_policy_targets(org_client, policy_id):
 
         for page in paginator.paginate(PolicyId=policy_id):
             for target in page.get('Targets', []):
-                target_id = target['TargetId']
-                target_type = target['Type']
+                target_id = target.get('TargetId')
+                target_type = target.get('Type')
 
                 if target_type == 'ROOT':
                     targets.append('Root')
                 elif target_type == 'ORGANIZATIONAL_UNIT':
                     try:
                         ou_response = org_client.describe_organizational_unit(OrganizationalUnitId=target_id)
-                        ou_name = ou_response['OrganizationalUnit'].get('Name', target_id)
+                        ou_name = ou_response.get('OrganizationalUnit', {}).get('Name', target_id)
                         targets.append(f"OU: {ou_name}")
                     except Exception:
                         targets.append(f"OU: {target_id}")
                 elif target_type == 'ACCOUNT':
                     try:
                         account_response = org_client.describe_account(AccountId=target_id)
-                        account_name = account_response['Account'].get('Name', target_id)
+                        account_name = account_response.get('Account', {}).get('Name', target_id)
                         targets.append(f"Account: {account_name}")
                     except Exception:
                         targets.append(f"Account: {target_id}")
@@ -761,6 +892,21 @@ def export_to_excel(org_info, ou_data, accounts_data, policies_data, account_id,
 def main():
     """
     Main function to orchestrate the Organizations information collection.
+
+    AWS Organizations is a global, account-scope service run from the
+    management account (there is no region scan) -- failures are tracked
+    per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py /
+    scripts/lambda_export.py for the account-scope reference pattern).
+    "AWS Organizations is not in use" / "this is not the management
+    account" is a legitimate, graceful "service not enabled" state (exit 0,
+    no marker) -- handled by ``get_organization_info()`` -- and must not be
+    confused with a real collection failure on the organizational-units,
+    accounts, or policies scopes, which are exported as a partial result
+    (whatever succeeded) and always surfaced via
+    ``utils.report_collection_failures`` + a non-zero exit. A failed scope
+    must never be silently collapsed into "nothing to report" (07.15.2026 /
+    07.16.2026 audits).
     """
     try:
         # Check dependencies first
@@ -797,29 +943,53 @@ def main():
         org_info = get_organization_info()
 
         if not org_info:
+            # Graceful skip: AWS Organizations is not enabled in this
+            # account, or this is not the management account. This is a
+            # legitimate, expected state -- NOT a collection failure -- so
+            # no failure marker is written and the process exits 0.
             utils.log_error("Could not access AWS Organizations. This script must be run from the management account.")
             utils.log_info("Please ensure you have the necessary permissions and are running from the management account.")
             return
 
-        # Collect organizational data
+        # Account-scope failure tracking (see scripts/shield_export.py).
+        failed_scopes = []
+
+        # PRIMARY scope 1/3: organizational units. A real API error here
+        # must propagate to failed_scopes, never collapse into an empty
+        # list that reads as "no OUs configured".
         utils.log_info("Collecting organizational units...")
-        ou_data = collect_organizational_units()
+        try:
+            ou_data = collect_organizational_units()
+        except Exception as e:
+            failed_scopes.append(('organizational_units', str(e)))
+            utils.log_error(f"Organizational units collection failed: {e}")
+            ou_data = []
 
+        # PRIMARY scope 2/3: accounts.
         utils.log_info("Collecting accounts...")
-        accounts_data = collect_accounts()
+        try:
+            accounts_data = collect_accounts()
+        except Exception as e:
+            failed_scopes.append(('accounts', str(e)))
+            utils.log_error(f"Accounts collection failed: {e}")
+            accounts_data = []
 
+        # PRIMARY scope 3/3: policies.
         utils.log_info("Collecting policies...")
-        policies_data = collect_policies()
-
-        if not ou_data and not accounts_data and not policies_data:
-            utils.log_warning("No Organizations data collected. Exiting.")
-            return
+        try:
+            policies_data = collect_policies()
+        except Exception as e:
+            failed_scopes.append(('policies', str(e)))
+            utils.log_error(f"Policies collection failed: {e}")
+            policies_data = []
 
         print("\n====================================================================")
         print("COLLECTION COMPLETE")
         print("====================================================================")
 
-        # Export to Excel
+        # Export whatever succeeded -- a partial export is required even
+        # when some scopes failed (see
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
         filename = export_to_excel(org_info, ou_data, accounts_data, policies_data, account_id, account_name)
 
         if filename:
@@ -839,8 +1009,25 @@ def main():
                 utils.log_info(f"Service Control Policies: {scps}")
 
             print("\nScript execution completed.")
+        elif not failed_scopes:
+            # Genuinely empty: every scope succeeded and there is simply
+            # nothing to export.
+            utils.log_warning("No Organizations data collected. Nothing to export.")
         else:
             utils.log_error("Export failed. Please check the logs.")
+
+        # If any primary scope failed, make it loud: write a marker and
+        # exit non-zero, even if a partial export was written. A partial
+        # export that looks complete is exactly the failure mode this
+        # guards against.
+        if failed_scopes:
+            utils.report_collection_failures(account_name, 'organizations', failed_scopes)
+            print(
+                "\nERROR: Organizations export completed with failures — data is "
+                "incomplete. See the *-organizations-FAILED-*.txt marker in the "
+                "output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")
