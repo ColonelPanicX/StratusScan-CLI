@@ -58,123 +58,163 @@ def calculate_documentdb_instance_monthly_cost(instance_class: str, pricing_data
     return round(float(monthly), 2)
 
 
+def _build_cluster_row(cluster: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single DocumentDB cluster export row from a describe response."""
+    cluster_id = cluster.get('DBClusterIdentifier', 'N/A')
+
+    # Basic cluster information
+    engine = cluster.get('Engine', 'N/A')
+    engine_version = cluster.get('EngineVersion', 'N/A')
+    status = cluster.get('Status', 'unknown')
+
+    # Endpoint information
+    endpoint = cluster.get('Endpoint', 'N/A')
+    reader_endpoint = cluster.get('ReaderEndpoint', 'N/A')
+    port = cluster.get('Port', 0)
+
+    # Member instances
+    cluster_members = cluster.get('DBClusterMembers', [])
+    member_count = len(cluster_members)
+
+    # Primary instance identifier
+    primary_instance = 'N/A'
+    for member in cluster_members:
+        if member.get('IsClusterWriter', False):
+            primary_instance = member.get('DBInstanceIdentifier', 'N/A')
+            break
+
+    # Multi-AZ and availability zones
+    multi_az = cluster.get('MultiAZ', False)
+    availability_zones = cluster.get('AvailabilityZones', [])
+    az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
+
+    # Backup configuration
+    backup_retention_period = cluster.get('BackupRetentionPeriod', 0)
+    preferred_backup_window = cluster.get('PreferredBackupWindow', 'N/A')
+    preferred_maintenance_window = cluster.get('PreferredMaintenanceWindow', 'N/A')
+
+    # Encryption
+    storage_encrypted = cluster.get('StorageEncrypted', False)
+    kms_key_id = cluster.get('KmsKeyId', 'N/A')
+    if kms_key_id != 'N/A' and '/' in kms_key_id:
+        kms_key_id = kms_key_id.split('/')[-1]  # Extract key ID from ARN
+
+    # Deletion protection
+    deletion_protection = cluster.get('DeletionProtection', False)
+
+    # Cluster creation time
+    cluster_create_time = cluster.get('ClusterCreateTime')
+    if cluster_create_time:
+        cluster_create_time_str = cluster_create_time.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        cluster_create_time_str = 'N/A'
+
+    # VPC security groups
+    vpc_security_groups = cluster.get('VpcSecurityGroups', [])
+    security_group_ids = [sg.get('VpcSecurityGroupId', '') for sg in vpc_security_groups]
+    security_groups_str = ', '.join(security_group_ids) if security_group_ids else 'N/A'
+
+    # DB subnet group
+    db_subnet_group = cluster.get('DBSubnetGroup', 'N/A')
+    if isinstance(db_subnet_group, dict):
+        db_subnet_group = db_subnet_group.get('DBSubnetGroupName', 'N/A')
+
+    # Cluster parameter group
+    db_cluster_parameter_group = cluster.get('DBClusterParameterGroup', 'N/A')
+
+    # Enabled CloudWatch logs exports
+    enabled_cloudwatch_logs_exports = cluster.get('EnabledCloudwatchLogsExports', [])
+    logs_exports_str = ', '.join(enabled_cloudwatch_logs_exports) if enabled_cloudwatch_logs_exports else 'None'
+
+    return {
+        'Region': region,
+        'Cluster ID': cluster_id,
+        'Engine': engine,
+        'Engine Version': engine_version,
+        'Status': status,
+        'Endpoint': endpoint,
+        'Reader Endpoint': reader_endpoint,
+        'Port': port,
+        'Member Instances': member_count,
+        'Primary Instance': primary_instance,
+        'Multi-AZ': 'Yes' if multi_az else 'No',
+        'Availability Zones': az_list,
+        'Backup Retention (Days)': backup_retention_period,
+        'Backup Window': preferred_backup_window,
+        'Maintenance Window': preferred_maintenance_window,
+        'Storage Encrypted': 'Yes' if storage_encrypted else 'No',
+        'KMS Key ID': kms_key_id if storage_encrypted else 'N/A',
+        'Deletion Protection': 'Yes' if deletion_protection else 'No',
+        'Created': cluster_create_time_str,
+        'Security Groups': security_groups_str,
+        'Subnet Group': db_subnet_group,
+        'Parameter Group': db_cluster_parameter_group,
+        'CloudWatch Logs': logs_exports_str,
+    }
+
+
 def _scan_documentdb_clusters_region(region: str) -> list[dict[str, Any]]:
-    """Scan a single region for DocumentDB clusters."""
+    """
+    Collect DocumentDB clusters from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no DocumentDB clusters" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed clusters are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     clusters_data = []
 
-    try:
-        docdb_client = utils.get_boto3_client('docdb', region_name=region)
+    docdb_client = utils.get_boto3_client('docdb', region_name=region)
 
-        paginator = docdb_client.get_paginator('describe_db_clusters')
-        for page in paginator.paginate():
-            db_clusters = page.get('DBClusters', [])
+    paginator = docdb_client.get_paginator('describe_db_clusters')
+    for page in paginator.paginate():
+        db_clusters = page.get('DBClusters', [])
 
-            for cluster in db_clusters:
-                cluster_id = cluster.get('DBClusterIdentifier', 'N/A')
-
-                # Basic cluster information
-                engine = cluster.get('Engine', 'N/A')
-                engine_version = cluster.get('EngineVersion', 'N/A')
-                status = cluster.get('Status', 'unknown')
-
-                # Endpoint information
-                endpoint = cluster.get('Endpoint', 'N/A')
-                reader_endpoint = cluster.get('ReaderEndpoint', 'N/A')
-                port = cluster.get('Port', 0)
-
-                # Member instances
-                cluster_members = cluster.get('DBClusterMembers', [])
-                member_count = len(cluster_members)
-
-                # Primary instance identifier
-                primary_instance = 'N/A'
-                for member in cluster_members:
-                    if member.get('IsClusterWriter', False):
-                        primary_instance = member.get('DBInstanceIdentifier', 'N/A')
-                        break
-
-                # Multi-AZ and availability zones
-                multi_az = cluster.get('MultiAZ', False)
-                availability_zones = cluster.get('AvailabilityZones', [])
-                az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
-
-                # Backup configuration
-                backup_retention_period = cluster.get('BackupRetentionPeriod', 0)
-                preferred_backup_window = cluster.get('PreferredBackupWindow', 'N/A')
-                preferred_maintenance_window = cluster.get('PreferredMaintenanceWindow', 'N/A')
-
-                # Encryption
-                storage_encrypted = cluster.get('StorageEncrypted', False)
-                kms_key_id = cluster.get('KmsKeyId', 'N/A')
-                if kms_key_id != 'N/A' and '/' in kms_key_id:
-                    kms_key_id = kms_key_id.split('/')[-1]  # Extract key ID from ARN
-
-                # Deletion protection
-                deletion_protection = cluster.get('DeletionProtection', False)
-
-                # Cluster creation time
-                cluster_create_time = cluster.get('ClusterCreateTime')
-                if cluster_create_time:
-                    cluster_create_time_str = cluster_create_time.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    cluster_create_time_str = 'N/A'
-
-                # VPC security groups
-                vpc_security_groups = cluster.get('VpcSecurityGroups', [])
-                security_group_ids = [sg.get('VpcSecurityGroupId', '') for sg in vpc_security_groups]
-                security_groups_str = ', '.join(security_group_ids) if security_group_ids else 'N/A'
-
-                # DB subnet group
-                db_subnet_group = cluster.get('DBSubnetGroup', 'N/A')
-                if isinstance(db_subnet_group, dict):
-                    db_subnet_group = db_subnet_group.get('DBSubnetGroupName', 'N/A')
-
-                # Cluster parameter group
-                db_cluster_parameter_group = cluster.get('DBClusterParameterGroup', 'N/A')
-
-                # Enabled CloudWatch logs exports
-                enabled_cloudwatch_logs_exports = cluster.get('EnabledCloudwatchLogsExports', [])
-                logs_exports_str = ', '.join(enabled_cloudwatch_logs_exports) if enabled_cloudwatch_logs_exports else 'None'
-
-                clusters_data.append({
-                    'Region': region,
-                    'Cluster ID': cluster_id,
-                    'Engine': engine,
-                    'Engine Version': engine_version,
-                    'Status': status,
-                    'Endpoint': endpoint,
-                    'Reader Endpoint': reader_endpoint,
-                    'Port': port,
-                    'Member Instances': member_count,
-                    'Primary Instance': primary_instance,
-                    'Multi-AZ': 'Yes' if multi_az else 'No',
-                    'Availability Zones': az_list,
-                    'Backup Retention (Days)': backup_retention_period,
-                    'Backup Window': preferred_backup_window,
-                    'Maintenance Window': preferred_maintenance_window,
-                    'Storage Encrypted': 'Yes' if storage_encrypted else 'No',
-                    'KMS Key ID': kms_key_id if storage_encrypted else 'N/A',
-                    'Deletion Protection': 'Yes' if deletion_protection else 'No',
-                    'Created': cluster_create_time_str,
-                    'Security Groups': security_groups_str,
-                    'Subnet Group': db_subnet_group,
-                    'Parameter Group': db_cluster_parameter_group,
-                    'CloudWatch Logs': logs_exports_str,
-                })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting DocumentDB clusters in {region}", e)
+        for cluster in db_clusters:
+            try:
+                clusters_data.append(_build_cluster_row(cluster, region))
+            except Exception as e:
+                # One malformed cluster is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed DocumentDB cluster in {region}: "
+                    f"{cluster.get('DBClusterIdentifier', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return clusters_data
 
 
-@utils.aws_error_handler("Collecting DocumentDB clusters", default_return=[])
-def collect_documentdb_clusters(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect DocumentDB cluster information from AWS regions."""
-    results = utils.scan_regions_concurrent(regions, _scan_documentdb_clusters_region)
-    all_clusters = [cluster for result in results for cluster in result]
+def collect_documentdb_clusters(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect DocumentDB cluster information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(clusters, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_documentdb_clusters_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_clusters = [cluster for result in region_results for cluster in result]
     utils.log_success(f"Collected {len(all_clusters)} DocumentDB clusters")
-    return all_clusters
+    return all_clusters, failed_regions
 
 
 def _scan_documentdb_instances_region(region: str) -> list[dict[str, Any]]:
@@ -519,7 +559,11 @@ def generate_summary(clusters: list[dict[str, Any]],
 def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect DocumentDB data and write the Excel export."""
     print("\n=== Collecting DocumentDB Data ===")
-    clusters = collect_documentdb_clusters(regions)
+    # Primary scope (clusters): region failures must propagate as
+    # failed_regions, never collapse into "empty".
+    clusters, failed_regions = collect_documentdb_clusters(regions)
+    # Enrichment scopes: degrade gracefully; a region-level failure here does
+    # not fail the whole export.
     instances = collect_documentdb_instances(regions)
     snapshots = collect_documentdb_snapshots(regions)
     subnet_groups = collect_documentdb_subnet_groups(regions)
@@ -561,6 +605,20 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY region failed the primary DocumentDB clusters scope collection,
+    # make it loud: write a marker and exit non-zero, even though the
+    # always-written Summary sheet means a workbook still landed. A
+    # complete-looking file that silently hides a zero-row scope is exactly
+    # the failure mode this guards against. A genuinely empty account (every
+    # region succeeded, none had clusters) stays a plain export, exit 0.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'documentdb', failed_regions)
+        print(
+            "\nERROR: DocumentDB export completed with failures — data is incomplete. "
+            "See the *-documentdb-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
