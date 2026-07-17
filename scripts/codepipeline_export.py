@@ -26,112 +26,157 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CodePipeline pipelines to Excel")
 
-def _scan_pipelines_region(region: str) -> list[dict[str, Any]]:
-    """Scan a single region for CodePipeline pipelines."""
-    pipelines_data = []
+def _build_pipeline_row(client, pipeline_summary: dict, region: str) -> dict[str, Any]:
+    """
+    Build a single CodePipeline pipeline export row, including detail lookups.
 
+    The pipeline-state lookup (latest execution status) is an enrichment
+    call and degrades gracefully to 'Unknown' on failure; a failure fetching
+    the pipeline itself (``get_pipeline``) propagates so the caller can skip
+    just this one malformed/inaccessible pipeline.
+    """
+    pipeline_name = pipeline_summary.get('name', 'N/A')
+    print(f"  Processing pipeline: {pipeline_name}")
+
+    pipeline_response = client.get_pipeline(name=pipeline_name)
+    pipeline = pipeline_response.get('pipeline', {})
+    metadata = pipeline_response.get('metadata', {})
+
+    # Basic info
+    arn = metadata.get('pipelineArn', 'N/A')
+
+    created = pipeline_summary.get('created', metadata.get('created', 'N/A'))
+    if created != 'N/A':
+        created = created.strftime('%Y-%m-%d %H:%M:%S')
+
+    updated = pipeline_summary.get('updated', metadata.get('updated', 'N/A'))
+    if updated != 'N/A':
+        updated = updated.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Version
+    version = pipeline_summary.get('version', pipeline.get('version', 'N/A'))
+
+    # Role
+    role_arn = pipeline.get('roleArn', 'N/A')
+
+    # Artifact store
+    artifact_store = pipeline.get('artifactStore', {})
+    artifact_type = artifact_store.get('type', 'N/A')
+    artifact_location = artifact_store.get('location', 'N/A')
+
+    # Encryption key
+    encryption_key = artifact_store.get('encryptionKey', {})
+    kms_key_id = encryption_key.get('id', 'None')
+
+    # Stages
+    stages = pipeline.get('stages', [])
+    stage_count = len(stages)
+    stage_names = [s.get('name', 'N/A') for s in stages]
+    stages_str = ' → '.join(stage_names)
+
+    # Count actions across all stages
+    total_actions = sum(len(stage.get('actions', [])) for stage in stages)
+
+    # Get pipeline state for execution info (enrichment — degrades gracefully)
     try:
-        codepipeline_client = utils.get_boto3_client('codepipeline', region_name=region)
+        state_response = client.get_pipeline_state(name=pipeline_name)
 
-        # List all pipelines
-        paginator = codepipeline_client.get_paginator('list_pipelines')
-        for page in paginator.paginate():
-            pipeline_summaries = page.get('pipelines', [])
+        # Latest execution
+        stage_states = state_response.get('stageStates', [])
+        if stage_states:
+            latest_execution = stage_states[0].get('latestExecution', {})
+            latest_status = latest_execution.get('status', 'N/A')
+        else:
+            latest_status = 'No Executions'
 
-            for pipeline_summary in pipeline_summaries:
-                pipeline_name = pipeline_summary.get('name', 'N/A')
+    except Exception:
+        latest_status = 'Unknown'
 
-                # Get detailed pipeline information
-                try:
-                    pipeline_response = codepipeline_client.get_pipeline(name=pipeline_name)
-                    pipeline = pipeline_response.get('pipeline', {})
-                    metadata = pipeline_response.get('metadata', {})
+    return {
+        'Region': region,
+        'Pipeline Name': pipeline_name,
+        'ARN': arn,
+        'Version': version,
+        'Created': created,
+        'Updated': updated,
+        'Latest Status': latest_status,
+        'Stage Count': stage_count,
+        'Total Actions': total_actions,
+        'Stages': stages_str,
+        'Role ARN': role_arn,
+        'Artifact Store Type': artifact_type,
+        'Artifact Location': artifact_location,
+        'KMS Key ID': kms_key_id
+    }
 
-                    # Basic info
-                    arn = metadata.get('pipelineArn', 'N/A')
 
-                    created = pipeline_summary.get('created', metadata.get('created', 'N/A'))
-                    if created != 'N/A':
-                        created = created.strftime('%Y-%m-%d %H:%M:%S')
+def _scan_pipelines_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan a single region for CodePipeline pipelines.
 
-                    updated = pipeline_summary.get('updated', metadata.get('updated', 'N/A'))
-                    if updated != 'N/A':
-                        updated = updated.strftime('%Y-%m-%d %H:%M:%S')
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no pipelines" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
-                    # Version
-                    version = pipeline_summary.get('version', pipeline.get('version', 'N/A'))
+    Individual malformed/inaccessible pipelines are skipped (logged) rather
+    than aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-                    # Role
-                    role_arn = pipeline.get('roleArn', 'N/A')
+    print(f"\nProcessing region: {region}")
 
-                    # Artifact store
-                    artifact_store = pipeline.get('artifactStore', {})
-                    artifact_type = artifact_store.get('type', 'N/A')
-                    artifact_location = artifact_store.get('location', 'N/A')
+    pipelines_data = []
+    codepipeline_client = utils.get_boto3_client('codepipeline', region_name=region)
 
-                    # Encryption key
-                    encryption_key = artifact_store.get('encryptionKey', {})
-                    kms_key_id = encryption_key.get('id', 'None')
+    # List all pipelines
+    paginator = codepipeline_client.get_paginator('list_pipelines')
+    for page in paginator.paginate():
+        pipeline_summaries = page.get('pipelines', [])
 
-                    # Stages
-                    stages = pipeline.get('stages', [])
-                    stage_count = len(stages)
-                    stage_names = [s.get('name', 'N/A') for s in stages]
-                    stages_str = ' → '.join(stage_names)
-
-                    # Count actions across all stages
-                    total_actions = sum(len(stage.get('actions', [])) for stage in stages)
-
-                    # Get pipeline state for execution info
-                    try:
-                        state_response = codepipeline_client.get_pipeline_state(name=pipeline_name)
-                        state = state_response
-
-                        # Latest execution
-                        stage_states = state.get('stageStates', [])
-                        if stage_states:
-                            latest_execution = stage_states[0].get('latestExecution', {})
-                            latest_status = latest_execution.get('status', 'N/A')
-                        else:
-                            latest_status = 'No Executions'
-
-                    except Exception:
-                        latest_status = 'Unknown'
-
-                    pipelines_data.append({
-                        'Region': region,
-                        'Pipeline Name': pipeline_name,
-                        'ARN': arn,
-                        'Version': version,
-                        'Created': created,
-                        'Updated': updated,
-                        'Latest Status': latest_status,
-                        'Stage Count': stage_count,
-                        'Total Actions': total_actions,
-                        'Stages': stages_str,
-                        'Role ARN': role_arn,
-                        'Artifact Store Type': artifact_type,
-                        'Artifact Location': artifact_location,
-                        'KMS Key ID': kms_key_id
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for pipeline {pipeline_name} in {region}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_error(f"Error scanning CodePipeline pipelines in {region}", e)
+        for pipeline_summary in pipeline_summaries:
+            pipeline_name = pipeline_summary.get('name', 'N/A')
+            try:
+                pipelines_data.append(
+                    _build_pipeline_row(codepipeline_client, pipeline_summary, region)
+                )
+            except Exception as e:
+                # One malformed/inaccessible pipeline is skipped, not fatal
+                # to the region.
+                utils.log_error(
+                    f"Skipping malformed CodePipeline pipeline in {region}: {pipeline_name}",
+                    e,
+                )
+                continue
 
     return pipelines_data
 
 
-@utils.aws_error_handler("Collecting CodePipeline pipelines", default_return=[])
-def collect_pipelines(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect CodePipeline pipeline information from AWS regions."""
-    results = utils.scan_regions_concurrent(regions, _scan_pipelines_region)
-    all_pipelines = [pipeline for result in results for pipeline in result]
+def collect_pipelines(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect CodePipeline pipeline information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(pipelines, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_pipelines_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_pipelines = [pipeline for result in region_results for pipeline in result]
     utils.log_success(f"Collected {len(all_pipelines)} CodePipeline pipelines")
-    return all_pipelines
+    return all_pipelines, failed_regions
 
 
 def _scan_executions_region(region: str) -> list[dict[str, Any]]:
@@ -388,7 +433,10 @@ def main():
     # Collect data
     print("\nCollecting AWS CodePipeline data...")
 
-    pipelines = collect_pipelines(regions)
+    # Pipelines are the primary scope: region failures must propagate as
+    # failed_regions, never collapse into "empty" (see the silent-collection
+    # -failure blast-radius audit).
+    pipelines, failed_regions = collect_pipelines(regions)
     executions = collect_executions(regions)
     webhooks = collect_webhooks(regions)
     summary = generate_summary(pipelines, executions, webhooks)
@@ -431,6 +479,19 @@ def main():
         utils.log_warning("No AWS CodePipeline data found to export")
 
     utils.log_success("AWS CodePipeline export completed successfully")
+
+    # If ANY region failed the primary Pipelines scope collection, make it
+    # loud: write a marker and exit non-zero, even though the Summary sheet
+    # always lands (this script forces a non-empty Summary regardless of
+    # data). A complete-looking workbook that silently hides a failed region
+    # is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'codepipeline', failed_regions)
+        print(
+            "\nERROR: CodePipeline export completed with failures — data is incomplete. "
+            "See the *-codepipeline-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
