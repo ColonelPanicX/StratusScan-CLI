@@ -47,16 +47,103 @@ except ImportError:
 args = utils.parse_script_args("Export GuardDuty detectors and findings to Excel")
 
 
-@utils.aws_error_handler("Collecting GuardDuty detectors from region", default_return=[])
+def _build_detector_row(detector: dict, detector_id: str, region: str) -> dict[str, Any]:
+    """
+    Build a single GuardDuty detector export row from a get_detector response.
+
+    Extracted so the per-detector processing can be wrapped in try/except by
+    the caller: a malformed detector entry is logged and skipped rather than
+    discarding the whole region's results. Every field is read with ``.get()``
+    and a safe default for the same reason.
+
+    Args:
+        detector: The get_detector response body.
+        detector_id: The detector's ID.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled detector row.
+    """
+    # Status
+    status = detector.get('Status', '')
+
+    # Service role
+    service_role = detector.get('ServiceRole', 'N/A')
+
+    # Data sources
+    data_sources = detector.get('DataSources', {})
+    cloud_trail = data_sources.get('CloudTrail', {}).get('Status', 'N/A')
+    dns_logs = data_sources.get('DNSLogs', {}).get('Status', 'N/A')
+    flow_logs = data_sources.get('FlowLogs', {}).get('Status', 'N/A')
+    s3_logs = data_sources.get('S3Logs', {}).get('Status', 'N/A')
+    kubernetes = data_sources.get('Kubernetes', {})
+    k8s_audit_logs = kubernetes.get('AuditLogs', {}).get('Status', 'N/A') if kubernetes else 'N/A'
+
+    # Finding publishing frequency
+    finding_frequency = detector.get('FindingPublishingFrequency', 'N/A')
+
+    # Created at
+    created_at = detector.get('CreatedAt', '')
+    if created_at:
+        created_at = created_at if isinstance(created_at, str) else created_at.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Updated at
+    updated_at = detector.get('UpdatedAt', '')
+    if updated_at:
+        updated_at = updated_at if isinstance(updated_at, str) else updated_at.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Protection features (newer GuardDuty categories: EKS Runtime, RDS, Lambda, Malware)
+    features = detector.get('Features', [])
+    features_str = ', '.join(
+        f"{f.get('Name', '')}: {f.get('Status', '')}"
+        for f in features
+    ) if features else 'N/A'
+
+    # Tags
+    tags = detector.get('Tags', {})
+    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'N/A'
+
+    return {
+        'Region': region,
+        'Detector ID': detector_id,
+        'Status': status,
+        'Finding Frequency': finding_frequency,
+        'CloudTrail': cloud_trail,
+        'DNS Logs': dns_logs,
+        'VPC Flow Logs': flow_logs,
+        'S3 Logs': s3_logs,
+        'Kubernetes Audit Logs': k8s_audit_logs,
+        'Protection Features': features_str,
+        'Service Role': service_role,
+        'Created At': created_at,
+        'Updated At': updated_at,
+        'Tags': tags_str
+    }
+
+
 def collect_detectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect GuardDuty detector information from a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no GuardDuty detectors" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed/unreachable detectors are skipped (logged) rather
+    than aborting the whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with detector information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
@@ -77,91 +164,45 @@ def collect_detectors_from_region(region: str) -> list[dict[str, Any]]:
     for detector_id in detector_ids:
         utils.log_info(f"Processing detector: {detector_id} in {region}")
 
+        # One malformed/unreachable detector is skipped, not fatal to the
+        # region.
         try:
-            # Get detector details
             detector = gd_client.get_detector(DetectorId=detector_id)
-
-            # Status
-            status = detector.get('Status', '')
-
-            # Service role
-            service_role = detector.get('ServiceRole', 'N/A')
-
-            # Data sources
-            data_sources = detector.get('DataSources', {})
-            cloud_trail = data_sources.get('CloudTrail', {}).get('Status', 'N/A')
-            dns_logs = data_sources.get('DNSLogs', {}).get('Status', 'N/A')
-            flow_logs = data_sources.get('FlowLogs', {}).get('Status', 'N/A')
-            s3_logs = data_sources.get('S3Logs', {}).get('Status', 'N/A')
-            kubernetes = data_sources.get('Kubernetes', {})
-            k8s_audit_logs = kubernetes.get('AuditLogs', {}).get('Status', 'N/A') if kubernetes else 'N/A'
-
-            # Finding publishing frequency
-            finding_frequency = detector.get('FindingPublishingFrequency', 'N/A')
-
-            # Created at
-            created_at = detector.get('CreatedAt', '')
-            if created_at:
-                created_at = created_at if isinstance(created_at, str) else created_at.strftime('%Y-%m-%d %H:%M:%S')
-
-            # Updated at
-            updated_at = detector.get('UpdatedAt', '')
-            if updated_at:
-                updated_at = updated_at if isinstance(updated_at, str) else updated_at.strftime('%Y-%m-%d %H:%M:%S')
-
-            # Protection features (newer GuardDuty categories: EKS Runtime, RDS, Lambda, Malware)
-            features = detector.get('Features', [])
-            features_str = ', '.join(
-                f"{f.get('Name', '')}: {f.get('Status', '')}"
-                for f in features
-            ) if features else 'N/A'
-
-            # Tags
-            tags = detector.get('Tags', {})
-            tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'N/A'
-
-            detectors_data.append({
-                'Region': region,
-                'Detector ID': detector_id,
-                'Status': status,
-                'Finding Frequency': finding_frequency,
-                'CloudTrail': cloud_trail,
-                'DNS Logs': dns_logs,
-                'VPC Flow Logs': flow_logs,
-                'S3 Logs': s3_logs,
-                'Kubernetes Audit Logs': k8s_audit_logs,
-                'Protection Features': features_str,
-                'Service Role': service_role,
-                'Created At': created_at,
-                'Updated At': updated_at,
-                'Tags': tags_str
-            })
-
+            detectors_data.append(_build_detector_row(detector, detector_id, region))
         except Exception as e:
-            utils.log_warning(f"Could not get details for detector {detector_id}: {e}")
+            utils.log_error(
+                f"Skipping GuardDuty detector {detector_id} in {region} due to a processing error", e
+            )
+            continue
 
     utils.log_info(f"Found {len(detectors_data)} detectors in {region}")
     return detectors_data
 
 
-def collect_detectors(regions: list[str]) -> list[dict[str, Any]]:
+def collect_detectors(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect GuardDuty detector information using concurrent scanning.
+    Collect GuardDuty detector information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with detector information
+        tuple: ``(detectors, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING GUARDDUTY DETECTORS ===")
     utils.log_info(f"Scanning {len(regions)} regions for GuardDuty detectors...")
 
     # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_detectors_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -170,7 +211,7 @@ def collect_detectors(regions: list[str]) -> list[dict[str, Any]]:
         all_detectors.extend(detectors_in_region)
 
     utils.log_success(f"Total GuardDuty detectors collected: {len(all_detectors)}")
-    return all_detectors
+    return all_detectors, failed_regions
 
 
 @utils.aws_error_handler("Collecting GuardDuty findings from region", default_return=[])
@@ -533,63 +574,80 @@ def export_guardduty_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect detectors
-    detectors = collect_detectors(regions)
+    # STEP 1: Collect detectors (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    detectors, failed_regions = collect_detectors(regions)
     if detectors:
         data_frames['Detectors'] = pd.DataFrame(detectors)
 
-    # STEP 2: Collect findings
+    # STEP 2: Collect findings (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     findings = collect_findings(regions)
     if findings:
         data_frames['Findings'] = pd.DataFrame(findings)
 
-    # STEP 3: Collect threat intel sets
+    # STEP 3: Collect threat intel sets (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     threat_sets = collect_threat_intel_sets(regions)
     if threat_sets:
         data_frames['Threat Intel Sets'] = pd.DataFrame(threat_sets)
 
-    # STEP 4: Collect IP sets
+    # STEP 4: Collect IP sets (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     ip_sets = collect_ip_sets(regions)
     if ip_sets:
         data_frames['IP Sets'] = pd.DataFrame(ip_sets)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'guardduty',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("GuardDuty data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No GuardDuty data was collected. Nothing to export.")
         print("\nNo GuardDuty detectors found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'guardduty',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("GuardDuty data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary detector scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data (from this
+    # scope or the enrichment sheets) was exported. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'guardduty', failed_regions)
+        print(
+            "\nERROR: GuardDuty export completed with failures — data is incomplete. "
+            "See the *-guardduty-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

@@ -49,9 +49,118 @@ except ImportError:
 args = utils.parse_script_args("Export Secrets Manager secrets to Excel")
 
 
+def _build_secret_row(item: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single Secrets Manager secret.
+
+    Extracted so the per-secret processing can be wrapped in try/except by
+    the caller: a malformed secret entry is logged and skipped rather than
+    discarding the whole region's results. Every field is read with ``.get()``
+    and a safe default for the same reason.
+
+    SECURITY: This function does NOT retrieve secret values, only metadata.
+
+    Args:
+        item: A single SecretList entry from list_secrets.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled secret row.
+    """
+    secret_name = item.get('Name', '')
+    secret_arn = item.get('ARN', '')
+
+    # Description
+    description = item.get('Description', 'N/A')
+
+    # KMS key
+    kms_key_id = item.get('KmsKeyId', 'N/A')
+
+    # Rotation enabled
+    rotation_enabled = item.get('RotationEnabled', False)
+
+    # Rotation Lambda ARN
+    rotation_lambda_arn = item.get('RotationLambdaARN', 'N/A')
+
+    # Rotation rules
+    rotation_rules = item.get('RotationRules', {}) or {}
+    automatically_after_days = rotation_rules.get('AutomaticallyAfterDays', 'N/A')
+
+    # Last rotated date
+    last_rotated_date = item.get('LastRotatedDate', '')
+    if last_rotated_date:
+        last_rotated_date = last_rotated_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_rotated_date, datetime.datetime) else str(last_rotated_date)
+    else:
+        last_rotated_date = 'Never'
+
+    # Last changed date
+    last_changed_date = item.get('LastChangedDate', '')
+    if last_changed_date:
+        last_changed_date = last_changed_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_changed_date, datetime.datetime) else str(last_changed_date)
+
+    # Last accessed date
+    last_accessed_date = item.get('LastAccessedDate', '')
+    if last_accessed_date:
+        last_accessed_date = last_accessed_date.strftime('%Y-%m-%d') if isinstance(last_accessed_date, datetime.datetime) else str(last_accessed_date)
+    else:
+        last_accessed_date = 'Never'
+
+    # Deleted date
+    deleted_date = item.get('DeletedDate', '')
+    if deleted_date:
+        deleted_date = deleted_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(deleted_date, datetime.datetime) else str(deleted_date)
+    else:
+        deleted_date = 'N/A'
+
+    # Created date
+    created_date = item.get('CreatedDate', '')
+    if created_date:
+        created_date = created_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_date, datetime.datetime) else str(created_date)
+
+    # Primary region (for replicated secrets)
+    primary_region = item.get('PrimaryRegion', region)
+
+    # Tags
+    tags = item.get('Tags', []) or []
+    tag_dict = {tag.get('Key'): tag.get('Value') for tag in tags if tag.get('Key') is not None and tag.get('Value') is not None}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    # Owning service
+    owning_service = item.get('OwningService', 'N/A')
+
+    return {
+        'Region': region,
+        'Secret Name': secret_name,
+        'Description': description,
+        'Rotation Enabled': rotation_enabled,
+        'Rotation Interval (days)': automatically_after_days,
+        'Rotation Lambda ARN': rotation_lambda_arn,
+        'Last Rotated': last_rotated_date,
+        'Last Changed': last_changed_date,
+        'Last Accessed': last_accessed_date,
+        'KMS Key ID': kms_key_id,
+        'Primary Region': primary_region,
+        'Owning Service': owning_service,
+        'Deleted Date': deleted_date,
+        'Created Date': created_date,
+        'Tags': tags_str,
+        'Secret ARN': secret_arn
+    }
+
+
 def scan_secrets_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Secrets Manager secrets in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no secrets" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed secrets are skipped (logged) rather than aborting the
+    whole region.
 
     SECURITY: This function does NOT retrieve secret values, only metadata.
 
@@ -60,111 +169,62 @@ def scan_secrets_in_region(region: str) -> list[dict[str, Any]]:
 
     Returns:
         list: List of dictionaries with secret metadata from this region
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_secrets = []
 
-    try:
-        secrets_client = utils.get_boto3_client('secretsmanager', region_name=region)
+    secrets_client = utils.get_boto3_client('secretsmanager', region_name=region)
 
-        # Get secrets (metadata only, no values)
-        paginator = secrets_client.get_paginator('list_secrets')
+    # Get secrets (metadata only, no values)
+    paginator = secrets_client.get_paginator('list_secrets')
+    secret_count = 0
+    skipped = 0
 
-        for page in paginator.paginate():
-            secrets = page.get('SecretList', [])
+    for page in paginator.paginate():
+        secrets = page.get('SecretList', [])
+        secret_count += len(secrets)
 
-            for secret in secrets:
-                secret_name = secret.get('Name', '')
-                secret_arn = secret.get('ARN', '')
+        # Process each secret. One malformed secret must not sink the
+        # region, so each is built inside try/except; failures are logged
+        # and skipped.
+        for secret in secrets:
+            try:
+                regional_secrets.append(_build_secret_row(secret, region))
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping malformed Secrets Manager secret in {region}: "
+                    f"{secret.get('Name', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                # Description
-                description = secret.get('Description', 'N/A')
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {secret_count} secret(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining secrets were still collected."
+        )
 
-                # KMS key
-                kms_key_id = secret.get('KmsKeyId', 'N/A')
-
-                # Rotation enabled
-                rotation_enabled = secret.get('RotationEnabled', False)
-
-                # Rotation Lambda ARN
-                rotation_lambda_arn = secret.get('RotationLambdaARN', 'N/A')
-
-                # Rotation rules
-                rotation_rules = secret.get('RotationRules', {})
-                automatically_after_days = rotation_rules.get('AutomaticallyAfterDays', 'N/A')
-
-                # Last rotated date
-                last_rotated_date = secret.get('LastRotatedDate', '')
-                if last_rotated_date:
-                    last_rotated_date = last_rotated_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_rotated_date, datetime.datetime) else str(last_rotated_date)
-                else:
-                    last_rotated_date = 'Never'
-
-                # Last changed date
-                last_changed_date = secret.get('LastChangedDate', '')
-                if last_changed_date:
-                    last_changed_date = last_changed_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_changed_date, datetime.datetime) else str(last_changed_date)
-
-                # Last accessed date
-                last_accessed_date = secret.get('LastAccessedDate', '')
-                if last_accessed_date:
-                    last_accessed_date = last_accessed_date.strftime('%Y-%m-%d') if isinstance(last_accessed_date, datetime.datetime) else str(last_accessed_date)
-                else:
-                    last_accessed_date = 'Never'
-
-                # Deleted date
-                deleted_date = secret.get('DeletedDate', '')
-                if deleted_date:
-                    deleted_date = deleted_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(deleted_date, datetime.datetime) else str(deleted_date)
-                else:
-                    deleted_date = 'N/A'
-
-                # Created date
-                created_date = secret.get('CreatedDate', '')
-                if created_date:
-                    created_date = created_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_date, datetime.datetime) else str(created_date)
-
-                # Primary region (for replicated secrets)
-                primary_region = secret.get('PrimaryRegion', region)
-
-                # Tags
-                tags = secret.get('Tags', [])
-                tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
-                tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-                # Owning service
-                owning_service = secret.get('OwningService', 'N/A')
-
-                regional_secrets.append({
-                    'Region': region,
-                    'Secret Name': secret_name,
-                    'Description': description,
-                    'Rotation Enabled': rotation_enabled,
-                    'Rotation Interval (days)': automatically_after_days,
-                    'Rotation Lambda ARN': rotation_lambda_arn,
-                    'Last Rotated': last_rotated_date,
-                    'Last Changed': last_changed_date,
-                    'Last Accessed': last_accessed_date,
-                    'KMS Key ID': kms_key_id,
-                    'Primary Region': primary_region,
-                    'Owning Service': owning_service,
-                    'Deleted Date': deleted_date,
-                    'Created Date': created_date,
-                    'Tags': tags_str,
-                    'Secret ARN': secret_arn
-                })
-
-        utils.log_info(f"Found {len(regional_secrets)} secrets in {region}")
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for secrets", e)
+    utils.log_info(f"Found {len(regional_secrets)} secrets in {region}")
 
     return regional_secrets
 
 
-@utils.aws_error_handler("Collecting Secrets Manager secrets", default_return=[])
-def collect_secrets(regions: list[str]) -> list[dict[str, Any]]:
+def collect_secrets(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
     Collect Secrets Manager secret information from AWS regions using concurrent scanning.
+
+    Uses ``collect_failures=True``: ``scan_secrets_in_region`` raises on a
+    region-level failure so that failure is recorded and surfaced by the
+    caller, never silently collapsed into "no secrets" (see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
 
     SECURITY: This function does NOT retrieve secret values, only metadata.
 
@@ -172,21 +232,27 @@ def collect_secrets(regions: list[str]) -> list[dict[str, Any]]:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with secret metadata
+        tuple: (secrets, failed_regions) where failed_regions is a list of
+            (region, error_message) tuples for regions whose scan raised.
     """
     print("\n=== COLLECTING SECRETS MANAGER SECRETS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_secrets = []
-    for region_data in utils.scan_regions_concurrent(
+    # Use concurrent scanning, surfacing failed regions rather than
+    # silently dropping them.
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_secrets_in_region,
-    ):
+        show_progress=True,
+        collect_failures=True,
+    )
+
+    all_secrets = []
+    for region_data in region_results:
         all_secrets.extend(region_data)
 
     utils.log_success(f"Total secrets collected: {len(all_secrets)}")
-    return all_secrets
+    return all_secrets, failed_regions
 
 
 def scan_secret_versions_in_region(region: str) -> list[dict[str, Any]]:
@@ -394,58 +460,74 @@ def export_secrets_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect secrets
-    secrets = collect_secrets(regions)
+    # STEP 1: Collect secrets (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    secrets, failed_regions = collect_secrets(regions)
     if secrets:
         data_frames['Secrets'] = pd.DataFrame(secrets)
 
-    # STEP 2: Collect versions
+    # STEP 2: Collect versions (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     versions = collect_secret_versions(regions)
     if versions:
         data_frames['Secret Versions'] = pd.DataFrame(versions)
 
-    # STEP 3: Collect replications
+    # STEP 3: Collect replications (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     replications = collect_secret_replications(regions)
     if replications:
         data_frames['Replications'] = pd.DataFrame(replications)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'secrets-manager',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Secrets Manager data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Secrets Manager data was collected. Nothing to export.")
         print("\nNo secrets found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'secrets-manager',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Secrets Manager data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary secrets scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was
+    # exported. A partial export that looks complete is exactly the failure
+    # mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'secrets-manager', failed_regions)
+        print(
+            "\nERROR: Secrets Manager export completed with failures — data is incomplete. "
+            "See the *-secrets-manager-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
