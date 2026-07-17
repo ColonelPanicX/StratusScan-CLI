@@ -26,50 +26,94 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Rekognition collections to Excel")
 
-@utils.aws_error_handler("Collecting Rekognition projects", default_return=[])
-def collect_projects(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Rekognition custom model projects from AWS regions."""
-    all_projects = []
+def _build_project_row(project: dict, region: str) -> dict[str, Any]:
+    """Build a single Rekognition project export row from a describe response."""
+    project_arn = project.get('ProjectArn', 'N/A')
+    creation_timestamp = project.get('CreationTimestamp', 'N/A')
+    status = project.get('Status', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Collecting Rekognition projects in {region}...")
-        rekognition_client = utils.get_boto3_client('rekognition', region_name=region)
+    if creation_timestamp != 'N/A':
+        creation_timestamp = creation_timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
-        try:
-            paginator = rekognition_client.get_paginator('describe_projects')
-            for page in paginator.paginate():
-                projects = page.get('ProjectDescriptions', [])
+    # Extract project name from ARN
+    # ARN format: arn:aws:rekognition:region:account-id:project/project-name/timestamp
+    project_name = 'N/A'
+    if project_arn != 'N/A' and '/project/' in project_arn:
+        parts = project_arn.split('/project/')
+        if len(parts) > 1:
+            project_name = parts[1].split('/')[0]
 
-                for project in projects:
-                    project_arn = project.get('ProjectArn', 'N/A')
-                    creation_timestamp = project.get('CreationTimestamp', 'N/A')
-                    status = project.get('Status', 'N/A')
+    return {
+        'Region': region,
+        'Project Name': project_name,
+        'Project ARN': project_arn,
+        'Status': status,
+        'Created': creation_timestamp
+    }
 
-                    if creation_timestamp != 'N/A':
-                        creation_timestamp = creation_timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
-                    # Extract project name from ARN
-                    # ARN format: arn:aws:rekognition:region:account-id:project/project-name/timestamp
-                    project_name = 'N/A'
-                    if project_arn != 'N/A' and '/project/' in project_arn:
-                        parts = project_arn.split('/project/')
-                        if len(parts) > 1:
-                            project_name = parts[1].split('/')[0]
+def _scan_projects_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Rekognition custom model projects from a single region.
 
-                    all_projects.append({
-                        'Region': region,
-                        'Project Name': project_name,
-                        'Project ARN': project_arn,
-                        'Status': status,
-                        'Created': creation_timestamp
-                    })
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no projects" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
-        except Exception as e:
-            utils.log_warning(f"Error listing Rekognition projects in {region}: {str(e)}")
-            continue
+    Individual malformed projects are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
+    utils.log_info(f"Collecting Rekognition projects in {region}...")
+    rekognition_client = utils.get_boto3_client('rekognition', region_name=region)
+
+    region_projects = []
+    paginator = rekognition_client.get_paginator('describe_projects')
+    for page in paginator.paginate():
+        projects = page.get('ProjectDescriptions', [])
+
+        for project in projects:
+            try:
+                region_projects.append(_build_project_row(project, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Rekognition project in {region}: "
+                    f"{project.get('ProjectArn', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    utils.log_info(f"Collected {len(region_projects)} projects in {region}")
+    return region_projects
+
+
+def collect_projects(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Rekognition custom model projects across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(projects, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_projects_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_projects = [project for result in region_results for project in result]
     utils.log_info(f"Collected {len(all_projects)} projects")
-    return all_projects
+    return all_projects, failed_regions
 
 
 @utils.aws_error_handler("Collecting Rekognition project versions", default_return=[])
@@ -397,7 +441,9 @@ def main():
     # Collect data
     print("\nCollecting Amazon Rekognition data...")
 
-    projects = collect_projects(regions)
+    # Collect projects (primary scope — region failures must propagate as
+    # failed_regions, never collapse into "empty").
+    projects, failed_regions = collect_projects(regions)
     versions = collect_project_versions(regions)
     collections = collect_collections(regions)
     stream_processors = collect_stream_processors(regions)
@@ -444,6 +490,18 @@ def main():
         # Log summary
     else:
         utils.log_warning("No Amazon Rekognition data found to export")
+
+    # If ANY region failed the projects scope collection, make it loud: write
+    # a marker and exit non-zero, even though the always-written Summary
+    # sheet means a workbook still lands. A partial export that looks
+    # complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'rekognition', failed_regions)
+        print(
+            "\nERROR: Rekognition export completed with failures — data is incomplete. "
+            "See the *-rekognition-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("Amazon Rekognition export completed successfully")
 

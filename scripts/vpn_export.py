@@ -54,102 +54,130 @@ def scan_vpn_connections_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Site-to-Site VPN connections in a single AWS region.
 
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no VPN connections" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed VPN connections are skipped (logged) rather than
+    aborting the whole region.
+
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of VPN connection dictionaries for this region
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    ec2 = utils.get_boto3_client('ec2', region_name=region)
+
+    # Describe VPN connections
+    response = ec2.describe_vpn_connections()
+    vpn_list = response.get('VpnConnections', [])
+
     vpn_connections = []
-
-    try:
-        ec2 = utils.get_boto3_client('ec2', region_name=region)
-
-        # Describe VPN connections
-        response = ec2.describe_vpn_connections()
-        vpn_list = response.get('VpnConnections', [])
-
-        for vpn in vpn_list:
-            vpn_id = vpn.get('VpnConnectionId', '')
-            state = vpn.get('State', '')
-            vpn_type = vpn.get('Type', '')
-
-            print(f"    Processing VPN connection: {vpn_id} ({state})")
-
-            # Gateway IDs
-            customer_gateway_id = vpn.get('CustomerGatewayId', 'N/A')
-            vpn_gateway_id = vpn.get('VpnGatewayId', 'N/A')
-            transit_gateway_id = vpn.get('TransitGatewayId', 'N/A')
-
-            # Routing
-            static_routes_only = vpn.get('Options', {}).get('StaticRoutesOnly', False)
-            routing_type = 'Static' if static_routes_only else 'Dynamic (BGP)'
-
-            # Static routes
-            static_routes = vpn.get('Routes', [])
-            route_list = [f"{r.get('DestinationCidrBlock', '')} ({r.get('State', '')})" for r in static_routes]
-            routes = ', '.join(route_list) if route_list else 'N/A'
-
-            # Tunnel details (count)
-            vgw_telemetry = vpn.get('VgwTelemetry', [])
-            tunnel_count = len(vgw_telemetry)
-
-            # Check tunnel status
-            tunnels_up = sum(1 for t in vgw_telemetry if t.get('Status', '') == 'UP')
-            tunnel_status = f"{tunnels_up}/{tunnel_count} UP"
-
-            # Tags
-            tags = vpn.get('Tags', [])
-            tag_dict = {tag['Key']: tag['Value'] for tag in tags}
-            name = tag_dict.get('Name', 'N/A')
-            tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-            vpn_connections.append({
-                'Region': region,
-                'VPN Connection ID': vpn_id,
-                'Name': name,
-                'State': state,
-                'Type': vpn_type,
-                'Routing Type': routing_type,
-                'Customer Gateway ID': customer_gateway_id,
-                'Virtual Private Gateway ID': vpn_gateway_id,
-                'Transit Gateway ID': transit_gateway_id,
-                'Tunnel Status': tunnel_status,
-                'Tunnel Count': tunnel_count,
-                'Static Routes': routes,
-                'Tags': tags_str
-            })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting VPN connections in {region}", e)
+    for vpn in vpn_list:
+        try:
+            vpn_connections.append(_build_vpn_row(vpn, region))
+        except Exception as e:
+            # One malformed VPN connection is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed VPN connection in {region}: "
+                f"{vpn.get('VpnConnectionId', '<unknown>')}",
+                e,
+            )
+            continue
 
     utils.log_info(f"Found {len(vpn_connections)} VPN connections in {region}")
     return vpn_connections
 
 
-@utils.aws_error_handler("Collecting Site-to-Site VPN connections", default_return=[])
-def collect_vpn_connections(regions: list[str]) -> list[dict[str, Any]]:
+def _build_vpn_row(vpn: dict, region: str) -> dict[str, Any]:
+    """Build a single Site-to-Site VPN connection export row from a describe response."""
+    vpn_id = vpn.get('VpnConnectionId', '')
+    state = vpn.get('State', '')
+    vpn_type = vpn.get('Type', '')
+
+    print(f"    Processing VPN connection: {vpn_id} ({state})")
+
+    # Gateway IDs
+    customer_gateway_id = vpn.get('CustomerGatewayId', 'N/A')
+    vpn_gateway_id = vpn.get('VpnGatewayId', 'N/A')
+    transit_gateway_id = vpn.get('TransitGatewayId', 'N/A')
+
+    # Routing
+    static_routes_only = vpn.get('Options', {}).get('StaticRoutesOnly', False)
+    routing_type = 'Static' if static_routes_only else 'Dynamic (BGP)'
+
+    # Static routes
+    static_routes = vpn.get('Routes', [])
+    route_list = [f"{r.get('DestinationCidrBlock', '')} ({r.get('State', '')})" for r in static_routes]
+    routes = ', '.join(route_list) if route_list else 'N/A'
+
+    # Tunnel details (count)
+    vgw_telemetry = vpn.get('VgwTelemetry', [])
+    tunnel_count = len(vgw_telemetry)
+
+    # Check tunnel status
+    tunnels_up = sum(1 for t in vgw_telemetry if t.get('Status', '') == 'UP')
+    tunnel_status = f"{tunnels_up}/{tunnel_count} UP"
+
+    # Tags
+    tags = vpn.get('Tags', [])
+    tag_dict = {tag.get('Key'): tag.get('Value') for tag in tags if 'Key' in tag}
+    name = tag_dict.get('Name', 'N/A')
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    return {
+        'Region': region,
+        'VPN Connection ID': vpn_id,
+        'Name': name,
+        'State': state,
+        'Type': vpn_type,
+        'Routing Type': routing_type,
+        'Customer Gateway ID': customer_gateway_id,
+        'Virtual Private Gateway ID': vpn_gateway_id,
+        'Transit Gateway ID': transit_gateway_id,
+        'Tunnel Status': tunnel_status,
+        'Tunnel Count': tunnel_count,
+        'Static Routes': routes,
+        'Tags': tags_str
+    }
+
+
+def collect_vpn_connections(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Site-to-Site VPN connection information across regions.
+    Collect Site-to-Site VPN connection information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with VPN connection details
+        tuple: ``(vpn_connections, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING SITE-TO-SITE VPN CONNECTIONS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    vpn_connections = []
-    for region_data in utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_vpn_connections_in_region,
-    ):
-        vpn_connections.extend(region_data)
+        show_progress=True,
+        collect_failures=True,
+    )
+    vpn_connections = [vpn for result in region_results for vpn in result]
 
     utils.log_success(f"Total Site-to-Site VPN connections collected: {len(vpn_connections)}")
-    return vpn_connections
+    return vpn_connections, failed_regions
 
 
 def scan_vpn_tunnels_in_region(region: str) -> list[dict[str, Any]]:
@@ -762,8 +790,9 @@ def export_vpn_data(account_id: str, account_name: str, regions: list[str]):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Site-to-Site VPN connections
-    vpn_connections = collect_vpn_connections(regions)
+    # STEP 1: Collect Site-to-Site VPN connections (primary scope — region
+    # failures must propagate as failed_regions, never collapse into "empty").
+    vpn_connections, failed_regions = collect_vpn_connections(regions)
     if vpn_connections:
         data_frames['S2S VPN Connections'] = pd.DataFrame(vpn_connections)
 
@@ -797,46 +826,62 @@ def export_vpn_data(account_id: str, account_name: str, regions: list[str]):
     if summary:
         data_frames['Summary'] = pd.DataFrame(summary)
 
-    # Check if we have any data
+    # Check if we have any data. In practice the Summary sheet above is forced
+    # (it always includes unconditional Gateways/Auth Rules categories), so
+    # this branch is a defense-in-depth guard rather than the common path —
+    # the workbook is expected to always land.
     if not data_frames:
-        utils.log_warning("No VPN data was collected. Nothing to export.")
-        print("\nNo VPN resources found in the selected regions.")
-        return
+        if not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
+            utils.log_warning("No VPN data was collected. Nothing to export.")
+            print("\nNo VPN resources found in the selected regions.")
+    else:
+        # STEP 8: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
 
-    # STEP 8: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+        # STEP 9: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        region_suffix = 'multi-region' if len(regions) > 1 else regions[0]
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'vpn',
+            region_suffix,
+            current_date
+        )
 
-    # STEP 9: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    region_suffix = 'multi-region' if len(regions) > 1 else regions[0]
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'vpn',
-        region_suffix,
-        current_date
-    )
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
 
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+            if output_path:
+                utils.log_success("VPN data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
 
-        if output_path:
-            utils.log_success("VPN data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
+                # Summary of exported data
+                print("\n" + "=" * 60)
+                print("EXPORT SUMMARY")
+                print("=" * 60)
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
 
-            # Summary of exported data
-            print("\n" + "=" * 60)
-            print("EXPORT SUMMARY")
-            print("=" * 60)
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
 
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary VPN connection scope collection, make
+    # it loud: write a marker and exit non-zero, even though the Summary sheet
+    # (and any successfully-collected data) was still exported above. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'vpn', failed_regions)
+        print(
+            "\nERROR: VPN export completed with failures — data is incomplete. "
+            "See the *-vpn-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

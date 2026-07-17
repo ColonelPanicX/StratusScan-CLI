@@ -73,8 +73,8 @@ def get_tag_value(tags, key='Name'):
         return "N/A"
 
     for tag in tags:
-        if tag['Key'] == key:
-            return tag['Value']
+        if tag.get('Key') == key:
+            return tag.get('Value', 'N/A')
 
     return "N/A"
 
@@ -111,10 +111,73 @@ def format_rule(rule):
 
     return f"{rule_number}: {action.upper()} {protocol}:{port_range} from {cidr}"
 
-@utils.aws_error_handler("Collecting Network ACL data", default_return=[])
+def _build_nacl_row(nacl, region):
+    """Build a single Network ACL export row from a describe response."""
+    nacl_id = nacl.get('NetworkAclId', 'N/A')
+    vpc_id = nacl.get('VpcId', 'N/A')
+    is_default = nacl.get('IsDefault', False)
+
+    # Get NACL name from tags
+    nacl_name = get_tag_value(nacl.get('Tags', []))
+
+    # Format tags as a string
+    tags_str = '; '.join([f"{tag.get('Key', 'N/A')}={tag.get('Value', 'N/A')}" for tag in nacl.get('Tags', [])])
+    if not tags_str:
+        tags_str = "N/A"
+
+    # Get inbound and outbound rules
+    inbound_rules = [rule for rule in nacl.get('Entries', []) if not rule.get('Egress', False)]
+    outbound_rules = [rule for rule in nacl.get('Entries', []) if rule.get('Egress', False)]
+
+    # Format rules as strings
+    inbound_rules_str = '; '.join([format_rule(rule) for rule in sorted(inbound_rules, key=lambda x: x.get('RuleNumber', 0))])
+    outbound_rules_str = '; '.join([format_rule(rule) for rule in sorted(outbound_rules, key=lambda x: x.get('RuleNumber', 0))])
+
+    if not inbound_rules_str:
+        inbound_rules_str = "N/A"
+    if not outbound_rules_str:
+        outbound_rules_str = "N/A"
+
+    # Get subnet associations
+    subnet_associations = []
+    for assoc in nacl.get('Associations', []):
+        subnet_id = assoc.get('SubnetId', 'N/A')
+        if subnet_id != 'N/A':
+            subnet_associations.append(subnet_id)
+
+    subnet_associations_str = '; '.join(subnet_associations) if subnet_associations else "N/A"
+
+    # Get owner information
+    owner_id = nacl.get('OwnerId', 'N/A')
+    owner_formatted = utils.get_account_name_formatted(owner_id)
+
+    return {
+        'Region': region,
+        'NACL ID': nacl_id,
+        'NACL Name': nacl_name,
+        'VPC ID': vpc_id,
+        'Is Default': 'Yes' if is_default else 'No',
+        'Inbound Rules': inbound_rules_str,
+        'Outbound Rules': outbound_rules_str,
+        'Subnet Associations': subnet_associations_str,
+        'Owner ID': owner_formatted,
+        'Tags': tags_str
+    }
+
+
 def get_nacl_data(region):
     """
     Get Network ACL information for a specific AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no NACLs" (the silent-collection-
+    loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed NACLs are skipped (logged) rather than aborting the
+    whole region.
 
     Args:
         region: AWS region name
@@ -139,59 +202,16 @@ def get_nacl_data(region):
         all_nacls.extend(page.get('NetworkAcls', []))
 
     for nacl in all_nacls:
-        nacl_id = nacl.get('NetworkAclId', 'N/A')
-        vpc_id = nacl.get('VpcId', 'N/A')
-        is_default = nacl.get('IsDefault', False)
-
-        # Get NACL name from tags
-        nacl_name = get_tag_value(nacl.get('Tags', []))
-
-        # Format tags as a string
-        tags_str = '; '.join([f"{tag['Key']}={tag['Value']}" for tag in nacl.get('Tags', [])])
-        if not tags_str:
-            tags_str = "N/A"
-
-        # Get inbound and outbound rules
-        inbound_rules = [rule for rule in nacl.get('Entries', []) if not rule.get('Egress', False)]
-        outbound_rules = [rule for rule in nacl.get('Entries', []) if rule.get('Egress', False)]
-
-        # Format rules as strings
-        inbound_rules_str = '; '.join([format_rule(rule) for rule in sorted(inbound_rules, key=lambda x: x.get('RuleNumber', 0))])
-        outbound_rules_str = '; '.join([format_rule(rule) for rule in sorted(outbound_rules, key=lambda x: x.get('RuleNumber', 0))])
-
-        if not inbound_rules_str:
-            inbound_rules_str = "N/A"
-        if not outbound_rules_str:
-            outbound_rules_str = "N/A"
-
-        # Get subnet associations
-        subnet_associations = []
-        for assoc in nacl.get('Associations', []):
-            subnet_id = assoc.get('SubnetId', 'N/A')
-            if subnet_id != 'N/A':
-                subnet_associations.append(subnet_id)
-
-        subnet_associations_str = '; '.join(subnet_associations) if subnet_associations else "N/A"
-
-        # Get owner information
-        owner_id = nacl.get('OwnerId', 'N/A')
-        owner_formatted = utils.get_account_name_formatted(owner_id)
-
-        # Add NACL data
-        nacl_entry = {
-            'Region': region,
-            'NACL ID': nacl_id,
-            'NACL Name': nacl_name,
-            'VPC ID': vpc_id,
-            'Is Default': 'Yes' if is_default else 'No',
-            'Inbound Rules': inbound_rules_str,
-            'Outbound Rules': outbound_rules_str,
-            'Subnet Associations': subnet_associations_str,
-            'Owner ID': owner_formatted,
-            'Tags': tags_str
-        }
-
-        nacl_data.append(nacl_entry)
+        try:
+            nacl_data.append(_build_nacl_row(nacl, region))
+        except Exception as e:
+            # One malformed NACL is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed NACL in {region}: "
+                f"{nacl.get('NetworkAclId', '<unknown>')}",
+                e,
+            )
+            continue
 
     return nacl_data
 
@@ -230,11 +250,13 @@ def main():
             utils.log_info(f"Found {len(region_data)} NACLs in {region}")
             return region_data
 
-        # Use concurrent region scanning
-        region_results = utils.scan_regions_concurrent(
+        # Use concurrent region scanning, surfacing per-region failures so a
+        # failed collection is never silently collapsed into "no NACLs".
+        region_results, failed_regions = utils.scan_regions_concurrent(
             regions=regions,
             scan_function=scan_region_nacls,
-            show_progress=True
+            show_progress=True,
+            collect_failures=True,
         )
 
         # Flatten results
@@ -272,6 +294,18 @@ def main():
             print("\nScript execution completed.")
         else:
             utils.log_error("Error exporting data. Please check the logs.")
+            sys.exit(1)
+
+        # If ANY region failed the primary NACL scope collection, make it loud:
+        # write a marker and exit non-zero, even though a workbook was written.
+        # A partial export that looks complete is exactly the failure mode this
+        # guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'nacl', failed_regions)
+            print(
+                "\nERROR: NACL export completed with failures — data is incomplete. "
+                "See the *-nacl-FAILED-*.txt marker in the output directory."
+            )
             sys.exit(1)
 
     except KeyboardInterrupt:

@@ -48,33 +48,80 @@ utils.setup_logging('network-manager-export')
 home_region: str = 'us-west-2'
 
 
-@utils.aws_error_handler("Collecting global networks", default_return=[])
+def _build_global_network_row(network: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single Network Manager global network.
+
+    Extracted so per-item processing can be wrapped in try/except by the
+    caller: a malformed global network entry must not sink the whole
+    account-scope collection. Required fields are read with ``.get()`` and a
+    safe default for the same reason (the previous hard
+    ``network['GlobalNetworkId']`` subscript was the KeyError source flagged
+    in the 07.16.2026 silent-collection-failure audit).
+
+    Args:
+        network: A single GlobalNetworks entry from describe_global_networks.
+
+    Returns:
+        dict: The assembled global network row.
+    """
+    tags = []
+    for tag in network.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    return {
+        'GlobalNetworkId': network.get('GlobalNetworkId', 'N/A'),
+        'GlobalNetworkArn': network.get('GlobalNetworkArn', 'N/A'),
+        'Description': network.get('Description', 'N/A'),
+        'State': network.get('State', 'N/A'),
+        'CreatedAt': network.get('CreatedAt'),
+        'Tags': ', '.join(tags) if tags else 'N/A',
+    }
+
+
 def collect_global_networks() -> list[dict[str, Any]]:
-    """Collect all Network Manager global networks."""
+    """
+    Collect all Network Manager global networks.
+
+    Network Manager is a global, account-scope service (not multi-region —
+    see scripts/shield_export.py for the account-scope reference pattern
+    this follows). Not wrapped in ``aws_error_handler`` and does not swallow
+    account-scope errors (client creation, pagination) to an empty list: a
+    swallowed error here would be indistinguishable from a genuinely empty
+    account (no global networks configured), producing silent data loss
+    (see the 07.16.2026 silent-collection-failure audit). Per-item errors
+    are contained internally (logged and skipped) via
+    ``_build_global_network_row``.
+
+    Returns:
+        list: List of global network dictionaries.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
+    """
     # Network Manager is a global service, use us-west-2
     # Networkmanager is a global service - use partition-aware home region
     nm = utils.get_boto3_client('networkmanager', region_name=home_region)
     networks = []
+    skipped = 0
 
-    try:
-        paginator = nm.get_paginator('describe_global_networks')
-        for page in paginator.paginate():
-            for network in page.get('GlobalNetworks', []):
-                # Format tags
-                tags = []
-                for tag in network.get('Tags', []):
-                    tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+    paginator = nm.get_paginator('describe_global_networks')
+    for page in paginator.paginate():
+        for network in page.get('GlobalNetworks', []):
+            try:
+                networks.append(_build_global_network_row(network))
+            except Exception as e:
+                skipped += 1
+                network_id = network.get('GlobalNetworkId', 'Unknown') if isinstance(network, dict) else 'Unknown'
+                utils.log_error(f"Skipping Network Manager global network '{network_id}' due to a processing error", e)
+                continue
 
-                networks.append({
-                    'GlobalNetworkId': network.get('GlobalNetworkId', 'N/A'),
-                    'GlobalNetworkArn': network.get('GlobalNetworkArn', 'N/A'),
-                    'Description': network.get('Description', 'N/A'),
-                    'State': network.get('State', 'N/A'),
-                    'CreatedAt': network.get('CreatedAt'),
-                    'Tags': ', '.join(tags) if tags else 'N/A',
-                })
-    except Exception as e:
-        utils.log_warning(f"Error collecting Network Manager global networks: {e}")
+    if skipped:
+        utils.log_warning(
+            f"{skipped} Network Manager global network(s) were skipped due to "
+            "processing errors (see log above); the remaining global networks were still collected."
+        )
 
     return networks
 
@@ -278,16 +325,42 @@ def collect_cgw_associations(global_network_id: str) -> list[dict[str, Any]]:
 
 
 def _run_export(account_id: str, account_name: str) -> None:
-    """Collect Network Manager data and write the Excel export."""
+    """
+    Collect Network Manager data and write the Excel export.
+
+    Network Manager is a global, account-scope service, so failures are
+    tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py for the
+    account-scope reference pattern). The ``global_networks`` scope is the
+    primary collector: a real API error there must propagate to
+    ``failed_scopes`` and never collapse into "no global networks
+    configured" (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    Per-global-network enrichment (sites/links/devices/connections/TGW
+    registrations/CGW associations) stays graceful via its own
+    ``aws_error_handler`` decorators.
+    """
     utils.log_info("Network Manager is a global service accessed through us-west-2.")
     utils.log_info("Scanning for global networks and SD-WAN topology...")
 
-    # Collect global networks
-    global_networks = collect_global_networks()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes: list = []
+
+    # STEP 1: Collect global networks (PRIMARY scope — a real API error here
+    # must propagate to failed_scopes, never collapse into an empty list
+    # that reads as "no global networks configured").
+    try:
+        global_networks = collect_global_networks()
+    except Exception as e:
+        failed_scopes.append(('global_networks', str(e)))
+        utils.log_error(f"Network Manager global networks collection failed: {e}")
+        global_networks = []
 
     if not global_networks:
-        utils.log_warning("No Network Manager global networks found.")
-        utils.log_info("Creating empty export file...")
+        if failed_scopes:
+            utils.log_warning("Global networks collection failed; proceeding with an empty result set.")
+        else:
+            utils.log_warning("No Network Manager global networks found.")
+        utils.log_info("Creating export file with forced Summary sheet...")
     else:
         utils.log_info(f"Found {len(global_networks)} global network(s)")
 
@@ -300,7 +373,7 @@ def _run_export(account_id: str, account_name: str) -> None:
     all_cgw_associations = []
 
     for idx, network in enumerate(global_networks, 1):
-        global_network_id = network['GlobalNetworkId']
+        global_network_id = network.get('GlobalNetworkId', 'N/A')
         utils.log_info(f"[{idx}/{len(global_networks)}] Processing global network: {global_network_id}")
 
         # Collect sites
@@ -414,6 +487,19 @@ def _run_export(account_id: str, account_name: str) -> None:
     utils.log_info(f"  CGW Associations: {len(all_cgw_associations)}")
 
     utils.log_success("Network Manager export completed successfully!")
+
+    # If the global_networks scope failed, make it loud: write a marker and
+    # exit non-zero, even though a workbook (with a forced Summary sheet)
+    # was written. A partial export that looks complete is exactly the
+    # failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'network-manager', failed_scopes)
+        print(
+            "\nERROR: Network Manager export completed with failures — data is "
+            "incomplete. See the *-network-manager-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():
