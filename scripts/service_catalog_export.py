@@ -38,85 +38,212 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Service Catalog portfolios and products to Excel")
 
-@utils.aws_error_handler("Listing portfolios", default_return=[])
-def list_portfolios(region: str) -> list[dict[str, Any]]:
-    """List all portfolios."""
+
+def _build_portfolio_row(portfolio: dict, region: str) -> dict[str, Any]:
+    """Build a single portfolio export row from a list_portfolios item."""
+    return {
+        'Region': region,
+        'PortfolioId': portfolio.get('Id', 'N/A'),
+        'PortfolioARN': portfolio.get('ARN', 'N/A'),
+        'DisplayName': portfolio.get('DisplayName', 'N/A'),
+        'Description': portfolio.get('Description', 'N/A'),
+        'ProviderName': portfolio.get('ProviderName', 'N/A'),
+        'CreatedTime': portfolio.get('CreatedTime'),
+    }
+
+
+def _scan_portfolios_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Service Catalog portfolios from a single region.
+
+    This is one of the primary scope collectors. It deliberately does NOT
+    swallow errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no portfolios" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed portfolios are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     portfolios = []
 
     paginator = sc.get_paginator('list_portfolios')
     for page in paginator.paginate():
         for portfolio in page.get('PortfolioDetails', []):
-            portfolios.append({
-                'Region': region,
-                'PortfolioId': portfolio.get('Id', 'N/A'),
-                'PortfolioARN': portfolio.get('ARN', 'N/A'),
-                'DisplayName': portfolio.get('DisplayName', 'N/A'),
-                'Description': portfolio.get('Description', 'N/A'),
-                'ProviderName': portfolio.get('ProviderName', 'N/A'),
-                'CreatedTime': portfolio.get('CreatedTime'),
-            })
+            try:
+                portfolios.append(_build_portfolio_row(portfolio, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed portfolio in {region}: "
+                    f"{portfolio.get('Id', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return portfolios
 
 
-@utils.aws_error_handler("Searching products as admin", default_return=[])
-def search_products_as_admin(region: str) -> list[dict[str, Any]]:
-    """Search all products as admin."""
+def collect_portfolios(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Service Catalog portfolios across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(portfolios, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_portfolios_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_portfolios = [p for result in region_results for p in result]
+    return all_portfolios, failed_regions
+
+
+def _build_product_row(product: dict, region: str) -> dict[str, Any]:
+    """Build a single product export row from a search_products_as_admin item."""
+    product_view = product.get('ProductViewSummary', {})
+    product_arn = product.get('ProductARN', 'N/A')
+
+    return {
+        'Region': region,
+        'ProductId': product_view.get('ProductId', 'N/A'),
+        'ProductARN': product_arn,
+        'Name': product_view.get('Name', 'N/A'),
+        'ShortDescription': product_view.get('ShortDescription', 'N/A'),
+        'Type': product_view.get('Type', 'N/A'),
+        'Owner': product_view.get('Owner', 'N/A'),
+        'Distributor': product_view.get('Distributor', 'N/A'),
+        'SupportDescription': product_view.get('SupportDescription', 'N/A'),
+        'SupportEmail': product_view.get('SupportEmail', 'N/A'),
+        'SupportUrl': product_view.get('SupportUrl', 'N/A'),
+    }
+
+
+def _scan_products_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Service Catalog products (as admin) from a single region.
+
+    Primary scope collector — see ``_scan_portfolios_region`` docstring for
+    the no-swallow contract this follows.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     products = []
 
     paginator = sc.get_paginator('search_products_as_admin')
     for page in paginator.paginate():
         for product in page.get('ProductViewDetails', []):
-            product_view = product.get('ProductViewSummary', {})
-            product_arn = product.get('ProductARN', 'N/A')
-
-            products.append({
-                'Region': region,
-                'ProductId': product_view.get('ProductId', 'N/A'),
-                'ProductARN': product_arn,
-                'Name': product_view.get('Name', 'N/A'),
-                'ShortDescription': product_view.get('ShortDescription', 'N/A'),
-                'Type': product_view.get('Type', 'N/A'),
-                'Owner': product_view.get('Owner', 'N/A'),
-                'Distributor': product_view.get('Distributor', 'N/A'),
-                'SupportDescription': product_view.get('SupportDescription', 'N/A'),
-                'SupportEmail': product_view.get('SupportEmail', 'N/A'),
-                'SupportUrl': product_view.get('SupportUrl', 'N/A'),
-            })
+            try:
+                products.append(_build_product_row(product, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed product in {region}: "
+                    f"{product.get('ProductARN', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return products
 
 
-@utils.aws_error_handler("Scanning provisioned products", default_return=[])
-def scan_provisioned_products(region: str) -> list[dict[str, Any]]:
-    """Scan all provisioned products."""
+def collect_products(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Service Catalog products across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(products, failed_regions)`` — see ``collect_portfolios``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_products_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_products = [p for result in region_results for p in result]
+    return all_products, failed_regions
+
+
+def _build_provisioned_product_row(product: dict, region: str) -> dict[str, Any]:
+    """Build a single provisioned-product export row from a scan_provisioned_products item."""
+    return {
+        'Region': region,
+        'ProvisionedProductId': product.get('Id', 'N/A'),
+        'ProvisionedProductARN': product.get('Arn', 'N/A'),
+        'Name': product.get('Name', 'N/A'),
+        'Type': product.get('Type', 'N/A'),
+        'Status': product.get('Status', 'N/A'),
+        'StatusMessage': product.get('StatusMessage', 'N/A'),
+        'CreatedTime': product.get('CreatedTime'),
+        'LastRecordId': product.get('LastRecordId', 'N/A'),
+        'ProductId': product.get('ProductId', 'N/A'),
+        'ProductName': product.get('ProductName', 'N/A'),
+        'ProvisioningArtifactId': product.get('ProvisioningArtifactId', 'N/A'),
+        'ProvisioningArtifactName': product.get('ProvisioningArtifactName', 'N/A'),
+        'UserArn': product.get('UserArn', 'N/A'),
+        'UserArnSession': product.get('UserArnSession', 'N/A'),
+    }
+
+
+def _scan_provisioned_products_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Service Catalog provisioned products from a single region.
+
+    Primary scope collector — see ``_scan_portfolios_region`` docstring for
+    the no-swallow contract this follows.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     sc = utils.get_boto3_client('servicecatalog', region_name=region)
     provisioned = []
 
     paginator = sc.get_paginator('scan_provisioned_products')
     for page in paginator.paginate():
         for product in page.get('ProvisionedProducts', []):
-            provisioned.append({
-                'Region': region,
-                'ProvisionedProductId': product.get('Id', 'N/A'),
-                'ProvisionedProductARN': product.get('Arn', 'N/A'),
-                'Name': product.get('Name', 'N/A'),
-                'Type': product.get('Type', 'N/A'),
-                'Status': product.get('Status', 'N/A'),
-                'StatusMessage': product.get('StatusMessage', 'N/A'),
-                'CreatedTime': product.get('CreatedTime'),
-                'LastRecordId': product.get('LastRecordId', 'N/A'),
-                'ProductId': product.get('ProductId', 'N/A'),
-                'ProductName': product.get('ProductName', 'N/A'),
-                'ProvisioningArtifactId': product.get('ProvisioningArtifactId', 'N/A'),
-                'ProvisioningArtifactName': product.get('ProvisioningArtifactName', 'N/A'),
-                'UserArn': product.get('UserArn', 'N/A'),
-                'UserArnSession': product.get('UserArnSession', 'N/A'),
-            })
+            try:
+                provisioned.append(_build_provisioned_product_row(product, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed provisioned product in {region}: "
+                    f"{product.get('Id', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return provisioned
+
+
+def collect_provisioned_products(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Service Catalog provisioned products across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(provisioned_products, failed_regions)`` — see ``collect_portfolios``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_provisioned_products_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_provisioned = [p for result in region_results for p in result]
+    return all_provisioned, failed_regions
 
 
 @utils.aws_error_handler("Listing provisioning artifacts", default_return=[])
@@ -172,44 +299,48 @@ def list_portfolio_principals(region: str, portfolio_id: str) -> list[dict[str, 
 
 def _run_export(account_id: str, account_name: str, regions: list) -> None:
     """Collect Service Catalog data and write the Excel export."""
-    all_portfolios = []
-    all_products = []
-    all_provisioned = []
-    all_artifacts = []
-    all_principals = []
+    # STEP 1: Collect the primary scopes (portfolios, products, provisioned
+    # products). Each is routed through scan_regions_concurrent with
+    # collect_failures=True so a region that errors is recorded as failed
+    # rather than silently collapsed into "empty" — see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md.
+    failed_regions: list = []
 
-    for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    utils.log_info("=== COLLECTING PORTFOLIOS ===")
+    all_portfolios, portfolio_failures = collect_portfolios(regions)
+    utils.log_success(f"Total portfolios collected: {len(all_portfolios)}")
+    failed_regions.extend(portfolio_failures)
 
-        # Collect portfolios
-        portfolios = list_portfolios(region)
-        if portfolios:
-            utils.log_info(f"  Found {len(portfolios)} portfolio(s)")
-            all_portfolios.extend(portfolios)
+    utils.log_info("=== COLLECTING PRODUCTS ===")
+    all_products, product_failures = collect_products(regions)
+    utils.log_success(f"Total products collected: {len(all_products)}")
+    failed_regions.extend(product_failures)
 
-            # Collect principals for each portfolio
-            for portfolio in portfolios:
-                portfolio_id = portfolio['PortfolioId']
-                principals = list_portfolio_principals(region, portfolio_id)
-                all_principals.extend(principals)
+    utils.log_info("=== COLLECTING PROVISIONED PRODUCTS ===")
+    all_provisioned, provisioned_failures = collect_provisioned_products(regions)
+    utils.log_success(f"Total provisioned products collected: {len(all_provisioned)}")
+    failed_regions.extend(provisioned_failures)
 
-        # Collect products
-        products = search_products_as_admin(region)
-        if products:
-            utils.log_info(f"  Found {len(products)} product(s)")
-            all_products.extend(products)
+    # STEP 2: Secondary, best-effort detail (per-portfolio/per-product lookups).
+    # These are not primary scopes — a failure here is logged and skipped
+    # rather than tracked as a failed region.
+    all_principals: list[dict[str, Any]] = []
+    for portfolio in all_portfolios:
+        portfolio_id = portfolio.get('PortfolioId')
+        portfolio_region = portfolio.get('Region')
+        if not portfolio_id or portfolio_id == 'N/A' or not portfolio_region:
+            continue
+        principals = list_portfolio_principals(portfolio_region, portfolio_id)
+        all_principals.extend(principals)
 
-            # Collect artifacts for each product (sample first 10)
-            for product in products[:10]:
-                product_id = product['ProductId']
-                artifacts = list_provisioning_artifacts(region, product_id)
-                all_artifacts.extend(artifacts)
-
-        # Collect provisioned products
-        provisioned = scan_provisioned_products(region)
-        if provisioned:
-            utils.log_info(f"  Found {len(provisioned)} provisioned product(s)")
-            all_provisioned.extend(provisioned)
+    all_artifacts: list[dict[str, Any]] = []
+    for product in all_products[:10]:
+        product_id = product.get('ProductId')
+        product_region = product.get('Region')
+        if not product_id or product_id == 'N/A' or not product_region:
+            continue
+        artifacts = list_provisioning_artifacts(product_region, product_id)
+        all_artifacts.extend(artifacts)
 
     if not all_portfolios and not all_products:
         utils.log_warning("No Service Catalog portfolios or products found in any selected region.")
@@ -226,7 +357,9 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     df_artifacts = utils.prepare_dataframe_for_export(pd.DataFrame(all_artifacts))
     df_principals = utils.prepare_dataframe_for_export(pd.DataFrame(all_principals))
 
-    # Create summary
+    # Create summary — this sheet is ALWAYS written, even when collection
+    # partially failed, so a workbook always lands. Failure signaling is
+    # handled separately via the FAILED marker + non-zero exit below.
     summary_data = []
     summary_data.append({'Metric': 'Total Portfolios', 'Value': len(all_portfolios)})
     summary_data.append({'Metric': 'Total Products', 'Value': len(all_products)})
@@ -270,6 +403,19 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     utils.log_info(f"  Provisioned Products: {len(all_provisioned)}")
 
     utils.log_success("Service Catalog export completed successfully!")
+
+    # If ANY primary scope failed collection in any region, make it loud: a
+    # workbook always landed above (Summary sheet is always written), but a
+    # partial export that looks complete is exactly the failure mode this
+    # guards against. Write a marker and exit non-zero. A genuinely empty
+    # account (no failures, no data) stays exit 0 with no marker.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'service-catalog', failed_regions)
+        print(
+            "\nERROR: Service Catalog export completed with failures — data is incomplete. "
+            "See the *-service-catalog-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

@@ -77,6 +77,8 @@ _EXCLUDED = {
     #   rolesanywhere:ListTrustAnchors      -> 404 "Not yet implemented"
     #   ec2:DescribeVerifiedAccessInstances -> NotImplementedError
     #   verifiedpermissions:ListPolicyStores-> 404 "Not yet implemented"
+    #   servicecatalog:SearchProductsAsAdmin-> NotImplementedError
+    #   controltower:ListLandingZones       -> 404 "Not yet implemented"
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
@@ -91,6 +93,8 @@ _EXCLUDED = {
     "iam_rolesanywhere_export.py",
     "verifiedaccess_export.py",
     "verifiedpermissions_export.py",
+    "service_catalog_export.py",
+    "controltower_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(

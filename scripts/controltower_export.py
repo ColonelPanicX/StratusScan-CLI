@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 try:
     import utils
 except ImportError:
@@ -34,9 +36,30 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Control Tower landing zone configuration to Excel")
 
-@utils.aws_error_handler("Collecting landing zone information", default_return={})
 def collect_landing_zone() -> dict[str, Any]:
-    """Collect AWS Control Tower landing zone information (global service)."""
+    """
+    Collect AWS Control Tower landing zone information (global service).
+
+    This is a PRIMARY, account-scope collector (see scripts/shield_export.py
+    / scripts/organizations_export.py for the account-scope reference
+    pattern). It does not swallow errors to an empty dict: a swallowed error
+    here would be indistinguishable from Control Tower simply not being set
+    up in this account, producing silent data loss (see the 07.15.2026 /
+    07.16.2026 silent-collection-failure audits). "No landing zone" /
+    AccessDenied on ListLandingZones is treated as the legitimate "Control
+    Tower not set up" state and returns ``{}`` gracefully. Any other
+    ClientError/exception is allowed to propagate so the caller (main) can
+    record this scope as *failed* rather than *empty*.
+
+    Returns:
+        dict: Landing zone information, or ``{}`` if Control Tower is not
+            set up in this account (a legitimate, non-failure state).
+
+    Raises:
+        Exception: Any real AWS/pagination error for the account scope
+            (caller records it as a failed scope; it is never masked as
+            empty).
+    """
     print("\n=== COLLECTING LANDING ZONE INFORMATION ===")
 
     # Control Tower is a global service - use partition-aware home region
@@ -44,62 +67,114 @@ def collect_landing_zone() -> dict[str, Any]:
     ct_client = utils.get_boto3_client('controltower', region_name=home_region)
 
     try:
-        # List landing zones
         landing_zones = ct_client.list_landing_zones()
-        lz_list = landing_zones.get('landingZones', [])
-
-        if not lz_list:
-            utils.log_warning("No landing zone found. Control Tower may not be set up.")
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code in ('AccessDeniedException', 'ResourceNotFoundException'):
+            utils.log_info(
+                f"Control Tower landing zone not accessible ({error_code}); "
+                "treating as 'not set up' in this account."
+            )
             return {}
+        raise
 
-        # Get details for the first (and typically only) landing zone
-        lz_arn = lz_list[0].get('arn', '')
+    lz_list = landing_zones.get('landingZones', [])
 
-        if not lz_arn:
-            utils.log_warning("Landing zone ARN not found")
-            return {}
-
-        # Get detailed landing zone information
-        lz_response = ct_client.get_landing_zone(landingZoneIdentifier=lz_arn)
-        lz_details = lz_response.get('landingZone', {})
-
-        # Parse manifest if available
-        manifest = lz_details.get('manifest', {})
-        if isinstance(manifest, str):
-            try:
-                manifest = json.loads(manifest)
-            except json.JSONDecodeError:
-                manifest = {'raw': manifest}
-
-        # Get governed regions
-        governed_regions = manifest.get('governedRegions', []) if isinstance(manifest, dict) else []
-
-        # Drift status
-        drift_status_summary = lz_details.get('driftStatus', {})
-        drift_status = drift_status_summary.get('status', 'N/A')
-
-        landing_zone_info = {
-            'ARN': lz_details.get('arn', 'N/A'),
-            'Version': lz_details.get('version', 'N/A'),
-            'Latest Available Version': lz_details.get('latestAvailableVersion', 'N/A'),
-            'Status': lz_details.get('status', 'N/A'),
-            'Drift Status': drift_status,
-            'Governed Regions': ', '.join(governed_regions) if governed_regions else 'N/A',
-            'Number of Governed Regions': len(governed_regions) if governed_regions else 0,
-            'Manifest': json.dumps(manifest, indent=2) if isinstance(manifest, dict) else str(manifest)
-        }
-
-        utils.log_success(f"Landing zone found: Version {landing_zone_info['Version']}, Status: {landing_zone_info['Status']}")
-        return landing_zone_info
-
-    except Exception as e:
-        utils.log_warning(f"Could not retrieve landing zone information: {str(e)}")
+    if not lz_list:
+        utils.log_warning("No landing zone found. Control Tower may not be set up.")
         return {}
 
+    # Get details for the first (and typically only) landing zone
+    lz_arn = lz_list[0].get('arn', '')
 
-@utils.aws_error_handler("Collecting organizational units", default_return=[])
+    if not lz_arn:
+        utils.log_warning("Landing zone ARN not found")
+        return {}
+
+    # Get detailed landing zone information. A failure past this point means
+    # a landing zone genuinely exists but we could not read it -- a real
+    # failure, not a "not set up" state.
+    lz_response = ct_client.get_landing_zone(landingZoneIdentifier=lz_arn)
+    lz_details = lz_response.get('landingZone', {})
+
+    # Parse manifest if available
+    manifest = lz_details.get('manifest', {})
+    if isinstance(manifest, str):
+        try:
+            manifest = json.loads(manifest)
+        except json.JSONDecodeError:
+            manifest = {'raw': manifest}
+
+    # Get governed regions
+    governed_regions = manifest.get('governedRegions', []) if isinstance(manifest, dict) else []
+
+    # Drift status
+    drift_status_summary = lz_details.get('driftStatus', {})
+    drift_status = drift_status_summary.get('status', 'N/A')
+
+    landing_zone_info = {
+        'ARN': lz_details.get('arn', 'N/A'),
+        'Version': lz_details.get('version', 'N/A'),
+        'Latest Available Version': lz_details.get('latestAvailableVersion', 'N/A'),
+        'Status': lz_details.get('status', 'N/A'),
+        'Drift Status': drift_status,
+        'Governed Regions': ', '.join(governed_regions) if governed_regions else 'N/A',
+        'Number of Governed Regions': len(governed_regions) if governed_regions else 0,
+        'Manifest': json.dumps(manifest, indent=2) if isinstance(manifest, dict) else str(manifest)
+    }
+
+    utils.log_success(f"Landing zone found: Version {landing_zone_info['Version']}, Status: {landing_zone_info['Status']}")
+    return landing_zone_info
+
+
+def _build_ou_row(ou: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single organizational unit.
+
+    Extracted so per-OU processing can be wrapped in try/except by the
+    caller: a malformed OU entry must not sink the whole recursive branch.
+    Required fields are read with ``.get()`` and a safe default for the
+    same reason.
+
+    Args:
+        ou: A single OrganizationalUnits entry from
+            list_organizational_units_for_parent.
+
+    Returns:
+        dict: The assembled OU row.
+    """
+    return {
+        'OU ID': ou.get('Id', 'N/A'),
+        'OU ARN': ou.get('Arn', 'N/A'),
+        'OU Name': ou.get('Name', 'N/A'),
+        'Type': 'Organizational Unit'
+    }
+
+
 def collect_organizational_units() -> list[dict[str, Any]]:
-    """Collect organizational units from AWS Organizations."""
+    """
+    Collect organizational units from AWS Organizations.
+
+    This is a PRIMARY, account-scope collector (see scripts/shield_export.py
+    / scripts/organizations_export.py for the account-scope reference
+    pattern). It does not swallow errors to an empty list: a swallowed error
+    here would be indistinguishable from an organization with no child OUs,
+    producing silent data loss (see the 07.15.2026 / 07.16.2026 silent-
+    collection-failure audits). AWS Organizations not being in use, or this
+    not being the management account, is a legitimate "not set up" state and
+    returns ``[]`` gracefully. Any other error (client creation, pagination)
+    is allowed to propagate so the caller (main) can record this scope as
+    *failed* rather than *empty*. A single malformed OU entry is logged and
+    skipped rather than aborting the whole branch.
+
+    Returns:
+        list: List of OU information dictionaries.
+
+    Raises:
+        Exception: Any real AWS/pagination error for the account scope
+            (caller records it as a failed scope; it is never masked as
+            empty).
+    """
     print("\n=== COLLECTING ORGANIZATIONAL UNITS ===")
     all_ous = []
 
@@ -107,49 +182,52 @@ def collect_organizational_units() -> list[dict[str, Any]]:
     org_client = utils.get_boto3_client('organizations')
 
     try:
-        # Get organization root
-        roots = org_client.list_roots()['Roots']
-        if not roots:
-            utils.log_warning("No organization root found")
+        roots = org_client.list_roots().get('Roots', [])
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code in ('AWSOrganizationsNotInUseException', 'AccessDeniedException'):
+            utils.log_info(
+                f"AWS Organizations not accessible ({error_code}); treating "
+                "as 'not set up' for Control Tower OU collection."
+            )
             return []
+        raise
 
-        root_id = roots[0]['Id']
-        root_arn = roots[0]['Arn']
+    if not roots:
+        utils.log_warning("No organization root found")
+        return []
 
-        # Add root to the list
-        all_ous.append({
-            'OU ID': root_id,
-            'OU ARN': root_arn,
-            'OU Name': roots[0]['Name'],
-            'Type': 'Root'
-        })
+    root = roots[0]
+    root_id = root.get('Id', 'N/A')
+    root_arn = root.get('Arn', 'N/A')
 
-        # List OUs recursively
-        def list_ous_recursive(parent_id):
-            try:
-                paginator = org_client.get_paginator('list_organizational_units_for_parent')
-                for page in paginator.paginate(ParentId=parent_id):
-                    for ou in page.get('OrganizationalUnits', []):
-                        ou_id = ou.get('Id', 'N/A')
-                        ou_arn = ou.get('Arn', 'N/A')
-                        ou_name = ou.get('Name', 'N/A')
+    # Add root to the list
+    all_ous.append({
+        'OU ID': root_id,
+        'OU ARN': root_arn,
+        'OU Name': root.get('Name', 'N/A'),
+        'Type': 'Root'
+    })
 
-                        all_ous.append({
-                            'OU ID': ou_id,
-                            'OU ARN': ou_arn,
-                            'OU Name': ou_name,
-                            'Type': 'Organizational Unit'
-                        })
+    # List OUs recursively. Pagination errors propagate to the caller (the
+    # recursion is part of this PRIMARY scope); only a single malformed OU
+    # entry is contained.
+    def list_ous_recursive(parent_id):
+        paginator = org_client.get_paginator('list_organizational_units_for_parent')
+        for page in paginator.paginate(ParentId=parent_id):
+            for ou in page.get('OrganizationalUnits', []):
+                try:
+                    ou_row = _build_ou_row(ou)
+                except Exception as e:
+                    ou_id = ou.get('Id', 'Unknown') if isinstance(ou, dict) else 'Unknown'
+                    utils.log_error(f"Skipping malformed OU '{ou_id}' due to a processing error", e)
+                    continue
 
-                        # Recursively list child OUs
-                        list_ous_recursive(ou_id)
-            except Exception as e:
-                utils.log_warning(f"Error listing OUs for parent {parent_id}: {str(e)}")
+                all_ous.append(ou_row)
+                # Recursively list child OUs
+                list_ous_recursive(ou_row['OU ID'])
 
-        list_ous_recursive(root_id)
-
-    except Exception as e:
-        utils.log_warning(f"Error collecting organizational units: {str(e)}")
+    list_ous_recursive(root_id)
 
     utils.log_success(f"Total organizational units collected: {len(all_ous)}")
     return all_ous
@@ -223,9 +301,159 @@ def extract_service_from_control_identifier(control_id: str) -> str:
         return 'Other'
 
 
-@utils.aws_error_handler("Collecting enabled controls", default_return=[])
+def _build_control_row(
+    control: dict[str, Any],
+    ou_name: str,
+    ou_arn: str,
+    ct_client,
+    catalog_client,
+) -> dict[str, Any]:
+    """
+    Build the export row for a single enabled control.
+
+    Extracted so per-control processing can be wrapped in try/except by the
+    caller: a malformed control entry must not sink the whole OU's control
+    listing. Required fields are read with ``.get()`` and a safe default for
+    the same reason. Enrichment calls (GetEnabledControl parameters, control
+    catalog metadata) are contained internally and degrade to 'N/A'/'None'
+    on failure -- they are not treated as scope failures.
+
+    Args:
+        control: A single enabledControls entry from list_enabled_controls.
+        ou_name: Name of the OU this control belongs to.
+        ou_arn: ARN of the OU this control belongs to.
+        ct_client: The boto3 Control Tower client.
+        catalog_client: The boto3 Control Catalog client.
+
+    Returns:
+        dict: The assembled control row.
+    """
+    control_id = control.get('controlIdentifier', 'N/A')
+    control_arn = control.get('arn', 'N/A')
+
+    # Status summary
+    status_summary = control.get('statusSummary', {})
+    status = status_summary.get('status', 'N/A')
+    last_operation = status_summary.get('lastOperationIdentifier', 'N/A')
+
+    # Drift status
+    drift_summary = control.get('driftStatusSummary', {})
+    drift_status = drift_summary.get('driftStatus', 'N/A')
+
+    # Drift types
+    drift_types = drift_summary.get('types', {})
+    inheritance_drift = drift_types.get('inheritance', {}).get('status', 'N/A')
+    resource_drift = drift_types.get('resource', {}).get('status', 'N/A')
+
+    # Initialize control metadata
+    control_name = control_id  # Default to identifier
+    control_description = 'N/A'
+    control_behavior = 'N/A'
+    control_guidance = 'N/A'
+    service_name = 'N/A'
+    params_str = 'None'
+
+    try:
+        # Get control details from GetEnabledControl for parameters
+        enabled_control_details = ct_client.get_enabled_control(
+            enabledControlIdentifier=control_arn
+        )
+
+        enabled_control = enabled_control_details.get('enabledControlDetails', {})
+
+        # Get parameters if available
+        parameters = enabled_control.get('parameters', [])
+        if parameters:
+            params_list = []
+            for param in parameters:
+                key = param.get('key', '')
+                value = param.get('value', '')
+                if key and value:
+                    params_list.append(f"{key}: {value}")
+            params_str = ', '.join(params_list) if params_list else 'None'
+
+    except Exception as e:
+        utils.log_warning(f"Could not get enabled control details for {control_id}: {str(e)}")
+
+    # Try to get control metadata from control catalog
+    try:
+        # Use controlcatalog client to get full metadata
+        catalog_response = catalog_client.get_control(ControlArn=control_id)
+
+        # Extract metadata from control catalog response
+        control_name = catalog_response.get('Name', control_id)
+        control_description = catalog_response.get('Description', 'N/A')
+        control_behavior = catalog_response.get('Behavior', 'N/A')
+
+        # Control catalog doesn't have "Guidance" field - this is Control Tower specific
+        # We'll need to infer it or mark as N/A
+        control_guidance = 'N/A'
+
+        # Extract service from aliases if available
+        aliases = catalog_response.get('Aliases', [])
+        if aliases:
+            # Aliases often have format like "CT.S3.PR.1" or "SH.S3.1"
+            for alias in aliases:
+                if '.' in alias:
+                    parts = alias.split('.')
+                    if len(parts) >= 2:
+                        service_name = parts[1]  # e.g., "S3" from "CT.S3.PR.1"
+                        break
+
+        # If service not found from alias, try extracting from control identifier
+        if service_name == 'N/A':
+            service_name = extract_service_from_control_identifier(control_id)
+
+    except Exception as e:
+        # Fallback: try extracting service from identifier even if catalog call fails
+        service_name = extract_service_from_control_identifier(control_id)
+        utils.log_warning(f"Could not get catalog details for control {control_id}: {str(e)}")
+
+    return {
+        'OU Name': ou_name,
+        'OU ARN': ou_arn,
+        'Control Identifier': control_id,
+        'Service': service_name,
+        'Control Name': control_name,
+        'Control ARN': control_arn,
+        'Status': status,
+        'Drift Status': drift_status,
+        'Inheritance Drift': inheritance_drift,
+        'Resource Drift': resource_drift,
+        'Behavior': control_behavior,
+        'Guidance': control_guidance,
+        'Description': control_description,
+        'Parameters': params_str,
+        'Last Operation ID': last_operation
+    }
+
+
 def collect_enabled_controls(ous: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collect enabled controls for all organizational units."""
+    """
+    Collect enabled controls for all organizational units.
+
+    This is a PRIMARY, account-scope collector (see scripts/shield_export.py
+    / scripts/organizations_export.py for the account-scope reference
+    pattern). It does not swallow errors to an empty list: a swallowed
+    client-creation or pagination-setup error here would be indistinguishable
+    from an account with no enabled controls, producing silent data loss
+    (see the 07.15.2026 / 07.16.2026 silent-collection-failure audits).
+    Per-OU listing failures are logged and skipped (one OU's throttling/API
+    error does not sink the whole account's control inventory); a single
+    malformed control entry is likewise logged and skipped.
+
+    Args:
+        ous: List of OU information dictionaries from
+            collect_organizational_units().
+
+    Returns:
+        list: List of enabled control dictionaries.
+
+    Raises:
+        Exception: Any real AWS error setting up the account-scope clients
+            (caller records it as a failed scope; it is never masked as
+            empty).
+    """
     print("\n=== COLLECTING ENABLED CONTROLS ===")
     all_controls = []
 
@@ -260,104 +488,14 @@ def collect_enabled_controls(ous: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 enabled_controls = page.get('enabledControls', [])
 
                 for control in enabled_controls:
-                    control_id = control.get('controlIdentifier', 'N/A')
-                    control_arn = control.get('arn', 'N/A')
-
-                    # Status summary
-                    status_summary = control.get('statusSummary', {})
-                    status = status_summary.get('status', 'N/A')
-                    last_operation = status_summary.get('lastOperationIdentifier', 'N/A')
-
-                    # Drift status
-                    drift_summary = control.get('driftStatusSummary', {})
-                    drift_status = drift_summary.get('driftStatus', 'N/A')
-
-                    # Drift types
-                    drift_types = drift_summary.get('types', {})
-                    inheritance_drift = drift_types.get('inheritance', {}).get('status', 'N/A')
-                    resource_drift = drift_types.get('resource', {}).get('status', 'N/A')
-
-                    # Initialize control metadata
-                    control_name = control_id  # Default to identifier
-                    control_description = 'N/A'
-                    control_behavior = 'N/A'
-                    control_guidance = 'N/A'
-                    service_name = 'N/A'
-                    params_str = 'None'
-
                     try:
-                        # Get control details from GetEnabledControl for parameters
-                        enabled_control_details = ct_client.get_enabled_control(
-                            enabledControlIdentifier=control_arn
-                        )
-
-                        enabled_control = enabled_control_details.get('enabledControlDetails', {})
-
-                        # Get parameters if available
-                        parameters = enabled_control.get('parameters', [])
-                        if parameters:
-                            params_list = []
-                            for param in parameters:
-                                key = param.get('key', '')
-                                value = param.get('value', '')
-                                if key and value:
-                                    params_list.append(f"{key}: {value}")
-                            params_str = ', '.join(params_list) if params_list else 'None'
-
+                        control_row = _build_control_row(control, ou_name, ou_arn, ct_client, catalog_client)
                     except Exception as e:
-                        utils.log_warning(f"Could not get enabled control details for {control_id}: {str(e)}")
+                        control_id = control.get('controlIdentifier', 'Unknown') if isinstance(control, dict) else 'Unknown'
+                        utils.log_error(f"Skipping control '{control_id}' for OU {ou_name} due to a processing error", e)
+                        continue
 
-                    # Try to get control metadata from control catalog
-                    try:
-                        # Use controlcatalog client to get full metadata
-                        catalog_response = catalog_client.get_control(ControlArn=control_id)
-
-                        # Extract metadata from control catalog response
-                        control_name = catalog_response.get('Name', control_id)
-                        control_description = catalog_response.get('Description', 'N/A')
-                        control_behavior = catalog_response.get('Behavior', 'N/A')
-
-                        # Control catalog doesn't have "Guidance" field - this is Control Tower specific
-                        # We'll need to infer it or mark as N/A
-                        control_guidance = 'N/A'
-
-                        # Extract service from aliases if available
-                        aliases = catalog_response.get('Aliases', [])
-                        if aliases:
-                            # Aliases often have format like "CT.S3.PR.1" or "SH.S3.1"
-                            for alias in aliases:
-                                if '.' in alias:
-                                    parts = alias.split('.')
-                                    if len(parts) >= 2:
-                                        service_name = parts[1]  # e.g., "S3" from "CT.S3.PR.1"
-                                        break
-
-                        # If service not found from alias, try extracting from control identifier
-                        if service_name == 'N/A':
-                            service_name = extract_service_from_control_identifier(control_id)
-
-                    except Exception as e:
-                        # Fallback: try extracting service from identifier even if catalog call fails
-                        service_name = extract_service_from_control_identifier(control_id)
-                        utils.log_warning(f"Could not get catalog details for control {control_id}: {str(e)}")
-
-                    all_controls.append({
-                        'OU Name': ou_name,
-                        'OU ARN': ou_arn,
-                        'Control Identifier': control_id,
-                        'Service': service_name,
-                        'Control Name': control_name,
-                        'Control ARN': control_arn,
-                        'Status': status,
-                        'Drift Status': drift_status,
-                        'Inheritance Drift': inheritance_drift,
-                        'Resource Drift': resource_drift,
-                        'Behavior': control_behavior,
-                        'Guidance': control_guidance,
-                        'Description': control_description,
-                        'Parameters': params_str,
-                        'Last Operation ID': last_operation
-                    })
+                    all_controls.append(control_row)
 
         except Exception as e:
             utils.log_warning(f"Error listing controls for OU {ou_name}: {str(e)}")
@@ -458,7 +596,25 @@ def generate_summary(landing_zone: dict[str, Any],
 
 
 def main():
-    """Main execution function."""
+    """
+    Main execution function.
+
+    AWS Control Tower is a global, account-scope service run from the
+    management account (there is no region scan) -- failures are tracked
+    per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py /
+    scripts/organizations_export.py for the account-scope reference
+    pattern). Control Tower not being set up in this account (no landing
+    zone found, AccessDenied on ListLandingZones) is a legitimate, graceful
+    "service not enabled" state (exit 0, no marker) -- handled by
+    ``collect_landing_zone()`` -- and must not be confused with a real
+    collection failure on the landing-zone, organizational-units, or
+    enabled-controls scopes, which are exported as a partial result
+    (whatever succeeded, plus the always-written Summary sheet) and always
+    surfaced via ``utils.report_collection_failures`` + a non-zero exit. A
+    failed scope must never be silently collapsed into "nothing to report"
+    (07.15.2026 / 07.16.2026 audits).
+    """
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         return
     global pd
@@ -495,20 +651,59 @@ def main():
     # Collect data
     print("\nCollecting AWS Control Tower configuration...")
 
-    landing_zone = collect_landing_zone()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
 
-    if not landing_zone:
-        utils.log_warning("No Control Tower landing zone found. Exiting.")
+    # PRIMARY scope 1/3: landing zone. A real API error here must propagate
+    # to failed_scopes, never collapse into "Control Tower not set up".
+    try:
+        landing_zone = collect_landing_zone()
+    except Exception as e:
+        failed_scopes.append(('landing-zone', str(e)))
+        utils.log_error(f"Control Tower landing zone collection failed: {e}")
+        landing_zone = {}
+
+    if not landing_zone and not failed_scopes:
+        # Genuine not-set-up state: Control Tower has no landing zone in
+        # this account and the collection itself succeeded (no error).
+        # Nothing to export; not a failure.
+        utils.log_warning(
+            "No Control Tower landing zone found. Control Tower is not set "
+            "up in this account. Exiting."
+        )
         return
 
-    ous = collect_organizational_units()
-    controls = collect_enabled_controls(ous)
+    # PRIMARY scope 2/3: organizational units.
+    try:
+        ous = collect_organizational_units()
+    except Exception as e:
+        failed_scopes.append(('organizational-units', str(e)))
+        utils.log_error(f"Organizational units collection failed: {e}")
+        ous = []
+
+    # PRIMARY scope 3/3: enabled controls.
+    try:
+        controls = collect_enabled_controls(ous)
+    except Exception as e:
+        failed_scopes.append(('enabled-controls', str(e)))
+        utils.log_error(f"Enabled controls collection failed: {e}")
+        controls = []
+
     # Create DataFrames
     utils.log_info("Creating DataFrames...")
 
     dataframes = {}
 
-    # Add Enabled Controls first (user preference)
+    # Summary sheet is ALWAYS written once we reach this point (Control
+    # Tower confirmed set up, or a real failure occurred on a scope) -- a
+    # workbook must always land so a failed/partial export is never
+    # mistaken for "nothing to report" (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    summary_rows = generate_summary(landing_zone, ous, controls)
+    if summary_rows:
+        dataframes['Summary'] = pd.DataFrame(summary_rows)
+
+    # Add Enabled Controls next (user preference)
     if controls:
         df_controls = pd.DataFrame(controls)
 
@@ -553,7 +748,9 @@ def main():
         df_ous = utils.prepare_dataframe_for_export(df_ous)
         dataframes['Organizational Units'] = df_ous
 
-    # Export to Excel
+    # Export to Excel. Whatever succeeded is exported -- a partial export
+    # (Summary + any scopes that succeeded) is required even when some
+    # scopes failed.
     if dataframes:
         filename = utils.create_export_filename(account_name, 'controltower', 'global')
 
@@ -563,8 +760,26 @@ def main():
         # Log summary using correct function signature
         total_resources = len(controls)
         utils.log_export_summary('Control Tower Resources', total_resources, filename)
-    else:
+    elif not failed_scopes:
+        # Genuinely empty: every scope succeeded and there is simply
+        # nothing to export (should not normally happen since Summary is
+        # always populated, but guarded defensively).
         utils.log_warning("No Control Tower data found to export")
+    else:
+        utils.log_error("Control Tower export failed to produce any data.")
+
+    # If any primary scope failed, make it loud: write a marker and exit
+    # non-zero, even though a partial export (Summary + whatever succeeded)
+    # was written. A partial export that looks complete is exactly the
+    # failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'controltower', failed_scopes)
+        print(
+            "\nERROR: Control Tower export completed with failures — data is "
+            "incomplete. See the *-controltower-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("Control Tower export completed successfully")
 

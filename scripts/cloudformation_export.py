@@ -40,58 +40,108 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CloudFormation stacks and resources to Excel")
 
-@utils.aws_error_handler("Collecting CloudFormation stacks", default_return=[])
-def collect_stacks(region: str) -> list[dict[str, Any]]:
-    """Collect all CloudFormation stacks in a region."""
+def _build_stack_row(stack: dict, region: str) -> dict[str, Any]:
+    """Build a single CloudFormation stack export row from a describe_stacks entry."""
+    # Extract parameters
+    parameters = []
+    for param in stack.get('Parameters', []):
+        parameters.append(f"{param.get('ParameterKey')}={param.get('ParameterValue')}")
+
+    # Extract outputs
+    outputs = []
+    for output in stack.get('Outputs', []):
+        outputs.append(f"{output.get('OutputKey')}={output.get('OutputValue')}")
+
+    # Extract tags
+    tags = []
+    for tag in stack.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    # Extract capabilities
+    capabilities = ', '.join(stack.get('Capabilities', []))
+
+    return {
+        'Region': region,
+        'StackName': stack.get('StackName', 'N/A'),
+        'StackId': stack.get('StackId', 'N/A'),
+        'Status': stack.get('StackStatus', 'N/A'),
+        'StatusReason': stack.get('StackStatusReason', 'N/A'),
+        'CreationTime': stack.get('CreationTime'),
+        'LastUpdatedTime': stack.get('LastUpdatedTime', 'N/A'),
+        'DriftStatus': stack.get('DriftInformation', {}).get('StackDriftStatus', 'NOT_CHECKED'),
+        'LastDriftCheckTime': stack.get('DriftInformation', {}).get('LastCheckTimestamp', 'N/A'),
+        'TerminationProtection': stack.get('EnableTerminationProtection', False),
+        'RoleARN': stack.get('RoleARN', 'N/A'),
+        'TemplateDescription': stack.get('Description', 'N/A'),
+        'Capabilities': capabilities if capabilities else 'N/A',
+        'Parameters': ', '.join(parameters) if parameters else 'N/A',
+        'Outputs': ', '.join(outputs) if outputs else 'N/A',
+        'Tags': ', '.join(tags) if tags else 'N/A',
+        'DisableRollback': stack.get('DisableRollback', False),
+        'NotificationARNs': ', '.join(stack.get('NotificationARNs', [])) if stack.get('NotificationARNs') else 'N/A',
+        'TimeoutInMinutes': stack.get('TimeoutInMinutes', 'N/A'),
+        'ParentId': stack.get('ParentId', 'N/A'),
+        'RootId': stack.get('RootId', 'N/A'),
+    }
+
+
+def _scan_stacks_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect CloudFormation stacks from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no stacks" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed stacks are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     cfn = utils.get_boto3_client('cloudformation', region_name=region)
     stacks = []
 
     paginator = cfn.get_paginator('describe_stacks')
     for page in paginator.paginate():
         for stack in page.get('Stacks', []):
-            # Extract parameters
-            parameters = []
-            for param in stack.get('Parameters', []):
-                parameters.append(f"{param.get('ParameterKey')}={param.get('ParameterValue')}")
-
-            # Extract outputs
-            outputs = []
-            for output in stack.get('Outputs', []):
-                outputs.append(f"{output.get('OutputKey')}={output.get('OutputValue')}")
-
-            # Extract tags
-            tags = []
-            for tag in stack.get('Tags', []):
-                tags.append(f"{tag.get('Key')}={tag.get('Value')}")
-
-            # Extract capabilities
-            capabilities = ', '.join(stack.get('Capabilities', []))
-
-            stacks.append({
-                'Region': region,
-                'StackName': stack.get('StackName', 'N/A'),
-                'StackId': stack.get('StackId', 'N/A'),
-                'Status': stack.get('StackStatus', 'N/A'),
-                'StatusReason': stack.get('StackStatusReason', 'N/A'),
-                'CreationTime': stack.get('CreationTime'),
-                'LastUpdatedTime': stack.get('LastUpdatedTime', 'N/A'),
-                'DriftStatus': stack.get('DriftInformation', {}).get('StackDriftStatus', 'NOT_CHECKED'),
-                'LastDriftCheckTime': stack.get('DriftInformation', {}).get('LastCheckTimestamp', 'N/A'),
-                'TerminationProtection': stack.get('EnableTerminationProtection', False),
-                'RoleARN': stack.get('RoleARN', 'N/A'),
-                'TemplateDescription': stack.get('Description', 'N/A'),
-                'Capabilities': capabilities if capabilities else 'N/A',
-                'Parameters': ', '.join(parameters) if parameters else 'N/A',
-                'Outputs': ', '.join(outputs) if outputs else 'N/A',
-                'Tags': ', '.join(tags) if tags else 'N/A',
-                'DisableRollback': stack.get('DisableRollback', False),
-                'NotificationARNs': ', '.join(stack.get('NotificationARNs', [])) if stack.get('NotificationARNs') else 'N/A',
-                'TimeoutInMinutes': stack.get('TimeoutInMinutes', 'N/A'),
-                'ParentId': stack.get('ParentId', 'N/A'),
-                'RootId': stack.get('RootId', 'N/A'),
-            })
+            try:
+                stacks.append(_build_stack_row(stack, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed CloudFormation stack in {region}: "
+                    f"{stack.get('StackName', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return stacks
+
+
+def collect_stacks(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect CloudFormation stacks across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(stacks, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_stacks_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_stacks = [stack for result in region_results for stack in result]
+    return all_stacks, failed_regions
 
 
 @utils.aws_error_handler("Collecting stack resources", default_return=[])
@@ -194,27 +244,29 @@ def collect_stackset_instances(region: str, stackset_name: str) -> list[dict[str
 
 def _run_export(account_id: str, account_name: str, regions: list) -> None:
     """Collect CloudFormation data and write the Excel export."""
-    all_stacks = []
     all_resources = []
     all_stacksets = []
     all_stackset_instances = []
 
+    # PRIMARY scope: CloudFormation stacks (concurrent, failure-tracking — a
+    # region whose collection errors must never be reported as "no stacks").
+    utils.log_info(f"Collecting CloudFormation stacks across {len(regions)} region(s)...")
+    all_stacks, failed_regions = collect_stacks(regions)
+    utils.log_info(f"  Found {len(all_stacks)} stack(s) total")
+
+    # Enrichment: resources for each stack (graceful — a stack that can't be
+    # enumerated for resources does not invalidate the stack itself).
+    for stack in all_stacks:
+        region = stack['Region']
+        stack_name = stack['StackName']
+        resources = collect_stack_resources(region, stack_name)
+        all_resources.extend(resources)
+
+    # Collect StackSets and their instances (unaffected by this fix — kept as
+    # a graceful, per-region best-effort scan).
     for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region for StackSets: {region}")
 
-        # Collect stacks
-        stacks = collect_stacks(region)
-        if stacks:
-            utils.log_info(f"  Found {len(stacks)} stack(s)")
-            all_stacks.extend(stacks)
-
-            # Collect resources for each stack
-            for stack in stacks:
-                stack_name = stack['StackName']
-                resources = collect_stack_resources(region, stack_name)
-                all_resources.extend(resources)
-
-        # Collect StackSets
         stacksets = collect_stacksets(region)
         if stacksets:
             utils.log_info(f"  Found {len(stacksets)} StackSet(s)")
@@ -282,6 +334,18 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     utils.log_info(f"  StackSet Instances: {len(all_stackset_instances)}")
 
     utils.log_success("CloudFormation export completed successfully!")
+
+    # If ANY region failed the primary stacks scope collection, make it loud:
+    # write a marker and exit non-zero, even though the forced Summary sheet
+    # means a workbook always lands. A complete-looking file that silently
+    # hides missing regions is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'cloudformation', failed_regions)
+        print(
+            "\nERROR: CloudFormation export completed with failures — data is incomplete. "
+            "See the *-cloudformation-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

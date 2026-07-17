@@ -27,82 +27,122 @@ except ImportError:
 args = utils.parse_script_args("Export CodeBuild projects and builds to Excel")
 
 def _scan_projects_region(region: str) -> list[dict[str, Any]]:
-    """Scan a single region for CodeBuild projects."""
+    """
+    Collect CodeBuild projects from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no CodeBuild projects" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed projects are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     projects_data = []
+    codebuild_client = utils.get_boto3_client('codebuild', region_name=region)
 
-    try:
-        codebuild_client = utils.get_boto3_client('codebuild', region_name=region)
+    # List all projects
+    paginator = codebuild_client.get_paginator('list_projects')
+    project_names = []
+    for page in paginator.paginate():
+        project_names.extend(page.get('projects', []))
 
-        # List all projects
-        paginator = codebuild_client.get_paginator('list_projects')
-        project_names = []
-        for page in paginator.paginate():
-            project_names.extend(page.get('projects', []))
+    # Batch get project details (100 at a time)
+    for i in range(0, len(project_names), 100):
+        batch = project_names[i:i+100]
+        projects_response = codebuild_client.batch_get_projects(names=batch)
+        projects = projects_response.get('projects', [])
 
-        # Batch get project details (100 at a time)
-        for i in range(0, len(project_names), 100):
-            batch = project_names[i:i+100]
-            projects_response = codebuild_client.batch_get_projects(names=batch)
-            projects = projects_response.get('projects', [])
-
-            for project in projects:
-                created = project.get('created', 'N/A')
-                if created != 'N/A':
-                    created = created.strftime('%Y-%m-%d %H:%M:%S')
-                last_modified = project.get('lastModified', 'N/A')
-                if last_modified != 'N/A':
-                    last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-
-                source = project.get('source', {})
-                environment = project.get('environment', {})
-                artifacts = project.get('artifacts', {})
-                cache = project.get('cache', {})
-                vpc_config = project.get('vpcConfig', {})
-                vpc_id = vpc_config.get('vpcId', 'N/A')
-                logs_config = project.get('logsConfig', {})
-
-                projects_data.append({
-                    'Region': region,
-                    'Project Name': project.get('name', 'N/A'),
-                    'ARN': project.get('arn', 'N/A'),
-                    'Description': project.get('description', 'N/A'),
-                    'Created': created,
-                    'Last Modified': last_modified,
-                    'Source Type': source.get('type', 'N/A'),
-                    'Source Location': source.get('location', 'N/A'),
-                    'Buildspec': source.get('buildspec', 'Inline/Default'),
-                    'Git Clone Depth': source.get('gitCloneDepth', 'N/A'),
-                    'Environment Type': environment.get('type', 'N/A'),
-                    'Compute Type': environment.get('computeType', 'N/A'),
-                    'Image': environment.get('image', 'N/A'),
-                    'Privileged Mode': environment.get('privilegedMode', False),
-                    'Service Role': project.get('serviceRole', 'N/A'),
-                    'Artifacts Type': artifacts.get('type', 'N/A'),
-                    'Artifacts Location': artifacts.get('location', 'N/A'),
-                    'Cache Type': cache.get('type', 'NO_CACHE'),
-                    'Cache Location': cache.get('location', 'N/A'),
-                    'VPC Enabled': 'Yes' if vpc_id != 'N/A' else 'No',
-                    'VPC ID': vpc_id,
-                    'Timeout (minutes)': project.get('timeoutInMinutes', 'N/A'),
-                    'Queued Timeout (minutes)': project.get('queuedTimeoutInMinutes', 'N/A'),
-                    'Badge Enabled': project.get('badge', {}).get('badgeEnabled', False),
-                    'CloudWatch Logs': logs_config.get('cloudWatchLogs', {}).get('status', 'DISABLED'),
-                    'S3 Logs': logs_config.get('s3Logs', {}).get('status', 'DISABLED'),
-                    'Webhook URL': project.get('webhook', {}).get('url', 'N/A')
-                })
-    except Exception as e:
-        utils.log_error(f"Error scanning CodeBuild projects in {region}", e)
+        for project in projects:
+            try:
+                projects_data.append(_build_project_row(project, region))
+            except Exception as e:
+                # One malformed project is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed CodeBuild project in {region}: "
+                    f"{project.get('name', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return projects_data
 
 
-@utils.aws_error_handler("Collecting CodeBuild projects", default_return=[])
-def collect_projects(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect CodeBuild project information from AWS regions."""
-    results = utils.scan_regions_concurrent(regions, _scan_projects_region)
-    all_projects = [p for result in results for p in result]
+def _build_project_row(project: dict, region: str) -> dict[str, Any]:
+    """Build a single CodeBuild project export row from a batch_get_projects response."""
+    created = project.get('created', 'N/A')
+    if created != 'N/A':
+        created = created.strftime('%Y-%m-%d %H:%M:%S')
+    last_modified = project.get('lastModified', 'N/A')
+    if last_modified != 'N/A':
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
+
+    source = project.get('source', {})
+    environment = project.get('environment', {})
+    artifacts = project.get('artifacts', {})
+    cache = project.get('cache', {})
+    vpc_config = project.get('vpcConfig', {})
+    vpc_id = vpc_config.get('vpcId', 'N/A')
+    logs_config = project.get('logsConfig', {})
+
+    return {
+        'Region': region,
+        'Project Name': project.get('name', 'N/A'),
+        'ARN': project.get('arn', 'N/A'),
+        'Description': project.get('description', 'N/A'),
+        'Created': created,
+        'Last Modified': last_modified,
+        'Source Type': source.get('type', 'N/A'),
+        'Source Location': source.get('location', 'N/A'),
+        'Buildspec': source.get('buildspec', 'Inline/Default'),
+        'Git Clone Depth': source.get('gitCloneDepth', 'N/A'),
+        'Environment Type': environment.get('type', 'N/A'),
+        'Compute Type': environment.get('computeType', 'N/A'),
+        'Image': environment.get('image', 'N/A'),
+        'Privileged Mode': environment.get('privilegedMode', False),
+        'Service Role': project.get('serviceRole', 'N/A'),
+        'Artifacts Type': artifacts.get('type', 'N/A'),
+        'Artifacts Location': artifacts.get('location', 'N/A'),
+        'Cache Type': cache.get('type', 'NO_CACHE'),
+        'Cache Location': cache.get('location', 'N/A'),
+        'VPC Enabled': 'Yes' if vpc_id != 'N/A' else 'No',
+        'VPC ID': vpc_id,
+        'Timeout (minutes)': project.get('timeoutInMinutes', 'N/A'),
+        'Queued Timeout (minutes)': project.get('queuedTimeoutInMinutes', 'N/A'),
+        'Badge Enabled': project.get('badge', {}).get('badgeEnabled', False),
+        'CloudWatch Logs': logs_config.get('cloudWatchLogs', {}).get('status', 'DISABLED'),
+        'S3 Logs': logs_config.get('s3Logs', {}).get('status', 'DISABLED'),
+        'Webhook URL': project.get('webhook', {}).get('url', 'N/A')
+    }
+
+
+def collect_projects(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect CodeBuild project information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(projects, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_projects_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_projects = [p for result in region_results for p in result]
     utils.log_info(f"Collected {len(all_projects)} CodeBuild projects")
-    return all_projects
+    return all_projects, failed_regions
 
 
 def _scan_builds_region(region: str) -> list[dict[str, Any]]:
@@ -340,7 +380,9 @@ def main():
     # Collect data
     print("\nCollecting AWS CodeBuild data...")
 
-    projects = collect_projects(regions)
+    # STEP 1: Collect CodeBuild projects (primary scope — region failures
+    # must propagate as failed_regions, never collapse into "empty").
+    projects, failed_regions = collect_projects(regions)
     builds = collect_builds(regions)
     report_groups = collect_report_groups(regions)
     summary = generate_summary(projects, builds, report_groups)
@@ -381,6 +423,19 @@ def main():
         # Log summary
     else:
         utils.log_warning("No AWS CodeBuild data found to export")
+
+    # If ANY region failed the primary CodeBuild projects scope collection,
+    # make it loud: write a marker and exit non-zero, even though the
+    # always-written Summary sheet means a workbook still landed. A partial
+    # export that looks complete is exactly the failure mode this guards
+    # against (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'codebuild', failed_regions)
+        print(
+            "\nERROR: CodeBuild export completed with failures — data is incomplete. "
+            "See the *-codebuild-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("AWS CodeBuild export completed successfully")
 
