@@ -52,81 +52,117 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Direct Connect connections and virtual interfaces to Excel")
 
 
+def _build_connection_row(conn: dict, region: str) -> dict[str, Any]:
+    """Build a single Direct Connect connection export row."""
+    connection_id = conn.get('connectionId', 'N/A')
+
+    # Extract connection details
+    connection_name = conn.get('connectionName', 'N/A')
+    connection_state = conn.get('connectionState', 'N/A')
+    location = conn.get('location', 'N/A')
+    bandwidth = conn.get('bandwidth', 'N/A')
+    vlan = conn.get('vlan', 'N/A')
+    partner_name = conn.get('partnerName', 'N/A')
+    lag_id = conn.get('lagId', 'N/A')
+    aws_device = conn.get('awsDevice', 'N/A')
+    aws_device_v2 = conn.get('awsDeviceV2', 'N/A')
+    provider_name = conn.get('providerName', 'N/A')
+    owner_account = conn.get('ownerAccount', 'N/A')
+    has_logical_redundancy = conn.get('hasLogicalRedundancy', 'unknown')
+    jumbo_frame_capable = conn.get('jumboFrameCapable', False)
+    aws_logical_device_id = conn.get('awsLogicalDeviceId', 'N/A')
+
+    # Get tags
+    tags = conn.get('tags', [])
+    tag_string = ', '.join([f"{tag.get('key', '')}={tag.get('value', '')}" for tag in tags]) if tags else 'N/A'
+
+    return {
+        'Region': region,
+        'Connection ID': connection_id,
+        'Connection Name': connection_name,
+        'State': connection_state,
+        'Location': location,
+        'Bandwidth': bandwidth,
+        'VLAN': vlan,
+        'Partner Name': partner_name,
+        'Provider Name': provider_name,
+        'LAG ID': lag_id,
+        'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
+        'AWS Logical Device ID': aws_logical_device_id,
+        'Owner Account': owner_account,
+        'Has Logical Redundancy': has_logical_redundancy,
+        'Jumbo Frame Capable': jumbo_frame_capable,
+        'Tags': tag_string
+    }
+
+
 def _scan_connections_region(region: str) -> list[dict[str, Any]]:
-    """Scan Direct Connect connections in a single region."""
+    """
+    Scan Direct Connect connections in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Direct Connect connections"
+    (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed connections are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
     regional_connections = []
 
-    try:
-        dx = utils.get_boto3_client('directconnect', region_name=region)
+    dx = utils.get_boto3_client('directconnect', region_name=region)
 
-        # Get Direct Connect connections
-        response = dx.describe_connections()
-        connections = response.get('connections', [])
+    # Get Direct Connect connections
+    response = dx.describe_connections()
+    connections = response.get('connections', [])
 
-        for conn in connections:
-            connection_id = conn.get('connectionId', 'N/A')
+    for conn in connections:
+        try:
+            regional_connections.append(_build_connection_row(conn, region))
+        except Exception as e:
+            # One malformed connection is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed Direct Connect connection in {region}: "
+                f"{conn.get('connectionId', '<unknown>')}",
+                e,
+            )
+            continue
 
-            # Extract connection details
-            connection_name = conn.get('connectionName', 'N/A')
-            connection_state = conn.get('connectionState', 'N/A')
-            location = conn.get('location', 'N/A')
-            bandwidth = conn.get('bandwidth', 'N/A')
-            vlan = conn.get('vlan', 'N/A')
-            partner_name = conn.get('partnerName', 'N/A')
-            lag_id = conn.get('lagId', 'N/A')
-            aws_device = conn.get('awsDevice', 'N/A')
-            aws_device_v2 = conn.get('awsDeviceV2', 'N/A')
-            provider_name = conn.get('providerName', 'N/A')
-            owner_account = conn.get('ownerAccount', 'N/A')
-            has_logical_redundancy = conn.get('hasLogicalRedundancy', 'unknown')
-            jumbo_frame_capable = conn.get('jumboFrameCapable', False)
-            aws_logical_device_id = conn.get('awsLogicalDeviceId', 'N/A')
-
-            # Get tags
-            tags = conn.get('tags', [])
-            tag_string = ', '.join([f"{tag['key']}={tag['value']}" for tag in tags]) if tags else 'N/A'
-
-            regional_connections.append({
-                'Region': region,
-                'Connection ID': connection_id,
-                'Connection Name': connection_name,
-                'State': connection_state,
-                'Location': location,
-                'Bandwidth': bandwidth,
-                'VLAN': vlan,
-                'Partner Name': partner_name,
-                'Provider Name': provider_name,
-                'LAG ID': lag_id,
-                'AWS Device': aws_device_v2 if aws_device_v2 != 'N/A' else aws_device,
-                'AWS Logical Device ID': aws_logical_device_id,
-                'Owner Account': owner_account,
-                'Has Logical Redundancy': has_logical_redundancy,
-                'Jumbo Frame Capable': jumbo_frame_capable,
-                'Tags': tag_string
-            })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting Direct Connect connections in {region}", e)
-
+    print(f"  Found {len(connections)} Direct Connect connections")
     return regional_connections
 
 
-@utils.aws_error_handler("Collecting Direct Connect connections", default_return=[])
-def collect_connections(regions: list[str]) -> list[dict[str, Any]]:
+def collect_connections(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Direct Connect connection information from AWS regions.
+    Collect Direct Connect connection information across regions, surfacing
+    failures.
 
-    Args:
-        regions: List of AWS regions to scan
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Returns:
-        list: List of dictionaries with connection information
+        tuple: ``(connections, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING DIRECT CONNECT CONNECTIONS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_connections_region)
-    all_connections = [conn for result in results for conn in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_connections_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_connections = [conn for result in region_results for conn in result]
     utils.log_success(f"Total Direct Connect connections collected: {len(all_connections)}")
-    return all_connections
+    return all_connections, failed_regions
 
 
 def _scan_virtual_interfaces_region(region: str) -> list[dict[str, Any]]:
@@ -619,12 +655,14 @@ def export_directconnect_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Connections
-    connections = collect_connections(regions)
+    # STEP 1: Collect Connections (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    connections, failed_regions = collect_connections(regions)
     if connections:
         data_frames['Connections'] = pd.DataFrame(connections)
 
-    # STEP 2: Collect Virtual Interfaces
+    # STEP 2: Collect Virtual Interfaces (enrichment — degrades gracefully;
+    # a region-level failure here does not fail the whole export).
     vifs = collect_virtual_interfaces(regions)
     if vifs:
         data_frames['Virtual Interfaces'] = pd.DataFrame(vifs)
@@ -649,50 +687,64 @@ def export_directconnect_data(account_id: str, account_name: str):
     if tgw_associations:
         data_frames['TGW Associations'] = pd.DataFrame(tgw_associations)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure
+    # blast-radius audit).
+    if data_frames:
+        # STEP 7: Create Summary
+        summary_data = create_summary(data_frames)
+        if summary_data:
+            data_frames['Summary'] = pd.DataFrame(summary_data)
+
+        # STEP 8: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 9: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'directconnect',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Direct Connect data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                print("\n=== EXPORT SUMMARY ===")
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Direct Connect data was collected. Nothing to export.")
         print("\nNo Direct Connect resources found in the selected region(s).")
         print("This is normal if Direct Connect is not configured in this account.")
-        return
 
-    # STEP 7: Create Summary
-    summary_data = create_summary(data_frames)
-    if summary_data:
-        data_frames['Summary'] = pd.DataFrame(summary_data)
-
-    # STEP 8: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 9: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'directconnect',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Direct Connect data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            print("\n=== EXPORT SUMMARY ===")
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the Direct Connect Connections scope collection,
+    # make it loud: write a marker and exit non-zero, even if some data (from
+    # this scope or the enrichment sheets) was exported. A partial export
+    # that looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'directconnect', failed_regions)
+        print(
+            "\nERROR: Direct Connect export completed with failures — data is incomplete. "
+            "See the *-directconnect-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

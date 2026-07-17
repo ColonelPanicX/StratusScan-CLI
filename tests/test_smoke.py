@@ -69,12 +69,14 @@ _EXCLUDED = {
     #   accessanalyzer:ListAnalyzers        -> 404 "Not yet implemented"
     #   detective:ListGraphs                -> 404 "Not yet implemented"
     #   config:DescribeConformancePacks     -> NotImplementedError (one of its scopes)
+    #   globalaccelerator:ListAccelerators  -> 404 "Not yet implemented"
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
     "access_analyzer_export.py",
     "detective_export.py",
     "config_export.py",
+    "globalaccelerator_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(

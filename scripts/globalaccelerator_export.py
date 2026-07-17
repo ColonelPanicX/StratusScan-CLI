@@ -57,13 +57,83 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Global Accelerator accelerators to Excel")
 
 
-@utils.aws_error_handler("Collecting Global Accelerators", default_return=[])
+def _build_accelerator_row(acc: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single Global Accelerator.
+
+    Extracted so the per-accelerator processing can be wrapped in
+    try/except by the caller: a malformed accelerator entry is logged and
+    skipped rather than discarding the whole account-scope collection.
+    Every field is read with ``.get()`` and a safe default for the same
+    reason.
+
+    Args:
+        acc: A single Accelerators entry from list_accelerators.
+
+    Returns:
+        dict: The assembled accelerator row.
+    """
+    acc_arn = acc.get('AcceleratorArn', 'N/A')
+    print(f"  Processing accelerator: {acc.get('Name', 'N/A')}")
+
+    # Extract accelerator details
+    name = acc.get('Name', 'N/A')
+    enabled = acc.get('Enabled', False)
+    status = acc.get('Status', 'N/A')
+    ip_address_type = acc.get('IpAddressType', 'N/A')
+    dns_name = acc.get('DnsName', 'N/A')
+    created_time = acc.get('CreatedTime', '')
+    last_modified_time = acc.get('LastModifiedTime', '')
+
+    # Format timestamps
+    if created_time:
+        created_time = created_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_time, datetime.datetime) else str(created_time)
+    if last_modified_time:
+        last_modified_time = last_modified_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_modified_time, datetime.datetime) else str(last_modified_time)
+
+    # Get IP addresses
+    ip_sets = acc.get('IpSets', [])
+    ip_addresses = []
+    for ip_set in ip_sets:
+        ip_addresses.extend(ip_set.get('IpAddresses', []))
+
+    ip_addresses_str = ', '.join(ip_addresses) if ip_addresses else 'N/A'
+
+    return {
+        'Accelerator ARN': acc_arn,
+        'Name': name,
+        'Status': status,
+        'Enabled': enabled,
+        'IP Address Type': ip_address_type,
+        'IP Addresses': ip_addresses_str,
+        'DNS Name': dns_name,
+        'Created Time': created_time,
+        'Last Modified Time': last_modified_time
+    }
+
+
 def collect_accelerators() -> list[dict[str, Any]]:
     """
     Collect Global Accelerator information.
 
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no accelerators configured), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Global Accelerator is a global, account-scope service (control
+    plane in us-west-2, no per-region scan -- see scripts/shield_export.py
+    for the account-scope reference pattern this follows). Account-scope
+    failures (client creation, pagination) are allowed to raise so the
+    caller (export_globalaccelerator_data) can record this scope as *failed*
+    rather than *empty*. Per-accelerator errors are contained internally
+    (logged and skipped) via ``_build_accelerator_row``.
+
     Returns:
         list: List of dictionaries with accelerator information
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     print("\n=== COLLECTING GLOBAL ACCELERATORS ===")
     all_accelerators = []
@@ -72,59 +142,37 @@ def collect_accelerators() -> list[dict[str, Any]]:
     region = 'us-west-2'
     print(f"\nQuerying Global Accelerators (global service via {region})")
 
-    try:
-        globalaccelerator = utils.get_boto3_client('globalaccelerator', region_name=region)
+    globalaccelerator = utils.get_boto3_client('globalaccelerator', region_name=region)
 
-        # Get accelerators
-        paginator = globalaccelerator.get_paginator('list_accelerators')
+    # Get accelerators
+    paginator = globalaccelerator.get_paginator('list_accelerators')
 
-        for page in paginator.paginate():
-            accelerators = page.get('Accelerators', [])
+    total = 0
+    skipped = 0
 
-            for acc in accelerators:
-                acc_arn = acc.get('AcceleratorArn', 'N/A')
-                print(f"  Processing accelerator: {acc.get('Name', 'N/A')}")
+    for page in paginator.paginate():
+        accelerators = page.get('Accelerators', [])
+        total += len(accelerators)
 
-                # Extract accelerator details
-                name = acc.get('Name', 'N/A')
-                enabled = acc.get('Enabled', False)
-                status = acc.get('Status', 'N/A')
-                ip_address_type = acc.get('IpAddressType', 'N/A')
-                dns_name = acc.get('DnsName', 'N/A')
-                created_time = acc.get('CreatedTime', '')
-                last_modified_time = acc.get('LastModifiedTime', '')
+        # Process each accelerator. One malformed accelerator must not sink
+        # the whole account-scope collection, so each is built inside
+        # try/except; failures are logged and skipped.
+        for acc in accelerators:
+            try:
+                all_accelerators.append(_build_accelerator_row(acc))
+            except Exception as e:
+                skipped += 1
+                acc_name = acc.get('Name', 'Unknown') if isinstance(acc, dict) else 'Unknown'
+                utils.log_error(f"Skipping Global Accelerator '{acc_name}' due to a processing error", e)
+                continue
 
-                # Format timestamps
-                if created_time:
-                    created_time = created_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_time, datetime.datetime) else str(created_time)
-                if last_modified_time:
-                    last_modified_time = last_modified_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_modified_time, datetime.datetime) else str(last_modified_time)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total} Global Accelerator(s) were skipped due to "
+            "processing errors (see log above); the remaining accelerators were still collected."
+        )
 
-                # Get IP addresses
-                ip_sets = acc.get('IpSets', [])
-                ip_addresses = []
-                for ip_set in ip_sets:
-                    ip_addresses.extend(ip_set.get('IpAddresses', []))
-
-                ip_addresses_str = ', '.join(ip_addresses) if ip_addresses else 'N/A'
-
-                all_accelerators.append({
-                    'Accelerator ARN': acc_arn,
-                    'Name': name,
-                    'Status': status,
-                    'Enabled': enabled,
-                    'IP Address Type': ip_address_type,
-                    'IP Addresses': ip_addresses_str,
-                    'DNS Name': dns_name,
-                    'Created Time': created_time,
-                    'Last Modified Time': last_modified_time
-                })
-
-        print(f"  Found {len(all_accelerators)} accelerators")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting Global Accelerators from {region}", e)
-
+    print(f"  Found {len(all_accelerators)} accelerators")
     utils.log_success(f"Total accelerators collected: {len(all_accelerators)}")
     return all_accelerators
 
@@ -613,6 +661,17 @@ def export_globalaccelerator_data(account_id: str, account_name: str):
     """
     Export Global Accelerator information to an Excel file.
 
+    Global Accelerator is a global, account-scope service (not multi-region),
+    so ``collect_accelerators()`` failures are tracked via a local
+    ``failed_scopes`` list rather than ``utils.scan_regions_concurrent`` (see
+    scripts/shield_export.py for the account-scope reference pattern, and
+    scripts/lambda_export.py for this finalize shape). A real API error on
+    the accelerators scope is exported as a partial result (if any other
+    data was collected) and always surfaced via
+    ``utils.report_collection_failures`` + a non-zero exit -- it must never
+    be silently collapsed into "no accelerators" (07.15.2026 / 07.16.2026
+    audits).
+
     Args:
         account_id: The AWS account ID
         account_name: The AWS account name
@@ -638,99 +697,129 @@ def export_globalaccelerator_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Standard Accelerators
-    accelerators = collect_accelerators()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect Standard Accelerators (PRIMARY scope -- a real API
+    # error here must propagate to failed_scopes, never collapse into an
+    # empty list that reads as "no accelerators configured").
+    try:
+        accelerators = collect_accelerators()
+    except Exception as e:
+        failed_scopes.append(('accelerators', str(e)))
+        utils.log_error(f"Global Accelerator collection failed: {e}")
+        accelerators = []
+
     if accelerators:
         data_frames['Accelerators'] = pd.DataFrame(accelerators)
 
         # Get ARNs for further queries
-        accelerator_arns = [acc['Accelerator ARN'] for acc in accelerators]
+        accelerator_arns = [acc.get('Accelerator ARN', '') for acc in accelerators if acc.get('Accelerator ARN')]
 
-        # STEP 2: Collect Listeners
+        # STEP 2: Collect Listeners (enrichment -- degrades gracefully)
         listeners = collect_listeners(accelerator_arns)
         if listeners:
             data_frames['Listeners'] = pd.DataFrame(listeners)
 
             # Get listener ARNs
-            listener_arns = [listener['Listener ARN'] for listener in listeners]
+            listener_arns = [listener.get('Listener ARN', '') for listener in listeners if listener.get('Listener ARN')]
 
-            # STEP 3: Collect Endpoint Groups
+            # STEP 3: Collect Endpoint Groups (enrichment -- degrades gracefully)
             endpoint_groups = collect_endpoint_groups(listener_arns)
             if endpoint_groups:
                 data_frames['Endpoint Groups'] = pd.DataFrame(endpoint_groups)
 
                 # Get endpoint group ARNs
-                endpoint_group_arns = [eg['Endpoint Group ARN'] for eg in endpoint_groups]
+                endpoint_group_arns = [eg.get('Endpoint Group ARN', '') for eg in endpoint_groups if eg.get('Endpoint Group ARN')]
 
-                # STEP 4: Collect Endpoints
+                # STEP 4: Collect Endpoints (enrichment -- degrades gracefully)
                 endpoints = collect_endpoints(endpoint_group_arns)
                 if endpoints:
                     data_frames['Endpoints'] = pd.DataFrame(endpoints)
 
-    # STEP 5: Collect Custom Routing Accelerators
+    # STEP 5: Collect Custom Routing Accelerators (enrichment -- degrades gracefully)
     custom_accelerators = collect_custom_routing_accelerators()
     if custom_accelerators:
         data_frames['Custom Routing Accelerators'] = pd.DataFrame(custom_accelerators)
 
         # Get custom routing accelerator ARNs
-        custom_accelerator_arns = [acc['Accelerator ARN'] for acc in custom_accelerators]
+        custom_accelerator_arns = [acc.get('Accelerator ARN', '') for acc in custom_accelerators if acc.get('Accelerator ARN')]
 
-        # STEP 6: Collect Custom Routing Listeners
+        # STEP 6: Collect Custom Routing Listeners (enrichment -- degrades gracefully)
         custom_listeners = collect_custom_routing_listeners(custom_accelerator_arns)
         if custom_listeners:
             data_frames['Custom Routing Listeners'] = pd.DataFrame(custom_listeners)
 
             # Get custom routing listener ARNs
-            custom_listener_arns = [listener['Listener ARN'] for listener in custom_listeners]
+            custom_listener_arns = [listener.get('Listener ARN', '') for listener in custom_listeners if listener.get('Listener ARN')]
 
-            # STEP 7: Collect Custom Routing Endpoint Groups
+            # STEP 7: Collect Custom Routing Endpoint Groups (enrichment -- degrades gracefully)
             custom_endpoint_groups = collect_custom_routing_endpoint_groups(custom_listener_arns)
             if custom_endpoint_groups:
                 data_frames['Custom Routing Endpoint Groups'] = pd.DataFrame(custom_endpoint_groups)
 
-    # Check if we have any data
+    # Check if we have any data. Export whatever succeeded -- a partial
+    # export is required even when the accelerators scope failed (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
     if not data_frames:
-        utils.log_warning("No Global Accelerator data was collected. Nothing to export.")
-        print("\nNo Global Accelerator resources found in this account.")
-        print("This is normal if Global Accelerator is not configured.")
-        return
-
-    # STEP 8: Create Summary
-    summary_data = create_summary(data_frames)
-    if summary_data:
-        data_frames['Summary'] = pd.DataFrame(summary_data)
-
-    # STEP 9: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 10: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'globalaccelerator',
-        '',
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Global Accelerator data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-
-            # Summary of exported data
-            print("\n=== EXPORT SUMMARY ===")
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
+        if failed_scopes:
+            utils.log_error("Global Accelerator collection failed; no data was exported.")
         else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
+            # Genuinely empty: the accelerators scope succeeded and there is
+            # simply nothing configured.
+            utils.log_warning("No Global Accelerator data was collected. Nothing to export.")
+            print("\nNo Global Accelerator resources found in this account.")
+            print("This is normal if Global Accelerator is not configured.")
+    else:
+        # STEP 8: Create Summary
+        summary_data = create_summary(data_frames)
+        if summary_data:
+            data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+        # STEP 9: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 10: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'globalaccelerator',
+            '',
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Global Accelerator data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+
+                # Summary of exported data
+                print("\n=== EXPORT SUMMARY ===")
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+
+    # If the accelerators scope failed, make it loud: write a marker and
+    # exit non-zero, even if a partial export (enrichment or custom routing
+    # sheets) was written. A partial export that looks complete is exactly
+    # the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'globalaccelerator', failed_scopes)
+        print(
+            "\nERROR: Global Accelerator export completed with failures — data is "
+            "incomplete. See the *-globalaccelerator-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():
