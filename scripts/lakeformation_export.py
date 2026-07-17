@@ -13,6 +13,18 @@ Features:
 - Summary: Resource counts and governance metrics
 
 Output: Excel file with 5 worksheets
+
+Silent-collection-failure contract (Tier-3 PARTIAL — see
+.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md):
+This exporter always writes a workbook, including a forced Summary sheet,
+even when some scopes failed. Each of the four scopes (resources,
+permissions, settings, tags) is region-scanned with
+``collect_failures=True``; any scope's region failures are merged into one
+combined ``failed_regions`` list. If that list is non-empty, a
+``*-lakeformation-FAILED-*.txt`` marker is written via
+``utils.report_collection_failures`` and the script exits non-zero — even
+though a (partial) workbook was already written. A genuinely empty result
+(all scopes/regions succeeded, nothing found) still exits 0 with no marker.
 """
 
 import sys
@@ -31,287 +43,396 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Lake Formation resources and permissions to Excel")
 
 def _scan_lakeformation_resources_region(region: str) -> list[dict[str, Any]]:
-    """Scan Lake Formation resources in a single region."""
+    """
+    Scan Lake Formation resources in a single region.
+
+    Does NOT swallow region-level errors: an API/permission failure must
+    propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records the region as failed instead of silently reporting "no
+    resources" (the silent-collection-loss bug).
+
+    Individual malformed resources are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_resources = []
-    try:
-        lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        next_token = None
-        while True:
-            params = {}
-            params['MaxResults'] = 50
-            if next_token:
-                params['NextToken'] = next_token
-            page = lf_client.list_resources(**params)
-            resources = page.get('ResourceInfoList', [])
+    lf_client = utils.get_boto3_client('lakeformation', region_name=region)
+    next_token = None
+    while True:
+        params = {}
+        params['MaxResults'] = 50
+        if next_token:
+            params['NextToken'] = next_token
+        page = lf_client.list_resources(**params)
+        resources = page.get('ResourceInfoList', [])
 
-            for resource in resources:
-                resource_arn = resource.get('ResourceArn', 'N/A')
-                role_arn = resource.get('RoleArn', 'N/A')
-
-                # Extract S3 path from ARN
-                if resource_arn.startswith('arn:aws:s3:::'):
-                    s3_path = resource_arn.replace('arn:aws:s3:::', 's3://')
-                else:
-                    s3_path = resource_arn
-
-                # Extract role name from ARN
-                role_name = 'N/A'
-                if role_arn != 'N/A' and '/' in role_arn:
-                    role_name = role_arn.split('/')[-1]
-
-                # Last modified timestamp
-                last_modified = resource.get('LastModified')
-                if last_modified:
-                    last_modified_str = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    last_modified_str = 'N/A'
-
-                regional_resources.append({
-                    'Region': region,
-                    'S3 Path': s3_path,
-                    'Resource ARN': resource_arn,
-                    'Role Name': role_name,
-                    'Role ARN': role_arn,
-                    'Last Modified': last_modified_str,
-                })
-            next_token = page.get('NextToken')
-            if not next_token:
-                break
-    except Exception as e:
-        utils.log_error(f"Error collecting Lake Formation resources in {region}", e)
+        for resource in resources:
+            try:
+                regional_resources.append(_build_resource_row(resource, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Lake Formation resource in {region}: "
+                    f"{resource.get('ResourceArn', '<unknown>')}",
+                    e,
+                )
+                continue
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
     return regional_resources
 
 
+def _build_resource_row(resource: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Lake Formation registered-resource export row."""
+    resource_arn = resource.get('ResourceArn', 'N/A')
+    role_arn = resource.get('RoleArn', 'N/A')
+
+    # Extract S3 path from ARN
+    if resource_arn.startswith('arn:aws:s3:::'):
+        s3_path = resource_arn.replace('arn:aws:s3:::', 's3://')
+    else:
+        s3_path = resource_arn
+
+    # Extract role name from ARN
+    role_name = 'N/A'
+    if role_arn != 'N/A' and '/' in role_arn:
+        role_name = role_arn.split('/')[-1]
+
+    # Last modified timestamp
+    last_modified = resource.get('LastModified')
+    last_modified_str = last_modified.strftime('%Y-%m-%d %H:%M:%S') if last_modified else 'N/A'
+
+    return {
+        'Region': region,
+        'S3 Path': s3_path,
+        'Resource ARN': resource_arn,
+        'Role Name': role_name,
+        'Role ARN': role_arn,
+        'Last Modified': last_modified_str,
+    }
+
+
 def _scan_lakeformation_permissions_region(region: str) -> list[dict[str, Any]]:
-    """Scan Lake Formation permissions in a single region."""
+    """
+    Scan Lake Formation permissions in a single region.
+
+    Does NOT swallow region-level errors — see
+    ``_scan_lakeformation_resources_region`` docstring for the contract.
+    Individual malformed permission entries are skipped (logged).
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_permissions = []
-    try:
-        lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        next_token = None
-        while True:
-            params = {}
-            params['MaxResults'] = 50
-            if next_token:
-                params['NextToken'] = next_token
-            page = lf_client.list_permissions(**params)
-            permissions = page.get('PrincipalResourcePermissions', [])
+    lf_client = utils.get_boto3_client('lakeformation', region_name=region)
+    next_token = None
+    while True:
+        params = {}
+        params['MaxResults'] = 50
+        if next_token:
+            params['NextToken'] = next_token
+        page = lf_client.list_permissions(**params)
+        permissions = page.get('PrincipalResourcePermissions', [])
 
-            for perm in permissions:
-                # Principal (who has access)
-                principal = perm.get('Principal', {})
-                data_lake_principal_id = principal.get('DataLakePrincipalIdentifier', 'N/A')
-
-                # Extract principal name
-                principal_name = 'N/A'
-                if data_lake_principal_id != 'N/A':
-                    if '/' in data_lake_principal_id:
-                        principal_name = data_lake_principal_id.split('/')[-1]
-                    elif ':' in data_lake_principal_id:
-                        parts = data_lake_principal_id.split(':')
-                        principal_name = parts[-1] if len(parts) > 0 else 'N/A'
-                    else:
-                        principal_name = data_lake_principal_id
-
-                # Resource (what they have access to)
-                resource = perm.get('Resource', {})
-
-                # Determine resource type and details
-                resource_type = 'Unknown'
-                resource_details = 'N/A'
-
-                if 'Catalog' in resource:
-                    resource_type = 'Catalog'
-                    resource_details = 'Data Catalog'
-                elif 'Database' in resource:
-                    resource_type = 'Database'
-                    db_name = resource.get('Database', {}).get('Name', 'N/A')
-                    resource_details = db_name
-                elif 'Table' in resource:
-                    resource_type = 'Table'
-                    table_info = resource.get('Table', {})
-                    db_name = table_info.get('DatabaseName', 'N/A')
-                    table_name = table_info.get('Name', 'N/A')
-                    resource_details = f"{db_name}.{table_name}"
-                elif 'TableWithColumns' in resource:
-                    resource_type = 'Table with Columns'
-                    table_info = resource.get('TableWithColumns', {})
-                    db_name = table_info.get('DatabaseName', 'N/A')
-                    table_name = table_info.get('Name', 'N/A')
-                    columns = table_info.get('ColumnNames', [])
-                    columns_str = ', '.join(columns[:3]) if columns else 'All'
-                    if len(columns) > 3:
-                        columns_str += f' (+{len(columns) - 3} more)'
-                    resource_details = f"{db_name}.{table_name} ({columns_str})"
-                elif 'DataLocation' in resource:
-                    resource_type = 'Data Location'
-                    resource_arn = resource.get('DataLocation', {}).get('ResourceArn', 'N/A')
-                    if resource_arn.startswith('arn:aws:s3:::'):
-                        resource_details = resource_arn.replace('arn:aws:s3:::', 's3://')
-                    else:
-                        resource_details = resource_arn
-                elif 'LFTag' in resource:
-                    resource_type = 'LF-Tag'
-                    tag_key = resource.get('LFTag', {}).get('TagKey', 'N/A')
-                    tag_values = resource.get('LFTag', {}).get('TagValues', [])
-                    tag_values_str = ', '.join(tag_values[:3]) if tag_values else 'N/A'
-                    if len(tag_values) > 3:
-                        tag_values_str += f' (+{len(tag_values) - 3} more)'
-                    resource_details = f"{tag_key}={tag_values_str}"
-
-                # Permissions granted
-                permissions_list = perm.get('Permissions', [])
-                permissions_str = ', '.join(permissions_list) if permissions_list else 'None'
-
-                # Grantable permissions
-                permissions_with_grant = perm.get('PermissionsWithGrantOption', [])
-                grant_permissions_str = ', '.join(permissions_with_grant) if permissions_with_grant else 'None'
-
-                regional_permissions.append({
-                    'Region': region,
-                    'Principal': principal_name,
-                    'Principal ARN': data_lake_principal_id,
-                    'Resource Type': resource_type,
-                    'Resource': resource_details,
-                    'Permissions': permissions_str,
-                    'Grant Permissions': grant_permissions_str,
-                })
-            next_token = page.get('NextToken')
-            if not next_token:
-                break
-    except Exception as e:
-        utils.log_error(f"Error collecting Lake Formation permissions in {region}", e)
+        for perm in permissions:
+            try:
+                regional_permissions.append(_build_permission_row(perm, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Lake Formation permission entry in {region}", e
+                )
+                continue
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
     return regional_permissions
 
 
+def _build_permission_row(perm: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Lake Formation permission export row."""
+    # Principal (who has access)
+    principal = perm.get('Principal', {})
+    data_lake_principal_id = principal.get('DataLakePrincipalIdentifier', 'N/A')
+
+    # Extract principal name
+    principal_name = 'N/A'
+    if data_lake_principal_id != 'N/A':
+        if '/' in data_lake_principal_id:
+            principal_name = data_lake_principal_id.split('/')[-1]
+        elif ':' in data_lake_principal_id:
+            parts = data_lake_principal_id.split(':')
+            principal_name = parts[-1] if len(parts) > 0 else 'N/A'
+        else:
+            principal_name = data_lake_principal_id
+
+    # Resource (what they have access to)
+    resource = perm.get('Resource', {})
+
+    # Determine resource type and details
+    resource_type = 'Unknown'
+    resource_details = 'N/A'
+
+    if 'Catalog' in resource:
+        resource_type = 'Catalog'
+        resource_details = 'Data Catalog'
+    elif 'Database' in resource:
+        resource_type = 'Database'
+        db_name = resource.get('Database', {}).get('Name', 'N/A')
+        resource_details = db_name
+    elif 'Table' in resource:
+        resource_type = 'Table'
+        table_info = resource.get('Table', {})
+        db_name = table_info.get('DatabaseName', 'N/A')
+        table_name = table_info.get('Name', 'N/A')
+        resource_details = f"{db_name}.{table_name}"
+    elif 'TableWithColumns' in resource:
+        resource_type = 'Table with Columns'
+        table_info = resource.get('TableWithColumns', {})
+        db_name = table_info.get('DatabaseName', 'N/A')
+        table_name = table_info.get('Name', 'N/A')
+        columns = table_info.get('ColumnNames', [])
+        columns_str = ', '.join(columns[:3]) if columns else 'All'
+        if len(columns) > 3:
+            columns_str += f' (+{len(columns) - 3} more)'
+        resource_details = f"{db_name}.{table_name} ({columns_str})"
+    elif 'DataLocation' in resource:
+        resource_type = 'Data Location'
+        resource_arn = resource.get('DataLocation', {}).get('ResourceArn', 'N/A')
+        if resource_arn.startswith('arn:aws:s3:::'):
+            resource_details = resource_arn.replace('arn:aws:s3:::', 's3://')
+        else:
+            resource_details = resource_arn
+    elif 'LFTag' in resource:
+        resource_type = 'LF-Tag'
+        tag_key = resource.get('LFTag', {}).get('TagKey', 'N/A')
+        tag_values = resource.get('LFTag', {}).get('TagValues', [])
+        tag_values_str = ', '.join(tag_values[:3]) if tag_values else 'N/A'
+        if len(tag_values) > 3:
+            tag_values_str += f' (+{len(tag_values) - 3} more)'
+        resource_details = f"{tag_key}={tag_values_str}"
+
+    # Permissions granted
+    permissions_list = perm.get('Permissions', [])
+    permissions_str = ', '.join(permissions_list) if permissions_list else 'None'
+
+    # Grantable permissions
+    permissions_with_grant = perm.get('PermissionsWithGrantOption', [])
+    grant_permissions_str = ', '.join(permissions_with_grant) if permissions_with_grant else 'None'
+
+    return {
+        'Region': region,
+        'Principal': principal_name,
+        'Principal ARN': data_lake_principal_id,
+        'Resource Type': resource_type,
+        'Resource': resource_details,
+        'Permissions': permissions_str,
+        'Grant Permissions': grant_permissions_str,
+    }
+
+
 def _scan_lakeformation_settings_region(region: str) -> list[dict[str, Any]]:
-    """Scan Lake Formation settings in a single region."""
+    """
+    Scan Lake Formation settings in a single region.
+
+    Does NOT swallow region-level errors — see
+    ``_scan_lakeformation_resources_region`` docstring for the contract.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_settings = []
+    lf_client = utils.get_boto3_client('lakeformation', region_name=region)
+
+    # Get data lake settings
+    settings_response = lf_client.get_data_lake_settings()
+    settings = settings_response.get('DataLakeSettings', {})
+
     try:
-        lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-
-        # Get data lake settings
-        settings_response = lf_client.get_data_lake_settings()
-        settings = settings_response.get('DataLakeSettings', {})
-
-        # Data lake admins
-        admins = settings.get('DataLakeAdmins', [])
-        admin_arns = [admin.get('DataLakePrincipalIdentifier', '') for admin in admins]
-        admin_names = []
-        for arn in admin_arns:
-            if '/' in arn:
-                admin_names.append(arn.split('/')[-1])
-            elif ':' in arn:
-                parts = arn.split(':')
-                admin_names.append(parts[-1] if len(parts) > 0 else arn)
-            else:
-                admin_names.append(arn)
-        admins_str = ', '.join(admin_names) if admin_names else 'None'
-
-        # Create database default permissions
-        create_db_default_perms = settings.get('CreateDatabaseDefaultPermissions', [])
-        create_db_perms_str = 'N/A'
-        if create_db_default_perms:
-            perms_list = []
-            for perm_entry in create_db_default_perms:
-                principal = perm_entry.get('Principal', {}).get('DataLakePrincipalIdentifier', '')
-                permissions = perm_entry.get('Permissions', [])
-                perms_list.append(f"{principal}: {', '.join(permissions)}")
-            create_db_perms_str = ' | '.join(perms_list) if perms_list else 'Default'
-
-        # Create table default permissions
-        create_table_default_perms = settings.get('CreateTableDefaultPermissions', [])
-        create_table_perms_str = 'N/A'
-        if create_table_default_perms:
-            perms_list = []
-            for perm_entry in create_table_default_perms:
-                principal = perm_entry.get('Principal', {}).get('DataLakePrincipalIdentifier', '')
-                permissions = perm_entry.get('Permissions', [])
-                perms_list.append(f"{principal}: {', '.join(permissions)}")
-            create_table_perms_str = ' | '.join(perms_list) if perms_list else 'Default'
-
-        # Trusted resource owners
-        trusted_owners = settings.get('TrustedResourceOwners', [])
-        trusted_owners_str = ', '.join(trusted_owners) if trusted_owners else 'None'
-
-        regional_settings.append({
-            'Region': region,
-            'Data Lake Admins': admins_str,
-            'Trusted Resource Owners': trusted_owners_str,
-            'Create Database Default Permissions': create_db_perms_str,
-            'Create Table Default Permissions': create_table_perms_str,
-        })
+        regional_settings.append(_build_settings_row(settings, region))
     except Exception as e:
-        utils.log_error(f"Error collecting Lake Formation settings in {region}", e)
+        utils.log_error(f"Skipping malformed Lake Formation settings in {region}", e)
+
     return regional_settings
 
 
+def _build_settings_row(settings: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build the Lake Formation data lake settings export row for a region."""
+    # Data lake admins
+    admins = settings.get('DataLakeAdmins', [])
+    admin_arns = [admin.get('DataLakePrincipalIdentifier', '') for admin in admins]
+    admin_names = []
+    for arn in admin_arns:
+        if '/' in arn:
+            admin_names.append(arn.split('/')[-1])
+        elif ':' in arn:
+            parts = arn.split(':')
+            admin_names.append(parts[-1] if len(parts) > 0 else arn)
+        else:
+            admin_names.append(arn)
+    admins_str = ', '.join(admin_names) if admin_names else 'None'
+
+    # Create database default permissions
+    create_db_default_perms = settings.get('CreateDatabaseDefaultPermissions', [])
+    create_db_perms_str = 'N/A'
+    if create_db_default_perms:
+        perms_list = []
+        for perm_entry in create_db_default_perms:
+            principal = perm_entry.get('Principal', {}).get('DataLakePrincipalIdentifier', '')
+            permissions = perm_entry.get('Permissions', [])
+            perms_list.append(f"{principal}: {', '.join(permissions)}")
+        create_db_perms_str = ' | '.join(perms_list) if perms_list else 'Default'
+
+    # Create table default permissions
+    create_table_default_perms = settings.get('CreateTableDefaultPermissions', [])
+    create_table_perms_str = 'N/A'
+    if create_table_default_perms:
+        perms_list = []
+        for perm_entry in create_table_default_perms:
+            principal = perm_entry.get('Principal', {}).get('DataLakePrincipalIdentifier', '')
+            permissions = perm_entry.get('Permissions', [])
+            perms_list.append(f"{principal}: {', '.join(permissions)}")
+        create_table_perms_str = ' | '.join(perms_list) if perms_list else 'Default'
+
+    # Trusted resource owners
+    trusted_owners = settings.get('TrustedResourceOwners', [])
+    trusted_owners_str = ', '.join(trusted_owners) if trusted_owners else 'None'
+
+    return {
+        'Region': region,
+        'Data Lake Admins': admins_str,
+        'Trusted Resource Owners': trusted_owners_str,
+        'Create Database Default Permissions': create_db_perms_str,
+        'Create Table Default Permissions': create_table_perms_str,
+    }
+
+
 def _scan_lakeformation_tags_region(region: str) -> list[dict[str, Any]]:
-    """Scan Lake Formation LF-Tags in a single region."""
+    """
+    Scan Lake Formation LF-Tags in a single region.
+
+    Does NOT swallow region-level errors — see
+    ``_scan_lakeformation_resources_region`` docstring for the contract.
+    Individual malformed tags are skipped (logged).
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_tags = []
-    try:
-        lf_client = utils.get_boto3_client('lakeformation', region_name=region)
-        paginator = lf_client.get_paginator('list_lf_tags')
-        for page in paginator.paginate():
-            lf_tags = page.get('LFTags', [])
+    lf_client = utils.get_boto3_client('lakeformation', region_name=region)
+    paginator = lf_client.get_paginator('list_lf_tags')
+    for page in paginator.paginate():
+        lf_tags = page.get('LFTags', [])
 
-            for tag in lf_tags:
-                tag_key = tag.get('TagKey', 'N/A')
-                tag_values = tag.get('TagValues', [])
-                tag_values_str = ', '.join(tag_values) if tag_values else 'None'
+        for tag in lf_tags:
+            try:
+                regional_tags.append(_build_tag_row(tag, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Lake Formation LF-Tag in {region}: "
+                    f"{tag.get('TagKey', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                # Catalog ID
-                catalog_id = tag.get('CatalogId', 'N/A')
-
-                regional_tags.append({
-                    'Region': region,
-                    'Tag Key': tag_key,
-                    'Tag Values': tag_values_str,
-                    'Value Count': len(tag_values),
-                    'Catalog ID': catalog_id,
-                })
-    except Exception as e:
-        utils.log_error(f"Error collecting Lake Formation LF-Tags in {region}", e)
     return regional_tags
 
 
-@utils.aws_error_handler("Collecting Lake Formation resources", default_return=[])
-def collect_lakeformation_resources(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Lake Formation registered resource information from AWS regions."""
+def _build_tag_row(tag: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Lake Formation LF-Tag export row."""
+    tag_key = tag.get('TagKey', 'N/A')
+    tag_values = tag.get('TagValues', [])
+    tag_values_str = ', '.join(tag_values) if tag_values else 'None'
+
+    # Catalog ID
+    catalog_id = tag.get('CatalogId', 'N/A')
+
+    return {
+        'Region': region,
+        'Tag Key': tag_key,
+        'Tag Values': tag_values_str,
+        'Value Count': len(tag_values),
+        'Catalog ID': catalog_id,
+    }
+
+
+def collect_lakeformation_resources(
+    regions: list[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect Lake Formation registered resource information from AWS regions.
+
+    Uses ``collect_failures=True`` so a region whose collection raised is
+    reported as a failed scope rather than silently collapsed into empty
+    (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+
+    Returns:
+        tuple: ``(resources, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING LAKE FORMATION RESOURCES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_lakeformation_resources_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions, _scan_lakeformation_resources_region, show_progress=True, collect_failures=True
+    )
     all_resources = [res for result in results for res in result]
     utils.log_success(f"Total Lake Formation resources collected: {len(all_resources)}")
-    return all_resources
+    return all_resources, failed_regions
 
 
-@utils.aws_error_handler("Collecting Lake Formation permissions", default_return=[])
-def collect_lakeformation_permissions(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Lake Formation permissions information from AWS regions."""
+def collect_lakeformation_permissions(
+    regions: list[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect Lake Formation permissions information from AWS regions.
+
+    Uses ``collect_failures=True`` — see ``collect_lakeformation_resources``.
+    """
     print("\n=== COLLECTING LAKE FORMATION PERMISSIONS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_lakeformation_permissions_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions, _scan_lakeformation_permissions_region, show_progress=True, collect_failures=True
+    )
     all_permissions = [perm for result in results for perm in result]
     utils.log_success(f"Total Lake Formation permissions collected: {len(all_permissions)}")
-    return all_permissions
+    return all_permissions, failed_regions
 
 
-@utils.aws_error_handler("Collecting Lake Formation settings", default_return=[])
-def collect_lakeformation_settings(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Lake Formation data lake settings from AWS regions."""
+def collect_lakeformation_settings(
+    regions: list[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect Lake Formation data lake settings from AWS regions.
+
+    Uses ``collect_failures=True`` — see ``collect_lakeformation_resources``.
+    """
     print("\n=== COLLECTING LAKE FORMATION SETTINGS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_lakeformation_settings_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions, _scan_lakeformation_settings_region, show_progress=True, collect_failures=True
+    )
     all_settings = [setting for result in results for setting in result]
     utils.log_success(f"Total Lake Formation settings collected: {len(all_settings)}")
-    return all_settings
+    return all_settings, failed_regions
 
 
-@utils.aws_error_handler("Collecting Lake Formation tags", default_return=[])
-def collect_lakeformation_tags(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Lake Formation LF-Tag information from AWS regions."""
+def collect_lakeformation_tags(
+    regions: list[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect Lake Formation LF-Tag information from AWS regions.
+
+    Uses ``collect_failures=True`` — see ``collect_lakeformation_resources``.
+    """
     print("\n=== COLLECTING LAKE FORMATION LF-TAGS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_lakeformation_tags_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions, _scan_lakeformation_tags_region, show_progress=True, collect_failures=True
+    )
     all_tags = [tag for result in results for tag in result]
     utils.log_success(f"Total Lake Formation LF-Tags collected: {len(all_tags)}")
-    return all_tags
+    return all_tags, failed_regions
 
 
 def generate_summary(resources: list[dict[str, Any]],
@@ -408,12 +529,22 @@ def generate_summary(resources: list[dict[str, Any]],
 
 def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Lake Formation data and write the Excel export."""
-    # Collect data
+    # Collect data. Each scope is region-scanned with collect_failures=True;
+    # failures from all four scopes are merged into one combined
+    # failed_regions list at the end (Tier-3: the Summary sheet below is
+    # ALWAYS written — a workbook always lands — but a failed marker + exit 1
+    # is added on top when any scope failed).
     print("\n=== Collecting Lake Formation Data ===")
-    resources = collect_lakeformation_resources(regions)
-    permissions = collect_lakeformation_permissions(regions)
-    settings = collect_lakeformation_settings(regions)
-    tags = collect_lakeformation_tags(regions)
+    resources, resources_failed = collect_lakeformation_resources(regions)
+    permissions, permissions_failed = collect_lakeformation_permissions(regions)
+    settings, settings_failed = collect_lakeformation_settings(regions)
+    tags, tags_failed = collect_lakeformation_tags(regions)
+
+    failed_regions: list[tuple[str, str]] = []
+    failed_regions.extend(resources_failed)
+    failed_regions.extend(permissions_failed)
+    failed_regions.extend(settings_failed)
+    failed_regions.extend(tags_failed)
 
     # Generate summary
     summary = generate_summary(resources, permissions, settings, tags)
@@ -441,7 +572,8 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     region_suffix = regions[0] if len(regions) == 1 else 'all-regions'
     filename = utils.create_export_filename(account_name, 'lakeformation', region_suffix)
 
-    # Save to Excel with multiple sheets
+    # Save to Excel with multiple sheets — Summary is ALWAYS included, so a
+    # workbook always lands even when some scopes failed.
     print("\n=== Exporting to Excel ===")
     dataframes = {
         'Registered Resources': resources_df,
@@ -452,6 +584,18 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY scope failed in ANY region, make it loud: write a marker and
+    # exit non-zero, even though a (partial) workbook was already written.
+    # A partial export that looks complete is exactly the failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'lakeformation', failed_regions)
+        print(
+            "\nERROR: Lake Formation export completed with failures — data is incomplete. "
+            "See the *-lakeformation-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

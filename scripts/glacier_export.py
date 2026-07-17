@@ -29,103 +29,149 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export S3 Glacier vaults to Excel")
 
+def _build_vault_row(vault: dict[str, Any], region: str, glacier_client) -> dict[str, Any]:
+    """
+    Build a single Glacier vault export row.
+
+    Per-vault enrichment calls (access policy, lock policy, notifications,
+    tags) remain best-effort: each is wrapped in its own try/except so a
+    missing/denied enrichment call degrades gracefully instead of losing the
+    whole vault.
+    """
+    vault_name = vault.get('VaultName', 'N/A')
+    vault_arn = vault.get('VaultARN', 'N/A')
+
+    # Get vault access policy
+    vault_policy = 'N/A'
+    try:
+        policy_response = glacier_client.get_vault_access_policy(vaultName=vault_name)
+        vault_policy = policy_response.get('policy', {}).get('Policy', 'N/A')
+    except Exception:
+        pass
+
+    # Get vault lock policy
+    lock_policy = 'N/A'
+    lock_state = 'N/A'
+    try:
+        lock_response = glacier_client.get_vault_lock(vaultName=vault_name)
+        lock_policy = lock_response.get('Policy', 'N/A')
+        lock_state = lock_response.get('State', 'N/A')
+    except Exception:
+        pass
+
+    # Get vault notifications
+    sns_topic = 'N/A'
+    events_str = 'N/A'
+    try:
+        notif_response = glacier_client.get_vault_notifications(vaultName=vault_name)
+        notification_cfg = notif_response.get('vaultNotificationConfig', {})
+        sns_topic = notification_cfg.get('SNSTopic', 'N/A')
+        events = notification_cfg.get('Events', [])
+        events_str = ', '.join(events) if events else 'N/A'
+    except Exception:
+        pass
+
+    # Get vault tags
+    tags_str = 'None'
+    try:
+        tags_response = glacier_client.list_tags_for_vault(vaultName=vault_name)
+        tags = tags_response.get('Tags', {})
+        if tags:
+            tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()])
+    except Exception:
+        pass
+
+    creation_date = vault.get('CreationDate', 'N/A')
+    if creation_date != 'N/A' and isinstance(creation_date, datetime):
+        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_inventory = vault.get('LastInventoryDate', 'N/A')
+    if last_inventory != 'N/A' and isinstance(last_inventory, datetime):
+        last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
+
+    size_bytes = vault.get('SizeInBytes', 0)
+    size_gb = round(size_bytes / (1024**3), 2) if size_bytes else 0
+
+    return {
+        'Region': region,
+        'Vault Name': vault_name,
+        'Number of Archives': vault.get('NumberOfArchives', 0),
+        'Size (GB)': size_gb,
+        'Size (Bytes)': size_bytes,
+        'Created': creation_date,
+        'Last Inventory': last_inventory,
+        'Has Access Policy': 'Yes' if vault_policy != 'N/A' else 'No',
+        'Has Lock Policy': 'Yes' if lock_policy != 'N/A' else 'No',
+        'Lock State': lock_state,
+        'Has Notifications': 'Yes' if sns_topic != 'N/A' else 'No',
+        'SNS Topic': sns_topic,
+        'Notification Events': events_str,
+        'Tags': tags_str,
+        'ARN': vault_arn
+    }
+
+
 def _scan_vaults_region(region: str) -> list[dict[str, Any]]:
-    """Scan Glacier vaults in a single region."""
+    """
+    Collect Glacier vaults from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no vaults" (the silent-
+    collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed vaults are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_vaults = []
     glacier_client = utils.get_boto3_client('glacier', region_name=region)
 
-    try:
-        paginator = glacier_client.get_paginator('list_vaults')
-        for page in paginator.paginate():
-            vaults = page.get('VaultList', [])
+    paginator = glacier_client.get_paginator('list_vaults')
+    for page in paginator.paginate():
+        vaults = page.get('VaultList', [])
 
-            for vault in vaults:
-                vault_name = vault.get('VaultName', 'N/A')
-                vault_arn = vault.get('VaultARN', 'N/A')
-
-                # Get vault access policy
-                vault_policy = 'N/A'
-                try:
-                    policy_response = glacier_client.get_vault_access_policy(vaultName=vault_name)
-                    vault_policy = policy_response.get('policy', {}).get('Policy', 'N/A')
-                except Exception:
-                    pass
-
-                # Get vault lock policy
-                lock_policy = 'N/A'
-                lock_state = 'N/A'
-                try:
-                    lock_response = glacier_client.get_vault_lock(vaultName=vault_name)
-                    lock_policy = lock_response.get('Policy', 'N/A')
-                    lock_state = lock_response.get('State', 'N/A')
-                except Exception:
-                    pass
-
-                # Get vault notifications
-                sns_topic = 'N/A'
-                events_str = 'N/A'
-                try:
-                    notif_response = glacier_client.get_vault_notifications(vaultName=vault_name)
-                    notification_cfg = notif_response.get('vaultNotificationConfig', {})
-                    sns_topic = notification_cfg.get('SNSTopic', 'N/A')
-                    events = notification_cfg.get('Events', [])
-                    events_str = ', '.join(events) if events else 'N/A'
-                except Exception:
-                    pass
-
-                # Get vault tags
-                tags_str = 'None'
-                try:
-                    tags_response = glacier_client.list_tags_for_vault(vaultName=vault_name)
-                    tags = tags_response.get('Tags', {})
-                    if tags:
-                        tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()])
-                except Exception:
-                    pass
-
-                creation_date = vault.get('CreationDate', 'N/A')
-                if creation_date != 'N/A' and isinstance(creation_date, datetime):
-                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
-
-                last_inventory = vault.get('LastInventoryDate', 'N/A')
-                if last_inventory != 'N/A' and isinstance(last_inventory, datetime):
-                    last_inventory = last_inventory.strftime('%Y-%m-%d %H:%M:%S')
-
-                size_bytes = vault.get('SizeInBytes', 0)
-                size_gb = round(size_bytes / (1024**3), 2) if size_bytes else 0
-
-                regional_vaults.append({
-                    'Region': region,
-                    'Vault Name': vault_name,
-                    'Number of Archives': vault.get('NumberOfArchives', 0),
-                    'Size (GB)': size_gb,
-                    'Size (Bytes)': size_bytes,
-                    'Created': creation_date,
-                    'Last Inventory': last_inventory,
-                    'Has Access Policy': 'Yes' if vault_policy != 'N/A' else 'No',
-                    'Has Lock Policy': 'Yes' if lock_policy != 'N/A' else 'No',
-                    'Lock State': lock_state,
-                    'Has Notifications': 'Yes' if sns_topic != 'N/A' else 'No',
-                    'SNS Topic': sns_topic,
-                    'Notification Events': events_str,
-                    'Tags': tags_str,
-                    'ARN': vault_arn
-                })
-
-    except Exception as e:
-        utils.log_warning(f"Error listing vaults in {region}: {str(e)}")
+        for vault in vaults:
+            try:
+                regional_vaults.append(_build_vault_row(vault, region, glacier_client))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Glacier vault in {region}: "
+                    f"{vault.get('VaultName', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return regional_vaults
 
 
-@utils.aws_error_handler("Collecting Glacier vaults", default_return=[])
-def collect_vaults(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Glacier vault information from AWS regions."""
+def collect_vaults(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Glacier vault information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(vaults, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING GLACIER VAULTS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_vaults_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_vaults_region,
+        show_progress=True,
+        collect_failures=True,
+    )
     all_vaults = [vault for result in results for vault in result]
     utils.log_success(f"Total vaults collected: {len(all_vaults)}")
-    return all_vaults
+    return all_vaults, failed_regions
 
 
 def generate_summary(vaults: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -219,7 +265,7 @@ def main():
     # Collect data
     print("\nCollecting Glacier vault data...")
 
-    vaults = collect_vaults(regions)
+    vaults, failed_regions = collect_vaults(regions)
     summary = generate_summary(vaults)
 
     # Create DataFrames
@@ -264,6 +310,19 @@ def main():
         utils.log_warning("No Glacier vaults found to export")
 
     utils.log_success("Glacier export completed successfully")
+
+    # If ANY region failed the primary vault scope collection, make it loud:
+    # write a marker and exit non-zero, even though the Summary sheet (and
+    # any collected data) was still exported above. A complete-looking
+    # workbook with silently zero/partial rows is exactly the failure mode
+    # this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'glacier', failed_regions)
+        print(
+            "\nERROR: Glacier export completed with failures — data is incomplete. "
+            "See the *-glacier-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
