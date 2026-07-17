@@ -26,9 +26,103 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export IAM identity providers to Excel")
 
-@utils.aws_error_handler("Collecting SAML providers", default_return=[])
+def _build_saml_row(iam_client, provider: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single SAML provider.
+
+    Extracted so per-provider processing can be wrapped in try/except by
+    the caller: a malformed provider entry (or a per-provider API error)
+    must not sink the whole account-scope collection.
+
+    Args:
+        iam_client: The boto3 IAM client.
+        provider (dict): A single SAMLProviderList entry from
+            list_saml_providers.
+
+    Returns:
+        dict: The assembled SAML provider row.
+
+    Raises:
+        Exception: Any error building this row (caller skips the entry).
+    """
+    provider_arn = provider.get('Arn', 'N/A')
+
+    # Get detailed information about the SAML provider
+    provider_response = iam_client.get_saml_provider(SAMLProviderArn=provider_arn)
+
+    saml_metadata = provider_response.get('SAMLMetadataDocument', 'N/A')
+    create_date = provider_response.get('CreateDate', 'N/A')
+    valid_until = provider_response.get('ValidUntil', 'N/A')
+
+    # Format dates
+    if create_date != 'N/A':
+        create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    if valid_until != 'N/A':
+        valid_until = valid_until.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Extract provider name from ARN
+    # ARN format: arn:aws:iam::account-id:saml-provider/provider-name
+    provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
+
+    # Truncate SAML metadata for display
+    saml_metadata_display = 'N/A'
+    if saml_metadata != 'N/A':
+        # Extract some information from metadata if possible
+        if 'entityID' in saml_metadata:
+            try:
+                # Try to extract entity ID from XML
+                entity_id_start = saml_metadata.find('entityID="') + 10
+                entity_id_end = saml_metadata.find('"', entity_id_start)
+                entity_id = saml_metadata[entity_id_start:entity_id_end]
+                saml_metadata_display = f"Entity ID: {entity_id} (metadata truncated)"
+            except Exception:
+                saml_metadata_display = "Metadata present (truncated)"
+        else:
+            saml_metadata_display = "Metadata present (truncated)"
+
+    # Get tags for this provider (enrichment — degrades gracefully)
+    tags_str = 'N/A'
+    try:
+        tags_response = iam_client.list_saml_provider_tags(SAMLProviderArn=provider_arn)
+        tags = tags_response.get('Tags', [])
+        if tags:
+            tags_str = ', '.join([f"{tag.get('Key')}={tag.get('Value')}" for tag in tags])
+    except Exception:
+        pass
+
+    return {
+        'Provider Name': provider_name,
+        'ARN': provider_arn,
+        'Created': create_date,
+        'Valid Until': valid_until,
+        'SAML Metadata': saml_metadata_display,
+        'Tags': tags_str
+    }
+
+
 def collect_saml_providers() -> list[dict[str, Any]]:
-    """Collect IAM SAML provider information."""
+    """
+    Collect IAM SAML provider information.
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no SAML providers configured), producing
+    silent data loss (see the 07.15.2026 / 07.16.2026 silent-collection-
+    failure audits). IAM identity providers are a global, account-scope
+    resource (not multi-region — see scripts/shield_export.py for the
+    account-scope reference pattern this follows). Account-scope failures
+    (client creation, list_saml_providers) are allowed to raise so the
+    caller (main) can record this scope as *failed* rather than *empty*.
+    Per-provider errors are contained internally (logged and skipped).
+
+    Returns:
+        list: List of SAML provider information dictionaries.
+
+    Raises:
+        Exception: Any AWS error for the account scope (caller records it
+            as a failed scope; it is never masked as empty).
+    """
     utils.log_info("Collecting SAML providers...")
     all_saml_providers = []
 
@@ -39,93 +133,135 @@ def collect_saml_providers() -> list[dict[str, Any]]:
 
     iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
-    try:
-        # List all SAML providers
-        response = iam_client.list_saml_providers()
-        saml_provider_list = response.get('SAMLProviderList', [])
+    # List all SAML providers
+    response = iam_client.list_saml_providers()
+    saml_provider_list = response.get('SAMLProviderList', [])
 
-        utils.log_info(f"Found {len(saml_provider_list)} SAML providers")
+    utils.log_info(f"Found {len(saml_provider_list)} SAML providers")
 
-        for provider in saml_provider_list:
-            provider_arn = provider.get('Arn', 'N/A')
+    for provider in saml_provider_list:
+        provider_arn = provider.get('Arn', 'N/A') if isinstance(provider, dict) else 'N/A'
 
-            try:
-                # Get detailed information about the SAML provider
-                provider_response = iam_client.get_saml_provider(SAMLProviderArn=provider_arn)
+        try:
+            row = _build_saml_row(iam_client, provider)
+        except Exception as e:
+            utils.log_warning(f"Could not get details for SAML provider {provider_arn}: {str(e)}")
+            continue
 
-                saml_metadata = provider_response.get('SAMLMetadataDocument', 'N/A')
-                create_date = provider_response.get('CreateDate', 'N/A')
-                valid_until = provider_response.get('ValidUntil', 'N/A')
-
-                # Format dates
-                if create_date != 'N/A':
-                    create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
-
-                if valid_until != 'N/A':
-                    valid_until = valid_until.strftime('%Y-%m-%d %H:%M:%S')
-
-                # Extract provider name from ARN
-                # ARN format: arn:aws:iam::account-id:saml-provider/provider-name
-                provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
-
-                # Truncate SAML metadata for display
-                saml_metadata_display = 'N/A'
-                if saml_metadata != 'N/A':
-                    # Extract some information from metadata if possible
-                    if 'entityID' in saml_metadata:
-                        try:
-                            # Try to extract entity ID from XML
-                            entity_id_start = saml_metadata.find('entityID="') + 10
-                            entity_id_end = saml_metadata.find('"', entity_id_start)
-                            entity_id = saml_metadata[entity_id_start:entity_id_end]
-                            saml_metadata_display = f"Entity ID: {entity_id} (metadata truncated)"
-                        except Exception:
-                            saml_metadata_display = "Metadata present (truncated)"
-                    else:
-                        saml_metadata_display = "Metadata present (truncated)"
-
-                # Get tags for this provider
-                tags_str = 'N/A'
-                try:
-                    tags_response = iam_client.list_saml_provider_tags(SAMLProviderArn=provider_arn)
-                    tags = tags_response.get('Tags', [])
-                    if tags:
-                        tags_str = ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
-                except Exception:
-                    pass
-
-                all_saml_providers.append({
-                    'Provider Name': provider_name,
-                    'ARN': provider_arn,
-                    'Created': create_date,
-                    'Valid Until': valid_until,
-                    'SAML Metadata': saml_metadata_display,
-                    'Tags': tags_str
-                })
-
-            except Exception as e:
-                utils.log_warning(f"Could not get details for SAML provider {provider_arn}: {str(e)}")
-                # Add basic info
-                provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
-                all_saml_providers.append({
-                    'Provider Name': provider_name,
-                    'ARN': provider_arn,
-                    'Created': 'N/A',
-                    'Valid Until': 'N/A',
-                    'SAML Metadata': 'Error retrieving',
-                    'Tags': 'N/A'
-                })
-
-    except Exception as e:
-        utils.log_warning(f"Error listing SAML providers: {str(e)}")
+        all_saml_providers.append(row)
 
     utils.log_info(f"Collected {len(all_saml_providers)} SAML providers")
     return all_saml_providers
 
 
-@utils.aws_error_handler("Collecting OIDC providers", default_return=[])
+def _build_oidc_row(iam_client, provider: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single OIDC provider.
+
+    Extracted so per-provider processing can be wrapped in try/except by
+    the caller: a malformed provider entry (or a per-provider API error)
+    must not sink the whole account-scope collection.
+
+    Args:
+        iam_client: The boto3 IAM client.
+        provider (dict): A single OpenIDConnectProviderList entry from
+            list_open_id_connect_providers.
+
+    Returns:
+        dict: The assembled OIDC provider row.
+
+    Raises:
+        Exception: Any error building this row (caller skips the entry).
+    """
+    provider_arn = provider.get('Arn', 'N/A')
+
+    # Get detailed information about the OIDC provider
+    provider_response = iam_client.get_open_id_connect_provider(
+        OpenIDConnectProviderArn=provider_arn
+    )
+
+    url = provider_response.get('Url', 'N/A')
+    client_id_list = provider_response.get('ClientIDList', [])
+    thumbprint_list = provider_response.get('ThumbprintList', [])
+    create_date = provider_response.get('CreateDate', 'N/A')
+
+    # Format date
+    if create_date != 'N/A':
+        create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Extract provider name from ARN
+    # ARN format: arn:aws:iam::account-id:oidc-provider/provider-url
+    provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
+
+    # Format client IDs
+    client_ids_str = ', '.join(client_id_list) if client_id_list else 'None'
+
+    # Format thumbprints
+    thumbprints_str = ', '.join(thumbprint_list) if thumbprint_list else 'None'
+    thumbprint_count = len(thumbprint_list)
+
+    # Get tags for this provider (enrichment — degrades gracefully)
+    tags_str = 'N/A'
+    try:
+        tags_response = iam_client.list_open_id_connect_provider_tags(
+            OpenIDConnectProviderArn=provider_arn
+        )
+        tags = tags_response.get('Tags', [])
+        if tags:
+            tags_str = ', '.join([f"{tag.get('Key')}={tag.get('Value')}" for tag in tags])
+    except Exception:
+        pass
+
+    # Determine provider type based on URL
+    provider_type = 'Generic OIDC'
+    if 'amazonaws.com' in url:
+        provider_type = 'Amazon EKS' if 'eks' in url else 'AWS Service'
+    elif 'accounts.google.com' in url:
+        provider_type = 'Google'
+    elif 'login.microsoftonline.com' in url or 'sts.windows.net' in url:
+        provider_type = 'Microsoft Azure AD'
+    elif 'appleid.apple.com' in url:
+        provider_type = 'Apple'
+    elif 'token.actions.githubusercontent.com' in url:
+        provider_type = 'GitHub Actions'
+
+    return {
+        'Provider Name': provider_name,
+        'ARN': provider_arn,
+        'Provider Type': provider_type,
+        'URL': url,
+        'Created': create_date,
+        'Client IDs': client_ids_str,
+        'Client ID Count': len(client_id_list),
+        'Thumbprints': thumbprints_str,
+        'Thumbprint Count': thumbprint_count,
+        'Tags': tags_str
+    }
+
+
 def collect_oidc_providers() -> list[dict[str, Any]]:
-    """Collect IAM OIDC (OpenID Connect) provider information."""
+    """
+    Collect IAM OIDC (OpenID Connect) provider information.
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no OIDC providers configured), producing
+    silent data loss (see the 07.15.2026 / 07.16.2026 silent-collection-
+    failure audits). IAM identity providers are a global, account-scope
+    resource (not multi-region — see scripts/shield_export.py for the
+    account-scope reference pattern this follows). Account-scope failures
+    (client creation, list_open_id_connect_providers) are allowed to raise
+    so the caller (main) can record this scope as *failed* rather than
+    *empty*. Per-provider errors are contained internally (logged and
+    skipped).
+
+    Returns:
+        list: List of OIDC provider information dictionaries.
+
+    Raises:
+        Exception: Any AWS error for the account scope (caller records it
+            as a failed scope; it is never masked as empty).
+    """
     utils.log_info("Collecting OIDC providers...")
     all_oidc_providers = []
 
@@ -136,99 +272,22 @@ def collect_oidc_providers() -> list[dict[str, Any]]:
 
     iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
-    try:
-        # List all OIDC providers
-        response = iam_client.list_open_id_connect_providers()
-        oidc_provider_list = response.get('OpenIDConnectProviderList', [])
+    # List all OIDC providers
+    response = iam_client.list_open_id_connect_providers()
+    oidc_provider_list = response.get('OpenIDConnectProviderList', [])
 
-        utils.log_info(f"Found {len(oidc_provider_list)} OIDC providers")
+    utils.log_info(f"Found {len(oidc_provider_list)} OIDC providers")
 
-        for provider in oidc_provider_list:
-            provider_arn = provider.get('Arn', 'N/A')
+    for provider in oidc_provider_list:
+        provider_arn = provider.get('Arn', 'N/A') if isinstance(provider, dict) else 'N/A'
 
-            try:
-                # Get detailed information about the OIDC provider
-                provider_response = iam_client.get_open_id_connect_provider(
-                    OpenIDConnectProviderArn=provider_arn
-                )
+        try:
+            row = _build_oidc_row(iam_client, provider)
+        except Exception as e:
+            utils.log_warning(f"Could not get details for OIDC provider {provider_arn}: {str(e)}")
+            continue
 
-                url = provider_response.get('Url', 'N/A')
-                client_id_list = provider_response.get('ClientIDList', [])
-                thumbprint_list = provider_response.get('ThumbprintList', [])
-                create_date = provider_response.get('CreateDate', 'N/A')
-
-                # Format date
-                if create_date != 'N/A':
-                    create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
-
-                # Extract provider name from ARN
-                # ARN format: arn:aws:iam::account-id:oidc-provider/provider-url
-                provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
-
-                # Format client IDs
-                client_ids_str = ', '.join(client_id_list) if client_id_list else 'None'
-
-                # Format thumbprints
-                thumbprints_str = ', '.join(thumbprint_list) if thumbprint_list else 'None'
-                thumbprint_count = len(thumbprint_list)
-
-                # Get tags for this provider
-                tags_str = 'N/A'
-                try:
-                    tags_response = iam_client.list_open_id_connect_provider_tags(
-                        OpenIDConnectProviderArn=provider_arn
-                    )
-                    tags = tags_response.get('Tags', [])
-                    if tags:
-                        tags_str = ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
-                except Exception:
-                    pass
-
-                # Determine provider type based on URL
-                provider_type = 'Generic OIDC'
-                if 'amazonaws.com' in url:
-                    provider_type = 'Amazon EKS' if 'eks' in url else 'AWS Service'
-                elif 'accounts.google.com' in url:
-                    provider_type = 'Google'
-                elif 'login.microsoftonline.com' in url or 'sts.windows.net' in url:
-                    provider_type = 'Microsoft Azure AD'
-                elif 'appleid.apple.com' in url:
-                    provider_type = 'Apple'
-                elif 'token.actions.githubusercontent.com' in url:
-                    provider_type = 'GitHub Actions'
-
-                all_oidc_providers.append({
-                    'Provider Name': provider_name,
-                    'ARN': provider_arn,
-                    'Provider Type': provider_type,
-                    'URL': url,
-                    'Created': create_date,
-                    'Client IDs': client_ids_str,
-                    'Client ID Count': len(client_id_list),
-                    'Thumbprints': thumbprints_str,
-                    'Thumbprint Count': thumbprint_count,
-                    'Tags': tags_str
-                })
-
-            except Exception as e:
-                utils.log_warning(f"Could not get details for OIDC provider {provider_arn}: {str(e)}")
-                # Add basic info
-                provider_name = provider_arn.split('/')[-1] if '/' in provider_arn else 'N/A'
-                all_oidc_providers.append({
-                    'Provider Name': provider_name,
-                    'ARN': provider_arn,
-                    'Provider Type': 'Unknown',
-                    'URL': 'N/A',
-                    'Created': 'N/A',
-                    'Client IDs': 'Error retrieving',
-                    'Client ID Count': 0,
-                    'Thumbprints': 'Error retrieving',
-                    'Thumbprint Count': 0,
-                    'Tags': 'N/A'
-                })
-
-    except Exception as e:
-        utils.log_warning(f"Error listing OIDC providers: {str(e)}")
+        all_oidc_providers.append(row)
 
     utils.log_info(f"Collected {len(all_oidc_providers)} OIDC providers")
     return all_oidc_providers
@@ -414,7 +473,19 @@ def generate_summary(saml_providers: list[dict[str, Any]],
 
 
 def main():
-    """Main execution function."""
+    """
+    Main execution function.
+
+    IAM identity providers are a global, account-scope resource (not
+    multi-region), so failures are tracked per account-scope collector
+    rather than via ``utils.scan_regions_concurrent`` (see
+    scripts/shield_export.py for the account-scope reference pattern).
+    A failure on either primary scope (SAML or OIDC providers) is exported
+    as a partial result (the forced Summary sheet, plus any other data that
+    did collect) and always surfaced via ``utils.report_collection_failures``
+    plus a non-zero exit — it must never be silently collapsed into "no
+    providers" (07.15.2026 / 07.16.2026 audits).
+    """
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         return
     global pd
@@ -433,8 +504,30 @@ def main():
     # Collect data (IAM is global)
     print("\nCollecting IAM identity provider data...")
 
-    saml_providers = collect_saml_providers()
-    oidc_providers = collect_oidc_providers()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect SAML providers (PRIMARY scope — a real API error here
+    # must propagate to failed_scopes, never collapse into an empty list
+    # that reads as "no SAML providers configured").
+    try:
+        saml_providers = collect_saml_providers()
+    except Exception as e:
+        failed_scopes.append(('saml_providers', str(e)))
+        utils.log_error(f"SAML providers collection failed: {e}")
+        saml_providers = []
+
+    # STEP 2: Collect OIDC providers (PRIMARY scope — same treatment).
+    try:
+        oidc_providers = collect_oidc_providers()
+    except Exception as e:
+        failed_scopes.append(('oidc_providers', str(e)))
+        utils.log_error(f"OIDC providers collection failed: {e}")
+        oidc_providers = []
+
+    # STEP 3+: Enrichment collectors — degrade gracefully to a safe default
+    # via their own aws_error_handler decorator; a failure here does not
+    # fail the whole export.
     roles_with_providers = collect_roles_using_providers(saml_providers, oidc_providers)
     summary = generate_summary(saml_providers, oidc_providers, roles_with_providers)
 
@@ -458,21 +551,42 @@ def main():
         df_roles = utils.prepare_dataframe_for_export(df_roles)
         dataframes['Roles Using Providers'] = df_roles
 
+    # Summary sheet is always written (generate_summary always returns at
+    # least the SAML/OIDC/role counts) — this forced Summary sheet is what
+    # guarantees the workbook always lands, even on a total account-scope
+    # failure. PRESERVE this.
     if summary:
         df_summary = pd.DataFrame(summary)
         df_summary = utils.prepare_dataframe_for_export(df_summary)
         dataframes['Summary'] = df_summary
 
-    # Export to Excel
+    slug = 'iam-identity-providers'
+
+    # Export whatever succeeded — a partial export is required even when a
+    # primary scope failed (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
     if dataframes:
-        filename = utils.create_export_filename(account_name, 'iam-identity-providers', 'global')
+        filename = utils.create_export_filename(account_name, slug, 'global')
 
         utils.log_info(f"Exporting to {filename}...")
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
-
-        # Log summary
-    else:
+    elif not failed_scopes:
+        # Genuinely empty: both primary scopes succeeded and there is
+        # simply nothing configured.
         utils.log_warning("No IAM identity provider data found to export")
+
+    # If either primary scope failed, make it loud: write a marker and
+    # exit non-zero, even though the forced Summary sheet (and any partial
+    # SAML/OIDC data) was still exported. A partial export that looks
+    # complete is exactly the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, slug, failed_scopes)
+        print(
+            "\nERROR: IAM identity providers export completed with failures — "
+            "data is incomplete. See the *-iam-identity-providers-FAILED-*.txt "
+            "marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("IAM Identity Providers export completed successfully")
 

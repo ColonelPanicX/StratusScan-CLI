@@ -104,111 +104,136 @@ def get_available_regions():
 
     return available_regions if available_regions else aws_regions  # Fallback to configured regions
 
+def _build_finding_row(finding, region):
+    """Build a single Security Hub finding export row from a get_findings item."""
+    remediation = extract_remediation_info(finding)
+    resources = extract_resource_info(finding)
+    compliance = extract_compliance_info(finding)
+
+    return {
+        'Region': region,
+        'Finding ID': finding.get('Id', 'N/A'),
+        'Product ARN': finding.get('ProductArn', 'N/A'),
+        'Product Name': extract_product_name(finding.get('ProductArn', '')),
+        'Company Name': finding.get('CompanyName', 'N/A'),
+        'Title': finding.get('Title', 'N/A'),
+        'Description': finding.get('Description', 'N/A'),
+        'Severity Label': finding.get('Severity', {}).get('Label', 'N/A'),
+        'Severity Score': finding.get('Severity', {}).get('Normalized', 'N/A'),
+        'Confidence': finding.get('Confidence', 'N/A'),
+        'Criticality': finding.get('Criticality', 'N/A'),
+        'Workflow Status': finding.get('Workflow', {}).get('Status', 'N/A'),
+        'Record State': finding.get('RecordState', 'N/A'),
+        'Compliance Status': compliance['status'],
+        'Compliance Standards': compliance['standards'],
+        'Affected Resources': resources['summary'],
+        'Resource Types': resources['types'],
+        'Remediation Available': 'Yes' if remediation['available'] else 'No',
+        'Remediation URL': remediation['url'],
+        'Remediation Text': remediation['text'],
+        'Source URL': finding.get('SourceUrl', 'N/A'),
+        'First Observed': finding.get('FirstObservedAt', 'N/A'),
+        'Last Observed': finding.get('LastObservedAt', 'N/A'),
+        'Created At': finding.get('CreatedAt', 'N/A'),
+        'Updated At': finding.get('UpdatedAt', 'N/A'),
+        'Note': extract_note_info(finding),
+    }
+
+
 def collect_security_hub_findings(region):
     """
     Collect Security Hub findings from a specific region.
+
+    This is the primary scope collector. A real API error (throttling, access
+    denied, etc.) is allowed to raise so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no findings" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Security Hub not being enabled in a region (``InvalidAccessException`` /
+    ``SubscriptionRequiredException``) is a legitimate, non-failure state and
+    is treated as a normal skip, not a failure.
+
+    Individual malformed findings are skipped (logged) rather than aborting
+    the whole region.
 
     Args:
         region: AWS region to collect findings from
 
     Returns:
-        list: List of finding information dictionaries
+        tuple: (findings_data, cap_reached)
+
+    Raises:
+        ClientError: Any Security Hub API error other than "not enabled".
     """
     findings_data = []
     cap_reached = False
 
-    # Keep try-except for business logic: InvalidAccessException means Security Hub not enabled
+    client = utils.get_boto3_client('securityhub', region_name=region)
+
+    # Check if Security Hub is enabled. "Not enabled" is a legitimate skip,
+    # not a failure — every other error must propagate to the caller.
     try:
-        client = utils.get_boto3_client('securityhub', region_name=region)
+        client.describe_hub()
+        utils.log_success(f"Security Hub is enabled in {region}")
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code in ('InvalidAccessException', 'SubscriptionRequiredException'):
+            utils.log_warning(f"Security Hub is not enabled in {region}. Skipping this region.")
+            return [], False
+        raise
 
-        # Check if Security Hub is enabled
-        try:
-            client.describe_hub()
-            utils.log_success(f"Security Hub is enabled in {region}")
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'InvalidAccessException':
-                utils.log_warning(f"Security Hub is not enabled in {region}. Skipping this region.")
-                return [], False
-            else:
-                utils.log_error(f"Error accessing Security Hub in {region}: {e}")
-                return [], False
+    # Get findings using pagination
+    paginator = client.get_paginator('get_findings')
 
-        # Get findings using pagination
-        paginator = client.get_paginator('get_findings')
+    # Exclude INFORMATIONAL — too noisy for audits; filter at API level
+    filters = {
+        'WorkflowStatus': [
+            {'Value': 'NEW', 'Comparison': 'EQUALS'},
+            {'Value': 'NOTIFIED', 'Comparison': 'EQUALS'},
+        ],
+        'RecordState': [
+            {'Value': 'ACTIVE', 'Comparison': 'EQUALS'},
+        ],
+        'SeverityLabel': [
+            {'Value': 'CRITICAL', 'Comparison': 'EQUALS'},
+            {'Value': 'HIGH', 'Comparison': 'EQUALS'},
+            {'Value': 'MEDIUM', 'Comparison': 'EQUALS'},
+            {'Value': 'LOW', 'Comparison': 'EQUALS'},
+        ],
+    }
 
-        # Exclude INFORMATIONAL — too noisy for audits; filter at API level
-        filters = {
-            'WorkflowStatus': [
-                {'Value': 'NEW', 'Comparison': 'EQUALS'},
-                {'Value': 'NOTIFIED', 'Comparison': 'EQUALS'},
-            ],
-            'RecordState': [
-                {'Value': 'ACTIVE', 'Comparison': 'EQUALS'},
-            ],
-            'SeverityLabel': [
-                {'Value': 'CRITICAL', 'Comparison': 'EQUALS'},
-                {'Value': 'HIGH', 'Comparison': 'EQUALS'},
-                {'Value': 'MEDIUM', 'Comparison': 'EQUALS'},
-                {'Value': 'LOW', 'Comparison': 'EQUALS'},
-            ],
-        }
+    FINDINGS_CAP = 10_000
+    processed = 0
 
-        FINDINGS_CAP = 10_000
-        processed = 0
-
-        for page in paginator.paginate(Filters=filters, MaxResults=100):
-            for finding in page.get('Findings', []):
-                if processed >= FINDINGS_CAP:
-                    cap_reached = True
-                    break
-
-                remediation = extract_remediation_info(finding)
-                resources = extract_resource_info(finding)
-                compliance = extract_compliance_info(finding)
-
-                findings_data.append({
-                    'Region': region,
-                    'Finding ID': finding.get('Id', 'N/A'),
-                    'Product ARN': finding.get('ProductArn', 'N/A'),
-                    'Product Name': extract_product_name(finding.get('ProductArn', '')),
-                    'Company Name': finding.get('CompanyName', 'N/A'),
-                    'Title': finding.get('Title', 'N/A'),
-                    'Description': finding.get('Description', 'N/A'),
-                    'Severity Label': finding.get('Severity', {}).get('Label', 'N/A'),
-                    'Severity Score': finding.get('Severity', {}).get('Normalized', 'N/A'),
-                    'Confidence': finding.get('Confidence', 'N/A'),
-                    'Criticality': finding.get('Criticality', 'N/A'),
-                    'Workflow Status': finding.get('Workflow', {}).get('Status', 'N/A'),
-                    'Record State': finding.get('RecordState', 'N/A'),
-                    'Compliance Status': compliance['status'],
-                    'Compliance Standards': compliance['standards'],
-                    'Affected Resources': resources['summary'],
-                    'Resource Types': resources['types'],
-                    'Remediation Available': 'Yes' if remediation['available'] else 'No',
-                    'Remediation URL': remediation['url'],
-                    'Remediation Text': remediation['text'],
-                    'Source URL': finding.get('SourceUrl', 'N/A'),
-                    'First Observed': finding.get('FirstObservedAt', 'N/A'),
-                    'Last Observed': finding.get('LastObservedAt', 'N/A'),
-                    'Created At': finding.get('CreatedAt', 'N/A'),
-                    'Updated At': finding.get('UpdatedAt', 'N/A'),
-                    'Note': extract_note_info(finding),
-                })
-
-                processed += 1
-                if processed % 500 == 0:
-                    utils.log_info(f"Processed {processed} findings in {region}...")
-
-            if cap_reached:
-                utils.log_warning(
-                    f"Finding cap of {FINDINGS_CAP:,} reached in {region} — export truncated. "
-                    "Re-run with a severity filter or split by region to get remaining findings."
-                )
+    for page in paginator.paginate(Filters=filters, MaxResults=100):
+        for finding in page.get('Findings', []):
+            if processed >= FINDINGS_CAP:
+                cap_reached = True
                 break
 
-    except Exception as e:
-        utils.log_error(f"Error collecting Security Hub findings from {region}", e)
+            try:
+                findings_data.append(_build_finding_row(finding, region))
+            except Exception as e:
+                # One malformed finding is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Security Hub finding in {region}: "
+                    f"{finding.get('Id', '<unknown>')}",
+                    e,
+                )
+                continue
+
+            processed += 1
+            if processed % 500 == 0:
+                utils.log_info(f"Processed {processed} findings in {region}...")
+
+        if cap_reached:
+            utils.log_warning(
+                f"Finding cap of {FINDINGS_CAP:,} reached in {region} — export truncated. "
+                "Re-run with a severity filter or split by region to get remaining findings."
+            )
+            break
 
     return findings_data, cap_reached
 
@@ -502,9 +527,14 @@ def main():
 
         utils.log_info(f"Will scan Security Hub in regions: {', '.join(available_regions)}")
 
-        # Collect findings from all available regions using concurrent scanning
+        # Collect findings from all available regions using concurrent scanning.
+        # Primary scope collection — region failures must propagate as
+        # failed_regions, never collapse into "empty" (see
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
         print("\n=== COLLECTING SECURITY HUB FINDINGS ===")
-        results = utils.scan_regions_concurrent(available_regions, collect_security_hub_findings)
+        results, failed_regions = utils.scan_regions_concurrent(
+            available_regions, collect_security_hub_findings, collect_failures=True
+        )
         all_findings_data = []
         any_truncated = False
         for findings, cap_reached in results:
@@ -513,33 +543,48 @@ def main():
                 any_truncated = True
         utils.log_success(f"Total Security Hub findings collected: {len(all_findings_data)}")
 
-        if not all_findings_data:
+        if not all_findings_data and not failed_regions:
+            # Genuinely empty: every region succeeded (or legitimately had
+            # Security Hub disabled) and returned nothing.
             utils.log_warning("No Security Hub findings collected from any region. Exiting.")
             return
 
-        print("\n====================================================================")
-        print("COLLECTION COMPLETE")
-        print("====================================================================")
+        if all_findings_data:
+            print("\n====================================================================")
+            print("COLLECTION COMPLETE")
+            print("====================================================================")
 
-        # Export to Excel
-        filename = export_to_excel(all_findings_data, account_id, account_name, truncated=any_truncated)
+            # Export to Excel
+            filename = export_to_excel(all_findings_data, account_id, account_name, truncated=any_truncated)
 
-        if filename:
-            utils.log_info("Results exported with AWS compliance markers")
-            utils.log_info(f"Total findings processed: {len(all_findings_data)}")
+            if filename:
+                utils.log_info("Results exported with AWS compliance markers")
+                utils.log_info(f"Total findings processed: {len(all_findings_data)}")
 
-            # Display summary statistics
-            critical_high = len([f for f in all_findings_data if f.get('Severity Label') in ['CRITICAL', 'HIGH']])
-            failed_compliance = len([f for f in all_findings_data if f.get('Compliance Status') == 'FAILED'])
-            with_remediation = len([f for f in all_findings_data if f.get('Remediation Available') == 'Yes'])
+                # Display summary statistics
+                critical_high = len([f for f in all_findings_data if f.get('Severity Label') in ['CRITICAL', 'HIGH']])
+                failed_compliance = len([f for f in all_findings_data if f.get('Compliance Status') == 'FAILED'])
+                with_remediation = len([f for f in all_findings_data if f.get('Remediation Available') == 'Yes'])
 
-            utils.log_info(f"Critical/High severity findings: {critical_high}")
-            utils.log_info(f"Failed compliance findings: {failed_compliance}")
-            utils.log_info(f"Findings with remediation guidance: {with_remediation}")
+                utils.log_info(f"Critical/High severity findings: {critical_high}")
+                utils.log_info(f"Failed compliance findings: {failed_compliance}")
+                utils.log_info(f"Findings with remediation guidance: {with_remediation}")
 
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Export failed. Please check the logs.")
+                print("\nScript execution completed.")
+            else:
+                utils.log_error("Export failed. Please check the logs.")
+
+        # If ANY region failed the primary findings-collection scope, make it
+        # loud: write a marker and exit non-zero, even if some data was
+        # exported. A partial export that looks complete is exactly the
+        # failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'security-hub', failed_regions)
+            print(
+                "\nERROR: Security Hub export completed with failures — data is incomplete. "
+                "See the *-security-hub-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")
