@@ -27,147 +27,186 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export ACM Private Certificate Authority resources to Excel")
 
+def _build_ca_row(item: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build a single Private CA export row from a ``list_certificate_authorities``
+    entry.
+
+    ``ListCertificateAuthorities`` already returns the full ``CertificateAuthority``
+    shape (same fields as ``DescribeCertificateAuthority``), so no secondary
+    per-item describe call is needed. Every field is read with ``.get()`` and a
+    safe default so a malformed/partial entry raises predictably and is caught by
+    the caller rather than aborting the whole region.
+    """
+    ca_arn = item.get('Arn', 'N/A')
+    ca_type = item.get('Type', 'N/A')
+    status = item.get('Status', 'N/A')
+
+    config = item.get('CertificateAuthorityConfiguration', {}) or {}
+    key_algorithm = config.get('KeyAlgorithm', 'N/A')
+    signing_algorithm = config.get('SigningAlgorithm', 'N/A')
+
+    # Subject information
+    subject = config.get('Subject', {}) or {}
+    common_name = subject.get('CommonName', 'N/A')
+    organization = subject.get('Organization', 'N/A')
+    organizational_unit = subject.get('OrganizationalUnit', 'N/A')
+    country = subject.get('Country', 'N/A')
+    state = subject.get('State', 'N/A')
+    locality = subject.get('Locality', 'N/A')
+
+    # Dates
+    created_at = item.get('CreatedAt', 'N/A')
+    if created_at != 'N/A':
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
+
+    not_before = item.get('NotBefore', 'N/A')
+    if not_before != 'N/A':
+        not_before = not_before.strftime('%Y-%m-%d %H:%M:%S')
+
+    not_after = item.get('NotAfter', 'N/A')
+    if not_after != 'N/A':
+        not_after = not_after.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_state_change = item.get('LastStateChangeAt', 'N/A')
+    if last_state_change != 'N/A':
+        last_state_change = last_state_change.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Revocation configuration
+    revocation_config = item.get('RevocationConfiguration', {}) or {}
+    crl_config = revocation_config.get('CrlConfiguration', {}) or {}
+    crl_enabled = crl_config.get('Enabled', False)
+    crl_s3_bucket = crl_config.get('S3BucketName', 'N/A')
+    crl_s3_object_acl = crl_config.get('S3ObjectAcl', 'N/A')
+    crl_expiration_days = crl_config.get('ExpirationInDays', 'N/A')
+
+    ocsp_config = revocation_config.get('OcspConfiguration', {}) or {}
+    ocsp_enabled = ocsp_config.get('Enabled', False)
+    ocsp_custom_cname = ocsp_config.get('OcspCustomCname', 'N/A')
+
+    # Key storage security standard
+    key_storage = item.get('KeyStorageSecurityStandard', 'N/A')
+
+    # Usage mode
+    usage_mode = item.get('UsageMode', 'N/A')
+
+    # Owner account
+    owner_account = item.get('OwnerAccount', 'N/A')
+
+    # Failure reason
+    failure_reason = item.get('FailureReason', 'N/A')
+
+    # Serial number
+    serial = item.get('Serial', 'N/A')
+
+    return {
+        'Region': region,
+        'CA ARN': ca_arn,
+        'Type': ca_type,
+        'Status': status,
+        'Common Name': common_name,
+        'Organization': organization,
+        'Organizational Unit': organizational_unit,
+        'Country': country,
+        'State': state,
+        'Locality': locality,
+        'Key Algorithm': key_algorithm,
+        'Signing Algorithm': signing_algorithm,
+        'Key Storage Security Standard': key_storage,
+        'Usage Mode': usage_mode,
+        'Serial Number': serial,
+        'Created At': created_at,
+        'Not Before': not_before,
+        'Not After': not_after,
+        'Last State Change': last_state_change,
+        'CRL Enabled': crl_enabled,
+        'CRL S3 Bucket': crl_s3_bucket,
+        'CRL S3 Object ACL': crl_s3_object_acl,
+        'CRL Expiration Days': crl_expiration_days,
+        'OCSP Enabled': ocsp_enabled,
+        'OCSP Custom CNAME': ocsp_custom_cname,
+        'Owner Account': owner_account,
+        'Failure Reason': failure_reason,
+        'Tags': 'N/A',
+    }
+
+
 def _scan_private_cas_region(region: str) -> list[dict[str, Any]]:
-    """Scan Private CAs in a single region."""
+    """
+    Scan Private CAs in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Private CAs" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed CAs are skipped (logged) rather than aborting the
+    whole region. Tag lookup is best-effort enrichment: a failure there does
+    not drop the CA row, it just leaves ``Tags`` as ``'N/A'``.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_cas = []
     acmpca_client = utils.get_boto3_client('acm-pca', region_name=region)
 
-    try:
-        paginator = acmpca_client.get_paginator('list_certificate_authorities')
-        for page in paginator.paginate():
-            cas = page.get('CertificateAuthorities', [])
+    paginator = acmpca_client.get_paginator('list_certificate_authorities')
+    for page in paginator.paginate():
+        cas = page.get('CertificateAuthorities', [])
 
-            for ca in cas:
-                ca_arn = ca.get('Arn', 'N/A')
+        for ca in cas:
+            ca_arn = ca.get('Arn', '<unknown>')
 
-                # Get detailed CA information
-                try:
-                    ca_response = acmpca_client.describe_certificate_authority(
-                        CertificateAuthorityArn=ca_arn
+            try:
+                row = _build_ca_row(ca, region)
+            except Exception as e:
+                utils.log_warning(f"Could not process CA {ca_arn} in {region}: {str(e)}")
+                continue
+
+            # Get tags (best-effort — no policy/tags is normal, don't fail the row)
+            try:
+                tags_response = acmpca_client.list_tags(
+                    CertificateAuthorityArn=ca_arn
+                )
+                tags = tags_response.get('Tags', [])
+                if tags:
+                    row['Tags'] = ', '.join(
+                        f"{tag.get('Key')}={tag.get('Value')}" for tag in tags
                     )
-                    ca_details = ca_response.get('CertificateAuthority', {})
+            except Exception:
+                pass
 
-                    # Basic information
-                    ca_arn = ca_details.get('Arn', 'N/A')
-                    ca_type = ca_details.get('Type', 'N/A')
-                    status = ca_details.get('Status', 'N/A')
-                    key_algorithm = ca_details.get('CertificateAuthorityConfiguration', {}).get('KeyAlgorithm', 'N/A')
-                    signing_algorithm = ca_details.get('CertificateAuthorityConfiguration', {}).get('SigningAlgorithm', 'N/A')
-
-                    # Subject information
-                    subject = ca_details.get('CertificateAuthorityConfiguration', {}).get('Subject', {})
-                    common_name = subject.get('CommonName', 'N/A')
-                    organization = subject.get('Organization', 'N/A')
-                    organizational_unit = subject.get('OrganizationalUnit', 'N/A')
-                    country = subject.get('Country', 'N/A')
-                    state = subject.get('State', 'N/A')
-                    locality = subject.get('Locality', 'N/A')
-
-                    # Dates
-                    created_at = ca_details.get('CreatedAt', 'N/A')
-                    if created_at != 'N/A':
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
-
-                    not_before = ca_details.get('NotBefore', 'N/A')
-                    if not_before != 'N/A':
-                        not_before = not_before.strftime('%Y-%m-%d %H:%M:%S')
-
-                    not_after = ca_details.get('NotAfter', 'N/A')
-                    if not_after != 'N/A':
-                        not_after = not_after.strftime('%Y-%m-%d %H:%M:%S')
-
-                    last_state_change = ca_details.get('LastStateChangeAt', 'N/A')
-                    if last_state_change != 'N/A':
-                        last_state_change = last_state_change.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # Revocation configuration
-                    revocation_config = ca_details.get('RevocationConfiguration', {})
-                    crl_config = revocation_config.get('CrlConfiguration', {})
-                    crl_enabled = crl_config.get('Enabled', False)
-                    crl_s3_bucket = crl_config.get('S3BucketName', 'N/A')
-                    crl_s3_object_acl = crl_config.get('S3ObjectAcl', 'N/A')
-                    crl_expiration_days = crl_config.get('ExpirationInDays', 'N/A')
-
-                    ocsp_config = revocation_config.get('OcspConfiguration', {})
-                    ocsp_enabled = ocsp_config.get('Enabled', False)
-                    ocsp_custom_cname = ocsp_config.get('OcspCustomCname', 'N/A')
-
-                    # Key storage security standard
-                    key_storage = ca_details.get('KeyStorageSecurityStandard', 'N/A')
-
-                    # Usage mode
-                    usage_mode = ca_details.get('UsageMode', 'N/A')
-
-                    # Owner account
-                    owner_account = ca_details.get('OwnerAccount', 'N/A')
-
-                    # Failure reason
-                    failure_reason = ca_details.get('FailureReason', 'N/A')
-
-                    # Serial number
-                    serial = ca_details.get('Serial', 'N/A')
-
-                    # Get tags
-                    tags_str = 'N/A'
-                    try:
-                        tags_response = acmpca_client.list_tags(
-                            CertificateAuthorityArn=ca_arn
-                        )
-                        tags = tags_response.get('Tags', [])
-                        if tags:
-                            tags_str = ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
-                    except Exception:
-                        pass
-
-                    regional_cas.append({
-                        'Region': region,
-                        'CA ARN': ca_arn,
-                        'Type': ca_type,
-                        'Status': status,
-                        'Common Name': common_name,
-                        'Organization': organization,
-                        'Organizational Unit': organizational_unit,
-                        'Country': country,
-                        'State': state,
-                        'Locality': locality,
-                        'Key Algorithm': key_algorithm,
-                        'Signing Algorithm': signing_algorithm,
-                        'Key Storage Security Standard': key_storage,
-                        'Usage Mode': usage_mode,
-                        'Serial Number': serial,
-                        'Created At': created_at,
-                        'Not Before': not_before,
-                        'Not After': not_after,
-                        'Last State Change': last_state_change,
-                        'CRL Enabled': crl_enabled,
-                        'CRL S3 Bucket': crl_s3_bucket,
-                        'CRL S3 Object ACL': crl_s3_object_acl,
-                        'CRL Expiration Days': crl_expiration_days,
-                        'OCSP Enabled': ocsp_enabled,
-                        'OCSP Custom CNAME': ocsp_custom_cname,
-                        'Owner Account': owner_account,
-                        'Failure Reason': failure_reason,
-                        'Tags': tags_str
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for CA {ca_arn} in {region}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error listing Private CAs in {region}: {str(e)}")
+            regional_cas.append(row)
 
     return regional_cas
 
 
-@utils.aws_error_handler("Collecting Private Certificate Authorities", default_return=[])
-def collect_private_cas(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect ACM Private CA certificate authority information from AWS regions."""
+def collect_private_cas(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect ACM Private CA certificate authority information from AWS regions,
+    surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(cas, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING PRIVATE CERTIFICATE AUTHORITIES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_private_cas_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_private_cas_region,
+        show_progress=True,
+        collect_failures=True,
+    )
     all_cas = [ca for result in results for ca in result]
     utils.log_success(f"Total Private CAs collected: {len(all_cas)}")
-    return all_cas
+    return all_cas, failed_regions
 
 
 @utils.aws_error_handler("Collecting issued certificates", default_return=[])
@@ -388,7 +427,9 @@ def main():
     # Collect data
     print("\nCollecting ACM Private CA data...")
 
-    cas = collect_private_cas(regions)
+    # Primary scope — region failures must propagate as failed_regions, never
+    # collapse into "empty" (see .collab/audit/07.16.2026-...).
+    cas, failed_regions = collect_private_cas(regions)
     certificates = collect_issued_certificates(regions)
     permissions = collect_ca_permissions(regions)
     summary = generate_summary(cas, certificates, permissions)
@@ -418,7 +459,11 @@ def main():
         df_summary = utils.prepare_dataframe_for_export(df_summary)
         dataframes['Summary'] = df_summary
 
-    # Export to Excel
+    # Export to Excel. The Summary sheet is always non-empty (generate_summary
+    # always returns at least the top-level counters), so ``dataframes`` is
+    # always truthy and a workbook always lands here — this is the Tier-3
+    # PARTIAL behavior we preserve. It does NOT mean the export succeeded;
+    # see the failed_regions check below.
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'acm-privateca', region_suffix)
@@ -429,6 +474,20 @@ def main():
         # Log summary
     else:
         utils.log_warning("No ACM Private CA data found to export")
+
+    # If any region failed the primary Private CA scope collection, make it
+    # loud: write a marker and exit non-zero, even though the forced Summary
+    # sheet means a workbook still landed. A complete-looking file that is
+    # silently missing data is exactly the failure mode this guards against.
+    # A genuinely empty result (every region succeeded, none had CAs) stays
+    # exit 0 with no marker.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'acm-privateca', failed_regions)
+        print(
+            "\nERROR: ACM Private CA export completed with failures — data is incomplete. "
+            "See the *-acm-privateca-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("ACM Private CA export completed successfully")
 
