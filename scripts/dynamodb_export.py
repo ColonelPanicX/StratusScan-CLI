@@ -45,164 +45,182 @@ except ImportError:
 args = utils.parse_script_args("Export DynamoDB tables and capacity to Excel")
 
 
-def scan_dynamodb_tables_in_region(region: str) -> list[dict[str, Any]]:
+def _scan_dynamodb_tables_region(region: str) -> list[dict[str, Any]]:
     """
-    Scan DynamoDB tables in a single region.
+    Collect DynamoDB tables from a single region.
 
-    Args:
-        region: AWS region to scan
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no DynamoDB tables" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
-    Returns:
-        list: List of dictionaries with table information from this region
+    Individual malformed tables are skipped (logged) rather than aborting the
+    whole region.
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    dynamodb_client = utils.get_boto3_client('dynamodb', region_name=region)
+
+    # List tables
+    paginator = dynamodb_client.get_paginator('list_tables')
+    table_names = []
+    for page in paginator.paginate():
+        table_names.extend(page.get('TableNames', []))
+
     regional_tables = []
+    for table_name in table_names:
+        print(f"  Processing table: {table_name}")
 
-    try:
-        dynamodb_client = utils.get_boto3_client('dynamodb', region_name=region)
+        try:
+            table_response = dynamodb_client.describe_table(TableName=table_name)
+            table = table_response.get('Table', {})
+            regional_tables.append(_build_table_row(dynamodb_client, table, region))
+        except Exception as e:
+            # One malformed table is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed DynamoDB table in {region}: {table_name}",
+                e,
+            )
+            continue
 
-        # List tables
-        paginator = dynamodb_client.get_paginator('list_tables')
-        for page in paginator.paginate():
-            table_names = page.get('TableNames', [])
-
-            for table_name in table_names:
-                print(f"  Processing table: {table_name}")
-
-                try:
-                    # Get table details
-                    table_response = dynamodb_client.describe_table(TableName=table_name)
-                    table = table_response.get('Table', {})
-
-                    # Basic info
-                    table_arn = table.get('TableArn', 'N/A')
-                    table_status = table.get('TableStatus', 'UNKNOWN')
-                    creation_date = table.get('CreationDateTime', '')
-                    if creation_date:
-                        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_date, datetime.datetime) else str(creation_date)
-
-                    # Item count and size
-                    item_count = table.get('ItemCount', 0)
-                    table_size_bytes = table.get('TableSizeBytes', 0)
-                    table_size_mb = round(table_size_bytes / (1024 * 1024), 2)
-
-                    # Billing mode
-                    billing_mode_summary = table.get('BillingModeSummary', {})
-                    billing_mode = billing_mode_summary.get('BillingMode', 'PROVISIONED')
-
-                    # Provisioned throughput
-                    provisioned_throughput = table.get('ProvisionedThroughput', {})
-                    read_capacity = provisioned_throughput.get('ReadCapacityUnits', 0)
-                    write_capacity = provisioned_throughput.get('WriteCapacityUnits', 0)
-
-                    # Key schema
-                    key_schema = table.get('KeySchema', [])
-                    partition_key = 'N/A'
-                    sort_key = 'N/A'
-                    for key in key_schema:
-                        if key.get('KeyType') == 'HASH':
-                            partition_key = key.get('AttributeName', 'N/A')
-                        elif key.get('KeyType') == 'RANGE':
-                            sort_key = key.get('AttributeName', 'N/A')
-
-                    # Global Secondary Indexes
-                    gsi_list = table.get('GlobalSecondaryIndexes', [])
-                    gsi_count = len(gsi_list)
-
-                    # Local Secondary Indexes
-                    lsi_list = table.get('LocalSecondaryIndexes', [])
-                    lsi_count = len(lsi_list)
-
-                    # Stream specification
-                    stream_spec = table.get('StreamSpecification', {})
-                    stream_enabled = stream_spec.get('StreamEnabled', False)
-                    stream_view_type = stream_spec.get('StreamViewType', 'N/A') if stream_enabled else 'N/A'
-
-                    # SSE (encryption)
-                    sse_description = table.get('SSEDescription', {})
-                    sse_status = sse_description.get('Status', 'DISABLED')
-                    sse_type = sse_description.get('SSEType', 'N/A') if sse_status == 'ENABLED' else 'N/A'
-                    kms_key_arn = sse_description.get('KMSMasterKeyArn', 'N/A') if sse_type == 'KMS' else 'N/A'
-
-                    # Point-in-time recovery
-                    try:
-                        pitr_response = dynamodb_client.describe_continuous_backups(TableName=table_name)
-                        continuous_backups = pitr_response.get('ContinuousBackupsDescription', {})
-                        pitr_status = continuous_backups.get('PointInTimeRecoveryDescription', {}).get('PointInTimeRecoveryStatus', 'DISABLED')
-                    except Exception:
-                        pitr_status = 'UNKNOWN'
-
-                    # Table class
-                    table_class_summary = table.get('TableClassSummary', {})
-                    table_class = table_class_summary.get('TableClass', 'STANDARD')
-
-                    # Tags
-                    try:
-                        tags_response = dynamodb_client.list_tags_of_resource(ResourceArn=table_arn)
-                        tags = tags_response.get('Tags', [])
-                        tags_str = ', '.join([f"{t['Key']}={t['Value']}" for t in tags]) if tags else 'None'
-                    except Exception:
-                        tags_str = 'Error retrieving'
-
-                    regional_tables.append({
-                        'Region': region,
-                        'Table Name': table_name,
-                        'Status': table_status,
-                        'Billing Mode': billing_mode,
-                        'Read Capacity': read_capacity if billing_mode == 'PROVISIONED' else 'On-Demand',
-                        'Write Capacity': write_capacity if billing_mode == 'PROVISIONED' else 'On-Demand',
-                        'Item Count': item_count,
-                        'Table Size (MB)': table_size_mb,
-                        'Partition Key': partition_key,
-                        'Sort Key': sort_key if sort_key != 'N/A' else 'None',
-                        'GSI Count': gsi_count,
-                        'LSI Count': lsi_count,
-                        'Stream Enabled': stream_enabled,
-                        'Stream View Type': stream_view_type,
-                        'Encryption Status': sse_status,
-                        'Encryption Type': sse_type,
-                        'KMS Key ARN': kms_key_arn,
-                        'PITR Status': pitr_status,
-                        'Table Class': table_class,
-                        'Created Date': creation_date if creation_date else 'N/A',
-                        'Tags': tags_str,
-                        'Table ARN': table_arn
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for table {table_name}: {e}")
-
-        utils.log_info(f"Found {len(regional_tables)} DynamoDB tables in {region}")
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for DynamoDB tables", e)
-
+    print(f"  Found {len(regional_tables)} DynamoDB tables")
+    utils.log_info(f"Found {len(regional_tables)} DynamoDB tables in {region}")
     return regional_tables
 
 
-@utils.aws_error_handler("Collecting DynamoDB tables", default_return=[])
-def collect_dynamodb_tables(regions: list[str]) -> list[dict[str, Any]]:
-    """
-    Collect DynamoDB table information from AWS regions using concurrent scanning.
+def _build_table_row(client, table: dict, region: str) -> dict[str, Any]:
+    """Build a single DynamoDB table export row from a describe_table response."""
+    table_name = table.get('TableName', 'N/A')
 
-    Args:
-        regions: List of AWS regions to scan
+    # Basic info
+    table_arn = table.get('TableArn', 'N/A')
+    table_status = table.get('TableStatus', 'UNKNOWN')
+    creation_date = table.get('CreationDateTime', '')
+    if creation_date:
+        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_date, datetime.datetime) else str(creation_date)
+
+    # Item count and size
+    item_count = table.get('ItemCount', 0)
+    table_size_bytes = table.get('TableSizeBytes', 0)
+    table_size_mb = round(table_size_bytes / (1024 * 1024), 2)
+
+    # Billing mode
+    billing_mode_summary = table.get('BillingModeSummary', {})
+    billing_mode = billing_mode_summary.get('BillingMode', 'PROVISIONED')
+
+    # Provisioned throughput
+    provisioned_throughput = table.get('ProvisionedThroughput', {})
+    read_capacity = provisioned_throughput.get('ReadCapacityUnits', 0)
+    write_capacity = provisioned_throughput.get('WriteCapacityUnits', 0)
+
+    # Key schema
+    key_schema = table.get('KeySchema', [])
+    partition_key = 'N/A'
+    sort_key = 'N/A'
+    for key in key_schema:
+        if key.get('KeyType') == 'HASH':
+            partition_key = key.get('AttributeName', 'N/A')
+        elif key.get('KeyType') == 'RANGE':
+            sort_key = key.get('AttributeName', 'N/A')
+
+    # Global Secondary Indexes
+    gsi_list = table.get('GlobalSecondaryIndexes', [])
+    gsi_count = len(gsi_list)
+
+    # Local Secondary Indexes
+    lsi_list = table.get('LocalSecondaryIndexes', [])
+    lsi_count = len(lsi_list)
+
+    # Stream specification
+    stream_spec = table.get('StreamSpecification', {})
+    stream_enabled = stream_spec.get('StreamEnabled', False)
+    stream_view_type = stream_spec.get('StreamViewType', 'N/A') if stream_enabled else 'N/A'
+
+    # SSE (encryption)
+    sse_description = table.get('SSEDescription', {})
+    sse_status = sse_description.get('Status', 'DISABLED')
+    sse_type = sse_description.get('SSEType', 'N/A') if sse_status == 'ENABLED' else 'N/A'
+    kms_key_arn = sse_description.get('KMSMasterKeyArn', 'N/A') if sse_type == 'KMS' else 'N/A'
+
+    # Point-in-time recovery (best-effort enrichment; a failure here should not
+    # discard the whole table row)
+    try:
+        pitr_response = client.describe_continuous_backups(TableName=table_name)
+        continuous_backups = pitr_response.get('ContinuousBackupsDescription', {})
+        pitr_status = continuous_backups.get('PointInTimeRecoveryDescription', {}).get('PointInTimeRecoveryStatus', 'DISABLED')
+    except Exception:
+        pitr_status = 'UNKNOWN'
+
+    # Table class
+    table_class_summary = table.get('TableClassSummary', {})
+    table_class = table_class_summary.get('TableClass', 'STANDARD')
+
+    # Tags (best-effort enrichment; a failure here should not discard the
+    # whole table row)
+    try:
+        tags_response = client.list_tags_of_resource(ResourceArn=table_arn)
+        tags = tags_response.get('Tags', [])
+        tags_str = ', '.join([f"{t.get('Key', '')}={t.get('Value', '')}" for t in tags]) if tags else 'None'
+    except Exception:
+        tags_str = 'Error retrieving'
+
+    return {
+        'Region': region,
+        'Table Name': table_name,
+        'Status': table_status,
+        'Billing Mode': billing_mode,
+        'Read Capacity': read_capacity if billing_mode == 'PROVISIONED' else 'On-Demand',
+        'Write Capacity': write_capacity if billing_mode == 'PROVISIONED' else 'On-Demand',
+        'Item Count': item_count,
+        'Table Size (MB)': table_size_mb,
+        'Partition Key': partition_key,
+        'Sort Key': sort_key if sort_key != 'N/A' else 'None',
+        'GSI Count': gsi_count,
+        'LSI Count': lsi_count,
+        'Stream Enabled': stream_enabled,
+        'Stream View Type': stream_view_type,
+        'Encryption Status': sse_status,
+        'Encryption Type': sse_type,
+        'KMS Key ARN': kms_key_arn,
+        'PITR Status': pitr_status,
+        'Table Class': table_class,
+        'Created Date': creation_date if creation_date else 'N/A',
+        'Tags': tags_str,
+        'Table ARN': table_arn
+    }
+
+
+def collect_dynamodb_tables(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect DynamoDB table information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Returns:
-        list: List of dictionaries with table information
+        tuple: ``(tables, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING DYNAMODB TABLES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_tables = []
-    for region_data in utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
-        scan_function=scan_dynamodb_tables_in_region,
-    ):
-        all_tables.extend(region_data)
+        scan_function=_scan_dynamodb_tables_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_tables = [table for result in region_results for table in result]
 
     utils.log_success(f"Total DynamoDB tables collected: {len(all_tables)}")
-    return all_tables
+    return all_tables, failed_regions
 
 
 def scan_global_secondary_indexes_in_region(region: str) -> list[dict[str, Any]]:
@@ -431,8 +449,9 @@ def export_dynamodb_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect tables
-    tables = collect_dynamodb_tables(regions)
+    # STEP 1: Collect tables (primary scope — region failures must propagate as
+    # failed_regions, never collapse into "empty").
+    tables, failed_regions = collect_dynamodb_tables(regions)
     if tables:
         data_frames['DynamoDB Tables'] = pd.DataFrame(tables)
 
@@ -486,43 +505,55 @@ def export_dynamodb_data(account_id: str, account_name: str):
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even when
+    # some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'dynamodb',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("DynamoDB data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No DynamoDB data was collected. Nothing to export.")
         print("\nNo DynamoDB resources found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'dynamodb',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("DynamoDB data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary table scope collection, make it loud:
+    # write a marker and exit non-zero, even if some data was exported. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'dynamodb', failed_regions)
+        print(
+            "\nERROR: DynamoDB export completed with failures — data is incomplete. "
+            "See the *-dynamodb-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

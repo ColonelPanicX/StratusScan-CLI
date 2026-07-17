@@ -80,142 +80,188 @@ def calculate_fsx_monthly_cost(
     return round(float(storage_capacity_gb) * rate, 2)
 
 
+def _build_filesystem_row(fs: dict[str, Any], region: str, pricing: dict[str, float]) -> dict[str, Any]:
+    """
+    Build the export row for a single FSx file system.
+
+    Extracted so the per-item processing can be wrapped in try/except by the
+    caller: a malformed file system entry is logged and skipped rather than
+    discarding the whole region's results. Every field is read with ``.get()``
+    and a safe default for the same reason.
+
+    Args:
+        fs: A single FileSystems entry from describe_file_systems.
+        region: AWS region name.
+        pricing: FSx per-GB-month storage rates.
+
+    Returns:
+        dict: The assembled file system row.
+    """
+    file_system_id = fs.get('FileSystemId', '')
+
+    # Basic information
+    file_system_type = fs.get('FileSystemType', '')
+    lifecycle = fs.get('Lifecycle', '')
+    storage_capacity = fs.get('StorageCapacity', 0)
+    storage_type = fs.get('StorageType', 'N/A')
+    vpc_id = fs.get('VpcId', 'N/A')
+
+    # Creation time
+    creation_time = fs.get('CreationTime', '')
+    if creation_time:
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_time, datetime.datetime) else str(creation_time)
+
+    # DNS name
+    dns_name = fs.get('DNSName', 'N/A')
+
+    # KMS key
+    kms_key_id = fs.get('KmsKeyId', 'N/A')
+
+    # Resource ARN
+    resource_arn = fs.get('ResourceARN', '')
+
+    # Subnet IDs
+    subnet_ids = fs.get('SubnetIds', [])
+    subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
+
+    # Network interface IDs
+    network_interface_ids = fs.get('NetworkInterfaceIds', [])
+    eni_count = len(network_interface_ids)
+
+    # File system type-specific configuration
+    type_specific_config = 'N/A'
+    deployment_type = 'N/A'
+    throughput_capacity = 'N/A'
+
+    if file_system_type == 'WINDOWS':
+        windows_config = fs.get('WindowsConfiguration', {})
+        deployment_type = windows_config.get('DeploymentType', 'N/A')
+        throughput_capacity = windows_config.get('ThroughputCapacity', 'N/A')
+        active_directory_id = windows_config.get('ActiveDirectoryId', 'N/A')
+        type_specific_config = f"AD: {active_directory_id}, Throughput: {throughput_capacity} MB/s"
+
+    elif file_system_type == 'LUSTRE':
+        lustre_config = fs.get('LustreConfiguration', {})
+        deployment_type = lustre_config.get('DeploymentType', 'N/A')
+        per_unit_storage_throughput = lustre_config.get('PerUnitStorageThroughput', 'N/A')
+        data_repo_config = lustre_config.get('DataRepositoryConfiguration', {})
+        import_path = data_repo_config.get('ImportPath', 'N/A')
+        type_specific_config = f"S3: {import_path}, Throughput: {per_unit_storage_throughput} MB/s/TiB"
+
+    elif file_system_type == 'ONTAP':
+        ontap_config = fs.get('OntapConfiguration', {})
+        deployment_type = ontap_config.get('DeploymentType', 'N/A')
+        throughput_capacity = ontap_config.get('ThroughputCapacity', 'N/A')
+        endpoint_ip_address_range = ontap_config.get('EndpointIpAddressRange', 'N/A')
+        type_specific_config = f"Endpoint Range: {endpoint_ip_address_range}, Throughput: {throughput_capacity} MB/s"
+
+    elif file_system_type == 'OPENZFS':
+        openzfs_config = fs.get('OpenZFSConfiguration', {})
+        deployment_type = openzfs_config.get('DeploymentType', 'N/A')
+        throughput_capacity = openzfs_config.get('ThroughputCapacity', 'N/A')
+        type_specific_config = f"Throughput: {throughput_capacity} MB/s"
+
+    # Tags
+    tags = fs.get('Tags', [])
+    tag_dict = {tag.get('Key'): tag.get('Value') for tag in tags if 'Key' in tag and 'Value' in tag}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    monthly_cost = calculate_fsx_monthly_cost(
+        file_system_type, storage_type, storage_capacity, pricing
+    )
+
+    return {
+        'Region': region,
+        'File System ID': file_system_id,
+        'File System Type': file_system_type,
+        'Lifecycle': lifecycle,
+        'Storage Capacity (GB)': storage_capacity,
+        'Storage Type': storage_type,
+        'Deployment Type': deployment_type,
+        'Throughput Capacity': throughput_capacity,
+        'Type-Specific Config': type_specific_config,
+        'VPC ID': vpc_id,
+        'Subnet IDs': subnet_ids_str,
+        'Network Interface Count': eni_count,
+        'DNS Name': dns_name,
+        'KMS Key ID': kms_key_id,
+        'Creation Time': creation_time,
+        'Tags': tags_str,
+        'Resource ARN': resource_arn,
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Cost Note': 'Estimate (us-east-1 storage only; excludes throughput capacity charges)',
+    }
+
+
 def _scan_fsx_file_systems_region(region: str) -> list[dict[str, Any]]:
-    """Scan a single region for FSx file systems."""
+    """
+    Scan a single region for FSx file systems.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no FSx file systems" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed file systems are skipped (logged) rather than
+    aborting the whole region.
+    """
     file_systems_data = []
 
     if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
         return file_systems_data
 
     pricing = _load_fsx_pricing()
 
-    try:
-        fsx_client = utils.get_boto3_client('fsx', region_name=region)
+    fsx_client = utils.get_boto3_client('fsx', region_name=region)
 
-        # Get FSx file systems
-        paginator = fsx_client.get_paginator('describe_file_systems')
+    # Get FSx file systems
+    paginator = fsx_client.get_paginator('describe_file_systems')
 
-        for page in paginator.paginate():
-            file_systems = page.get('FileSystems', [])
+    for page in paginator.paginate():
+        file_systems = page.get('FileSystems', [])
 
-            for fs in file_systems:
-                file_system_id = fs.get('FileSystemId', '')
-
-                # Basic information
-                file_system_type = fs.get('FileSystemType', '')
-                lifecycle = fs.get('Lifecycle', '')
-                storage_capacity = fs.get('StorageCapacity', 0)
-                storage_type = fs.get('StorageType', 'N/A')
-                vpc_id = fs.get('VpcId', 'N/A')
-
-                # Creation time
-                creation_time = fs.get('CreationTime', '')
-                if creation_time:
-                    creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_time, datetime.datetime) else str(creation_time)
-
-                # DNS name
-                dns_name = fs.get('DNSName', 'N/A')
-
-                # KMS key
-                kms_key_id = fs.get('KmsKeyId', 'N/A')
-
-                # Resource ARN
-                resource_arn = fs.get('ResourceARN', '')
-
-                # Subnet IDs
-                subnet_ids = fs.get('SubnetIds', [])
-                subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
-
-                # Network interface IDs
-                network_interface_ids = fs.get('NetworkInterfaceIds', [])
-                eni_count = len(network_interface_ids)
-
-                # File system type-specific configuration
-                type_specific_config = 'N/A'
-                deployment_type = 'N/A'
-                throughput_capacity = 'N/A'
-
-                if file_system_type == 'WINDOWS':
-                    windows_config = fs.get('WindowsConfiguration', {})
-                    deployment_type = windows_config.get('DeploymentType', 'N/A')
-                    throughput_capacity = windows_config.get('ThroughputCapacity', 'N/A')
-                    active_directory_id = windows_config.get('ActiveDirectoryId', 'N/A')
-                    type_specific_config = f"AD: {active_directory_id}, Throughput: {throughput_capacity} MB/s"
-
-                elif file_system_type == 'LUSTRE':
-                    lustre_config = fs.get('LustreConfiguration', {})
-                    deployment_type = lustre_config.get('DeploymentType', 'N/A')
-                    per_unit_storage_throughput = lustre_config.get('PerUnitStorageThroughput', 'N/A')
-                    data_repo_config = lustre_config.get('DataRepositoryConfiguration', {})
-                    import_path = data_repo_config.get('ImportPath', 'N/A')
-                    type_specific_config = f"S3: {import_path}, Throughput: {per_unit_storage_throughput} MB/s/TiB"
-
-                elif file_system_type == 'ONTAP':
-                    ontap_config = fs.get('OntapConfiguration', {})
-                    deployment_type = ontap_config.get('DeploymentType', 'N/A')
-                    throughput_capacity = ontap_config.get('ThroughputCapacity', 'N/A')
-                    endpoint_ip_address_range = ontap_config.get('EndpointIpAddressRange', 'N/A')
-                    type_specific_config = f"Endpoint Range: {endpoint_ip_address_range}, Throughput: {throughput_capacity} MB/s"
-
-                elif file_system_type == 'OPENZFS':
-                    openzfs_config = fs.get('OpenZFSConfiguration', {})
-                    deployment_type = openzfs_config.get('DeploymentType', 'N/A')
-                    throughput_capacity = openzfs_config.get('ThroughputCapacity', 'N/A')
-                    type_specific_config = f"Throughput: {throughput_capacity} MB/s"
-
-                # Tags
-                tags = fs.get('Tags', [])
-                tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
-                tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-                monthly_cost = calculate_fsx_monthly_cost(
-                    file_system_type, storage_type, storage_capacity, pricing
+        for fs in file_systems:
+            try:
+                file_systems_data.append(_build_filesystem_row(fs, region, pricing))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed FSx file system in {region}: "
+                    f"{fs.get('FileSystemId', '<unknown>')}",
+                    e,
                 )
-
-                file_systems_data.append({
-                    'Region': region,
-                    'File System ID': file_system_id,
-                    'File System Type': file_system_type,
-                    'Lifecycle': lifecycle,
-                    'Storage Capacity (GB)': storage_capacity,
-                    'Storage Type': storage_type,
-                    'Deployment Type': deployment_type,
-                    'Throughput Capacity': throughput_capacity,
-                    'Type-Specific Config': type_specific_config,
-                    'VPC ID': vpc_id,
-                    'Subnet IDs': subnet_ids_str,
-                    'Network Interface Count': eni_count,
-                    'DNS Name': dns_name,
-                    'KMS Key ID': kms_key_id,
-                    'Creation Time': creation_time,
-                    'Tags': tags_str,
-                    'Resource ARN': resource_arn,
-                    'Monthly Cost (On-Demand)': monthly_cost,
-                    'Cost Note': 'Estimate (us-east-1 storage only; excludes throughput capacity charges)',
-                })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting FSx file systems in {region}", e)
+                continue
 
     return file_systems_data
 
 
-@utils.aws_error_handler("Collecting FSx file systems", default_return=[])
-def collect_fsx_file_systems(regions: list[str]) -> list[dict[str, Any]]:
+def collect_fsx_file_systems(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect FSx file system information from AWS regions.
+    Collect FSx file system information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with FSx file system information
+        tuple: ``(file_systems, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING FSx FILE SYSTEMS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_fsx_file_systems_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_fsx_file_systems_region,
+        show_progress=True,
+        collect_failures=True,
+    )
     all_file_systems = [fs for result in results for fs in result]
     utils.log_success(f"Total FSx file systems collected: {len(all_file_systems)}")
-    return all_file_systems
+    return all_file_systems, failed_regions
 
 
 def _scan_fsx_backups_region(region: str) -> list[dict[str, Any]]:
@@ -313,53 +359,68 @@ def export_fsx_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect file systems
-    file_systems = collect_fsx_file_systems(regions)
+    # STEP 1: Collect file systems (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    file_systems, failed_regions = collect_fsx_file_systems(regions)
     if file_systems:
         data_frames['File Systems'] = pd.DataFrame(file_systems)
 
-    # STEP 2: Collect backups
+    # STEP 2: Collect backups (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     backups = collect_fsx_backups(regions)
     if backups:
         data_frames['Backups'] = pd.DataFrame(backups)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 3: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 4: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'fsx',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("FSx data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No FSx data was collected. Nothing to export.")
         print("\nNo FSx file systems found in the selected region(s).")
-        return
 
-    # STEP 3: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 4: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'fsx',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("FSx data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary file system scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was exported.
+    # A partial export that looks complete is exactly the failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'fsx', failed_regions)
+        print(
+            "\nERROR: FSx export completed with failures — data is incomplete. "
+            "See the *-fsx-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
