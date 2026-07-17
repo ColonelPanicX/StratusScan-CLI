@@ -54,6 +54,19 @@ _EXCLUDED = {
     "governance_resources.py",
     "output_archive.py",
     "services_in_use_export.py",
+    # image_builder and ssm_fleet: moto does not implement their PRIMARY
+    # collection APIs — imagebuilder:ListImagePipelines raises ClientError 404
+    # "Not yet implemented" and ssm:DescribeInstanceInformation raises
+    # NotImplementedError. With the Tier-2 silent-collection-failure fix, a
+    # primary-scope collection error is (correctly) surfaced as a failed scope
+    # -> FAILED marker -> sys.exit(1), so these cannot exit 0 against an empty
+    # mocked environment. The scripts are correct in production (the APIs exist
+    # there); adding an availability-probe skip would reintroduce silent loss on
+    # a real throttle/deny. Behavior is covered by the dedicated regression
+    # suites: tests/test_exporters/test_image_builder_export.py and
+    # test_ssm_fleet_export.py.
+    "image_builder_export.py",
+    "ssm_fleet_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(
