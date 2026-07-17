@@ -87,77 +87,122 @@ def check_subscription() -> dict[str, Any]:
             raise
 
 
-@utils.aws_error_handler("Collecting Shield protections", default_return=[])
+def _build_protection_row(client, protection: dict[str, Any], processed: int, total_protections: int) -> dict[str, Any]:
+    """
+    Build the export row for a single Shield protection.
+
+    Extracted so per-protection processing can be wrapped in try/except by
+    the caller: a malformed protection entry must not sink the whole
+    account-scope collection. Required fields are read with ``.get()`` and a
+    safe default for the same reason.
+
+    Args:
+        client: The boto3 Shield client.
+        protection (dict): A single Protections entry from list_protections.
+        processed: 1-based index of this protection within the current run.
+        total_protections: Total protection count, for progress logging.
+
+    Returns:
+        dict: The assembled protection row.
+    """
+    progress = (processed / total_protections) * 100 if total_protections > 0 else 0
+
+    # Log progress every 10 protections or at completion
+    if processed % 10 == 0 or processed == total_protections:
+        utils.log_info(f"[{progress:.1f}%] Processed {processed}/{total_protections} protections")
+
+    # Get detailed protection info
+    protection_id = protection.get('Id')
+    protection_detail = None
+
+    try:
+        if protection_id:
+            detail_response = client.describe_protection(ProtectionId=protection_id)
+            protection_detail = detail_response.get('Protection', {})
+    except Exception as e:
+        utils.log_debug(f"Could not get details for protection {protection_id}: {e}")
+
+    # Parse resource ARN for type
+    resource_arn = protection.get('ResourceArn', 'N/A')
+    resource_type = parse_resource_type(resource_arn)
+
+    return {
+        'Protection ID': protection.get('Id', 'N/A'),
+        'Protection Name': protection.get('Name', 'N/A'),
+        'Resource ARN': resource_arn,
+        'Resource Type': resource_type,
+        'Health Check IDs': format_list(protection.get('HealthCheckIds', [])),
+        'Protection ARN': protection.get('ProtectionArn', 'N/A'),
+        'Application Layer Automatic Response': 'Configured' if protection_detail and protection_detail.get('ApplicationLayerAutomaticResponseConfiguration') else 'Not Configured'
+    }
+
+
 def collect_protections() -> list[dict[str, Any]]:
     """
     Collect all Shield Advanced protections.
 
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no protections configured), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Shield Advanced is a global, account-scope service (not
+    multi-region — see scripts/iam_export.py for the account-scope
+    reference pattern this follows). Account-scope failures (client
+    creation, pagination) are allowed to raise so the caller (main) can
+    record this scope as *failed* rather than *empty*. Per-protection
+    errors are contained internally (logged and skipped).
+
     Returns:
-        list: List of protection information dictionaries
+        list: List of protection information dictionaries.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     protections_data = []
     home_region = utils.get_partition_default_region()
     client = utils.get_boto3_client('shield', region_name=home_region)
 
-    try:
-        # List protections using paginator
-        paginator = client.get_paginator('list_protections')
+    # List protections using paginator
+    paginator = client.get_paginator('list_protections')
 
-        total_protections = 0
-        for page in paginator.paginate():
-            protections = page.get('Protections', [])
-            total_protections += len(protections)
+    total_protections = 0
+    for page in paginator.paginate():
+        protections = page.get('Protections', [])
+        total_protections += len(protections)
 
-        if total_protections > 0:
-            utils.log_info(f"Found {total_protections} Shield protection(s) to process")
-        else:
-            utils.log_info("No Shield protections found")
-            return []
+    if total_protections > 0:
+        utils.log_info(f"Found {total_protections} Shield protection(s) to process")
+    else:
+        utils.log_info("No Shield protections found")
+        return []
 
-        # Reset paginator and process protections
-        paginator = client.get_paginator('list_protections')
-        processed = 0
+    # Reset paginator and process protections
+    paginator = client.get_paginator('list_protections')
+    processed = 0
+    skipped = 0
 
-        for page in paginator.paginate():
-            protections = page.get('Protections', [])
+    for page in paginator.paginate():
+        protections = page.get('Protections', [])
 
-            for protection in protections:
-                processed += 1
-                progress = (processed / total_protections) * 100 if total_protections > 0 else 0
+        for protection in protections:
+            processed += 1
 
-                # Log progress every 10 protections or at completion
-                if processed % 10 == 0 or processed == total_protections:
-                    utils.log_info(f"[{progress:.1f}%] Processed {processed}/{total_protections} protections")
+            try:
+                protection_info = _build_protection_row(client, protection, processed, total_protections)
+            except Exception as e:
+                skipped += 1
+                protection_id = protection.get('Id', 'Unknown') if isinstance(protection, dict) else 'Unknown'
+                utils.log_error(f"Skipping Shield protection '{protection_id}' due to a processing error", e)
+                continue
 
-                # Get detailed protection info
-                protection_id = protection.get('Id')
-                protection_detail = None
+            protections_data.append(protection_info)
 
-                try:
-                    if protection_id:
-                        detail_response = client.describe_protection(ProtectionId=protection_id)
-                        protection_detail = detail_response.get('Protection', {})
-                except Exception as e:
-                    utils.log_debug(f"Could not get details for protection {protection_id}: {e}")
-
-                # Parse resource ARN for type
-                resource_arn = protection.get('ResourceArn', 'N/A')
-                resource_type = parse_resource_type(resource_arn)
-
-                protection_info = {
-                    'Protection ID': protection.get('Id', 'N/A'),
-                    'Protection Name': protection.get('Name', 'N/A'),
-                    'Resource ARN': resource_arn,
-                    'Resource Type': resource_type,
-                    'Health Check IDs': format_list(protection.get('HealthCheckIds', [])),
-                    'Protection ARN': protection.get('ProtectionArn', 'N/A'),
-                    'Application Layer Automatic Response': 'Configured' if protection_detail and protection_detail.get('ApplicationLayerAutomaticResponseConfiguration') else 'Not Configured'
-                }
-
-                protections_data.append(protection_info)
-
-    except Exception as e:
-        utils.log_error("Error collecting Shield protections", e)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_protections} Shield protection(s) were skipped due to "
+            "processing errors (see log above); the remaining protections were still collected."
+        )
 
     return protections_data
 
@@ -669,6 +714,18 @@ def export_to_excel(
 def main():
     """
     Main function to orchestrate the Shield Advanced information collection.
+
+    Shield Advanced is a global, account-scope service (not multi-region),
+    so failures are tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/iam_export.py for the
+    account-scope reference pattern). Subscription-not-active is a
+    legitimate, graceful "service not enabled" state (exit 0, no marker)
+    and must not be confused with a real collection failure on the
+    ``protections`` scope, which is exported as a partial result (if any
+    data was collected) and always surfaced via
+    ``utils.report_collection_failures`` + a non-zero exit — it must never
+    be silently collapsed into "no protections" (07.15.2026 / 07.16.2026
+    audits).
     """
     try:
         # Check dependencies first
@@ -723,15 +780,31 @@ def main():
             print("  2. Review pricing and terms")
             print("  3. Complete subscription process")
             print("\nExiting without export.")
-            return
+            # Graceful skip — Shield Advanced not being subscribed is a
+            # legitimate, expected state, NOT a collection failure. No
+            # failure marker is written.
+            sys.exit(0)
 
         utils.log_success("Shield Advanced subscription confirmed")
         utils.log_info("Collecting Shield Advanced information...")
 
-        # Collect all data
-        utils.log_info("Collecting protected resources...")
-        protections_data = collect_protections()
+        # Account-scope failure tracking (see scripts/iam_export.py).
+        failed_scopes = []
 
+        # STEP 1: Collect protections (PRIMARY scope — a real API error here
+        # must propagate to failed_scopes, never collapse into an empty list
+        # that reads as "no protections configured").
+        utils.log_info("Collecting protected resources...")
+        try:
+            protections_data = collect_protections()
+        except Exception as e:
+            failed_scopes.append(('protections', str(e)))
+            utils.log_error(f"Shield protections collection failed: {e}")
+            protections_data = []
+
+        # STEP 2+: Enrichment collectors — degrade gracefully to a safe
+        # default via their own aws_error_handler decorators; a failure here
+        # does not fail the whole export.
         utils.log_info("Collecting attack history (last 90 days)...")
         attacks_data = collect_attacks()
 
@@ -748,7 +821,9 @@ def main():
         print("COLLECTION COMPLETE")
         print("====================================================================")
 
-        # Export to Excel
+        # Export whatever succeeded — a partial export is required even
+        # when the protections scope failed (see
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
         filename = export_to_excel(
             subscription,
             protections_data,
@@ -766,8 +841,25 @@ def main():
             utils.log_info(f"Protection groups: {len(groups_data)}")
             utils.log_info(f"DRT access: {drt_data.get('Status', 'Unknown')}")
             print("\nScript execution completed.")
+        elif not failed_scopes:
+            # Genuinely empty: subscription active, protections scope
+            # succeeded, and there is simply nothing configured.
+            utils.log_warning("No Shield Advanced data was collected. Nothing to export.")
         else:
             utils.log_error("Export failed. Please check the logs.")
+
+        # If the protections scope failed, make it loud: write a marker and
+        # exit non-zero, even if a partial export (enrichment sheets) was
+        # written. A partial export that looks complete is exactly the
+        # failure mode this guards against.
+        if failed_scopes:
+            utils.report_collection_failures(account_name, 'shield-advanced', failed_scopes)
+            print(
+                "\nERROR: Shield Advanced export completed with failures — data is "
+                "incomplete. See the *-shield-advanced-FAILED-*.txt marker in the "
+                "output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")

@@ -45,16 +45,90 @@ except ImportError:
 args = utils.parse_script_args("Export IAM Access Analyzer findings and analyzers to Excel")
 
 
-@utils.aws_error_handler("Collecting Access Analyzers from region", default_return=[])
+def _build_analyzer_row(analyzer: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single Access Analyzer.
+
+    Extracted so the per-analyzer processing can be wrapped in try/except by
+    the caller: a malformed analyzer entry is logged and skipped rather than
+    discarding the whole region's results.
+
+    Args:
+        analyzer: A single analyzers entry from list_analyzers.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled analyzer row.
+    """
+    analyzer_name = analyzer.get('name', '')
+    analyzer_arn = analyzer.get('arn', '')
+
+    # Type (ACCOUNT or ORGANIZATION)
+    analyzer_type = analyzer.get('type', '')
+
+    # Status
+    status = analyzer.get('status', '')
+
+    # Created at
+    created_at = analyzer.get('createdAt', '')
+    if created_at:
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
+
+    # Last resource analyzed
+    last_resource_analyzed = analyzer.get('lastResourceAnalyzed', 'N/A')
+
+    # Last resource analyzed at
+    last_resource_analyzed_at = analyzer.get('lastResourceAnalyzedAt', '')
+    if last_resource_analyzed_at:
+        last_resource_analyzed_at = last_resource_analyzed_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_resource_analyzed_at, datetime.datetime) else str(last_resource_analyzed_at)
+    else:
+        last_resource_analyzed_at = 'Never'
+
+    # Tags
+    tags = analyzer.get('tags', {})
+    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'N/A'
+
+    # Status reason
+    status_reason = analyzer.get('statusReason', {})
+    status_reason_code = status_reason.get('code', 'N/A')
+
+    return {
+        'Region': region,
+        'Analyzer Name': analyzer_name,
+        'Type': analyzer_type,
+        'Status': status,
+        'Status Reason': status_reason_code,
+        'Last Resource Analyzed': last_resource_analyzed,
+        'Last Analysis Time': last_resource_analyzed_at,
+        'Created At': created_at,
+        'Tags': tags_str,
+        'Analyzer ARN': analyzer_arn
+    }
+
+
 def collect_analyzers_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect IAM Access Analyzer information from a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no analyzers" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed analyzers are skipped (logged) rather than aborting
+    the whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with analyzer information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     if not utils.is_aws_region(region):
         return []
@@ -70,64 +144,41 @@ def collect_analyzers_from_region(region: str) -> list[dict[str, Any]]:
         analyzers = page.get('analyzers', [])
 
         for analyzer in analyzers:
-            analyzer_name = analyzer.get('name', '')
-            analyzer_arn = analyzer.get('arn', '')
-
-            # Type (ACCOUNT or ORGANIZATION)
-            analyzer_type = analyzer.get('type', '')
-
-            # Status
-            status = analyzer.get('status', '')
-
-            # Created at
-            created_at = analyzer.get('createdAt', '')
-            if created_at:
-                created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
-
-            # Last resource analyzed
-            last_resource_analyzed = analyzer.get('lastResourceAnalyzed', 'N/A')
-
-            # Last resource analyzed at
-            last_resource_analyzed_at = analyzer.get('lastResourceAnalyzedAt', '')
-            if last_resource_analyzed_at:
-                last_resource_analyzed_at = last_resource_analyzed_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_resource_analyzed_at, datetime.datetime) else str(last_resource_analyzed_at)
-            else:
-                last_resource_analyzed_at = 'Never'
-
-            # Tags
-            tags = analyzer.get('tags', {})
-            tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'N/A'
-
-            # Status reason
-            status_reason = analyzer.get('statusReason', {})
-            status_reason_code = status_reason.get('code', 'N/A')
-
-            analyzers_data.append({
-                'Region': region,
-                'Analyzer Name': analyzer_name,
-                'Type': analyzer_type,
-                'Status': status,
-                'Status Reason': status_reason_code,
-                'Last Resource Analyzed': last_resource_analyzed,
-                'Last Analysis Time': last_resource_analyzed_at,
-                'Created At': created_at,
-                'Tags': tags_str,
-                'Analyzer ARN': analyzer_arn
-            })
+            try:
+                analyzers_data.append(_build_analyzer_row(analyzer, region))
+            except Exception as e:
+                # One malformed analyzer is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Access Analyzer in {region}: "
+                    f"{analyzer.get('name', '<unknown>')}",
+                    e,
+                )
+                continue
 
     utils.log_info(f"Found {len(analyzers_data)} analyzers in {region}")
     return analyzers_data
 
 
-def collect_analyzers(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect IAM Access Analyzer information using concurrent scanning."""
+def collect_analyzers(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect IAM Access Analyzer information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(analyzers, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING ACCESS ANALYZERS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Access Analyzers...")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_analyzers_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -136,7 +187,7 @@ def collect_analyzers(regions: list[str]) -> list[dict[str, Any]]:
         all_analyzers.extend(analyzers_in_region)
 
     utils.log_success(f"Total Access Analyzers collected: {len(all_analyzers)}")
-    return all_analyzers
+    return all_analyzers, failed_regions
 
 
 @utils.aws_error_handler("Collecting active findings from region", default_return=[])
@@ -478,8 +529,9 @@ def export_access_analyzer_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect analyzers
-    analyzers = collect_analyzers(regions)
+    # STEP 1: Collect analyzers (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    analyzers, failed_regions = collect_analyzers(regions)
     if analyzers:
         data_frames['Analyzers'] = pd.DataFrame(analyzers)
 
@@ -498,43 +550,56 @@ def export_access_analyzer_data(account_id: str, account_name: str):
     if archive_rules:
         data_frames['Archive Rules'] = pd.DataFrame(archive_rules)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even when
+    # some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'access-analyzer',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Access Analyzer data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Access Analyzer data was collected. Nothing to export.")
         print("\nNo Access Analyzers found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'access-analyzer',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Access Analyzer data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the Analyzers scope collection, make it loud: write
+    # a marker and exit non-zero, even if some data was exported. A partial
+    # export that looks complete is exactly the failure mode this guards
+    # against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'access-analyzer', failed_regions)
+        print(
+            "\nERROR: Access Analyzer export completed with failures — data is incomplete. "
+            "See the *-access-analyzer-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

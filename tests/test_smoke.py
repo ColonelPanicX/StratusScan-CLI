@@ -63,11 +63,18 @@ _EXCLUDED = {
     # mocked environment. The scripts are correct in production (the APIs exist
     # there); adding an availability-probe skip would reintroduce silent loss on
     # a real throttle/deny. Behavior is covered by the dedicated regression
-    # suites under tests/test_exporters/. bedrock joins them for the same reason:
-    # moto's bedrock:ListFoundationModels raises NotImplementedError.
+    # suites under tests/test_exporters/. The others below join for the same
+    # reason — moto does not implement their primary collection API:
+    #   bedrock:ListFoundationModels        -> NotImplementedError
+    #   accessanalyzer:ListAnalyzers        -> 404 "Not yet implemented"
+    #   detective:ListGraphs                -> 404 "Not yet implemented"
+    #   config:DescribeConformancePacks     -> NotImplementedError (one of its scopes)
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
+    "access_analyzer_export.py",
+    "detective_export.py",
+    "config_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(
