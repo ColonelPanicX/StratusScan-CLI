@@ -27,74 +27,111 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Cloud Map namespaces and services to Excel")
 
+def _build_namespace_row(namespace_summary: dict, region: str) -> dict[str, Any]:
+    """Build a single Cloud Map namespace export row from a list_namespaces summary."""
+    namespace_id = namespace_summary.get('Id', 'N/A')
+    namespace_name = namespace_summary.get('Name', 'N/A')
+    namespace_type = namespace_summary.get('Type', 'N/A')
+
+    sd_client = utils.get_boto3_client('servicediscovery', region_name=region)
+
+    # Get detailed namespace information
+    namespace_response = sd_client.get_namespace(
+        Id=namespace_id
+    )
+    namespace_details = namespace_response.get('Namespace', {})
+
+    description = namespace_details.get('Description', 'N/A')
+    service_count = namespace_details.get('ServiceCount', 0)
+    arn = namespace_details.get('Arn', 'N/A')
+    create_date = namespace_details.get('CreateDate', 'N/A')
+    if create_date != 'N/A':
+        create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Properties specific to namespace type
+    properties = namespace_details.get('Properties', {})
+    dns_properties = properties.get('DnsProperties', {})
+    http_properties = properties.get('HttpProperties', {})
+
+    hosted_zone_id = dns_properties.get('HostedZoneId', 'N/A')
+    http_name = http_properties.get('HttpName', 'N/A')
+
+    return {
+        'Region': region,
+        'Namespace ID': namespace_id,
+        'Namespace Name': namespace_name,
+        'Type': namespace_type,
+        'Description': description,
+        'Service Count': service_count,
+        'Hosted Zone ID': hosted_zone_id,
+        'HTTP Name': http_name,
+        'Created': create_date,
+        'ARN': arn
+    }
+
+
 def _scan_namespaces_region(region: str) -> list[dict[str, Any]]:
-    """Scan Cloud Map namespaces in a single region."""
+    """
+    Collect Cloud Map namespaces from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no namespaces" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed namespaces are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_namespaces = []
     sd_client = utils.get_boto3_client('servicediscovery', region_name=region)
 
-    try:
-        paginator = sd_client.get_paginator('list_namespaces')
-        for page in paginator.paginate():
-            namespaces = page.get('Namespaces', [])
+    paginator = sd_client.get_paginator('list_namespaces')
+    for page in paginator.paginate():
+        namespaces = page.get('Namespaces', [])
 
-            for namespace_summary in namespaces:
-                namespace_id = namespace_summary.get('Id', 'N/A')
-                namespace_name = namespace_summary.get('Name', 'N/A')
-                namespace_type = namespace_summary.get('Type', 'N/A')
-
-                try:
-                    # Get detailed namespace information
-                    namespace_response = sd_client.get_namespace(
-                        Id=namespace_id
-                    )
-                    namespace_details = namespace_response.get('Namespace', {})
-
-                    description = namespace_details.get('Description', 'N/A')
-                    service_count = namespace_details.get('ServiceCount', 0)
-                    arn = namespace_details.get('Arn', 'N/A')
-                    create_date = namespace_details.get('CreateDate', 'N/A')
-                    if create_date != 'N/A':
-                        create_date = create_date.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # Properties specific to namespace type
-                    properties = namespace_details.get('Properties', {})
-                    dns_properties = properties.get('DnsProperties', {})
-                    http_properties = properties.get('HttpProperties', {})
-
-                    hosted_zone_id = dns_properties.get('HostedZoneId', 'N/A')
-                    http_name = http_properties.get('HttpName', 'N/A')
-
-                    regional_namespaces.append({
-                        'Region': region,
-                        'Namespace ID': namespace_id,
-                        'Namespace Name': namespace_name,
-                        'Type': namespace_type,
-                        'Description': description,
-                        'Service Count': service_count,
-                        'Hosted Zone ID': hosted_zone_id,
-                        'HTTP Name': http_name,
-                        'Created': create_date,
-                        'ARN': arn
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for namespace {namespace_id} in {region}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error listing namespaces in {region}: {str(e)}")
+        for namespace_summary in namespaces:
+            try:
+                regional_namespaces.append(_build_namespace_row(namespace_summary, region))
+            except Exception as e:
+                # One malformed namespace is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Cloud Map namespace in {region}: "
+                    f"{namespace_summary.get('Id', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return regional_namespaces
 
 
-@utils.aws_error_handler("Collecting Cloud Map namespaces", default_return=[])
-def collect_namespaces(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Cloud Map namespace information from AWS regions."""
+def collect_namespaces(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Cloud Map namespace information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(namespaces, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING CLOUD MAP NAMESPACES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_namespaces_region)
-    all_namespaces = [namespace for result in results for namespace in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_namespaces_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_namespaces = [namespace for result in region_results for namespace in result]
     utils.log_success(f"Total namespaces collected: {len(all_namespaces)}")
-    return all_namespaces
+    return all_namespaces, failed_regions
 
 
 def _scan_services_region(region: str) -> list[dict[str, Any]]:
@@ -317,7 +354,9 @@ def main():
     # Collect data
     print("\nCollecting Cloud Map data...")
 
-    namespaces = collect_namespaces(regions)
+    # Namespaces are the primary scope — region failures must propagate as
+    # failed_regions, never collapse into "empty".
+    namespaces, failed_regions = collect_namespaces(regions)
     services = collect_services(regions)
     instances = collect_service_instances(regions)
     summary = generate_summary(namespaces, services, instances)
@@ -347,7 +386,8 @@ def main():
         df_instances = utils.prepare_dataframe_for_export(df_instances)
         dataframes['Service Instances'] = df_instances
 
-    # Export to Excel
+    # Export to Excel — a forced Summary sheet means a workbook always lands,
+    # even when the underlying data is empty or a region failed.
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'cloudmap', region_suffix)
@@ -360,6 +400,18 @@ def main():
         utils.log_warning("No Cloud Map data found to export")
 
     utils.log_success("Cloud Map export completed successfully")
+
+    # If ANY region failed the namespace scope collection, make it loud: write
+    # a marker and exit non-zero, even though a workbook was still written
+    # (the forced Summary sheet). A complete-looking file that hides a failed
+    # scope is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'cloudmap', failed_regions)
+        print(
+            "\nERROR: Cloud Map export completed with failures — data is incomplete. "
+            "See the *-cloudmap-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

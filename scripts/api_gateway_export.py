@@ -45,99 +45,136 @@ except ImportError:
 args = utils.parse_script_args("Export AWS API Gateway REST and HTTP APIs to Excel")
 
 
+def _build_rest_api_row(item: dict, region: str) -> dict[str, Any]:
+    """
+    Build a single REST API export row from a get_rest_apis item.
+
+    Extracted so the per-item processing can be wrapped in try/except by the
+    caller: a malformed API entry is logged and skipped rather than
+    discarding the whole region's results.
+    """
+    api_id = item.get('id', 'N/A')
+    api_name = item.get('name', 'N/A')
+
+    print(f"  Processing REST API: {api_name}")
+
+    # API details
+    api_type = 'REST'
+    description = item.get('description', 'N/A')
+    created_date = item.get('createdDate', '')
+    if created_date:
+        created_date = created_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_date, datetime.datetime) else str(created_date)
+
+    # Endpoint configuration
+    endpoint_config = item.get('endpointConfiguration', {})
+    endpoint_types = endpoint_config.get('types', [])
+    endpoint_types_str = ', '.join(endpoint_types) if endpoint_types else 'EDGE'
+
+    # Policy
+    policy = item.get('policy', 'None')
+
+    # Version
+    version = item.get('version', 'N/A')
+
+    # Tags
+    tags = item.get('tags', {})
+    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
+
+    return {
+        'Region': region,
+        'API ID': api_id,
+        'API Name': api_name,
+        'API Type': api_type,
+        'Description': description,
+        'Endpoint Type': endpoint_types_str,
+        'Created Date': created_date if created_date else 'N/A',
+        'Version': version,
+        'Has Policy': 'Yes' if policy != 'None' else 'No',
+        'Tags': tags_str
+    }
+
+
 def scan_rest_apis_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan REST APIs in a single AWS region.
+
+    Not wrapped in a broad try/except: a region-level API/permission failure
+    here must propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records the region as failed instead of silently reporting "no REST
+    APIs" (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed items are skipped (logged) rather than aborting the
+    whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of REST API dictionaries for this region
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     region_apis = []
 
-    try:
-        apigw_client = utils.get_boto3_client('apigateway', region_name=region)
+    apigw_client = utils.get_boto3_client('apigateway', region_name=region)
 
-        paginator = apigw_client.get_paginator('get_rest_apis')
-        for page in paginator.paginate():
-            apis = page.get('items', [])
+    paginator = apigw_client.get_paginator('get_rest_apis')
+    for page in paginator.paginate():
+        apis = page.get('items', [])
 
-            for api in apis:
-                api_id = api.get('id', 'N/A')
-                api_name = api.get('name', 'N/A')
-
-                print(f"  Processing REST API: {api_name}")
-
-                # API details
-                api_type = 'REST'
-                description = api.get('description', 'N/A')
-                created_date = api.get('createdDate', '')
-                if created_date:
-                    created_date = created_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_date, datetime.datetime) else str(created_date)
-
-                # Endpoint configuration
-                endpoint_config = api.get('endpointConfiguration', {})
-                endpoint_types = endpoint_config.get('types', [])
-                endpoint_types_str = ', '.join(endpoint_types) if endpoint_types else 'EDGE'
-
-                # Policy
-                policy = api.get('policy', 'None')
-
-                # Version
-                version = api.get('version', 'N/A')
-
-                # Tags
-                tags = api.get('tags', {})
-                tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
-
-                region_apis.append({
-                    'Region': region,
-                    'API ID': api_id,
-                    'API Name': api_name,
-                    'API Type': api_type,
-                    'Description': description,
-                    'Endpoint Type': endpoint_types_str,
-                    'Created Date': created_date if created_date else 'N/A',
-                    'Version': version,
-                    'Has Policy': 'Yes' if policy != 'None' else 'No',
-                    'Tags': tags_str
-                })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting REST APIs in region {region}", e)
+        for api in apis:
+            try:
+                region_apis.append(_build_rest_api_row(api, region))
+            except Exception as e:
+                # One malformed REST API is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed REST API in {region}: "
+                    f"{api.get('id', '<unknown>')}",
+                    e,
+                )
+                continue
 
     utils.log_info(f"Found {len(region_apis)} REST APIs in {region}")
     return region_apis
 
 
-@utils.aws_error_handler("Collecting REST APIs", default_return=[])
-def collect_rest_apis(regions: list[str]) -> list[dict[str, Any]]:
+def collect_rest_apis(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect REST API (v1) information from AWS regions.
+    Collect REST API (v1) information from AWS regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with REST API information
+        tuple: ``(apis, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING REST APIs (v1) ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=scan_rest_apis_in_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+
     # scan_regions_concurrent returns a list-of-lists (one list per region); flatten.
-    all_apis = [
-        api
-        for region_apis in utils.scan_regions_concurrent(
-            regions=regions,
-            scan_function=scan_rest_apis_in_region,
-        )
-        for api in region_apis
-    ]
+    all_apis = [api for region_apis in region_results for api in region_apis]
 
     utils.log_success(f"Total REST APIs collected: {len(all_apis)}")
-    return all_apis
+    return all_apis, failed_regions
 
 
 def scan_http_apis_in_region(region: str) -> list[dict[str, Any]]:
@@ -381,8 +418,9 @@ def export_api_gateway_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect REST APIs
-    rest_apis = collect_rest_apis(regions)
+    # STEP 1: Collect REST APIs (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    rest_apis, failed_regions = collect_rest_apis(regions)
     if rest_apis:
         data_frames['REST APIs'] = pd.DataFrame(rest_apis)
 
@@ -410,43 +448,58 @@ def export_api_gateway_data(account_id: str, account_name: str):
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded — a partial export is still produced when
+    # some regions failed (see the silent-collection-failure blast-radius
+    # audit). KEEP the existing always-written Summary/file logic: a Summary
+    # sheet lands whenever any of the three collections found data.
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'api-gateway',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("API Gateway data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No API Gateway data was collected. Nothing to export.")
         print("\nNo API Gateway resources found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'api-gateway',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("API Gateway data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the REST APIs scope collection, make it loud: write
+    # a marker and exit non-zero, even if some data (from this scope or the
+    # HTTP APIs/stages enrichment) was exported. A partial export that looks
+    # complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'api-gateway', failed_regions)
+        print(
+            "\nERROR: API Gateway export completed with failures — data is incomplete. "
+            "See the *-api-gateway-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

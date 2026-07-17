@@ -32,9 +32,71 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Elastic Beanstalk applications and environments to Excel")
 
-@utils.aws_error_handler("Collecting Elastic Beanstalk applications from region", default_return=[])
+def _build_application_row(app: dict, region: str) -> dict[str, Any]:
+    """Build a single Elastic Beanstalk application export row from a describe response."""
+    app_name = app.get('ApplicationName', 'N/A')
+    description = app.get('Description', 'N/A')
+
+    # Resource lifecycle config
+    resource_lifecycle_config = app.get('ResourceLifecycleConfig', {})
+    service_role = resource_lifecycle_config.get('ServiceRole', 'N/A')
+    version_lifecycle_config = resource_lifecycle_config.get('VersionLifecycleConfig', {})
+    max_count = version_lifecycle_config.get('MaxCountRule', {}).get('MaxCount', 'N/A')
+    max_age_days = version_lifecycle_config.get('MaxAgeRule', {}).get('MaxAgeInDays', 'N/A')
+
+    # Extract role name
+    role_name = 'N/A'
+    if service_role != 'N/A' and '/' in service_role:
+        role_name = service_role.split('/')[-1]
+
+    # Date created
+    date_created = app.get('DateCreated')
+    date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S') if date_created else 'N/A'
+
+    # Date updated
+    date_updated = app.get('DateUpdated')
+    date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S') if date_updated else 'N/A'
+
+    # Versions count
+    versions = app.get('Versions', [])
+    version_count = len(versions)
+
+    # Configuration templates
+    config_templates = app.get('ConfigurationTemplates', [])
+    config_template_count = len(config_templates)
+
+    return {
+        'Region': region,
+        'Application Name': app_name,
+        'Description': description,
+        'Version Count': version_count,
+        'Config Template Count': config_template_count,
+        'Service Role': role_name,
+        'Max Versions': max_count,
+        'Max Age (Days)': max_age_days,
+        'Created': date_created_str,
+        'Updated': date_updated_str,
+    }
+
+
 def collect_applications_from_region(region: str) -> list[dict[str, Any]]:
-    """Collect Elastic Beanstalk application information from a single AWS region."""
+    """
+    Collect Elastic Beanstalk applications from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no applications" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed applications are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     applications = []
     eb_client = utils.get_boto3_client('elasticbeanstalk', region_name=region)
 
@@ -42,62 +104,40 @@ def collect_applications_from_region(region: str) -> list[dict[str, Any]]:
     apps = response.get('Applications', [])
 
     for app in apps:
-        app_name = app.get('ApplicationName', 'N/A')
-        description = app.get('Description', 'N/A')
-
-        # Resource lifecycle config
-        resource_lifecycle_config = app.get('ResourceLifecycleConfig', {})
-        service_role = resource_lifecycle_config.get('ServiceRole', 'N/A')
-        version_lifecycle_config = resource_lifecycle_config.get('VersionLifecycleConfig', {})
-        max_count = version_lifecycle_config.get('MaxCountRule', {}).get('MaxCount', 'N/A')
-        max_age_days = version_lifecycle_config.get('MaxAgeRule', {}).get('MaxAgeInDays', 'N/A')
-
-        # Extract role name
-        role_name = 'N/A'
-        if service_role != 'N/A' and '/' in service_role:
-            role_name = service_role.split('/')[-1]
-
-        # Date created
-        date_created = app.get('DateCreated')
-        date_created_str = date_created.strftime('%Y-%m-%d %H:%M:%S') if date_created else 'N/A'
-
-        # Date updated
-        date_updated = app.get('DateUpdated')
-        date_updated_str = date_updated.strftime('%Y-%m-%d %H:%M:%S') if date_updated else 'N/A'
-
-        # Versions count
-        versions = app.get('Versions', [])
-        version_count = len(versions)
-
-        # Configuration templates
-        config_templates = app.get('ConfigurationTemplates', [])
-        config_template_count = len(config_templates)
-
-        applications.append({
-            'Region': region,
-            'Application Name': app_name,
-            'Description': description,
-            'Version Count': version_count,
-            'Config Template Count': config_template_count,
-            'Service Role': role_name,
-            'Max Versions': max_count,
-            'Max Age (Days)': max_age_days,
-            'Created': date_created_str,
-            'Updated': date_updated_str,
-        })
+        try:
+            applications.append(_build_application_row(app, region))
+        except Exception as e:
+            # One malformed application is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed Elastic Beanstalk application in {region}: "
+                f"{app.get('ApplicationName', '<unknown>')}",
+                e,
+            )
+            continue
 
     return applications
 
 
-def collect_applications(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect Elastic Beanstalk application information using concurrent scanning."""
+def collect_applications(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Elastic Beanstalk application information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(applications, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING ELASTIC BEANSTALK APPLICATIONS ===")
     utils.log_info(f"Scanning {len(regions)} regions...")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_applications_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     all_applications = []
@@ -105,7 +145,7 @@ def collect_applications(regions: list[str]) -> list[dict[str, Any]]:
         all_applications.extend(apps_in_region)
 
     utils.log_success(f"Total applications collected: {len(all_applications)}")
-    return all_applications
+    return all_applications, failed_regions
 
 
 @utils.aws_error_handler("Collecting Elastic Beanstalk environments from region", default_return=[])
@@ -488,11 +528,21 @@ def generate_summary(applications: list[dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
-    """Collect Elastic Beanstalk data and write the Excel export."""
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> list:
+    """
+    Collect Elastic Beanstalk data and write the Excel export.
+
+    Returns:
+        list: ``failed_regions`` — ``(region, error_message)`` tuples for
+        regions whose Applications scope collection failed. The Summary
+        sheet (and workbook) is always written regardless; the caller
+        decides whether to also report a FAILED marker and exit non-zero.
+    """
     # Collect data
     print("\n=== Collecting Elastic Beanstalk Data ===")
-    applications = collect_applications(regions)
+    # Applications are the primary scope — region failures must propagate as
+    # failed_regions, never collapse into "empty".
+    applications, failed_regions = collect_applications(regions)
     environments = collect_environments(regions)
     versions = collect_application_versions(regions)
     templates = collect_configuration_templates(regions)
@@ -535,6 +585,9 @@ def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
+    return failed_regions
+
+
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
@@ -571,7 +624,19 @@ def main():
                 step = 3
 
             elif step == 3:
-                _run_export(account_id, account_name, regions)
+                failed_regions = _run_export(account_id, account_name, regions)
+                # If ANY region failed the Applications scope collection,
+                # make it loud: write a marker and exit non-zero, even
+                # though a workbook was still written (the forced Summary
+                # sheet). A complete-looking file that hides a failed scope
+                # is exactly the failure mode this guards against.
+                if failed_regions:
+                    utils.report_collection_failures(account_name, 'elasticbeanstalk', failed_regions)
+                    print(
+                        "\nERROR: Elastic Beanstalk export completed with failures — data is incomplete. "
+                        "See the *-elasticbeanstalk-FAILED-*.txt marker in the output directory."
+                    )
+                    sys.exit(1)
                 break
 
     except KeyboardInterrupt:
