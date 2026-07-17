@@ -50,13 +50,114 @@ except ImportError:
 args = utils.parse_script_args("Export Route 53 hosted zones and records to Excel")
 
 
-@utils.aws_error_handler("Collecting Route 53 hosted zones", default_return=[])
+def _build_hosted_zone_row(route53, zone: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single Route 53 hosted zone.
+
+    Extracted so per-zone processing can be wrapped in try/except by the
+    caller: a malformed zone entry or a failed detail lookup for one zone
+    must not sink the whole account-scope hosted-zones collection. Required
+    fields are read with ``.get()`` and a safe default for the same reason.
+
+    Args:
+        route53: The boto3 Route 53 client.
+        zone: A single HostedZones entry from list_hosted_zones.
+
+    Returns:
+        dict: The assembled hosted zone row.
+    """
+    zone_id = zone.get('Id', '').split('/')[-1]  # Extract ID from ARN
+    zone_name = zone.get('Name', '')
+
+    print(f"  Processing hosted zone: {zone_name} ({zone_id})")
+
+    # Get detailed zone information
+    zone_detail = route53.get_hosted_zone(Id=zone_id)
+    zone_info = zone_detail.get('HostedZone', {})
+    zone_config = zone_info.get('Config', {})
+
+    # Basic information
+    is_private = zone_config.get('PrivateZone', False)
+    zone_type = 'Private' if is_private else 'Public'
+    comment = zone_config.get('Comment', 'N/A')
+
+    # VPC associations (for private zones)
+    vpcs = zone_detail.get('VPCs', [])
+    vpc_list = []
+    for vpc in vpcs:
+        vpc_id = vpc.get('VPCId', '')
+        vpc_region = vpc.get('VPCRegion', '')
+        vpc_list.append(f"{vpc_id} ({vpc_region})")
+    vpc_associations = ', '.join(vpc_list) if vpc_list else 'N/A'
+
+    # Resource record set count
+    record_count = zone_info.get('ResourceRecordSetCount', 0)
+
+    # Get DNSSEC status
+    dnssec_status = 'N/A'
+    try:
+        dnssec = route53.get_dnssec(HostedZoneId=zone_id)
+        dnssec_status = dnssec.get('Status', {}).get('ServeSignature', 'DISABLED')
+    except Exception:
+        # DNSSEC not configured
+        dnssec_status = 'NOT_CONFIGURED'
+
+    # Get query logging config
+    query_logging = 'Disabled'
+    try:
+        query_configs = route53.list_query_logging_configs(HostedZoneId=zone_id)
+        configs = query_configs.get('QueryLoggingConfigs', [])
+        if configs:
+            query_logging = f"Enabled ({len(configs)} configs)"
+    except Exception:
+        pass
+
+    # Tags
+    try:
+        tags_response = route53.list_tags_for_resource(
+            ResourceType='hostedzone',
+            ResourceId=zone_id
+        )
+        tags_list = tags_response.get('ResourceTagSet', {}).get('Tags', [])
+        tags = ', '.join([f"{tag.get('Key')}={tag.get('Value')}" for tag in tags_list]) if tags_list else 'N/A'
+    except Exception:
+        tags = 'N/A'
+
+    return {
+        'Zone ID': zone_id,
+        'Zone Name': zone_name,
+        'Type': zone_type,
+        'Record Count': record_count,
+        'VPC Associations': vpc_associations,
+        'DNSSEC Status': dnssec_status,
+        'Query Logging': query_logging,
+        'Comment': comment,
+        'Tags': tags
+    }
+
+
 def collect_hosted_zones() -> list[dict[str, Any]]:
     """
     Collect Route 53 hosted zone information.
 
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no hosted zones configured), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Route 53 hosted zones are a global, account-scope resource (not
+    multi-region — see scripts/shield_export.py for the account-scope
+    reference pattern this follows). Account-scope failures (client
+    creation, pagination) are allowed to raise so the caller
+    (export_route53_data) can record this scope as *failed* rather than
+    *empty*. Per-zone errors are contained internally (logged and skipped)
+    via ``_build_hosted_zone_row``.
+
     Returns:
-        list: List of dictionaries with hosted zone details
+        list: List of dictionaries with hosted zone details.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     print("\n=== COLLECTING HOSTED ZONES ===")
     utils.log_info("Route 53 is a global service - collecting from us-east-1")
@@ -70,91 +171,32 @@ def collect_hosted_zones() -> list[dict[str, Any]]:
     paginator = route53.get_paginator('list_hosted_zones')
 
     total_count = 0
+    skipped = 0
+
     for page in paginator.paginate():
         zone_list = page.get('HostedZones', [])
         total_count += len(zone_list)
 
+        # Process each zone. One malformed zone (or a failed detail lookup
+        # for it) must not sink the whole account-scope collection, so each
+        # is built inside try/except; failures are logged and skipped.
         for zone in zone_list:
-            zone_id = zone.get('Id', '').split('/')[-1]  # Extract ID from ARN
-            zone_name = zone.get('Name', '')
-
-            print(f"  Processing hosted zone: {zone_name} ({zone_id})")
-
             try:
-                # Get detailed zone information
-                zone_detail = route53.get_hosted_zone(Id=zone_id)
-                zone_info = zone_detail.get('HostedZone', {})
-                zone_config = zone_info.get('Config', {})
-
-                # Basic information
-                is_private = zone_config.get('PrivateZone', False)
-                zone_type = 'Private' if is_private else 'Public'
-                comment = zone_config.get('Comment', 'N/A')
-
-                # VPC associations (for private zones)
-                vpcs = zone_detail.get('VPCs', [])
-                vpc_list = []
-                for vpc in vpcs:
-                    vpc_id = vpc.get('VPCId', '')
-                    vpc_region = vpc.get('VPCRegion', '')
-                    vpc_list.append(f"{vpc_id} ({vpc_region})")
-                vpc_associations = ', '.join(vpc_list) if vpc_list else 'N/A'
-
-                # Resource record set count
-                record_count = zone_info.get('ResourceRecordSetCount', 0)
-
-                # Get DNSSEC status
-                dnssec_status = 'N/A'
-                try:
-                    dnssec = route53.get_dnssec(HostedZoneId=zone_id)
-                    dnssec_status = dnssec.get('Status', {}).get('ServeSignature', 'DISABLED')
-                except Exception:
-                    # DNSSEC not configured
-                    dnssec_status = 'NOT_CONFIGURED'
-
-                # Get query logging config
-                query_logging = 'Disabled'
-                try:
-                    query_configs = route53.list_query_logging_configs(HostedZoneId=zone_id)
-                    configs = query_configs.get('QueryLoggingConfigs', [])
-                    if configs:
-                        query_logging = f"Enabled ({len(configs)} configs)"
-                except Exception:
-                    pass
-
-                # Tags
-                try:
-                    tags_response = route53.list_tags_for_resource(
-                        ResourceType='hostedzone',
-                        ResourceId=zone_id
-                    )
-                    tags_list = tags_response.get('ResourceTagSet', {}).get('Tags', [])
-                    tags = ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags_list]) if tags_list else 'N/A'
-                except Exception:
-                    tags = 'N/A'
-
-                zones.append({
-                    'Zone ID': zone_id,
-                    'Zone Name': zone_name,
-                    'Type': zone_type,
-                    'Record Count': record_count,
-                    'VPC Associations': vpc_associations,
-                    'DNSSEC Status': dnssec_status,
-                    'Query Logging': query_logging,
-                    'Comment': comment,
-                    'Tags': tags
-                })
-
+                zones.append(_build_hosted_zone_row(route53, zone))
             except Exception as e:
-                utils.log_error(f"Error getting details for zone {zone_id}", e)
-                zones.append({
-                    'Zone ID': zone_id,
-                    'Zone Name': zone_name,
-                    'Error': f'Could not retrieve full details: {str(e)}'
-                })
+                skipped += 1
+                zone_name = zone.get('Name', 'Unknown') if isinstance(zone, dict) else 'Unknown'
+                utils.log_error(f"Skipping Route 53 hosted zone '{zone_name}' due to a processing error", e)
+                continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_count} Route 53 hosted zone(s) were skipped due to "
+            "processing errors (see log above); the remaining zones were still collected."
+        )
 
     print(f"\nTotal hosted zones found: {total_count}")
-    utils.log_success(f"Total Route 53 hosted zones collected: {total_count}")
+    utils.log_success(f"Total Route 53 hosted zones collected: {len(zones)}")
 
     return zones
 
@@ -683,32 +725,44 @@ def export_route53_data(account_id: str, account_name: str, regions: list[str]):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect hosted zones
-    zones = collect_hosted_zones()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect hosted zones (PRIMARY scope — a real API error here
+    # must propagate to failed_scopes, never collapse into an empty list
+    # that reads as "no hosted zones configured").
+    try:
+        zones = collect_hosted_zones()
+    except Exception as e:
+        failed_scopes.append(('hosted_zones', str(e)))
+        utils.log_error(f"Route 53 hosted zones collection failed: {e}")
+        zones = []
     if zones:
         data_frames['Hosted Zones'] = pd.DataFrame(zones)
 
-    # STEP 2: Collect DNS records
+    # STEP 2: Collect DNS records (enrichment — per-zone; degrades
+    # gracefully via its own aws_error_handler decorator, so a failure here
+    # does not fail the whole export).
     records = collect_dns_records()
     if records:
         data_frames['DNS Records'] = pd.DataFrame(records)
 
-    # STEP 3: Collect health checks
+    # STEP 3: Collect health checks (enrichment)
     health_checks = collect_health_checks()
     if health_checks:
         data_frames['Health Checks'] = pd.DataFrame(health_checks)
 
-    # STEP 4: Collect resolver endpoints (regional)
+    # STEP 4: Collect resolver endpoints (regional, enrichment)
     endpoints = collect_resolver_endpoints(regions)
     if endpoints:
         data_frames['Resolver Endpoints'] = pd.DataFrame(endpoints)
 
-    # STEP 5: Collect resolver rules (regional)
+    # STEP 5: Collect resolver rules (regional, enrichment)
     rules = collect_resolver_rules(regions)
     if rules:
         data_frames['Resolver Rules'] = pd.DataFrame(rules)
 
-    # STEP 6: Collect query logging configs
+    # STEP 6: Collect query logging configs (enrichment)
     query_configs = collect_query_logging_configs()
     if query_configs:
         data_frames['Query Logging Configs'] = pd.DataFrame(query_configs)
@@ -757,6 +811,28 @@ def export_route53_data(account_id: str, account_name: str, regions: list[str]):
 
     except Exception as e:
         utils.log_error("Error creating Excel file", e)
+
+    # Genuinely empty vs failed: the hosted-zones scope succeeded (no
+    # exception) but every scope came back with nothing configured. This is
+    # a plain informational warning, not a failure — the always-written
+    # Summary sheet still lands above.
+    has_any_data = bool(zones or records or health_checks or endpoints or rules or query_configs)
+    if not has_any_data and not failed_scopes:
+        utils.log_warning("No Route 53 resources were found in this account. Nothing collected.")
+
+    # If the hosted-zones scope failed, make it loud: write a marker and
+    # exit non-zero, even though a partial/summary-only workbook was still
+    # written above. A file that looks complete is exactly the failure mode
+    # this guards against (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'route53', failed_scopes)
+        print(
+            "\nERROR: Route 53 export completed with failures — data is "
+            "incomplete. See the *-route53-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():

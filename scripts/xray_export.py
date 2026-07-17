@@ -28,83 +28,123 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS X-Ray groups and sampling rules to Excel")
 
+def _build_sampling_rule_row(rule_record: dict, region: str) -> dict[str, Any]:
+    """Build a single X-Ray sampling rule export row from a get_sampling_rules record."""
+    rule = rule_record.get('SamplingRule', {})
+    created_at = rule_record.get('CreatedAt', 'N/A')
+    modified_at = rule_record.get('ModifiedAt', 'N/A')
+
+    if created_at != 'N/A':
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
+    if modified_at != 'N/A':
+        modified_at = modified_at.strftime('%Y-%m-%d %H:%M:%S')
+
+    rule_name = rule.get('RuleName', 'N/A')
+    rule_arn = rule.get('RuleARN', 'N/A')
+    priority = rule.get('Priority', 'N/A')
+    fixed_rate = rule.get('FixedRate', 0)
+    reservoir_size = rule.get('ReservoirSize', 0)
+    service_name = rule.get('ServiceName', '*')
+    service_type = rule.get('ServiceType', '*')
+    host = rule.get('Host', '*')
+    http_method = rule.get('HTTPMethod', '*')
+    url_path = rule.get('URLPath', '*')
+    resource_arn = rule.get('ResourceARN', '*')
+    version = rule.get('Version', 1)
+
+    # Attributes
+    attributes = rule.get('Attributes', {})
+    attributes_str = json.dumps(attributes) if attributes else 'None'
+
+    return {
+        'Region': region,
+        'Rule Name': rule_name,
+        'Priority': priority,
+        'Fixed Rate': fixed_rate,
+        'Reservoir Size': reservoir_size,
+        'Service Name': service_name,
+        'Service Type': service_type,
+        'Host': host,
+        'HTTP Method': http_method,
+        'URL Path': url_path,
+        'Resource ARN': resource_arn,
+        'Version': version,
+        'Attributes': attributes_str,
+        'Created': created_at,
+        'Modified': modified_at,
+        'Rule ARN': rule_arn
+    }
+
+
 def _scan_sampling_rules_region(region: str) -> list[dict[str, Any]]:
-    """Scan X-Ray sampling rules in a single region."""
+    """
+    Collect X-Ray sampling rules from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no sampling rules" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed sampling rules are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_rules = []
     xray_client = utils.get_boto3_client('xray', region_name=region)
 
-    try:
-        # Get sampling rules (manual NextToken loop — no boto3 paginator for get_sampling_rules)
-        sampling_rules = []
-        kwargs = {}
-        while True:
-            response = xray_client.get_sampling_rules(**kwargs)
-            sampling_rules.extend(response.get('SamplingRuleRecords', []))
-            next_token = response.get('NextToken')
-            if not next_token:
-                break
-            kwargs = {'NextToken': next_token}
+    # Get sampling rules (manual NextToken loop — no boto3 paginator for get_sampling_rules)
+    sampling_rules = []
+    kwargs = {}
+    while True:
+        response = xray_client.get_sampling_rules(**kwargs)
+        sampling_rules.extend(response.get('SamplingRuleRecords', []))
+        next_token = response.get('NextToken')
+        if not next_token:
+            break
+        kwargs = {'NextToken': next_token}
 
-        for rule_record in sampling_rules:
-            rule = rule_record.get('SamplingRule', {})
-            created_at = rule_record.get('CreatedAt', 'N/A')
-            modified_at = rule_record.get('ModifiedAt', 'N/A')
-
-            if created_at != 'N/A':
-                created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
-            if modified_at != 'N/A':
-                modified_at = modified_at.strftime('%Y-%m-%d %H:%M:%S')
-
-            rule_name = rule.get('RuleName', 'N/A')
-            rule_arn = rule.get('RuleARN', 'N/A')
-            priority = rule.get('Priority', 'N/A')
-            fixed_rate = rule.get('FixedRate', 0)
-            reservoir_size = rule.get('ReservoirSize', 0)
-            service_name = rule.get('ServiceName', '*')
-            service_type = rule.get('ServiceType', '*')
-            host = rule.get('Host', '*')
-            http_method = rule.get('HTTPMethod', '*')
-            url_path = rule.get('URLPath', '*')
-            resource_arn = rule.get('ResourceARN', '*')
-            version = rule.get('Version', 1)
-
-            # Attributes
-            attributes = rule.get('Attributes', {})
-            attributes_str = json.dumps(attributes) if attributes else 'None'
-
-            regional_rules.append({
-                'Region': region,
-                'Rule Name': rule_name,
-                'Priority': priority,
-                'Fixed Rate': fixed_rate,
-                'Reservoir Size': reservoir_size,
-                'Service Name': service_name,
-                'Service Type': service_type,
-                'Host': host,
-                'HTTP Method': http_method,
-                'URL Path': url_path,
-                'Resource ARN': resource_arn,
-                'Version': version,
-                'Attributes': attributes_str,
-                'Created': created_at,
-                'Modified': modified_at,
-                'Rule ARN': rule_arn
-            })
-
-    except Exception as e:
-        utils.log_warning(f"Error getting sampling rules in {region}: {str(e)}")
+    for rule_record in sampling_rules:
+        try:
+            regional_rules.append(_build_sampling_rule_row(rule_record, region))
+        except Exception as e:
+            # One malformed sampling rule is skipped, not fatal to the region.
+            rule_name = rule_record.get('SamplingRule', {}).get('RuleName', '<unknown>')
+            utils.log_error(
+                f"Skipping malformed X-Ray sampling rule in {region}: {rule_name}",
+                e,
+            )
+            continue
 
     return regional_rules
 
 
-@utils.aws_error_handler("Collecting X-Ray sampling rules", default_return=[])
-def collect_sampling_rules(regions: list[str]) -> list[dict[str, Any]]:
-    """Collect X-Ray sampling rule information from AWS regions."""
+def collect_sampling_rules(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect X-Ray sampling rule information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(rules, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING X-RAY SAMPLING RULES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_sampling_rules_region)
-    all_rules = [rule for result in results for rule in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_sampling_rules_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_rules = [rule for result in region_results for rule in result]
     utils.log_success(f"Total sampling rules collected: {len(all_rules)}")
-    return all_rules
+    return all_rules, failed_regions
 
 
 def _scan_groups_region(region: str) -> list[dict[str, Any]]:
@@ -276,7 +316,11 @@ def main():
     # Collect data
     print("\nCollecting X-Ray configuration data...")
 
-    sampling_rules = collect_sampling_rules(regions)
+    # STEP 1: Collect sampling rules (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    sampling_rules, failed_regions = collect_sampling_rules(regions)
+    # Groups and encryption config are enrichment: they already degrade
+    # gracefully (per-region try/except) and do not affect failed_regions.
     groups = collect_groups(regions)
     encryption_configs = collect_encryption_config(regions)
     summary = generate_summary(sampling_rules, groups, encryption_configs)
@@ -306,7 +350,10 @@ def main():
         df_encryption = utils.prepare_dataframe_for_export(df_encryption)
         dataframes['Encryption Config'] = df_encryption
 
-    # Export to Excel
+    # Export to Excel — the Summary sheet is forced above, so a workbook is
+    # always written even when the primary scope collected nothing (partial
+    # export is preferred over no file; see the silent-collection-failure
+    # blast-radius audit).
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'xray', region_suffix)
@@ -316,6 +363,18 @@ def main():
 
     else:
         utils.log_warning("No X-Ray data found to export")
+
+    # If ANY region failed the sampling rules scope collection, make it loud:
+    # write a marker and exit non-zero, even though a workbook was still
+    # written above. A complete-looking file with silently zero-row data is
+    # exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'xray', failed_regions)
+        print(
+            "\nERROR: X-Ray export completed with failures — data is incomplete. "
+            "See the *-xray-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("X-Ray export completed successfully")
 

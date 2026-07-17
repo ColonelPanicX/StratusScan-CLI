@@ -79,6 +79,8 @@ _EXCLUDED = {
     #   verifiedpermissions:ListPolicyStores-> 404 "Not yet implemented"
     #   servicecatalog:SearchProductsAsAdmin-> NotImplementedError
     #   controltower:ListLandingZones       -> 404 "Not yet implemented"
+    #   rekognition:DescribeProjects        -> NotImplementedError
+    #   xray:GetSamplingRules               -> 404 "Not yet implemented"
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
@@ -95,6 +97,8 @@ _EXCLUDED = {
     "verifiedpermissions_export.py",
     "service_catalog_export.py",
     "controltower_export.py",
+    "rekognition_export.py",
+    "xray_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(
