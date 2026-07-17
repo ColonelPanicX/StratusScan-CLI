@@ -46,19 +46,127 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Savings Plans to Excel")
 
 
-@utils.aws_error_handler("Collecting Savings Plans", default_return=[])
+def _build_savings_plan_row(plan: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single Savings Plan.
+
+    Extracted so per-plan processing can be wrapped in try/except by the
+    caller: a malformed plan entry must not sink the whole account-scope
+    collection. All fields are read with ``.get()`` and a safe default for
+    the same reason (the ``plan['Hourly Commitment']`` style hard subscript
+    flagged in .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md
+    is a deterministic ``KeyError`` candidate on divergent plan variants).
+
+    Args:
+        plan: A single savingsPlans entry from describe_savings_plans.
+
+    Returns:
+        dict: The assembled savings plan row.
+    """
+    plan_id = plan.get('savingsPlanId', 'N/A')
+    plan_arn = plan.get('savingsPlanArn', 'N/A')
+
+    print(f"  Processing savings plan: {plan_id}")
+
+    # Basic info
+    plan_type = plan.get('savingsPlanType', 'N/A')
+    payment_option = plan.get('paymentOption', 'N/A')
+    state_val = plan.get('state', 'N/A')
+
+    # Commitment
+    commitment = plan.get('commitment', '0')
+    currency = plan.get('currency', 'USD')
+
+    # Convert Decimal to float for Excel
+    if isinstance(commitment, Decimal):
+        commitment = float(commitment)
+
+    # Term
+    term_duration = plan.get('termDurationInSeconds', 0)
+    # Convert seconds to years
+    term_years = term_duration / (365.25 * 24 * 60 * 60)
+
+    # Dates
+    start = plan.get('start', '')
+    if start:
+        start = start.strftime('%Y-%m-%d %H:%M:%S') if isinstance(start, datetime.datetime) else str(start)
+
+    end = plan.get('end', '')
+    if end:
+        end = end.strftime('%Y-%m-%d %H:%M:%S') if isinstance(end, datetime.datetime) else str(end)
+
+    # EC2 instance family (if applicable)
+    ec2_instance_family = plan.get('ec2InstanceFamily', 'N/A')
+
+    # Region (if applicable)
+    region = plan.get('region', 'N/A')
+
+    # Upfront payment
+    upfront = plan.get('upfrontPaymentAmount', '0')
+    if isinstance(upfront, Decimal):
+        upfront = float(upfront)
+
+    # Recurring payment
+    recurring = plan.get('recurringPaymentAmount', '0')
+    if isinstance(recurring, Decimal):
+        recurring = float(recurring)
+
+    # Description/offering ID
+    offering_id = plan.get('offeringId', 'N/A')
+
+    # Tags
+    tags = plan.get('tags', {}) or {}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
+
+    return {
+        'Savings Plan ID': plan_id,
+        'State': state_val,
+        'Savings Plan Type': plan_type,
+        'Payment Option': payment_option,
+        'Hourly Commitment': commitment,
+        'Currency': currency,
+        'Term (Years)': round(term_years, 1),
+        'Start Date': start if start else 'N/A',
+        'End Date': end if end else 'N/A',
+        'EC2 Instance Family': ec2_instance_family,
+        'Region': region,
+        'Upfront Payment': upfront,
+        'Recurring Payment': recurring,
+        'Offering ID': offering_id,
+        'Tags': tags_str,
+        'Savings Plan ARN': plan_arn
+    }
+
+
 def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
     """
     Collect Savings Plans information.
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no savings plans purchased), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Savings Plans is a global, account-scope service (not
+    multi-region — see scripts/shield_export.py for the account-scope
+    reference pattern this follows). Account-scope failures (client
+    creation, pagination) are allowed to raise so the caller (main) can
+    record this scope as *failed* rather than *empty*. Per-plan errors are
+    contained internally (logged and skipped).
 
     Args:
         states: List of states to filter (e.g., ['active', 'queued'])
 
     Returns:
-        list: List of dictionaries with savings plan information
+        list: List of dictionaries with savings plan information.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     print(f"\n=== COLLECTING SAVINGS PLANS (States: {', '.join(states)}) ===")
     all_plans = []
+    total_processed = 0
+    skipped = 0
 
     # Savings Plans is a global service but requires a region
     # Savings Plans is a global service - use partition-aware home region
@@ -68,98 +176,39 @@ def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
     for state in states:
         print(f"\nProcessing state: {state}")
 
-        try:
-            # describe_savings_plans has no boto3 paginator; page manually via nextToken.
-            next_token = None
-            while True:
-                params: dict[str, Any] = {'states': [state], 'maxResults': 100}
-                if next_token:
-                    params['nextToken'] = next_token
+        # describe_savings_plans has no boto3 paginator; page manually via nextToken.
+        next_token = None
+        while True:
+            params: dict[str, Any] = {'states': [state], 'maxResults': 100}
+            if next_token:
+                params['nextToken'] = next_token
 
-                page = sp_client.describe_savings_plans(**params)
-                savings_plans = page.get('savingsPlans', [])
+            page = sp_client.describe_savings_plans(**params)
+            savings_plans = page.get('savingsPlans', [])
 
-                for plan in savings_plans:
-                    plan_id = plan.get('savingsPlanId', 'N/A')
-                    plan_arn = plan.get('savingsPlanArn', 'N/A')
+            # Process each plan. One malformed plan must not sink the whole
+            # scope, so each is built inside try/except; failures are logged
+            # and skipped.
+            for plan in savings_plans:
+                total_processed += 1
 
-                    print(f"  Processing savings plan: {plan_id}")
+                try:
+                    all_plans.append(_build_savings_plan_row(plan))
+                except Exception as e:
+                    skipped += 1
+                    plan_id = plan.get('savingsPlanId', 'Unknown') if isinstance(plan, dict) else 'Unknown'
+                    utils.log_error(f"Skipping savings plan '{plan_id}' due to a processing error", e)
+                    continue
 
-                    # Basic info
-                    plan_type = plan.get('savingsPlanType', 'N/A')
-                    payment_option = plan.get('paymentOption', 'N/A')
-                    state_val = plan.get('state', 'N/A')
+            next_token = page.get('nextToken')
+            if not next_token:
+                break
 
-                    # Commitment
-                    commitment = plan.get('commitment', '0')
-                    currency = plan.get('currency', 'USD')
-
-                    # Convert Decimal to float for Excel
-                    if isinstance(commitment, Decimal):
-                        commitment = float(commitment)
-
-                    # Term
-                    term_duration = plan.get('termDurationInSeconds', 0)
-                    # Convert seconds to years
-                    term_years = term_duration / (365.25 * 24 * 60 * 60)
-
-                    # Dates
-                    start = plan.get('start', '')
-                    if start:
-                        start = start.strftime('%Y-%m-%d %H:%M:%S') if isinstance(start, datetime.datetime) else str(start)
-
-                    end = plan.get('end', '')
-                    if end:
-                        end = end.strftime('%Y-%m-%d %H:%M:%S') if isinstance(end, datetime.datetime) else str(end)
-
-                    # EC2 instance family (if applicable)
-                    ec2_instance_family = plan.get('ec2InstanceFamily', 'N/A')
-
-                    # Region (if applicable)
-                    region = plan.get('region', 'N/A')
-
-                    # Upfront payment
-                    upfront = plan.get('upfrontPaymentAmount', '0')
-                    if isinstance(upfront, Decimal):
-                        upfront = float(upfront)
-
-                    # Recurring payment
-                    recurring = plan.get('recurringPaymentAmount', '0')
-                    if isinstance(recurring, Decimal):
-                        recurring = float(recurring)
-
-                    # Description/offering ID
-                    offering_id = plan.get('offeringId', 'N/A')
-
-                    # Tags
-                    tags = plan.get('tags', {})
-                    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
-
-                    all_plans.append({
-                        'Savings Plan ID': plan_id,
-                        'State': state_val,
-                        'Savings Plan Type': plan_type,
-                        'Payment Option': payment_option,
-                        'Hourly Commitment': commitment,
-                        'Currency': currency,
-                        'Term (Years)': round(term_years, 1),
-                        'Start Date': start if start else 'N/A',
-                        'End Date': end if end else 'N/A',
-                        'EC2 Instance Family': ec2_instance_family,
-                        'Region': region,
-                        'Upfront Payment': upfront,
-                        'Recurring Payment': recurring,
-                        'Offering ID': offering_id,
-                        'Tags': tags_str,
-                        'Savings Plan ARN': plan_arn
-                    })
-
-                next_token = page.get('nextToken')
-                if not next_token:
-                    break
-
-        except Exception as e:
-            utils.log_error(f"Error collecting savings plans in state {state}", e)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_processed} savings plan(s) were skipped due to "
+            "processing errors (see log above); the remaining plans were still collected."
+        )
 
     utils.log_success(f"Total savings plans collected: {len(all_plans)}")
     return all_plans
@@ -168,6 +217,15 @@ def collect_savings_plans(states: list[str]) -> list[dict[str, Any]]:
 def export_savings_plans_data(account_id: str, account_name: str):
     """
     Export Savings Plans information to an Excel file.
+
+    Savings Plans is a global, account-scope service (not multi-region), so
+    failures are tracked per account-scope collector call rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py for the
+    account-scope reference pattern). Each ``collect_savings_plans`` call
+    (PRIMARY scope) is allowed to raise; a real API error is recorded in
+    ``failed_scopes`` and the export continues with whatever data was
+    already collected — it is never silently collapsed into "no savings
+    plans" (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
 
     Args:
         account_id: The AWS account ID
@@ -182,13 +240,29 @@ def export_savings_plans_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect active savings plans
-    active_plans = collect_savings_plans(['active'])
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes: list[tuple[str, str]] = []
+
+    # STEP 1: Collect active savings plans (PRIMARY scope — a real API error
+    # here must propagate to failed_scopes, never collapse into an empty
+    # list that reads as "no active savings plans").
+    try:
+        active_plans = collect_savings_plans(['active'])
+    except Exception as e:
+        failed_scopes.append(('savings_plans', str(e)))
+        utils.log_error(f"Active savings plans collection failed: {e}")
+        active_plans = []
     if active_plans:
         data_frames['Active Savings Plans'] = pd.DataFrame(active_plans)
 
-    # STEP 2: Collect queued (pending) savings plans
-    queued_plans = collect_savings_plans(['queued'])
+    # STEP 2: Collect queued (pending) savings plans (PRIMARY scope — same
+    # failure handling as STEP 1).
+    try:
+        queued_plans = collect_savings_plans(['queued'])
+    except Exception as e:
+        failed_scopes.append(('savings_plans', str(e)))
+        utils.log_error(f"Queued savings plans collection failed: {e}")
+        queued_plans = []
     if queued_plans:
         data_frames['Queued Savings Plans'] = pd.DataFrame(queued_plans)
 
@@ -201,9 +275,9 @@ def export_savings_plans_data(account_id: str, account_name: str):
         total_queued = len(queued_plans)
 
         # Commitment totals by type
-        compute_commitment = sum(float(p['Hourly Commitment']) for p in active_plans if p['Savings Plan Type'] == 'Compute')
-        ec2_commitment = sum(float(p['Hourly Commitment']) for p in active_plans if p['Savings Plan Type'] == 'EC2Instance')
-        sagemaker_commitment = sum(float(p['Hourly Commitment']) for p in active_plans if p['Savings Plan Type'] == 'SageMaker')
+        compute_commitment = sum(float(p.get('Hourly Commitment', 0)) for p in active_plans if p.get('Savings Plan Type') == 'Compute')
+        ec2_commitment = sum(float(p.get('Hourly Commitment', 0)) for p in active_plans if p.get('Savings Plan Type') == 'EC2Instance')
+        sagemaker_commitment = sum(float(p.get('Hourly Commitment', 0)) for p in active_plans if p.get('Savings Plan Type') == 'SageMaker')
 
         summary_data.append({
             'Metric': 'Total Active Savings Plans',
@@ -232,42 +306,57 @@ def export_savings_plans_data(account_id: str, account_name: str):
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    # Check if we have any data
+    # Check if we have any data. A genuinely empty result (no data AND no
+    # failed scopes) gets a plain warning; a failed scope is handled below
+    # regardless of whether a partial export was written.
     if not data_frames:
-        utils.log_warning("No Savings Plans data was collected. Nothing to export.")
-        print("\nNo Savings Plans found in this account.")
-        return
+        if not failed_scopes:
+            utils.log_warning("No Savings Plans data was collected. Nothing to export.")
+            print("\nNo Savings Plans found in this account.")
+    else:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'savings-plans',
+            '',
+            current_date
+        )
 
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'savings-plans',
-        '',
-        current_date
-    )
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
 
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+            if output_path:
+                utils.log_success("Savings Plans data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
 
-        if output_path:
-            utils.log_success("Savings Plans data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
 
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
 
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If any primary-scope collection failed, make it loud: write a marker
+    # and exit non-zero, even if a partial export (the other scope, or the
+    # Summary sheet) was written. A partial export that looks complete is
+    # exactly the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'savings-plans', failed_scopes)
+        print(
+            "\nERROR: Savings Plans export completed with failures — data is "
+            "incomplete. See the *-savings-plans-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():

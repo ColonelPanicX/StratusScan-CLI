@@ -70,6 +70,9 @@ _EXCLUDED = {
     #   detective:ListGraphs                -> 404 "Not yet implemented"
     #   config:DescribeConformancePacks     -> NotImplementedError (one of its scopes)
     #   globalaccelerator:ListAccelerators  -> 404 "Not yet implemented"
+    #   codecommit:ListRepositories         -> NotImplementedError
+    #   savingsplans:DescribeSavingsPlans   -> 404 "Not yet implemented"
+    #   transfer:ListServers                -> NotImplementedError
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
@@ -77,6 +80,9 @@ _EXCLUDED = {
     "detective_export.py",
     "config_export.py",
     "globalaccelerator_export.py",
+    "codecommit_export.py",
+    "savings_plans_export.py",
+    "transfer_family_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(
