@@ -25,9 +25,87 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Marketplace subscriptions to Excel")
 
-@utils.aws_error_handler("Collecting Marketplace agreements", default_return=[])
+def _build_agreement_row(mp_client, agreement_summary: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single Marketplace agreement.
+
+    Extracted so per-agreement processing can be wrapped in try/except by
+    the caller: a malformed/inaccessible agreement must not sink the whole
+    account-scope collection. Required fields are read with ``.get()`` and a
+    safe default for the same reason.
+
+    Args:
+        mp_client: The boto3 marketplace-agreement client.
+        agreement_summary (dict): A single agreementViewSummaries entry from
+            search_agreements.
+
+    Returns:
+        dict: The assembled agreement row.
+    """
+    agreement_id = agreement_summary.get('agreementId', 'N/A')
+
+    # Get detailed agreement information
+    agreement_details = mp_client.describe_agreement(agreementId=agreement_id)
+
+    proposer = agreement_details.get('proposer', {})
+    acceptor = agreement_details.get('acceptor', {})
+
+    agreement_type = agreement_details.get('agreementType', 'N/A')
+    status = agreement_details.get('status', 'N/A')
+
+    acceptance_time = agreement_details.get('acceptanceTime', 'N/A')
+    if acceptance_time != 'N/A':
+        acceptance_time = acceptance_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    start_time = agreement_details.get('startTime', 'N/A')
+    if start_time != 'N/A':
+        start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    end_time = agreement_details.get('endTime', 'N/A')
+    if end_time != 'N/A':
+        end_time = end_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    estimated_charges = agreement_details.get('estimatedCharges', {})
+    agreement_amount = estimated_charges.get('agreementValue', 'N/A')
+    currency_code = estimated_charges.get('currencyCode', 'N/A')
+
+    return {
+        'Agreement ID': agreement_id,
+        'Agreement Type': agreement_type,
+        'Status': status,
+        'Proposer Account ID': proposer.get('accountId', 'N/A'),
+        'Acceptor Account ID': acceptor.get('accountId', 'N/A'),
+        'Acceptance Time': acceptance_time,
+        'Start Time': start_time,
+        'End Time': end_time,
+        'Agreement Amount': agreement_amount,
+        'Currency': currency_code
+    }
+
+
 def collect_agreements() -> list[dict[str, Any]]:
-    """Collect AWS Marketplace agreement information (global service)."""
+    """
+    Collect AWS Marketplace agreement information (global service).
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no Marketplace agreements), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). AWS Marketplace is a global, account-scope service (not
+    multi-region — see scripts/shield_export.py for the sibling global/
+    account-scope PARTIAL-tier fix this follows). Account-scope failures
+    (client creation, pagination/search_agreements) are allowed to raise so
+    the caller (main) can record this scope as *failed* rather than
+    *empty*. Per-agreement errors are contained internally (logged and
+    skipped).
+
+    Returns:
+        list: List of agreement information dictionaries.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
+    """
     print("\n=== COLLECTING MARKETPLACE AGREEMENTS ===")
     all_agreements = []
 
@@ -35,74 +113,30 @@ def collect_agreements() -> list[dict[str, Any]]:
     home_region = utils.get_partition_default_region()
     mp_client = utils.get_boto3_client('marketplace-agreement', region_name=home_region)
 
-    try:
-        # Search for all agreements (active and expired)
-        # Search without filters to get all agreements
-        next_token = None
-        while True:
-            params = {}
-            params['maxResults'] = 100
-            if next_token:
-                params['nextToken'] = next_token
-            page = mp_client.search_agreements(**params)
-            agreements = page.get('agreementViewSummaries', [])
+    # Search for all agreements (active and expired), without filters, to
+    # get all agreements. A real error here (client creation, pagination)
+    # is allowed to propagate — it is not caught in this function.
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = mp_client.search_agreements(**params)
+        agreements = page.get('agreementViewSummaries', [])
 
-            for agreement_summary in agreements:
-                agreement_id = agreement_summary.get('agreementId', 'N/A')
+        for agreement_summary in agreements:
+            agreement_id = agreement_summary.get('agreementId', 'N/A')
 
-                try:
-                    # Get detailed agreement information
-                    agreement_response = mp_client.describe_agreement(
-                        agreementId=agreement_id
-                    )
+            try:
+                all_agreements.append(_build_agreement_row(mp_client, agreement_summary))
+            except Exception as e:
+                utils.log_warning(f"Could not get details for agreement {agreement_id}: {str(e)}")
+                continue
 
-                    agreement_details = agreement_response
-
-                    proposer = agreement_details.get('proposer', {})
-                    acceptor = agreement_details.get('acceptor', {})
-
-                    agreement_type = agreement_details.get('agreementType', 'N/A')
-                    status = agreement_details.get('status', 'N/A')
-
-                    acceptance_time = agreement_details.get('acceptanceTime', 'N/A')
-                    if acceptance_time != 'N/A':
-                        acceptance_time = acceptance_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                    start_time = agreement_details.get('startTime', 'N/A')
-                    if start_time != 'N/A':
-                        start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                    end_time = agreement_details.get('endTime', 'N/A')
-                    if end_time != 'N/A':
-                        end_time = end_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                    estimated_charges = agreement_details.get('estimatedCharges', {})
-                    agreement_amount = estimated_charges.get('agreementValue', 'N/A')
-                    currency_code = estimated_charges.get('currencyCode', 'N/A')
-
-                    all_agreements.append({
-                        'Agreement ID': agreement_id,
-                        'Agreement Type': agreement_type,
-                        'Status': status,
-                        'Proposer Account ID': proposer.get('accountId', 'N/A'),
-                        'Acceptor Account ID': acceptor.get('accountId', 'N/A'),
-                        'Acceptance Time': acceptance_time,
-                        'Start Time': start_time,
-                        'End Time': end_time,
-                        'Agreement Amount': agreement_amount,
-                        'Currency': currency_code
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for agreement {agreement_id}: {str(e)}")
-                    continue
-
-            next_token = page.get('nextToken')
-            if not next_token:
-                break
-
-    except Exception as e:
-        utils.log_warning(f"Error searching agreements: {str(e)}")
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Total agreements collected: {len(all_agreements)}")
     return all_agreements
@@ -251,7 +285,24 @@ def generate_summary(agreements: list[dict[str, Any]],
 
 
 def main():
-    """Main execution function."""
+    """
+    Main execution function.
+
+    AWS Marketplace is a global, account-scope service (not multi-region),
+    so failures are tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py for the
+    sibling global/account-scope PARTIAL-tier reference). This exporter
+    already builds an always-non-empty ``Summary`` sheet (see
+    ``generate_summary``), so a workbook always lands on disk regardless of
+    whether the ``agreements`` scope succeeded — that "file always lands"
+    behavior is preserved. What was missing is a way to tell "agreements
+    scope failed" apart from "genuinely no agreements": a failure on that
+    scope is now tracked in ``failed_scopes``, surfaced via a
+    ``utils.report_collection_failures`` marker, and causes a non-zero
+    exit -- it must never be silently collapsed into a zero-row Agreements
+    sheet inside an otherwise complete-looking workbook (07.15.2026 /
+    07.16.2026 audits).
+    """
     if not utils.ensure_dependencies('pandas', 'openpyxl'):
         return
     global pd
@@ -279,7 +330,22 @@ def main():
     # Collect data
     print("\nCollecting AWS Marketplace data...")
 
-    agreements = collect_agreements()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect agreements (PRIMARY scope — a real API error here
+    # must propagate to failed_scopes, never collapse into an empty list
+    # that reads as "no agreements").
+    try:
+        agreements = collect_agreements()
+    except Exception as e:
+        failed_scopes.append(('agreements', str(e)))
+        utils.log_error(f"Marketplace agreements collection failed: {e}")
+        agreements = []
+
+    # STEP 2: Collect agreement terms (enrichment — degrades gracefully via
+    # its own aws_error_handler decorator; a failure here does not fail the
+    # whole export).
     terms = collect_agreement_terms(agreements)
     summary = generate_summary(agreements, terms)
 
@@ -303,16 +369,32 @@ def main():
         df_terms = utils.prepare_dataframe_for_export(df_terms)
         dataframes['Agreement Terms'] = df_terms
 
-    # Export to Excel
-    if dataframes:
-        filename = utils.create_export_filename(account_name, 'marketplace', 'global')
+    # Export to Excel. The Summary sheet (see generate_summary) is always
+    # populated, so dataframes is never empty and a workbook always lands
+    # here -- this "file always lands" behavior is preserved even when the
+    # agreements scope failed.
+    filename = utils.create_export_filename(account_name, 'marketplace', 'global')
 
-        utils.log_info(f"Exporting to {filename}...")
-        utils.save_multiple_dataframes_to_excel(dataframes, filename)
+    utils.log_info(f"Exporting to {filename}...")
+    utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-        # Log summary
-    else:
+    if not agreements and not terms and not failed_scopes:
+        # Genuinely empty: the agreements scope succeeded and there is
+        # simply nothing configured -- not a failure.
         utils.log_warning("No Marketplace data found to export")
+
+    # If the agreements scope failed, make it loud: write a marker and exit
+    # non-zero, even though the always-written Summary sheet means a
+    # workbook still lands. A partial export that looks complete is exactly
+    # the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'marketplace', failed_scopes)
+        print(
+            "\nERROR: Marketplace export completed with failures — data is "
+            "incomplete. See the *-marketplace-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("Marketplace export completed successfully")
 

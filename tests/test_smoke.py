@@ -81,6 +81,13 @@ _EXCLUDED = {
     #   controltower:ListLandingZones       -> 404 "Not yet implemented"
     #   rekognition:DescribeProjects        -> NotImplementedError
     #   xray:GetSamplingRules               -> 404 "Not yet implemented"
+    # Batch-J cost/compute — moto implements none of these primary APIs:
+    #   ce:GetAnomalyMonitors / ce:ListCostCategoryDefinitions -> NotImplementedError
+    #   marketplace-agreement:SearchAgreements                 -> 404
+    #   ec2:DescribeReservedInstances / DescribeCapacityReservations
+    #     / DescribeHostReservations                           -> NotImplementedError
+    #   license-manager:ListLicenseConfigurations              -> 404
+    #   support:DescribeTrustedAdvisorCheckResult              -> NotImplementedError
     "image_builder_export.py",
     "ssm_fleet_export.py",
     "bedrock_export.py",
@@ -99,6 +106,14 @@ _EXCLUDED = {
     "controltower_export.py",
     "rekognition_export.py",
     "xray_export.py",
+    "cost_anomaly_detection_export.py",
+    "cost_categories_export.py",
+    "marketplace_export.py",
+    "reserved_instances_export.py",
+    "ec2_capacity_reservations_export.py",
+    "ec2_dedicated_hosts_export.py",
+    "license_manager_export.py",
+    "trusted_advisor_cost_optimization_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(

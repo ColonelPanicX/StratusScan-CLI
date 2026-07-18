@@ -41,14 +41,104 @@ args = utils.parse_script_args("Export AWS Cost Anomaly Detection monitors and a
 utils.setup_logging('cost-anomaly-detection-export')
 
 
-@utils.aws_error_handler("Retrieving Anomaly Monitors", default_return=[])
+def _build_monitor_row(monitor: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single anomaly monitor.
+
+    Extracted so per-item processing can be wrapped in try/except by the
+    caller: a malformed monitor entry must not sink the whole account-scope
+    collection. Every field is read with ``.get()`` and a safe default for
+    the same reason.
+
+    Args:
+        monitor: A single AnomalyMonitors entry from get_anomaly_monitors.
+
+    Returns:
+        dict: The assembled monitor row.
+    """
+    monitor_spec = monitor.get('MonitorSpecification', {})
+
+    return {
+        'MonitorName': monitor.get('MonitorName', 'N/A'),
+        'MonitorARN': monitor.get('MonitorArn', 'N/A'),
+        'MonitorType': monitor.get('MonitorType', 'N/A'),
+        'CreationDate': monitor.get('CreationDate'),
+        'LastEvaluatedDate': monitor.get('LastEvaluatedDate', 'N/A'),
+        'LastUpdatedDate': monitor.get('LastUpdatedDate', 'N/A'),
+        'DimensionalValueCount': monitor.get('DimensionalValueCount', 0),
+        'MonitorDimension': monitor.get('MonitorDimension', 'N/A'),
+        'Expression': parse_monitor_expression(monitor_spec),
+        'ExpressionJSON': json.dumps(monitor_spec, indent=2) if monitor_spec else 'N/A',
+    }
+
+
+def _build_subscription_row(subscription: dict[str, Any], account_id: str) -> dict[str, Any]:
+    """
+    Build the export row for a single anomaly subscription.
+
+    Extracted so per-item processing can be wrapped in try/except by the
+    caller: a malformed subscription entry must not sink the whole
+    account-scope collection. Every field is read with ``.get()`` and a
+    safe default for the same reason.
+
+    Args:
+        subscription: A single AnomalySubscriptions entry from
+            get_anomaly_subscriptions.
+        account_id: The AWS account ID, used as a fallback when a
+            subscription entry has no AccountId of its own.
+
+    Returns:
+        dict: The assembled subscription row.
+    """
+    subscribers = subscription.get('Subscribers', [])
+    subscriber_list = []
+    for sub in subscribers:
+        sub_type = sub.get('Type', 'UNKNOWN')
+        sub_address = sub.get('Address', 'N/A')
+        subscriber_list.append(f"{sub_type}: {sub_address}")
+
+    return {
+        'SubscriptionName': subscription.get('SubscriptionName', 'N/A'),
+        'SubscriptionARN': subscription.get('SubscriptionArn', 'N/A'),
+        'AccountID': subscription.get('AccountId', account_id),
+        'MonitorARNs': ', '.join(subscription.get('MonitorArnList', [])),
+        'NumberOfMonitors': len(subscription.get('MonitorArnList', [])),
+        'Frequency': subscription.get('Frequency', 'N/A'),
+        'Subscribers': ', '.join(subscriber_list) if subscriber_list else 'N/A',
+        'NumberOfSubscribers': len(subscribers),
+        'Threshold': subscription.get('Threshold', 'N/A'),
+        'ThresholdExpression': json.dumps(subscription.get('ThresholdExpression', {}), indent=2) if subscription.get('ThresholdExpression') else 'N/A',
+    }
+
+
 def get_anomaly_monitors() -> list[dict[str, Any]]:
-    """Get all anomaly monitors."""
-    # Cost Explorer is a global service - use partition-aware home region
+    """
+    Get all anomaly monitors.
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no monitors configured), producing silent data
+    loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Cost Anomaly Detection is a global, account-scope service
+    (Cost Explorer, us-east-1 home region) -- not multi-region (see
+    scripts/iam_export.py for the account-scope reference pattern this
+    follows; scripts/shield_export.py for the closest existing example).
+    Account-scope failures (client creation, pagination) are allowed to
+    raise so the caller (``_run_export``) can record this scope as *failed*
+    rather than *empty*. Per-monitor errors are contained internally
+    (logged and skipped).
+
+    Returns:
+        list: List of built anomaly monitor row dictionaries.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
+    """
     home_region = utils.get_partition_default_region()
     ce = utils.get_boto3_client('ce', region_name=home_region)
 
-    monitors = []
+    raw_monitors = []
     next_token = None
 
     while True:
@@ -57,25 +147,64 @@ def get_anomaly_monitors() -> list[dict[str, Any]]:
             params['NextPageToken'] = next_token
 
         response = ce.get_anomaly_monitors(**params)
-
-        for monitor in response.get('AnomalyMonitors', []):
-            monitors.append(monitor)
+        raw_monitors.extend(response.get('AnomalyMonitors', []))
 
         next_token = response.get('NextPageToken')
         if not next_token:
             break
 
+    monitors = []
+    skipped = 0
+
+    for monitor in raw_monitors:
+        try:
+            monitors.append(_build_monitor_row(monitor))
+        except Exception as e:
+            skipped += 1
+            monitor_name = monitor.get('MonitorName', 'Unknown') if isinstance(monitor, dict) else 'Unknown'
+            utils.log_error(f"Skipping anomaly monitor '{monitor_name}' due to a processing error", e)
+            continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(raw_monitors)} anomaly monitor(s) were skipped due to "
+            "processing errors (see log above); the remaining monitors were still collected."
+        )
+
     return monitors
 
 
-@utils.aws_error_handler("Retrieving Anomaly Subscriptions", default_return=[])
-def get_anomaly_subscriptions() -> list[dict[str, Any]]:
-    """Get all anomaly subscriptions."""
-    # Cost Explorer is a global service - use partition-aware home region
+def get_anomaly_subscriptions(account_id: str) -> list[dict[str, Any]]:
+    """
+    Get all anomaly subscriptions.
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no subscriptions configured), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Cost Anomaly Detection is a global, account-scope service
+    (Cost Explorer, us-east-1 home region) -- not multi-region (see
+    scripts/iam_export.py for the account-scope reference pattern this
+    follows). Account-scope failures (client creation, pagination) are
+    allowed to raise so the caller (``_run_export``) can record this scope
+    as *failed* rather than *empty*. Per-subscription errors are contained
+    internally (logged and skipped).
+
+    Args:
+        account_id: The AWS account ID, passed through to
+            ``_build_subscription_row`` as an AccountId fallback.
+
+    Returns:
+        list: List of built anomaly subscription row dictionaries.
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
+    """
     home_region = utils.get_partition_default_region()
     ce = utils.get_boto3_client('ce', region_name=home_region)
 
-    subscriptions = []
+    raw_subscriptions = []
     next_token = None
 
     while True:
@@ -84,13 +213,29 @@ def get_anomaly_subscriptions() -> list[dict[str, Any]]:
             params['NextPageToken'] = next_token
 
         response = ce.get_anomaly_subscriptions(**params)
-
-        for subscription in response.get('AnomalySubscriptions', []):
-            subscriptions.append(subscription)
+        raw_subscriptions.extend(response.get('AnomalySubscriptions', []))
 
         next_token = response.get('NextPageToken')
         if not next_token:
             break
+
+    subscriptions = []
+    skipped = 0
+
+    for subscription in raw_subscriptions:
+        try:
+            subscriptions.append(_build_subscription_row(subscription, account_id))
+        except Exception as e:
+            skipped += 1
+            subscription_name = subscription.get('SubscriptionName', 'Unknown') if isinstance(subscription, dict) else 'Unknown'
+            utils.log_error(f"Skipping anomaly subscription '{subscription_name}' due to a processing error", e)
+            continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(raw_subscriptions)} anomaly subscription(s) were skipped due to "
+            "processing errors (see log above); the remaining subscriptions were still collected."
+        )
 
     return subscriptions
 
@@ -193,29 +338,68 @@ def classify_impact(impact: dict) -> str:
 
 
 def _run_export(account_id: str, account_name: str) -> None:
-    """Collect Cost Anomaly Detection data and write the Excel export."""
+    """
+    Collect Cost Anomaly Detection data and write the Excel export.
+
+    Cost Anomaly Detection is a global, account-scope service (Cost
+    Explorer, accessed via the partition-aware home region) -- not
+    multi-region, so failures are tracked per account-scope collector
+    rather than via ``utils.scan_regions_concurrent`` (see
+    scripts/iam_export.py for the account-scope reference pattern;
+    scripts/shield_export.py and scripts/lambda_export.py for the finalize
+    shape this follows). The PRIMARY scopes are ``get_anomaly_monitors()``
+    and ``get_anomaly_subscriptions()`` -- a real API error on either scope
+    is recorded in ``failed_scopes`` and surfaced via
+    ``utils.report_collection_failures`` plus a non-zero exit; it must
+    never be silently collapsed into "no monitors configured" / "no
+    subscriptions configured" (see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    Anomalies (the 90-day detection history) is enrichment -- it degrades
+    gracefully via its own ``aws_error_handler`` decorator and a failure
+    there does not fail the whole export. The Summary sheet (and the rest
+    of the workbook) is always written, even when a primary scope failed,
+    so a partial export is never silently indistinguishable from a
+    complete one.
+    """
     utils.log_info(f"Exporting Cost Anomaly Detection data for account: {account_name} ({utils.mask_account_id(account_id)})")
     utils.log_info("Cost Anomaly Detection is global (accessed via us-east-1)...")
 
-    # Get anomaly monitors
+    failed_scopes = []
+
+    # STEP 1: Anomaly monitors (PRIMARY scope -- a real API error here must
+    # propagate to failed_scopes, never collapse into an empty list that
+    # reads as "no monitors configured").
     utils.log_info("Retrieving anomaly monitors...")
-    monitors = get_anomaly_monitors()
-
-    if monitors:
-        utils.log_info(f"Found {len(monitors)} anomaly monitor(s)")
+    try:
+        monitors = get_anomaly_monitors()
+    except Exception as e:
+        failed_scopes.append(('anomaly_monitors', str(e)))
+        utils.log_error(f"Anomaly monitors collection failed: {e}")
+        monitors = []
     else:
-        utils.log_warning("No anomaly monitors found.")
+        if monitors:
+            utils.log_info(f"Found {len(monitors)} anomaly monitor(s)")
+        else:
+            utils.log_info("No anomaly monitors found.")
 
-    # Get anomaly subscriptions
+    # STEP 2: Anomaly subscriptions (PRIMARY scope -- same reasoning as
+    # monitors above).
     utils.log_info("Retrieving anomaly subscriptions...")
-    subscriptions = get_anomaly_subscriptions()
-
-    if subscriptions:
-        utils.log_info(f"Found {len(subscriptions)} anomaly subscription(s)")
+    try:
+        subscriptions = get_anomaly_subscriptions(account_id)
+    except Exception as e:
+        failed_scopes.append(('anomaly_subscriptions', str(e)))
+        utils.log_error(f"Anomaly subscriptions collection failed: {e}")
+        subscriptions = []
     else:
-        utils.log_warning("No anomaly subscriptions found.")
+        if subscriptions:
+            utils.log_info(f"Found {len(subscriptions)} anomaly subscription(s)")
+        else:
+            utils.log_info("No anomaly subscriptions found.")
 
-    # Get anomalies for the past 90 days
+    # STEP 3: Anomalies for the past 90 days (enrichment -- degrades
+    # gracefully via its own aws_error_handler decorator; a failure here
+    # does not fail the whole export).
     end_date = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=90)
 
@@ -230,51 +414,11 @@ def _run_export(account_id: str, account_name: str) -> None:
     else:
         utils.log_info("No anomalies detected in the past 90 days")
 
-    # Process monitors
-    monitor_data = []
-    for monitor in monitors:
-        monitor_spec = monitor.get('MonitorSpecification', {})
-
-        monitor_data.append({
-            'MonitorName': monitor.get('MonitorName', 'N/A'),
-            'MonitorARN': monitor.get('MonitorArn', 'N/A'),
-            'MonitorType': monitor.get('MonitorType', 'N/A'),
-            'CreationDate': monitor.get('CreationDate'),
-            'LastEvaluatedDate': monitor.get('LastEvaluatedDate', 'N/A'),
-            'LastUpdatedDate': monitor.get('LastUpdatedDate', 'N/A'),
-            'DimensionalValueCount': monitor.get('DimensionalValueCount', 0),
-            'MonitorDimension': monitor.get('MonitorDimension', 'N/A'),
-            'Expression': parse_monitor_expression(monitor_spec),
-            'ExpressionJSON': json.dumps(monitor_spec, indent=2) if monitor_spec else 'N/A',
-        })
-
-    df_monitors = utils.prepare_dataframe_for_export(pd.DataFrame(monitor_data))
-
-    # Process subscriptions
-    subscription_data = []
-    for subscription in subscriptions:
-        # Get subscriber details
-        subscribers = subscription.get('Subscribers', [])
-        subscriber_list = []
-        for sub in subscribers:
-            sub_type = sub.get('Type', 'UNKNOWN')
-            sub_address = sub.get('Address', 'N/A')
-            subscriber_list.append(f"{sub_type}: {sub_address}")
-
-        subscription_data.append({
-            'SubscriptionName': subscription.get('SubscriptionName', 'N/A'),
-            'SubscriptionARN': subscription.get('SubscriptionArn', 'N/A'),
-            'AccountID': subscription.get('AccountId', account_id),
-            'MonitorARNs': ', '.join(subscription.get('MonitorArnList', [])),
-            'NumberOfMonitors': len(subscription.get('MonitorArnList', [])),
-            'Frequency': subscription.get('Frequency', 'N/A'),
-            'Subscribers': ', '.join(subscriber_list) if subscriber_list else 'N/A',
-            'NumberOfSubscribers': len(subscribers),
-            'Threshold': subscription.get('Threshold', 'N/A'),
-            'ThresholdExpression': json.dumps(subscription.get('ThresholdExpression', {}), indent=2) if subscription.get('ThresholdExpression') else 'N/A',
-        })
-
-    df_subscriptions = utils.prepare_dataframe_for_export(pd.DataFrame(subscription_data))
+    # Monitors and subscriptions are already built rows (see
+    # _build_monitor_row / _build_subscription_row inside their
+    # collectors above) -- no further per-item processing needed here.
+    df_monitors = utils.prepare_dataframe_for_export(pd.DataFrame(monitors))
+    df_subscriptions = utils.prepare_dataframe_for_export(pd.DataFrame(subscriptions))
 
     # Process anomalies
     anomaly_data = []
@@ -354,6 +498,10 @@ def _run_export(account_id: str, account_name: str) -> None:
         'Root Causes': df_root_causes,
     }
 
+    # The workbook (including the always-present Summary sheet) is written
+    # unconditionally -- even when a primary scope failed above -- so a
+    # partial export is never lost, only ever unmarked (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
@@ -364,7 +512,29 @@ def _run_export(account_id: str, account_name: str) -> None:
     if not df_high_impact.empty:
         utils.log_warning(f"  {len(df_high_impact)} high-impact anomaly/anomalies detected (>$100)")
 
-    utils.log_success("Cost Anomaly Detection export completed successfully!")
+    has_any_data = bool(monitors or subscriptions or all_anomalies)
+
+    if failed_scopes:
+        utils.log_error("Cost Anomaly Detection export completed with failures — data is incomplete.")
+    elif not has_any_data:
+        # Genuinely empty: both primary scopes succeeded and there is
+        # simply nothing configured/detected. Exit 0, no marker.
+        utils.log_warning("No Cost Anomaly Detection data was collected. Nothing to export.")
+    else:
+        utils.log_success("Cost Anomaly Detection export completed successfully!")
+
+    # If either primary scope failed, make it loud: write a marker and exit
+    # non-zero, even though the Summary sheet (and any partial data) was
+    # already written above. A partial export that looks complete is
+    # exactly the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'cost-anomaly-detection', failed_scopes)
+        print(
+            "\nERROR: Cost Anomaly Detection export completed with failures — data is "
+            "incomplete. See the *-cost-anomaly-detection-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():
