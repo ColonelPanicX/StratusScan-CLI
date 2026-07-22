@@ -1,6 +1,6 @@
 # StratusScanCLI-AWS
 
-[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
+[![Version: 0.6.0](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -388,11 +388,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the exporter script template and cont
 
 ## Project Status
 
-**Current version: 0.4.0-beta**
+**Current version: 0.6.0-beta**
 
 StratusScanCLI-AWS is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
 
-### What's new in v0.4.0
+### What's new in v0.6.0
+
+- **Fail-loud collection (reliability)**: All 96 region- and account-scoped exporters now surface collection failures instead of silently emitting empty results. On an API failure an exporter writes a `*-FAILED-*.txt` marker and exits non-zero; a genuinely empty account still exits 0. This makes partial or failed audits detectable rather than indistinguishable from an empty account. **Behavior change:** automation keying on exit codes will now see a non-zero exit on collection errors.
+- **Security hardening**: Python floor raised to 3.10 (pulls the patched `urllib3 2.7.0`); subprocess launcher containment guard (only known, validated scripts can run); log-forging (CWE-117) and file-path (CWE-73) cleanup; `os.system` screen-clear replaced with an ANSI escape.
+- **Smart Scan discovery**: 27 new service detectors close the discovery coverage gap; a Cost Explorer bill cross-check reconciles discovered services against actual spend; discovery-catalog name resolution stops Deep Scan from dropping services.
+- **Correctness**: fixed non-pageable `get_paginator` calls across 18 exporters; added "All \<Category\>" bundle exports for every menu category; fixed the cross-account session env-var path; added a static API-contract smoke net.
+- **Modernization**: ruff CI gate added; type annotations modernized to PEP 585/604.
+
+### Previously in v0.5.0
+
+- **Multi-account org-scan**: run any exporter across every account in an AWS Organization via STS role assumption (#128).
+- **CLI flags and non-interactive args**: `--version`, `--dry-run`, `--verbose`, plus per-exporter CLI arguments for unattended execution (#10, #169).
+- **Signal-based navigation**: back / exit-to-main / quit flow control across all interactive menus (#170).
+- **Export format choice**: xlsx (default) or universal CSV (#174).
+- **GovCloud FIPS fix**: `use_fips_endpoint` set on the client `Config`, not passed as a `client()` kwarg.
+- **Scan sessions**: progress tracking and resume for org-scan and smart-scan (#189).
+- **Internals**: `sslib/` folded back into `utils.py` (#177); moto smoke suite covering 101 exporter scripts.
+
+### Previously in v0.4.0
 
 - **Cost columns for 14 exporters**: `Monthly Cost (On-Demand)` and `Cost Note` columns added to ElastiCache, OpenSearch, Redshift, Neptune, DocumentDB, S3, EFS, FSx, NAT Gateways, EKS node groups, SageMaker notebook instances and real-time endpoints, and EC2 Dedicated Hosts. EC2 and RDS already had cost columns. SageMaker training jobs show actual billed job cost (not a monthly estimate) derived from `BillableTimeInSeconds`.
 - **Pricing reference overhaul**: 11 static JSON pricing files in `reference/` replace the legacy CSV approach. Covers `ml.*` SageMaker instances, dedicated host families, FSx storage types, EFS tier rates, Neptune, DocumentDB, ElastiCache, OpenSearch, Redshift, NAT Gateways, and S3.
@@ -410,7 +428,7 @@ StratusScanCLI-AWS is in active beta development. The API and output format may 
 
 | Version | Target | Notes |
 |---|---|---|
-| `0.4.x` | Patch releases | Coverage gaps, pricing data refresh |
+| `0.6.x` | Patch releases | Coverage gaps, pricing data refresh, live-account hardening |
 | `1.0.0` | Planned | Full Textual-based TUI; subprocess output streamed live |
 
 ---
