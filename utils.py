@@ -966,7 +966,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             df.to_csv(output_path, index=False)
             logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-            return str(output_path)
+            return deliver_output(str(output_path))
 
         # --- xlsx path ---
         # Ensure the output directory exists
@@ -988,7 +988,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return str(output_path)
+        return deliver_output(str(output_path))
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
@@ -1042,17 +1042,16 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                     base_stem = base_stem[: -len(ext)]
                     break
 
-            first_path: Optional[str] = None
+            delivered: list[str] = []
             for sheet_name, df in dataframes_dict.items():
                 slug = _re.sub(r'[^a-z0-9]+', '-', sheet_name.lower()).strip('-')
                 csv_filename = f"{base_stem}-{slug}.csv"
                 csv_path = output_dir / csv_filename
                 df.to_csv(csv_path, index=False)
                 logger.info(_scrub_log(f"Data successfully exported to: {csv_path}"))
-                if first_path is None:
-                    first_path = str(csv_path)
+                delivered.append(deliver_output(str(csv_path)))
 
-            return first_path
+            return delivered[0] if delivered else None
 
         # --- xlsx path ---
         output_path = get_output_filepath(filename)
@@ -1084,11 +1083,272 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return str(output_path)
+        return deliver_output(str(output_path))
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Output delivery — S3 upload (Issue #175)
+# ---------------------------------------------------------------------------
+#
+# Two delivery destinations are supported via the ``output_settings`` config
+# block (or the ``STRATUSSCAN_S3_BUCKET`` env var for headless/CI runs):
+#
+#   * ``local`` (default) — files stay in ``output/`` exactly as before.
+#   * ``s3``            — files are written to ``output/`` first, uploaded to
+#                          the configured bucket, then the local copy is deleted
+#                          on a successful upload. On failure the local file is
+#                          retained as a fallback and the local path is returned.
+#
+# Scanning stays read-only everywhere; the only write any of this performs is a
+# write-only ``PutObject`` to the one designated bucket.
+
+
+def resolve_s3_destination() -> dict[str, Any]:
+    """
+    Resolve the effective output destination from config + environment.
+
+    The ``STRATUSSCAN_S3_BUCKET`` env var is the headless/CI hook: when set it
+    forces S3 delivery regardless of the config ``destination`` value, so a
+    scheduled runner can route output to S3 without a committed config.json.
+    ``STRATUSSCAN_S3_PREFIX`` optionally overrides the prefix the same way.
+
+    Returns:
+        dict: ``{"enabled": bool, "bucket": str, "prefix": str}``.
+              ``enabled`` is True only when S3 delivery is active AND a bucket
+              is known.
+    """
+    settings = config_value("s3", default={}, section="output_settings") or {}
+    destination = config_value("destination", default="local", section="output_settings")
+
+    env_bucket = os.environ.get("STRATUSSCAN_S3_BUCKET", "").strip()
+    env_prefix = os.environ.get("STRATUSSCAN_S3_PREFIX", "").strip()
+
+    bucket = env_bucket or (settings.get("bucket", "") or "").strip()
+    prefix = env_prefix or settings.get("prefix", "stratusscan/")
+
+    # S3 is active if the env var forced it OR config selected it.
+    selected = bool(env_bucket) or str(destination).lower() == "s3"
+
+    return {
+        "enabled": bool(selected and bucket),
+        "bucket": bucket,
+        "prefix": prefix,
+    }
+
+
+def _s3_bootstrap_region() -> str:
+    """
+    Pick a region for the initial bucket-location lookup and as the upload
+    fallback. Order: STRATUSSCAN_REGIONS → config default_regions → us-east-1.
+
+    Using an operating region (rather than hardcoding us-east-1) keeps the
+    partition correct so GovCloud buckets resolve against a GovCloud endpoint.
+    """
+    env_regions = os.environ.get("STRATUSSCAN_REGIONS", "").strip()
+    if env_regions:
+        first = env_regions.split(",")[0].strip()
+        if first:
+            return first
+
+    defaults = config_value("default_regions", default=[]) or []
+    if defaults:
+        return defaults[0]
+
+    return "us-east-1"
+
+
+def _resolve_bucket_region(bucket: str, bootstrap_region: str) -> Optional[str]:
+    """
+    Return the region a bucket lives in via ``GetBucketLocation``.
+
+    ``LocationConstraint`` is ``None``/empty for us-east-1 (AWS quirk); map that
+    back to ``us-east-1``. Returns None if the lookup fails (caller falls back
+    to the bootstrap region).
+    """
+    try:
+        client = get_boto3_client("s3", bootstrap_region)
+        loc = client.get_bucket_location(Bucket=bucket).get("LocationConstraint")
+        return loc or "us-east-1"
+    except Exception as e:
+        logging.getLogger("stratusscan").debug(
+            "GetBucketLocation failed for bucket '%s' from %s: %s", bucket, bootstrap_region, e
+        )
+        return None
+
+
+def _build_s3_key(prefix: str, local_path: str) -> str:
+    """Join a prefix and a file's basename into an S3 key (single '/' separators)."""
+    name = os.path.basename(local_path)
+    prefix = (prefix or "").lstrip("/")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    return f"{prefix}{name}"
+
+
+def upload_to_s3(
+    local_path: str,
+    bucket: str,
+    prefix: str = "stratusscan/",
+    region: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Upload a local file to S3 and delete the local copy on success.
+
+    Uses :func:`get_boto3_client` so the upload inherits retry/FIPS behaviour
+    (GovCloud buckets get a FIPS endpoint automatically). The local file is
+    removed only after a successful upload; on any failure it is left in place
+    as a fallback.
+
+    Args:
+        local_path: Path to the file to upload.
+        bucket: Destination S3 bucket name.
+        prefix: Key prefix within the bucket.
+        region: Bucket region. If None, resolved via GetBucketLocation with a
+                bootstrap-region fallback.
+
+    Returns:
+        str: The ``s3://bucket/key`` URI on success, or None on failure.
+    """
+    log = logging.getLogger("stratusscan")
+
+    if not os.path.exists(local_path):
+        log.error("upload_to_s3: local file does not exist: %s", local_path)
+        return None
+    if not bucket:
+        log.error("upload_to_s3: no bucket configured; cannot upload %s", local_path)
+        return None
+
+    bootstrap = _s3_bootstrap_region()
+    if region is None:
+        region = _resolve_bucket_region(bucket, bootstrap) or bootstrap
+
+    key = _build_s3_key(prefix, local_path)
+    try:
+        client = get_boto3_client("s3", region)
+        client.upload_file(local_path, bucket, key)
+    except Exception as e:
+        log.error("S3 upload failed for %s -> s3://%s/%s: %s", local_path, bucket, key, e)
+        log.error("Local file retained at: %s", local_path)
+        return None
+
+    uri = f"s3://{bucket}/{key}"
+    log.info("Uploaded to %s", uri)
+
+    try:
+        os.remove(local_path)
+    except OSError as e:
+        # Upload succeeded — a stranded local copy is non-fatal, just noisy.
+        log.warning("Uploaded to S3 but could not delete local copy %s: %s", local_path, e)
+
+    return uri
+
+
+def deliver_output(local_path: str) -> str:
+    """
+    Post-save delivery hook: route a freshly-saved file to its destination.
+
+    Called by the ``save_*`` helpers after a file is written locally. If S3
+    delivery is active and an upload succeeds, returns the ``s3://`` URI (the
+    local copy is gone). Otherwise — local destination, no bucket, or a failed
+    upload — returns the original local path unchanged.
+
+    Args:
+        local_path: Path to the file just written to ``output/``.
+
+    Returns:
+        str: The S3 URI when uploaded, else the local path.
+    """
+    dest = resolve_s3_destination()
+    if not dest["enabled"]:
+        return local_path
+
+    uri = upload_to_s3(local_path, dest["bucket"], dest["prefix"])
+    return uri if uri else local_path
+
+
+def test_s3_connectivity(
+    bucket: str,
+    prefix: str = "stratusscan/",
+    region: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Run a full write roundtrip against a bucket and report which step failed.
+
+    Steps: ``HeadBucket`` → ``PutObject`` (probe file) → ``DeleteObject``
+    (cleanup). S3 permissions are notoriously fiddly, so each step's outcome is
+    captured individually with the verbatim boto3 error — no generic "failed"
+    messages. This is library code: it returns a structured result and never
+    prints; the CLI layer renders it.
+
+    Args:
+        bucket: Bucket to test.
+        prefix: Key prefix the probe object is written under.
+        region: Bucket region (resolved via GetBucketLocation if None).
+
+    Returns:
+        dict: ``{"ok": bool, "bucket": str, "region": str|None, "key": str,
+                 "steps": [{"step", "ok", "error"}], "failed_step": str|None}``
+    """
+    result: dict[str, Any] = {
+        "ok": False,
+        "bucket": bucket,
+        "region": region,
+        "key": None,
+        "steps": [],
+        "failed_step": None,
+    }
+
+    if not bucket:
+        result["steps"].append(
+            {"step": "config", "ok": False, "error": "No bucket configured."}
+        )
+        result["failed_step"] = "config"
+        return result
+
+    bootstrap = _s3_bootstrap_region()
+    if region is None:
+        region = _resolve_bucket_region(bucket, bootstrap) or bootstrap
+    result["region"] = region
+
+    key = _build_s3_key(prefix, "stratusscan-connectivity-test.txt")
+    result["key"] = key
+
+    def _run(step_name, fn) -> bool:
+        try:
+            fn()
+            result["steps"].append({"step": step_name, "ok": True, "error": None})
+            return True
+        except Exception as e:
+            result["steps"].append({"step": step_name, "ok": False, "error": str(e)})
+            result["failed_step"] = step_name
+            return False
+
+    try:
+        client = get_boto3_client("s3", region)
+    except Exception as e:
+        result["steps"].append({"step": "client", "ok": False, "error": str(e)})
+        result["failed_step"] = "client"
+        return result
+
+    if not _run("HeadBucket", lambda: client.head_bucket(Bucket=bucket)):
+        return result
+    if not _run(
+        "PutObject",
+        lambda: client.put_object(
+            Bucket=bucket, Key=key, Body=b"stratusscan connectivity test"
+        ),
+    ):
+        return result
+    if not _run("DeleteObject", lambda: client.delete_object(Bucket=bucket, Key=key)):
+        return result
+
+    result["ok"] = True
+    return result
+
 
 def detect_default_format() -> str:
     """
@@ -1189,7 +1449,7 @@ def aws_error_handler(
 
     Example:
         @aws_error_handler("Collecting IAM users", default_return=[])
-        def collect_iam_users() -> List[Dict[str, Any]]:
+        def collect_iam_users() -> list[dict[str, Any]]:
             iam = get_boto3_client('iam')
             users = []
             for user in iam.list_users()['Users']:
