@@ -72,8 +72,8 @@ class ScriptExecutor:
             regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS.
                      If None, subprocesses use their own configured defaults.
             show_output: When True, stream script stdout to console (prefixed with
-                         two spaces). When False, capture silently — for future TUI
-                         use where the TUI will consume the stream directly.
+                         two spaces). When False, capture silently for a caller
+                         that consumes the stream directly.
         """
         self.scripts = sorted(set(scripts))  # Deduplicate and sort for consistent ordering
 
@@ -635,7 +635,7 @@ def execute_scripts(
         save_log: Whether to save execution log to file
         regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS
         show_output: When True, stream script stdout to console in real time.
-                     When False, capture silently (for future TUI use).
+                     When False, capture silently for a caller that consumes it.
         session: Optional scan session dict from utils.start_scan_session().
                  When provided, results are persisted to disk after each script.
         skip_scripts: Optional set of script filenames to skip (already
