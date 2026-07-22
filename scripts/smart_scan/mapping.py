@@ -108,6 +108,7 @@ SERVICE_ALIASES: dict[str, str] = {
 
     # Management & Governance
     "cloudwatch": "Amazon CloudWatch",
+    "amazon cloudwatch logs": "Amazon CloudWatch",
     "cloudtrail": "AWS CloudTrail",
     "config": "AWS Config",
     "systems manager": "AWS Systems Manager",
