@@ -5,7 +5,6 @@ Previously tested sslib.concurrency; now tests utils directly.
 """
 
 import sys
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,14 +12,16 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import utils
 from utils import (
     ConcurrentScanningError,
     _scan_regions_sequential,
     build_dataframe_in_batches,
     paginate_with_progress,
+    report_collection_failures,
     scan_regions_concurrent,
+    write_failure_marker,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -100,14 +101,13 @@ class TestScanRegionsConcurrent:
     def test_disabled_config_falls_back_to_sequential(self):
         config_with_disabled = {"advanced_settings": {"concurrent_scanning": {"enabled": False}}}
 
-        with patch("utils.get_config", return_value=({}, config_with_disabled)):
-            with patch("utils._scan_regions_sequential", side_effect=lambda r, f, p: []) as mock_seq:
-                scan_regions_concurrent(
-                    ["us-east-1"],
-                    lambda r: r,
-                    show_progress=False,
-                )
-                mock_seq.assert_called_once()
+        with patch("utils.get_config", return_value=({}, config_with_disabled)), patch("utils._scan_regions_sequential", side_effect=lambda r, f, p, collect_failures=False: []) as mock_seq:
+            scan_regions_concurrent(
+                ["us-east-1"],
+                lambda r: r,
+                show_progress=False,
+            )
+            mock_seq.assert_called_once()
 
     def test_fallback_on_all_errors(self):
         """If every worker fails, fallback_on_error triggers sequential."""
@@ -187,3 +187,100 @@ class TestBuildDataframeInBatches:
         data = [{"x": i} for i in range(1000)]
         df = build_dataframe_in_batches(data, batch_size=1000)
         assert len(df) == 1000
+
+
+# ---------------------------------------------------------------------------
+# collect_failures — failed vs empty distinction (Issue #233)
+# ---------------------------------------------------------------------------
+
+
+class TestCollectFailures:
+    def test_sequential_returns_failed_regions(self):
+        def scan(region):
+            if region == "us-west-2":
+                raise RuntimeError("Throttling")
+            return [f"ok-{region}"]
+
+        results, failed = _scan_regions_sequential(
+            ["us-east-1", "us-west-2", "eu-west-1"], scan, False, collect_failures=True
+        )
+
+        assert results == [["ok-us-east-1"], ["ok-eu-west-1"]]
+        assert len(failed) == 1
+        assert failed[0][0] == "us-west-2"
+        assert "Throttling" in failed[0][1]
+
+    def test_sequential_no_failures_returns_empty_failed_list(self):
+        results, failed = _scan_regions_sequential(
+            ["us-east-1", "us-west-2"], lambda r: [r], False, collect_failures=True
+        )
+        assert failed == []
+        assert len(results) == 2
+
+    def test_concurrent_returns_tuple_when_collect_failures(self):
+        def scan(region):
+            if region == "r2":
+                raise RuntimeError("boom")
+            return [region]
+
+        with patch("utils.get_config", return_value=_noop_config()):
+            results, failed = scan_regions_concurrent(
+                ["r1", "r2", "r3"],
+                scan,
+                max_workers=3,
+                show_progress=False,
+                fallback_on_error=False,
+                collect_failures=True,
+            )
+
+        assert isinstance(results, list)
+        assert [r[0] for r in failed] == ["r2"]
+
+    def test_concurrent_default_returns_bare_list(self):
+        """Legacy callers (no collect_failures) still receive a plain list."""
+        with patch("utils.get_config", return_value=_noop_config()):
+            results = scan_regions_concurrent(
+                ["us-east-1", "us-west-2"],
+                lambda r: r,
+                max_workers=2,
+                show_progress=False,
+                fallback_on_error=False,
+            )
+        assert isinstance(results, list)
+        assert not (len(results) == 2 and isinstance(results, tuple))
+
+
+# ---------------------------------------------------------------------------
+# write_failure_marker / report_collection_failures (Issue #233)
+# ---------------------------------------------------------------------------
+
+
+class TestFailureMarker:
+    def test_write_failure_marker_names_scopes(self, tmp_path):
+        with patch.object(utils, "get_output_filepath", lambda name: tmp_path / name):
+            marker = write_failure_marker(
+                "ACME-PROD",
+                "ec2",
+                [("us-east-1", "Throttling: Rate exceeded"), ("us-gov-west-1", "KeyError")],
+            )
+
+        assert marker is not None
+        content = (tmp_path / Path(marker).name).read_text()
+        assert "us-east-1" in content
+        assert "us-gov-west-1" in content
+        assert "FAILED" in content
+        assert Path(marker).name.startswith("ACME-PROD-ec2-FAILED-")
+
+    def test_report_collection_failures_returns_none_when_empty(self, tmp_path):
+        with patch.object(utils, "get_output_filepath", lambda name: tmp_path / name):
+            assert report_collection_failures("ACME-PROD", "ec2", []) is None
+        # No marker written for a clean run.
+        assert list(tmp_path.iterdir()) == []
+
+    def test_report_collection_failures_writes_marker(self, tmp_path):
+        with patch.object(utils, "get_output_filepath", lambda name: tmp_path / name):
+            marker = report_collection_failures(
+                "ACME-PROD", "vpc", [("us-east-1", "AccessDenied")]
+            )
+        assert marker is not None
+        assert (tmp_path / Path(marker).name).exists()

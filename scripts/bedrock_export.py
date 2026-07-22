@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with Bedrock resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -28,385 +28,599 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Bedrock models and usage to Excel")
 
-@utils.aws_error_handler("Collecting Bedrock foundation models", default_return=[])
-def collect_foundation_models(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect available Bedrock foundation models from AWS regions."""
-    all_models = []
 
-    for region in regions:
-        utils.log_info(f"Collecting foundation models in {region}...")
-        bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
+def _build_foundation_model_row(model: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build the export row for a single Bedrock foundation model."""
+    model_id = model.get('modelId', 'N/A')
+    model_arn = model.get('modelArn', 'N/A')
+    model_name = model.get('modelName', 'N/A')
+    provider_name = model.get('providerName', 'N/A')
 
+    # Input/output modalities
+    input_modalities = model.get('inputModalities', [])
+    output_modalities = model.get('outputModalities', [])
+    input_str = ', '.join(input_modalities) if input_modalities else 'N/A'
+    output_str = ', '.join(output_modalities) if output_modalities else 'N/A'
+
+    # Response streaming
+    response_streaming = model.get('responseStreamingSupported', False)
+
+    # Customization supported
+    customization_supported = model.get('customizationsSupported', [])
+    customization_str = ', '.join(customization_supported) if customization_supported else 'None'
+
+    # Inference types
+    inference_types = model.get('inferenceTypesSupported', [])
+    inference_str = ', '.join(inference_types) if inference_types else 'N/A'
+
+    # Model lifecycle status
+    model_lifecycle = model.get('modelLifecycle', {}) or {}
+    lifecycle_status = model_lifecycle.get('status', 'N/A')
+
+    return {
+        'Region': region,
+        'Model ID': model_id,
+        'Model Name': model_name,
+        'Provider': provider_name,
+        'ARN': model_arn,
+        'Lifecycle Status': lifecycle_status,
+        'Input Modalities': input_str,
+        'Output Modalities': output_str,
+        'Response Streaming': response_streaming,
+        'Customization Supported': customization_str,
+        'Inference Types': inference_str
+    }
+
+
+def _scan_foundation_models_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Bedrock foundation models from a single region.
+
+    This is a primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no foundation models" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed models are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    utils.log_info(f"Collecting foundation models in {region}...")
+    bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
+
+    # list_foundation_models is not paginated (no token) — single call.
+    response = bedrock_client.list_foundation_models()
+    models = response.get('modelSummaries', [])
+
+    region_models = []
+    for model in models:
         try:
-            paginator = bedrock_client.get_paginator('list_foundation_models')
-            for page in paginator.paginate():
-                models = page.get('modelSummaries', [])
-
-                for model in models:
-                    model_id = model.get('modelId', 'N/A')
-                    model_arn = model.get('modelArn', 'N/A')
-                    model_name = model.get('modelName', 'N/A')
-                    provider_name = model.get('providerName', 'N/A')
-
-                    # Input/output modalities
-                    input_modalities = model.get('inputModalities', [])
-                    output_modalities = model.get('outputModalities', [])
-                    input_str = ', '.join(input_modalities) if input_modalities else 'N/A'
-                    output_str = ', '.join(output_modalities) if output_modalities else 'N/A'
-
-                    # Response streaming
-                    response_streaming = model.get('responseStreamingSupported', False)
-
-                    # Customization supported
-                    customization_supported = model.get('customizationsSupported', [])
-                    customization_str = ', '.join(customization_supported) if customization_supported else 'None'
-
-                    # Inference types
-                    inference_types = model.get('inferenceTypesSupported', [])
-                    inference_str = ', '.join(inference_types) if inference_types else 'N/A'
-
-                    # Model lifecycle status
-                    model_lifecycle = model.get('modelLifecycle', {})
-                    lifecycle_status = model_lifecycle.get('status', 'N/A')
-
-                    all_models.append({
-                        'Region': region,
-                        'Model ID': model_id,
-                        'Model Name': model_name,
-                        'Provider': provider_name,
-                        'ARN': model_arn,
-                        'Lifecycle Status': lifecycle_status,
-                        'Input Modalities': input_str,
-                        'Output Modalities': output_str,
-                        'Response Streaming': response_streaming,
-                        'Customization Supported': customization_str,
-                        'Inference Types': inference_str
-                    })
-
+            region_models.append(_build_foundation_model_row(model, region))
         except Exception as e:
-            utils.log_warning(f"Error listing foundation models in {region}: {str(e)}")
+            utils.log_error(
+                f"Skipping malformed foundation model in {region}: "
+                f"{model.get('modelId', '<unknown>')}",
+                e,
+            )
             continue
 
+    utils.log_info(f"Collected {len(region_models)} foundation models in {region}")
+    return region_models
+
+
+def collect_foundation_models(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock foundation model information across regions, surfacing
+    failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(models, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_foundation_models_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_models = [m for result in region_results for m in result]
     utils.log_info(f"Collected {len(all_models)} foundation models")
-    return all_models
+    return all_models, failed_regions
 
 
-@utils.aws_error_handler("Collecting Bedrock custom models", default_return=[])
-def collect_custom_models(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Bedrock custom (fine-tuned) models."""
-    all_custom_models = []
+def _build_custom_model_row(model: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build the export row for a single Bedrock custom (fine-tuned) model."""
+    model_arn = model.get('modelArn', 'N/A')
+    model_name = model.get('modelName', 'N/A')
+    base_model_arn = model.get('baseModelArn', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Collecting custom models in {region}...")
-        bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
+    creation_time = model.get('creationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
 
-        try:
-            paginator = bedrock_client.get_paginator('list_custom_models')
-            for page in paginator.paginate():
-                models = page.get('modelSummaries', [])
+    # Extract base model name from ARN
+    base_model_name = 'N/A'
+    if base_model_arn != 'N/A' and '/' in base_model_arn:
+        base_model_name = base_model_arn.split('/')[-1]
 
-                for model in models:
-                    model_arn = model.get('modelArn', 'N/A')
-                    model_name = model.get('modelName', 'N/A')
-                    base_model_arn = model.get('baseModelArn', 'N/A')
+    customization_type = model.get('customizationType', 'N/A')
 
-                    creation_time = model.get('creationTime', 'N/A')
-                    if creation_time != 'N/A':
-                        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+    return {
+        'Region': region,
+        'Model Name': model_name,
+        'Model ARN': model_arn,
+        'Base Model': base_model_name,
+        'Base Model ARN': base_model_arn,
+        'Customization Type': customization_type,
+        'Created': creation_time
+    }
 
-                    # Extract base model name from ARN
-                    base_model_name = 'N/A'
-                    if base_model_arn != 'N/A' and '/' in base_model_arn:
-                        base_model_name = base_model_arn.split('/')[-1]
 
-                    # Customization type
-                    customization_type = model.get('customizationType', 'N/A')
+def _scan_custom_models_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Bedrock custom models from a single region.
 
-                    all_custom_models.append({
-                        'Region': region,
-                        'Model Name': model_name,
-                        'Model ARN': model_arn,
-                        'Base Model': base_model_name,
-                        'Base Model ARN': base_model_arn,
-                        'Customization Type': customization_type,
-                        'Created': creation_time
-                    })
+    Primary scope collector — raises on genuine API error so the caller can
+    record the region as failed rather than empty. Individual malformed
+    models are skipped (logged).
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-        except Exception as e:
-            utils.log_warning(f"Error listing custom models in {region}: {str(e)}")
-            continue
+    utils.log_info(f"Collecting custom models in {region}...")
+    bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
 
+    region_custom_models = []
+    paginator = bedrock_client.get_paginator('list_custom_models')
+    for page in paginator.paginate():
+        models = page.get('modelSummaries', [])
+        for model in models:
+            try:
+                region_custom_models.append(_build_custom_model_row(model, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed custom model in {region}: "
+                    f"{model.get('modelArn', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    utils.log_info(f"Collected {len(region_custom_models)} custom models in {region}")
+    return region_custom_models
+
+
+def collect_custom_models(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock custom model information across regions, surfacing
+    failures via ``collect_failures=True``.
+
+    Returns:
+        tuple: ``(models, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_custom_models_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_custom_models = [m for result in region_results for m in result]
     utils.log_info(f"Collected {len(all_custom_models)} custom models")
-    return all_custom_models
+    return all_custom_models, failed_regions
 
 
-@utils.aws_error_handler("Collecting Bedrock model invocation logging", default_return=[])
-def collect_model_invocation_logging(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Bedrock model invocation logging configurations."""
-    all_logging_configs = []
+def _build_logging_config_row(logging_config: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build the export row for a single region's model invocation logging config."""
+    cloudwatch_config = logging_config.get('cloudWatchConfig', {}) or {}
+    cloudwatch_enabled = cloudwatch_config.get('logGroupName') is not None
+    cloudwatch_log_group = cloudwatch_config.get('logGroupName', 'N/A')
+    cloudwatch_role = cloudwatch_config.get('roleArn', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Collecting model invocation logging config in {region}...")
-        bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
+    s3_config = logging_config.get('s3Config', {}) or {}
+    s3_enabled = s3_config.get('bucketName') is not None
+    s3_bucket = s3_config.get('bucketName', 'N/A')
+    s3_prefix = s3_config.get('keyPrefix', 'N/A')
 
-        try:
-            response = bedrock_client.get_model_invocation_logging_configuration()
-            logging_config = response.get('loggingConfig', {})
+    text_data_delivery = logging_config.get('textDataDeliveryEnabled', False)
+    image_data_delivery = logging_config.get('imageDataDeliveryEnabled', False)
+    embedding_data_delivery = logging_config.get('embeddingDataDeliveryEnabled', False)
 
-            if logging_config:
-                # CloudWatch Logs
-                cloudwatch_config = logging_config.get('cloudWatchConfig', {})
-                cloudwatch_enabled = cloudwatch_config.get('logGroupName') is not None
-                cloudwatch_log_group = cloudwatch_config.get('logGroupName', 'N/A')
-                cloudwatch_role = cloudwatch_config.get('roleArn', 'N/A')
+    return {
+        'Region': region,
+        'CloudWatch Enabled': cloudwatch_enabled,
+        'CloudWatch Log Group': cloudwatch_log_group,
+        'CloudWatch Role ARN': cloudwatch_role,
+        'S3 Enabled': s3_enabled,
+        'S3 Bucket': s3_bucket,
+        'S3 Key Prefix': s3_prefix,
+        'Text Data Delivery': text_data_delivery,
+        'Image Data Delivery': image_data_delivery,
+        'Embedding Data Delivery': embedding_data_delivery
+    }
 
-                # S3
-                s3_config = logging_config.get('s3Config', {})
-                s3_enabled = s3_config.get('bucketName') is not None
-                s3_bucket = s3_config.get('bucketName', 'N/A')
-                s3_prefix = s3_config.get('keyPrefix', 'N/A')
 
-                # Text data delivery
-                text_data_delivery = logging_config.get('textDataDeliveryEnabled', False)
-                image_data_delivery = logging_config.get('imageDataDeliveryEnabled', False)
-                embedding_data_delivery = logging_config.get('embeddingDataDeliveryEnabled', False)
+def _scan_model_invocation_logging_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect the Bedrock model invocation logging configuration for a single
+    region.
 
-                all_logging_configs.append({
-                    'Region': region,
-                    'CloudWatch Enabled': cloudwatch_enabled,
-                    'CloudWatch Log Group': cloudwatch_log_group,
-                    'CloudWatch Role ARN': cloudwatch_role,
-                    'S3 Enabled': s3_enabled,
-                    'S3 Bucket': s3_bucket,
-                    'S3 Key Prefix': s3_prefix,
-                    'Text Data Delivery': text_data_delivery,
-                    'Image Data Delivery': image_data_delivery,
-                    'Embedding Data Delivery': embedding_data_delivery
-                })
+    Primary scope collector — raises on genuine API error so the caller can
+    record the region as failed rather than empty.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-        except Exception as e:
-            utils.log_warning(f"Error getting model invocation logging config in {region}: {str(e)}")
-            continue
+    utils.log_info(f"Collecting model invocation logging config in {region}...")
+    bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
 
+    response = bedrock_client.get_model_invocation_logging_configuration()
+    logging_config = response.get('loggingConfig', {})
+
+    if not logging_config:
+        return []
+
+    try:
+        return [_build_logging_config_row(logging_config, region)]
+    except Exception as e:
+        utils.log_error(f"Skipping malformed logging config in {region}", e)
+        return []
+
+
+def collect_model_invocation_logging(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock model invocation logging configurations across regions,
+    surfacing failures via ``collect_failures=True``.
+
+    Returns:
+        tuple: ``(logging_configs, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_model_invocation_logging_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_logging_configs = [c for result in region_results for c in result]
     utils.log_info(f"Collected {len(all_logging_configs)} logging configurations")
-    return all_logging_configs
+    return all_logging_configs, failed_regions
 
 
-@utils.aws_error_handler("Collecting Bedrock guardrails", default_return=[])
-def collect_guardrails(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Bedrock guardrails for responsible AI."""
-    all_guardrails = []
+def _build_guardrail_row(guardrail: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build the export row for a single Bedrock guardrail."""
+    guardrail_id = guardrail.get('id', 'N/A')
+    guardrail_arn = guardrail.get('arn', 'N/A')
+    guardrail_name = guardrail.get('name', 'N/A')
+    description = guardrail.get('description', 'N/A')
+    version = guardrail.get('version', 'N/A')
+    status = guardrail.get('status', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Collecting guardrails in {region}...")
-        bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
+    created_at = guardrail.get('createdAt', 'N/A')
+    if created_at != 'N/A':
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
 
-        try:
-            paginator = bedrock_client.get_paginator('list_guardrails')
-            for page in paginator.paginate():
-                guardrails = page.get('guardrails', [])
+    updated_at = guardrail.get('updatedAt', 'N/A')
+    if updated_at != 'N/A':
+        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                for guardrail in guardrails:
-                    guardrail_id = guardrail.get('id', 'N/A')
-                    guardrail_arn = guardrail.get('arn', 'N/A')
-                    guardrail_name = guardrail.get('name', 'N/A')
-                    description = guardrail.get('description', 'N/A')
-                    version = guardrail.get('version', 'N/A')
-                    status = guardrail.get('status', 'N/A')
+    return {
+        'Region': region,
+        'Guardrail Name': guardrail_name,
+        'Guardrail ID': guardrail_id,
+        'ARN': guardrail_arn,
+        'Version': version,
+        'Status': status,
+        'Description': description,
+        'Created': created_at,
+        'Updated': updated_at
+    }
 
-                    created_at = guardrail.get('createdAt', 'N/A')
-                    if created_at != 'N/A':
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                    updated_at = guardrail.get('updatedAt', 'N/A')
-                    if updated_at != 'N/A':
-                        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
+def _scan_guardrails_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Bedrock guardrails from a single region.
 
-                    all_guardrails.append({
-                        'Region': region,
-                        'Guardrail Name': guardrail_name,
-                        'Guardrail ID': guardrail_id,
-                        'ARN': guardrail_arn,
-                        'Version': version,
-                        'Status': status,
-                        'Description': description,
-                        'Created': created_at,
-                        'Updated': updated_at
-                    })
+    Primary scope collector — raises on genuine API error so the caller can
+    record the region as failed rather than empty. The exception is the
+    op-availability probe below: ``list_guardrails`` is absent at the
+    botocore floor in some environments (see Issue #224). A missing
+    operation is a graceful skip, NOT a failed region — only errors raised
+    by an actually-present operation propagate as failures.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-        except Exception as e:
-            utils.log_warning(f"Error listing guardrails in {region}: {str(e)}")
-            continue
+    utils.log_info(f"Collecting guardrails in {region}...")
+    bedrock_client = utils.get_boto3_client('bedrock', region_name=region)
 
+    # list_guardrails is absent in older botocore and unpaginated in newer —
+    # probe for the operation, then page manually via nextToken. A missing
+    # operation is a graceful skip, not a collection failure.
+    if 'list_guardrails' not in bedrock_client.meta.service_model.operation_names:
+        utils.log_info(f"Bedrock guardrails API unavailable in this SDK ({region}); skipping.")
+        return []
+
+    region_guardrails = []
+    next_token = None
+    while True:
+        params: dict[str, Any] = {'maxResults': 100}
+        if next_token:
+            params['nextToken'] = next_token
+        page = bedrock_client.list_guardrails(**params)
+        guardrails = page.get('guardrails', [])
+
+        for guardrail in guardrails:
+            try:
+                region_guardrails.append(_build_guardrail_row(guardrail, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed guardrail in {region}: "
+                    f"{guardrail.get('id', '<unknown>')}",
+                    e,
+                )
+                continue
+
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
+
+    utils.log_info(f"Collected {len(region_guardrails)} guardrails in {region}")
+    return region_guardrails
+
+
+def collect_guardrails(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock guardrail information across regions, surfacing failures
+    via ``collect_failures=True``. The op-availability probe (missing
+    ``list_guardrails`` operation) is a graceful per-region skip and never
+    contributes to ``failed_regions``.
+
+    Returns:
+        tuple: ``(guardrails, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_guardrails_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_guardrails = [g for result in region_results for g in result]
     utils.log_info(f"Collected {len(all_guardrails)} guardrails")
-    return all_guardrails
+    return all_guardrails, failed_regions
 
 
-@utils.aws_error_handler("Collecting Bedrock knowledge bases", default_return=[])
-def collect_knowledge_bases(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Bedrock knowledge bases for RAG applications."""
-    all_knowledge_bases = []
+def _build_kb_row(kb: dict[str, Any], region: str, bedrock_agent_client) -> dict[str, Any]:
+    """
+    Build the export row for a single Bedrock knowledge base.
 
-    for region in regions:
-        utils.log_info(f"Collecting knowledge bases in {region}...")
-        bedrock_agent_client = utils.get_boto3_client('bedrock-agent', region_name=region)
+    Fetches enrichment details via ``get_knowledge_base``; that call is
+    best-effort (a single knowledge base's detail lookup failing should not
+    discard the base from the export) so it degrades to basic info on error
+    rather than raising.
+    """
+    kb_id = kb.get('knowledgeBaseId', 'N/A')
+    kb_name = kb.get('name', 'N/A')
+    description = kb.get('description', 'N/A')
+    status = kb.get('status', 'N/A')
 
-        try:
-            paginator = bedrock_agent_client.get_paginator('list_knowledge_bases')
-            for page in paginator.paginate():
-                knowledge_bases = page.get('knowledgeBaseSummaries', [])
+    created_at = kb.get('createdAt', 'N/A')
+    if created_at != 'N/A':
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                for kb in knowledge_bases:
-                    kb_id = kb.get('knowledgeBaseId', 'N/A')
-                    kb_name = kb.get('name', 'N/A')
-                    description = kb.get('description', 'N/A')
-                    status = kb.get('status', 'N/A')
+    updated_at = kb.get('updatedAt', 'N/A')
+    if updated_at != 'N/A':
+        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                    created_at = kb.get('createdAt', 'N/A')
-                    if created_at != 'N/A':
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
+    kb_arn = 'N/A'
+    role_arn = 'N/A'
+    storage_type = 'N/A'
 
-                    updated_at = kb.get('updatedAt', 'N/A')
-                    if updated_at != 'N/A':
-                        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        kb_details = bedrock_agent_client.get_knowledge_base(knowledgeBaseId=kb_id)
+        kb_data = kb_details.get('knowledgeBase', {})
 
-                    # Get additional details
-                    try:
-                        kb_details = bedrock_agent_client.get_knowledge_base(
-                            knowledgeBaseId=kb_id
-                        )
-                        kb_data = kb_details.get('knowledgeBase', {})
+        kb_arn = kb_data.get('knowledgeBaseArn', 'N/A')
+        role_arn = kb_data.get('roleArn', 'N/A')
 
-                        kb_arn = kb_data.get('knowledgeBaseArn', 'N/A')
-                        role_arn = kb_data.get('roleArn', 'N/A')
+        storage_config = kb_data.get('storageConfiguration', {})
+        storage_type = storage_config.get('type', 'N/A')
+    except Exception as e:
+        utils.log_warning(f"Could not get details for knowledge base {kb_id}: {str(e)}")
 
-                        # Storage configuration
-                        storage_config = kb_data.get('storageConfiguration', {})
-                        storage_type = storage_config.get('type', 'N/A')
+    return {
+        'Region': region,
+        'Knowledge Base Name': kb_name,
+        'Knowledge Base ID': kb_id,
+        'ARN': kb_arn,
+        'Status': status,
+        'Description': description,
+        'Storage Type': storage_type,
+        'Role ARN': role_arn,
+        'Created': created_at,
+        'Updated': updated_at
+    }
 
-                        all_knowledge_bases.append({
-                            'Region': region,
-                            'Knowledge Base Name': kb_name,
-                            'Knowledge Base ID': kb_id,
-                            'ARN': kb_arn,
-                            'Status': status,
-                            'Description': description,
-                            'Storage Type': storage_type,
-                            'Role ARN': role_arn,
-                            'Created': created_at,
-                            'Updated': updated_at
-                        })
 
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for knowledge base {kb_id}: {str(e)}")
-                        # Add basic info
-                        all_knowledge_bases.append({
-                            'Region': region,
-                            'Knowledge Base Name': kb_name,
-                            'Knowledge Base ID': kb_id,
-                            'ARN': 'N/A',
-                            'Status': status,
-                            'Description': description,
-                            'Storage Type': 'N/A',
-                            'Role ARN': 'N/A',
-                            'Created': created_at,
-                            'Updated': updated_at
-                        })
+def _scan_knowledge_bases_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Bedrock knowledge bases from a single region.
 
-        except Exception as e:
-            utils.log_warning(f"Error listing knowledge bases in {region}: {str(e)}")
-            continue
+    Primary scope collector — raises on genuine API error from the
+    ``list_knowledge_bases`` listing call so the caller can record the region
+    as failed rather than empty. Per-knowledge-base detail enrichment
+    (``get_knowledge_base``) degrades gracefully inside ``_build_kb_row`` and
+    does not fail the region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
+    utils.log_info(f"Collecting knowledge bases in {region}...")
+    bedrock_agent_client = utils.get_boto3_client('bedrock-agent', region_name=region)
+
+    region_knowledge_bases = []
+    paginator = bedrock_agent_client.get_paginator('list_knowledge_bases')
+    for page in paginator.paginate():
+        knowledge_bases = page.get('knowledgeBaseSummaries', [])
+        for kb in knowledge_bases:
+            try:
+                region_knowledge_bases.append(_build_kb_row(kb, region, bedrock_agent_client))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed knowledge base in {region}: "
+                    f"{kb.get('knowledgeBaseId', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    utils.log_info(f"Collected {len(region_knowledge_bases)} knowledge bases in {region}")
+    return region_knowledge_bases
+
+
+def collect_knowledge_bases(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock knowledge base information across regions, surfacing
+    failures via ``collect_failures=True``.
+
+    Returns:
+        tuple: ``(knowledge_bases, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_knowledge_bases_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_knowledge_bases = [kb for result in region_results for kb in result]
     utils.log_info(f"Collected {len(all_knowledge_bases)} knowledge bases")
-    return all_knowledge_bases
+    return all_knowledge_bases, failed_regions
 
 
-@utils.aws_error_handler("Collecting Bedrock agents", default_return=[])
-def collect_agents(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Bedrock agents for task automation."""
-    all_agents = []
+def _build_agent_row(agent: dict[str, Any], region: str, bedrock_agent_client) -> dict[str, Any]:
+    """
+    Build the export row for a single Bedrock agent.
 
-    for region in regions:
-        utils.log_info(f"Collecting agents in {region}...")
-        bedrock_agent_client = utils.get_boto3_client('bedrock-agent', region_name=region)
+    Fetches enrichment details via ``get_agent``; that call is best-effort (a
+    single agent's detail lookup failing should not discard the agent from
+    the export) so it degrades to basic info on error rather than raising.
+    """
+    agent_id = agent.get('agentId', 'N/A')
+    agent_name = agent.get('agentName', 'N/A')
+    agent_status = agent.get('agentStatus', 'N/A')
+    description = agent.get('description', 'N/A')
+    latest_agent_version = agent.get('latestAgentVersion', 'N/A')
 
-        try:
-            paginator = bedrock_agent_client.get_paginator('list_agents')
-            for page in paginator.paginate():
-                agents = page.get('agentSummaries', [])
+    created_at = agent.get('createdAt', 'N/A')
+    if created_at != 'N/A':
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                for agent in agents:
-                    agent_id = agent.get('agentId', 'N/A')
-                    agent_name = agent.get('agentName', 'N/A')
-                    agent_status = agent.get('agentStatus', 'N/A')
-                    description = agent.get('description', 'N/A')
-                    latest_agent_version = agent.get('latestAgentVersion', 'N/A')
+    updated_at = agent.get('updatedAt', 'N/A')
+    if updated_at != 'N/A':
+        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
 
-                    created_at = agent.get('createdAt', 'N/A')
-                    if created_at != 'N/A':
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S')
+    agent_arn = 'N/A'
+    agent_resource_role_arn = 'N/A'
+    foundation_model = 'N/A'
+    idle_session_ttl = 'N/A'
 
-                    updated_at = agent.get('updatedAt', 'N/A')
-                    if updated_at != 'N/A':
-                        updated_at = updated_at.strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        agent_details = bedrock_agent_client.get_agent(agentId=agent_id)
+        agent_data = agent_details.get('agent', {})
 
-                    # Get additional details
-                    try:
-                        agent_details = bedrock_agent_client.get_agent(agentId=agent_id)
-                        agent_data = agent_details.get('agent', {})
+        agent_arn = agent_data.get('agentArn', 'N/A')
+        agent_resource_role_arn = agent_data.get('agentResourceRoleArn', 'N/A')
+        foundation_model = agent_data.get('foundationModel', 'N/A')
+        idle_session_ttl = agent_data.get('idleSessionTTLInSeconds', 'N/A')
+    except Exception as e:
+        utils.log_warning(f"Could not get details for agent {agent_id}: {str(e)}")
 
-                        agent_arn = agent_data.get('agentArn', 'N/A')
-                        agent_resource_role_arn = agent_data.get('agentResourceRoleArn', 'N/A')
-                        foundation_model = agent_data.get('foundationModel', 'N/A')
-                        idle_session_ttl = agent_data.get('idleSessionTTLInSeconds', 'N/A')
+    return {
+        'Region': region,
+        'Agent Name': agent_name,
+        'Agent ID': agent_id,
+        'ARN': agent_arn,
+        'Status': agent_status,
+        'Latest Version': latest_agent_version,
+        'Foundation Model': foundation_model,
+        'Description': description,
+        'Role ARN': agent_resource_role_arn,
+        'Idle Session TTL (seconds)': idle_session_ttl,
+        'Created': created_at,
+        'Updated': updated_at
+    }
 
-                        all_agents.append({
-                            'Region': region,
-                            'Agent Name': agent_name,
-                            'Agent ID': agent_id,
-                            'ARN': agent_arn,
-                            'Status': agent_status,
-                            'Latest Version': latest_agent_version,
-                            'Foundation Model': foundation_model,
-                            'Description': description,
-                            'Role ARN': agent_resource_role_arn,
-                            'Idle Session TTL (seconds)': idle_session_ttl,
-                            'Created': created_at,
-                            'Updated': updated_at
-                        })
 
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for agent {agent_id}: {str(e)}")
-                        # Add basic info
-                        all_agents.append({
-                            'Region': region,
-                            'Agent Name': agent_name,
-                            'Agent ID': agent_id,
-                            'ARN': 'N/A',
-                            'Status': agent_status,
-                            'Latest Version': latest_agent_version,
-                            'Foundation Model': 'N/A',
-                            'Description': description,
-                            'Role ARN': 'N/A',
-                            'Idle Session TTL (seconds)': 'N/A',
-                            'Created': created_at,
-                            'Updated': updated_at
-                        })
+def _scan_agents_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Bedrock agents from a single region.
 
-        except Exception as e:
-            utils.log_warning(f"Error listing agents in {region}: {str(e)}")
-            continue
+    Primary scope collector — raises on genuine API error from the
+    ``list_agents`` listing call so the caller can record the region as
+    failed rather than empty. Per-agent detail enrichment (``get_agent``)
+    degrades gracefully inside ``_build_agent_row`` and does not fail the
+    region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
+    utils.log_info(f"Collecting agents in {region}...")
+    bedrock_agent_client = utils.get_boto3_client('bedrock-agent', region_name=region)
+
+    region_agents = []
+    paginator = bedrock_agent_client.get_paginator('list_agents')
+    for page in paginator.paginate():
+        agents = page.get('agentSummaries', [])
+        for agent in agents:
+            try:
+                region_agents.append(_build_agent_row(agent, region, bedrock_agent_client))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed agent in {region}: "
+                    f"{agent.get('agentId', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    utils.log_info(f"Collected {len(region_agents)} agents in {region}")
+    return region_agents
+
+
+def collect_agents(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Bedrock agent information across regions, surfacing failures via
+    ``collect_failures=True``.
+
+    Returns:
+        tuple: ``(agents, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_agents_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_agents = [a for result in region_results for a in result]
     utils.log_info(f"Collected {len(all_agents)} agents")
-    return all_agents
+    return all_agents, failed_regions
 
 
-def generate_summary(foundation_models: List[Dict[str, Any]],
-                     custom_models: List[Dict[str, Any]],
-                     logging_configs: List[Dict[str, Any]],
-                     guardrails: List[Dict[str, Any]],
-                     knowledge_bases: List[Dict[str, Any]],
-                     agents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(foundation_models: list[dict[str, Any]],
+                     custom_models: list[dict[str, Any]],
+                     logging_configs: list[dict[str, Any]],
+                     guardrails: list[dict[str, Any]],
+                     knowledge_bases: list[dict[str, Any]],
+                     agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Bedrock resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -515,14 +729,30 @@ def main():
     # Collect data
     print("\nCollecting Amazon Bedrock data...")
 
-    foundation_models = collect_foundation_models(regions)
-    custom_models = collect_custom_models(regions)
-    logging_configs = collect_model_invocation_logging(regions)
-    guardrails = collect_guardrails(regions)
-    knowledge_bases = collect_knowledge_bases(regions)
-    agents = collect_agents(regions)
+    # Each scope collector surfaces its own (region, error) failures; region
+    # failures must propagate as failed scopes, never collapse into "empty"
+    # (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    # The guardrails op-availability probe (missing operation) is a graceful
+    # skip and never contributes to its failed_regions list.
+    foundation_models, failed_fm = collect_foundation_models(regions)
+    custom_models, failed_cm = collect_custom_models(regions)
+    logging_configs, failed_log = collect_model_invocation_logging(regions)
+    guardrails, failed_gr = collect_guardrails(regions)
+    knowledge_bases, failed_kb = collect_knowledge_bases(regions)
+    agents, failed_ag = collect_agents(regions)
     summary = generate_summary(foundation_models, custom_models, logging_configs,
                                 guardrails, knowledge_bases, agents)
+
+    # Merge every scope's failed regions into one combined list, tagged with
+    # the scope that failed, so a single marker + exit covers all of them.
+    failed_regions = (
+        [(f"foundation_models/{region}", err) for region, err in failed_fm]
+        + [(f"custom_models/{region}", err) for region, err in failed_cm]
+        + [(f"model_invocation_logging/{region}", err) for region, err in failed_log]
+        + [(f"guardrails/{region}", err) for region, err in failed_gr]
+        + [(f"knowledge_bases/{region}", err) for region, err in failed_kb]
+        + [(f"agents/{region}", err) for region, err in failed_ag]
+    )
 
     # Create DataFrames
     utils.log_info("Creating DataFrames...")
@@ -564,7 +794,9 @@ def main():
         df_summary = utils.prepare_dataframe_for_export(df_summary)
         dataframes['Summary'] = df_summary
 
-    # Export to Excel
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius
+    # audit).
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'bedrock', region_suffix)
@@ -572,11 +804,23 @@ def main():
         utils.log_info(f"Exporting to {filename}...")
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-        # Log summary
-    else:
+        utils.log_success("Amazon Bedrock export completed successfully")
+    elif not failed_regions:
+        # Genuinely empty account: every scope/region succeeded and returned
+        # nothing.
         utils.log_warning("No Amazon Bedrock data found to export")
 
-    utils.log_success("Amazon Bedrock export completed successfully")
+    # If ANY scope failed collection in ANY region, make it loud: write a
+    # marker and exit non-zero, even if some data was exported. A partial
+    # export that looks complete is exactly the failure mode this guards
+    # against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'bedrock', failed_regions)
+        print(
+            "\nERROR: Bedrock export completed with failures — data is incomplete. "
+            "See the *-bedrock-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

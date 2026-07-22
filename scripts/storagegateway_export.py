@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Import utils with fallback for running from scripts directory
 try:
@@ -36,7 +36,7 @@ args = utils.parse_script_args("Export AWS Storage Gateway resources to Excel")
 # ============================================================================
 
 @utils.aws_error_handler("Listing Storage Gateways", default_return=[])
-def list_gateways(region: str) -> List[str]:
+def list_gateways(region: str) -> list[str]:
     """List all Storage Gateway ARNs in a region."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     gateway_arns = []
@@ -49,7 +49,7 @@ def list_gateways(region: str) -> List[str]:
 
 
 @utils.aws_error_handler("Describing gateway", default_return=None)
-def describe_gateway(gateway_arn: str, region: str) -> Optional[Dict[str, Any]]:
+def describe_gateway(gateway_arn: str, region: str) -> dict[str, Any] | None:
     """Get detailed information about a gateway."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     response = sgw.describe_gateway_information(GatewayARN=gateway_arn)
@@ -57,7 +57,7 @@ def describe_gateway(gateway_arn: str, region: str) -> Optional[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Listing file shares", default_return=[])
-def list_file_shares(gateway_arn: str, region: str) -> List[str]:
+def list_file_shares(gateway_arn: str, region: str) -> list[str]:
     """List all file share ARNs for a gateway."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     file_share_arns = []
@@ -70,7 +70,7 @@ def list_file_shares(gateway_arn: str, region: str) -> List[str]:
 
 
 @utils.aws_error_handler("Describing NFS file shares", default_return=[])
-def describe_nfs_file_shares(file_share_arns: List[str], region: str) -> List[Dict[str, Any]]:
+def describe_nfs_file_shares(file_share_arns: list[str], region: str) -> list[dict[str, Any]]:
     """Get detailed information about NFS file shares."""
     if not file_share_arns:
         return []
@@ -81,7 +81,7 @@ def describe_nfs_file_shares(file_share_arns: List[str], region: str) -> List[Di
 
 
 @utils.aws_error_handler("Describing SMB file shares", default_return=[])
-def describe_smb_file_shares(file_share_arns: List[str], region: str) -> List[Dict[str, Any]]:
+def describe_smb_file_shares(file_share_arns: list[str], region: str) -> list[dict[str, Any]]:
     """Get detailed information about SMB file shares."""
     if not file_share_arns:
         return []
@@ -92,7 +92,7 @@ def describe_smb_file_shares(file_share_arns: List[str], region: str) -> List[Di
 
 
 @utils.aws_error_handler("Listing volumes", default_return=[])
-def list_volumes(gateway_arn: str, region: str) -> List[str]:
+def list_volumes(gateway_arn: str, region: str) -> list[str]:
     """List all volume ARNs for a gateway."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     volume_arns = []
@@ -105,7 +105,7 @@ def list_volumes(gateway_arn: str, region: str) -> List[str]:
 
 
 @utils.aws_error_handler("Describing cached volumes", default_return=[])
-def describe_cached_volumes(volume_arns: List[str], region: str) -> List[Dict[str, Any]]:
+def describe_cached_volumes(volume_arns: list[str], region: str) -> list[dict[str, Any]]:
     """Get detailed information about cached iSCSI volumes."""
     if not volume_arns:
         return []
@@ -116,7 +116,7 @@ def describe_cached_volumes(volume_arns: List[str], region: str) -> List[Dict[st
 
 
 @utils.aws_error_handler("Describing stored volumes", default_return=[])
-def describe_stored_volumes(volume_arns: List[str], region: str) -> List[Dict[str, Any]]:
+def describe_stored_volumes(volume_arns: list[str], region: str) -> list[dict[str, Any]]:
     """Get detailed information about stored iSCSI volumes."""
     if not volume_arns:
         return []
@@ -127,7 +127,7 @@ def describe_stored_volumes(volume_arns: List[str], region: str) -> List[Dict[st
 
 
 @utils.aws_error_handler("Listing tapes", default_return=[])
-def list_tapes(region: str) -> List[str]:
+def list_tapes(region: str) -> list[str]:
     """List all tape ARNs in a region."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     tape_arns = []
@@ -140,7 +140,7 @@ def list_tapes(region: str) -> List[str]:
 
 
 @utils.aws_error_handler("Describing tapes", default_return=[])
-def describe_tapes(tape_arns: List[str], region: str) -> List[Dict[str, Any]]:
+def describe_tapes(tape_arns: list[str], region: str) -> list[dict[str, Any]]:
     """Get detailed information about tapes (batch operation)."""
     if not tape_arns:
         return []
@@ -159,7 +159,7 @@ def describe_tapes(tape_arns: List[str], region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Listing tape pools", default_return=[])
-def list_tape_pools(region: str) -> List[Dict[str, Any]]:
+def list_tape_pools(region: str) -> list[dict[str, Any]]:
     """List all tape pools in a region."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     pools = []
@@ -172,7 +172,7 @@ def list_tape_pools(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Listing local disks", default_return=[])
-def list_local_disks(gateway_arn: str, region: str) -> List[Dict[str, Any]]:
+def list_local_disks(gateway_arn: str, region: str) -> list[dict[str, Any]]:
     """List local disks for a gateway."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     response = sgw.list_local_disks(GatewayARN=gateway_arn)
@@ -180,7 +180,7 @@ def list_local_disks(gateway_arn: str, region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Listing tags", default_return=[])
-def list_tags_for_resource(resource_arn: str, region: str) -> List[Dict[str, str]]:
+def list_tags_for_resource(resource_arn: str, region: str) -> list[dict[str, str]]:
     """List tags for a Storage Gateway resource."""
     sgw = utils.get_boto3_client('storagegateway', region_name=region)
     response = sgw.list_tags_for_resource(ResourceARN=resource_arn)
@@ -191,14 +191,14 @@ def list_tags_for_resource(resource_arn: str, region: str) -> List[Dict[str, str
 # DATA PROCESSING FUNCTIONS
 # ============================================================================
 
-def format_tags(tags: List[Dict[str, str]]) -> str:
+def format_tags(tags: list[dict[str, str]]) -> str:
     """Format tags list as 'Key=Value' pairs."""
     if not tags:
         return 'N/A'
     return ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
 
 
-def bytes_to_gb(bytes_value: Optional[int]) -> str:
+def bytes_to_gb(bytes_value: int | None) -> str:
     """Convert bytes to GB with 2 decimal places."""
     if bytes_value is None or bytes_value == 0:
         return '0 GB'
@@ -206,7 +206,7 @@ def bytes_to_gb(bytes_value: Optional[int]) -> str:
     return f"{gb:.2f} GB"
 
 
-def bytes_to_tb(bytes_value: Optional[int]) -> str:
+def bytes_to_tb(bytes_value: int | None) -> str:
     """Convert bytes to TB with 2 decimal places."""
     if bytes_value is None or bytes_value == 0:
         return '0 TB'
@@ -241,7 +241,7 @@ def extract_volume_id(volume_arn: str) -> str:
         return volume_arn
 
 
-def collect_all_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_gateways(regions: list[str]) -> list[dict[str, Any]]:
     """Collect all Storage Gateways across specified regions."""
     all_gateways = []
 
@@ -298,7 +298,7 @@ def collect_all_gateways(regions: List[str]) -> List[Dict[str, Any]]:
     return all_gateways
 
 
-def collect_all_file_shares(regions: List[str], gateway_arns_by_region: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+def collect_all_file_shares(regions: list[str], gateway_arns_by_region: dict[str, list[str]]) -> list[dict[str, Any]]:
     """Collect all file shares across specified regions."""
     all_file_shares = []
 
@@ -383,7 +383,7 @@ def collect_all_file_shares(regions: List[str], gateway_arns_by_region: Dict[str
     return all_file_shares
 
 
-def collect_all_volumes(regions: List[str], gateway_arns_by_region: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+def collect_all_volumes(regions: list[str], gateway_arns_by_region: dict[str, list[str]]) -> list[dict[str, Any]]:
     """Collect all volumes across specified regions."""
     all_volumes = []
 
@@ -452,7 +452,7 @@ def collect_all_volumes(regions: List[str], gateway_arns_by_region: Dict[str, Li
     return all_volumes
 
 
-def collect_all_tapes(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_tapes(regions: list[str]) -> list[dict[str, Any]]:
     """Collect all tapes across specified regions."""
     all_tapes = []
 
@@ -491,7 +491,7 @@ def collect_all_tapes(regions: List[str]) -> List[Dict[str, Any]]:
     return all_tapes
 
 
-def collect_all_tape_pools(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_tape_pools(regions: list[str]) -> list[dict[str, Any]]:
     """Collect all tape pools across specified regions."""
     all_pools = []
 
@@ -521,7 +521,7 @@ def collect_all_tape_pools(regions: List[str]) -> List[Dict[str, Any]]:
     return all_pools
 
 
-def collect_all_local_disks(regions: List[str], gateway_arns_by_region: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+def collect_all_local_disks(regions: list[str], gateway_arns_by_region: dict[str, list[str]]) -> list[dict[str, Any]]:
     """Collect all local disks across specified regions."""
     all_disks = []
 
@@ -559,9 +559,9 @@ def collect_all_local_disks(regions: List[str], gateway_arns_by_region: Dict[str
     return all_disks
 
 
-def create_summary_sheet(gateways: List[Dict[str, Any]], file_shares: List[Dict[str, Any]],
-                         volumes: List[Dict[str, Any]], tapes: List[Dict[str, Any]],
-                         pools: List[Dict[str, Any]], disks: List[Dict[str, Any]]) -> pd.DataFrame:
+def create_summary_sheet(gateways: list[dict[str, Any]], file_shares: list[dict[str, Any]],
+                         volumes: list[dict[str, Any]], tapes: list[dict[str, Any]],
+                         pools: list[dict[str, Any]], disks: list[dict[str, Any]]) -> pd.DataFrame:
     """Create summary sheet with counts and statistics."""
     summary_data = []
 
@@ -644,7 +644,7 @@ def create_summary_sheet(gateways: List[Dict[str, Any]], file_shares: List[Dict[
 # MAIN EXECUTION
 # ============================================================================
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Storage Gateway data and write the Excel export."""
     utils.log_info("\n" + "=" * 80)
     utils.log_info("Collecting Storage Gateway Data")

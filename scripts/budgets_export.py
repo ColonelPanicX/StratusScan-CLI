@@ -23,7 +23,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -44,125 +44,170 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Budgets configuration to Excel")
 
 
-@utils.aws_error_handler("Collecting Budgets", default_return=[])
-def collect_budgets(account_id: str) -> List[Dict[str, Any]]:
+def _build_budget_row(budget: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single AWS Budget.
+
+    Extracted so the per-budget processing can be wrapped in try/except by
+    the caller: a malformed budget entry is logged and skipped rather than
+    discarding the whole account-scope collection. Every field is read with
+    ``.get()`` and a safe default for the same reason.
+
+    Args:
+        budget: A single Budgets entry from describe_budgets.
+
+    Returns:
+        dict: The assembled budget row.
+    """
+    budget_name = budget.get('BudgetName', 'N/A')
+
+    print(f"  Processing budget: {budget_name}")
+
+    # Budget type
+    budget_type = budget.get('BudgetType', 'N/A')
+
+    # Time unit
+    time_unit = budget.get('TimeUnit', 'N/A')
+
+    # Time period
+    time_period = budget.get('TimePeriod', {}) or {}
+    start_date = time_period.get('Start', '')
+    if start_date:
+        start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.datetime) else str(start_date)
+    end_date = time_period.get('End', '')
+    if end_date:
+        end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.datetime) else str(end_date)
+
+    # Budget limit
+    budget_limit = budget.get('BudgetLimit', {}) or {}
+    limit_amount = budget_limit.get('Amount', '0')
+    try:
+        limit_amount = float(limit_amount)
+    except (ValueError, TypeError):
+        limit_amount = 0.0
+    limit_unit = budget_limit.get('Unit', 'USD')
+
+    # Calculated spend
+    calculated_spend = budget.get('CalculatedSpend', {}) or {}
+
+    # Actual spend
+    actual_spend = calculated_spend.get('ActualSpend', {}) or {}
+    actual_amount = actual_spend.get('Amount', '0')
+    try:
+        actual_amount = float(actual_amount)
+    except (ValueError, TypeError):
+        actual_amount = 0.0
+
+    # Forecasted spend
+    forecasted_spend = calculated_spend.get('ForecastedSpend', {}) or {}
+    forecasted_amount = forecasted_spend.get('Amount', '0')
+    try:
+        forecasted_amount = float(forecasted_amount)
+    except (ValueError, TypeError):
+        forecasted_amount = 0.0
+
+    # Cost filters
+    cost_filters = budget.get('CostFilters', {}) or {}
+    filters_str = ', '.join([f"{k}={','.join(v)}" for k, v in cost_filters.items()]) if cost_filters else 'None'
+
+    # Cost types
+    cost_types = budget.get('CostTypes', {}) or {}
+    include_tax = cost_types.get('IncludeTax', False)
+    include_subscription = cost_types.get('IncludeSubscription', False)
+    include_support = cost_types.get('IncludeSupport', False)
+    include_refund = cost_types.get('IncludeRefund', False)
+    include_credit = cost_types.get('IncludeCredit', False)
+
+    # Last updated
+    last_updated = budget.get('LastUpdatedTime', '')
+    if last_updated:
+        last_updated = last_updated.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_updated, datetime.datetime) else str(last_updated)
+
+    return {
+        'Budget Name': budget_name,
+        'Budget Type': budget_type,
+        'Time Unit': time_unit,
+        'Start Date': start_date if start_date else 'N/A',
+        'End Date': end_date if end_date else 'Ongoing',
+        'Budget Limit': limit_amount,
+        'Currency': limit_unit,
+        'Actual Spend': actual_amount,
+        'Forecasted Spend': forecasted_amount,
+        'Spend %': round((actual_amount / limit_amount * 100) if limit_amount > 0 else 0, 2),
+        'Cost Filters': filters_str,
+        'Include Tax': include_tax,
+        'Include Subscription': include_subscription,
+        'Include Support': include_support,
+        'Include Refund': include_refund,
+        'Include Credit': include_credit,
+        'Last Updated': last_updated if last_updated else 'N/A'
+    }
+
+
+def collect_budgets(account_id: str) -> list[dict[str, Any]]:
     """
     Collect AWS Budgets information.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that the caller cannot distinguish from a genuinely empty
+    account, producing silent data loss (see the 07.15.2026 / 07.16.2026
+    silent-collection-failure audits). Budgets is a global, account-scope
+    service (not multi-region — see scripts/shield_export.py for the
+    account-scope reference pattern this follows). Account-scope failures
+    (client creation, pagination) are allowed to raise so the caller (main)
+    can record this scope as *failed* rather than *empty*. Per-budget errors
+    are contained internally (logged and skipped) via ``_build_budget_row``.
 
     Args:
         account_id: AWS account ID
 
     Returns:
         list: List of dictionaries with budget information
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     print("\n=== COLLECTING AWS BUDGETS ===")
     all_budgets = []
+    skipped = 0
 
     # Budgets is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
     budgets_client = utils.get_boto3_client('budgets', region_name=home_region)
 
-    try:
-        paginator = budgets_client.get_paginator('describe_budgets')
-        page_iterator = paginator.paginate(AccountId=account_id)
+    paginator = budgets_client.get_paginator('describe_budgets')
+    page_iterator = paginator.paginate(AccountId=account_id)
 
-        for page in page_iterator:
-            budgets = page.get('Budgets', [])
+    total_budgets = 0
+    for page in page_iterator:
+        budgets = page.get('Budgets', [])
+        total_budgets += len(budgets)
 
-            for budget in budgets:
-                budget_name = budget.get('BudgetName', 'N/A')
+        # Process each budget. One malformed budget must not sink the whole
+        # account-scope collection, so each is built inside try/except;
+        # failures are logged and skipped.
+        for budget in budgets:
+            try:
+                all_budgets.append(_build_budget_row(budget))
+            except Exception as e:
+                skipped += 1
+                budget_name = budget.get('BudgetName', 'Unknown') if isinstance(budget, dict) else 'Unknown'
+                utils.log_error(f"Skipping budget '{budget_name}' due to a processing error", e)
+                continue
 
-                print(f"  Processing budget: {budget_name}")
-
-                # Budget type
-                budget_type = budget.get('BudgetType', 'N/A')
-
-                # Time unit
-                time_unit = budget.get('TimeUnit', 'N/A')
-
-                # Time period
-                time_period = budget.get('TimePeriod', {})
-                start_date = time_period.get('Start', '')
-                if start_date:
-                    start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.datetime) else str(start_date)
-                end_date = time_period.get('End', '')
-                if end_date:
-                    end_date = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime.datetime) else str(end_date)
-
-                # Budget limit
-                budget_limit = budget.get('BudgetLimit', {})
-                limit_amount = budget_limit.get('Amount', '0')
-                try:
-                    limit_amount = float(limit_amount)
-                except (ValueError, TypeError):
-                    limit_amount = 0.0
-                limit_unit = budget_limit.get('Unit', 'USD')
-
-                # Calculated spend
-                calculated_spend = budget.get('CalculatedSpend', {})
-
-                # Actual spend
-                actual_spend = calculated_spend.get('ActualSpend', {})
-                actual_amount = actual_spend.get('Amount', '0')
-                try:
-                    actual_amount = float(actual_amount)
-                except (ValueError, TypeError):
-                    actual_amount = 0.0
-
-                # Forecasted spend
-                forecasted_spend = calculated_spend.get('ForecastedSpend', {})
-                forecasted_amount = forecasted_spend.get('Amount', '0')
-                try:
-                    forecasted_amount = float(forecasted_amount)
-                except (ValueError, TypeError):
-                    forecasted_amount = 0.0
-
-                # Cost filters
-                cost_filters = budget.get('CostFilters', {})
-                filters_str = ', '.join([f"{k}={','.join(v)}" for k, v in cost_filters.items()]) if cost_filters else 'None'
-
-                # Cost types
-                cost_types = budget.get('CostTypes', {})
-                include_tax = cost_types.get('IncludeTax', False)
-                include_subscription = cost_types.get('IncludeSubscription', False)
-                include_support = cost_types.get('IncludeSupport', False)
-                include_refund = cost_types.get('IncludeRefund', False)
-                include_credit = cost_types.get('IncludeCredit', False)
-
-                # Last updated
-                last_updated = budget.get('LastUpdatedTime', '')
-                if last_updated:
-                    last_updated = last_updated.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_updated, datetime.datetime) else str(last_updated)
-
-                all_budgets.append({
-                    'Budget Name': budget_name,
-                    'Budget Type': budget_type,
-                    'Time Unit': time_unit,
-                    'Start Date': start_date if start_date else 'N/A',
-                    'End Date': end_date if end_date else 'Ongoing',
-                    'Budget Limit': limit_amount,
-                    'Currency': limit_unit,
-                    'Actual Spend': actual_amount,
-                    'Forecasted Spend': forecasted_amount,
-                    'Spend %': round((actual_amount / limit_amount * 100) if limit_amount > 0 else 0, 2),
-                    'Cost Filters': filters_str,
-                    'Include Tax': include_tax,
-                    'Include Subscription': include_subscription,
-                    'Include Support': include_support,
-                    'Include Refund': include_refund,
-                    'Include Credit': include_credit,
-                    'Last Updated': last_updated if last_updated else 'N/A'
-                })
-
-    except Exception as e:
-        utils.log_error("Error collecting budgets", e)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_budgets} budget(s) were skipped due to "
+            "processing errors (see log above); the remaining budgets were still collected."
+        )
 
     utils.log_success(f"Total budgets collected: {len(all_budgets)}")
     return all_budgets
 
 
 @utils.aws_error_handler("Collecting Budget Notifications", default_return=[])
-def collect_budget_notifications(account_id: str, budget_names: List[str]) -> List[Dict[str, Any]]:
+def collect_budget_notifications(account_id: str, budget_names: list[str]) -> list[dict[str, Any]]:
     """
     Collect notification configurations for budgets.
 
@@ -244,6 +289,15 @@ def export_budgets_data(account_id: str, account_name: str):
     """
     Export AWS Budgets information to an Excel file.
 
+    Budgets is a global, account-scope service (not multi-region), so
+    failures are tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py for the
+    account-scope reference pattern). A real collection failure on the
+    ``budgets`` scope is exported as a partial result (if any data was
+    collected) and always surfaced via ``utils.report_collection_failures``
+    + a non-zero exit — it must never be silently collapsed into "no
+    budgets" (07.15.2026 / 07.16.2026 audits).
+
     Args:
         account_id: The AWS account ID
         account_name: The AWS account name
@@ -257,8 +311,19 @@ def export_budgets_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect budgets
-    budgets = collect_budgets(account_id)
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect budgets (PRIMARY scope — a real API error here must
+    # propagate to failed_scopes, never collapse into an empty list that
+    # reads as "no budgets configured").
+    try:
+        budgets = collect_budgets(account_id)
+    except Exception as e:
+        failed_scopes.append(('budgets', str(e)))
+        utils.log_error(f"Budgets collection failed: {e}")
+        budgets = []
+
     if budgets:
         data_frames['Budgets'] = pd.DataFrame(budgets)
 
@@ -303,42 +368,58 @@ def export_budgets_data(account_id: str, account_name: str):
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    # Check if we have any data
+    # Check if we have any data. A genuinely empty result (collection
+    # succeeded, account simply has no budgets) is a plain warning — never
+    # confused with a failed collection (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
     if not data_frames:
-        utils.log_warning("No Budgets data was collected. Nothing to export.")
-        print("\nNo Budgets found in this account.")
-        return
+        if not failed_scopes:
+            utils.log_warning("No Budgets data was collected. Nothing to export.")
+            print("\nNo Budgets found in this account.")
+    else:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+        # STEP 5: Create filename and export — export whatever succeeded,
+        # a partial export is required even when the budgets scope failed.
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'budgets',
+            '',
+            current_date
+        )
 
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'budgets',
-        '',
-        current_date
-    )
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
 
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+            if output_path:
+                utils.log_success("Budgets data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
 
-        if output_path:
-            utils.log_success("Budgets data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
 
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
 
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If the budgets scope failed, make it loud: write a marker and exit
+    # non-zero, even if a partial export was written. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'budgets', failed_scopes)
+        print(
+            "\nERROR: Budgets export completed with failures — data is "
+            "incomplete. See the *-budgets-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -356,10 +437,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export Budgets data
         export_budgets_data(account_id, account_name)

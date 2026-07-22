@@ -25,7 +25,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import boto3
 from botocore.config import Config as BotocoreConfig
@@ -44,9 +44,97 @@ args = utils.parse_script_args("Discover AWS services in use and export inventor
 # Setup logging
 logger = utils.setup_logging('services-in-use-export')
 
+
+# ---------------------------------------------------------------------------
+# Detector helpers
+#
+# A detector's job is only to answer "is this service in use, and roughly how
+# much?" — not to collect data (that's the exporter's job). Counts are capped
+# for display by DISCOVERY_CAP, so these helpers stop early once the cap is
+# exceeded. Reference DISCOVERY_CAP (defined below) lazily at call time.
+# ---------------------------------------------------------------------------
+def _count_paginated(client, operation: str, key: str) -> int:
+    """Count items across all pages of a list/describe operation (cap-aware)."""
+    total = 0
+    for page in client.get_paginator(operation).paginate():
+        total += len(page.get(key, []) or [])
+        if total > DISCOVERY_CAP:
+            break
+    return total
+
+
+def _count_simple(client, operation: str, key: str) -> int:
+    """Count items from a single (non-paginated) list/describe call."""
+    return len(getattr(client, operation)().get(key, []) or [])
+
+
+def _shield_check(c, r) -> int:
+    """Shield Advanced is in use only when an active subscription exists.
+
+    describe_subscription raises ResourceNotFoundException when Shield Advanced
+    has never been subscribed — that is a clean 'not in use', not an error.
+    """
+    try:
+        return 1 if c.describe_subscription().get('Subscription') else 0
+    except Exception as e:
+        if 'resourcenotfound' in str(e).lower():
+            return 0
+        raise
+
+
+def _compute_optimizer_check(c, r) -> int:
+    """Compute Optimizer is in use only when the account is opted in (Active)."""
+    return 1 if c.get_enrollment_status().get('status') == 'Active' else 0
+
+
+def _cost_optimization_hub_check(c, r) -> int:
+    """Count accounts with an Active Cost Optimization Hub enrollment."""
+    total = 0
+    for page in c.get_paginator('list_enrollment_statuses').paginate():
+        total += sum(1 for i in page.get('items', []) if i.get('status') == 'Active')
+    return total
+
+
+def _marketplace_check(c, r) -> int:
+    """Best-effort detection of accepted AWS Marketplace agreements.
+
+    The Marketplace agreement API is restrictive and easy to mis-query; any
+    failure is treated as 'not detected' here. The bill cross-check is the
+    authoritative signal for Marketplace spend (see follow-up).
+    """
+    try:
+        resp = c.search_agreements(
+            catalog='AWSMarketplace',
+            filters=[{'name': 'PartyType', 'values': ['Proposer']}],
+            maxResults=20,
+        )
+        return len(resp.get('agreementViewSummaries', []) or [])
+    except Exception as e:
+        utils.log_debug(f"Marketplace agreement check skipped: {e}")
+        return 0
+
+
 # Service detection configuration - maps to your export scripts
 SERVICE_CHECKS = {
     'Compute Resources': {
+        'Amazon Elastic Container Registry': {
+            'client': 'ecr',
+            'check': lambda c, r: _count_paginated(c, 'describe_repositories', 'repositories'),
+            'unit': 'repositories',
+            'regional': True
+        },
+        'AWS Elastic Beanstalk': {
+            'client': 'elasticbeanstalk',
+            'check': lambda c, r: _count_simple(c, 'describe_applications', 'Applications'),
+            'unit': 'applications',
+            'regional': True
+        },
+        'Amazon EC2 Image Builder': {
+            'client': 'imagebuilder',
+            'check': lambda c, r: _count_simple(c, 'list_image_pipelines', 'imagePipelineList'),
+            'unit': 'pipelines',
+            'regional': True
+        },
         'Amazon EC2': {
             'client': 'ec2',
             'check': lambda c, r: sum(
@@ -159,6 +247,18 @@ SERVICE_CHECKS = {
         },
     },
     'Storage Resources': {
+        'AWS DataSync': {
+            'client': 'datasync',
+            'check': lambda c, r: _count_paginated(c, 'list_tasks', 'Tasks'),
+            'unit': 'tasks',
+            'regional': True
+        },
+        'AWS Transfer Family': {
+            'client': 'transfer',
+            'check': lambda c, r: _count_paginated(c, 'list_servers', 'Servers'),
+            'unit': 'servers',
+            'regional': True
+        },
         'Amazon S3': {
             'client': 's3',
             'check': lambda c, r: len(c.list_buckets()['Buckets']),
@@ -217,6 +317,20 @@ SERVICE_CHECKS = {
         },
     },
     'Network Resources': {
+        'AWS Cloud Map': {
+            'client': 'servicediscovery',
+            'check': lambda c, r: _count_paginated(c, 'list_namespaces', 'Namespaces'),
+            'unit': 'namespaces',
+            'regional': True
+        },
+        'AWS Network Manager': {
+            'client': 'networkmanager',
+            # Global service with a single partition endpoint — boto3 routes to
+            # it regardless of the client region, so a single check suffices.
+            'check': lambda c, r: _count_paginated(c, 'describe_global_networks', 'GlobalNetworks'),
+            'unit': 'global networks',
+            'regional': False
+        },
         'Amazon VPC': {
             'client': 'ec2',
             'check': lambda c, r: len([vpc for vpc in c.describe_vpcs()['Vpcs'] if not vpc.get('IsDefault', False)]),
@@ -327,6 +441,45 @@ SERVICE_CHECKS = {
         },
     },
     'Security & Identity': {
+        'AWS IAM Access Analyzer': {
+            'client': 'accessanalyzer',
+            'check': lambda c, r: _count_paginated(c, 'list_analyzers', 'analyzers'),
+            'unit': 'analyzers',
+            'regional': True
+        },
+        'AWS Certificate Manager Private Certificate Authority': {
+            'client': 'acm-pca',
+            'check': lambda c, r: _count_paginated(c, 'list_certificate_authorities', 'CertificateAuthorities'),
+            'unit': 'CAs',
+            'regional': True
+        },
+        'Amazon Detective': {
+            'client': 'detective',
+            'check': lambda c, r: _count_simple(c, 'list_graphs', 'GraphList'),
+            'unit': 'behavior graphs',
+            'regional': True
+        },
+        'AWS Shield': {
+            'client': 'shield',
+            'check': _shield_check,
+            'unit': 'subscription',
+            'regional': False,
+            'global_region': True
+        },
+        'AWS Verified Access': {
+            # Verified Access APIs live under EC2 — there is no 'verifiedaccess'
+            # boto3 client.
+            'client': 'ec2',
+            'check': lambda c, r: _count_paginated(c, 'describe_verified_access_instances', 'VerifiedAccessInstances'),
+            'unit': 'instances',
+            'regional': True
+        },
+        'Amazon Verified Permissions': {
+            'client': 'verifiedpermissions',
+            'check': lambda c, r: _count_paginated(c, 'list_policy_stores', 'policyStores'),
+            'unit': 'policy stores',
+            'regional': True
+        },
         'AWS IAM': {
             'client': 'iam',
             'check': lambda c, r: len(c.list_users()['Users']),
@@ -393,6 +546,29 @@ SERVICE_CHECKS = {
         },
     },
     'Management & Governance': {
+        'AWS License Manager': {
+            'client': 'license-manager',
+            'check': lambda c, r: _count_paginated(c, 'list_license_configurations', 'LicenseConfigurations'),
+            'unit': 'license configurations',
+            'regional': True
+        },
+        'AWS Health': {
+            'client': 'health',
+            # Global endpoint; requires Business/Enterprise Support — a missing
+            # support plan surfaces as 'subscription required' and is treated as
+            # not-in-use by _is_not_in_use_error.
+            'check': lambda c, r: _count_paginated(c, 'describe_events', 'events'),
+            'unit': 'events',
+            'regional': False,
+            'global_region': True
+        },
+        'AWS Marketplace': {
+            'client': 'marketplace-agreement',
+            'check': _marketplace_check,
+            'unit': 'agreements',
+            'regional': False,
+            'global_region': True
+        },
         'AWS CloudTrail': {
             'client': 'cloudtrail',
             'check': lambda c, r: len(c.describe_trails()['trailList']),
@@ -475,6 +651,12 @@ SERVICE_CHECKS = {
         },
     },
     'Integration & Messaging': {
+        'Amazon Simple Email Service': {
+            'client': 'sesv2',
+            'check': lambda c, r: _count_simple(c, 'list_email_identities', 'EmailIdentities'),
+            'unit': 'identities',
+            'regional': True
+        },
         'Amazon SNS': {
             'client': 'sns',
             'check': lambda c, r: len(c.list_topics()['Topics']),
@@ -583,11 +765,86 @@ SERVICE_CHECKS = {
             'regional': True
         },
     },
+    'Developer Tools': {
+        'AWS CodeBuild': {
+            'client': 'codebuild',
+            'check': lambda c, r: _count_paginated(c, 'list_projects', 'projects'),
+            'unit': 'projects',
+            'regional': True
+        },
+        'AWS CodeCommit': {
+            'client': 'codecommit',
+            'check': lambda c, r: _count_paginated(c, 'list_repositories', 'repositories'),
+            'unit': 'repositories',
+            'regional': True
+        },
+        'AWS CodeDeploy': {
+            'client': 'codedeploy',
+            'check': lambda c, r: _count_paginated(c, 'list_applications', 'applications'),
+            'unit': 'applications',
+            'regional': True
+        },
+        'AWS CodePipeline': {
+            'client': 'codepipeline',
+            'check': lambda c, r: _count_paginated(c, 'list_pipelines', 'pipelines'),
+            'unit': 'pipelines',
+            'regional': True
+        },
+    },
+    'Cost & Billing': {
+        'AWS Compute Optimizer': {
+            'client': 'compute-optimizer',
+            'check': _compute_optimizer_check,
+            'unit': 'enrollment',
+            'regional': False,
+            'global_region': True
+        },
+        'AWS Cost Anomaly Detection': {
+            'client': 'ce',
+            'check': lambda c, r: _count_simple(c, 'get_anomaly_monitors', 'AnomalyMonitors'),
+            'unit': 'monitors',
+            'regional': False,
+            'global_region': True
+        },
+        'AWS Cost Categories': {
+            'client': 'ce',
+            'check': lambda c, r: _count_simple(c, 'list_cost_category_definitions', 'CostCategoryReferences'),
+            'unit': 'cost categories',
+            'regional': False,
+            'global_region': True
+        },
+        'Cost Optimization Hub': {
+            'client': 'cost-optimization-hub',
+            'check': _cost_optimization_hub_check,
+            'unit': 'enrollment',
+            'regional': False,
+            'global_region': True
+        },
+        'Savings Plans': {
+            'client': 'savingsplans',
+            'check': lambda c, r: len(
+                c.describe_savings_plans(states=['active']).get('savingsPlans', []) or []
+            ),
+            'unit': 'savings plans',
+            'regional': False,
+            'global_region': True
+        },
+        'AWS Reserved Instances': {
+            'client': 'ec2',
+            'check': lambda c, r: len(
+                c.describe_reserved_instances(
+                    Filters=[{'Name': 'state', 'Values': ['active']}]
+                ).get('ReservedInstances', []) or []
+            ),
+            'unit': 'reserved instances',
+            'regional': True
+        },
+    },
 }
 
 
 # Flat map from service name → config dict for O(1) lookup in _enrich_with_detail.
-_SERVICE_CONFIG_FLAT: Dict[str, dict] = {
+_SERVICE_CONFIG_FLAT: dict[str, dict] = {
     service_name: config
     for category_services in SERVICE_CHECKS.values()
     for service_name, config in category_services.items()
@@ -610,6 +867,8 @@ _NOT_IN_USE_FRAGMENTS = (
     "not subscribed to",                          # Security Hub: not enabled
     "not enabled",                                # Macie, others: not enabled
     "must create a landing zone",                 # Control Tower: not deployed
+    "subscriptionrequiredexception",              # Health: no Business/Enterprise Support
+    "subscription required",                       # Health: no premium support plan
     "endpoint discovery failed",                  # Timestream: endpoint issue
     "read timeout",                               # service took too long — treat as not detected
     "connect timeout",                            # connection too slow — treat as not detected
@@ -651,9 +910,7 @@ def _is_not_in_use_error(exc: Exception) -> bool:
     if "only existing" in msg and "customers" in msg:
         return True
     # Organizations: AccessDeniedException on ListAccounts = not an org master account
-    if "accessdeniedexception" in msg and "listaccounts" in msg:
-        return True
-    return False
+    return bool("accessdeniedexception" in msg and "listaccounts" in msg)
 
 
 def _start_heartbeat(service_name: str):
@@ -683,7 +940,7 @@ def _stop_heartbeat(stop_event, thread) -> None:
     thread.join()
 
 
-def check_service_in_region(service_name: str, config: dict, region: str) -> Tuple[str, Any, str, Any]:
+def check_service_in_region(service_name: str, config: dict, region: str) -> tuple[str, Any, str, Any]:
     """
     Check if a service has resources in a specific region.
 
@@ -705,9 +962,9 @@ def check_service_in_region(service_name: str, config: dict, region: str) -> Tup
 
 
 def _enrich_with_detail(
-    services: Dict[str, Dict[str, Any]],
-    regions: List[str],
-    errors: Dict[str, List[str]],
+    services: dict[str, dict[str, Any]],
+    regions: list[str],
+    errors: dict[str, list[str]],
 ) -> None:
     """
     Second pass (Deep Scan only): add asset breakdown to detected services.
@@ -721,7 +978,7 @@ def _enrich_with_detail(
         if config is None or 'detail' not in config:
             continue
 
-        aggregated: Dict[str, int] = {}
+        aggregated: dict[str, int] = {}
         check_regions = list(data['regions'].keys()) if data['regional'] else regions[:1]
 
         for region in check_regions:
@@ -738,10 +995,10 @@ def _enrich_with_detail(
 
 
 def discover_services(
-    regions: List[str],
+    regions: list[str],
     mode: str = 'quick',
     errors_out=None,
-) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
     """
     Discover all services in use across regions using concurrent scanning.
 
@@ -759,7 +1016,7 @@ def discover_services(
     utils.log_info("Starting concurrent service discovery across all categories...")
 
     all_services = {}
-    errors: Dict[str, List[str]] = {}
+    errors: dict[str, list[str]] = {}
     total_services = sum(len(services) for services in SERVICE_CHECKS.values())
     completed = 0
 
@@ -772,8 +1029,18 @@ def discover_services(
             completed += 1
             progress = (completed / total_services) * 100
 
-            # Check if regional or global service
-            check_regions = regions if config['regional'] else [regions[0]]
+            # Decide which region(s) to probe for this service.
+            if config['regional']:
+                check_regions = regions
+            elif config.get('global_region'):
+                # Account-global service that only answers in the partition's
+                # default region (Cost Explorer, Shield, Savings Plans, Health,
+                # etc.). Probing it in an arbitrary scanned region yields false
+                # negatives, so pin to the partition default.
+                partition = utils.detect_partition(regions[0])
+                check_regions = [utils.get_partition_default_region(partition)]
+            else:
+                check_regions = [regions[0]]
 
             # Use concurrent scanning for regional services
             if len(check_regions) > 1:
@@ -854,7 +1121,7 @@ def discover_services(
     return all_services, errors
 
 
-def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(services: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics."""
     summary = []
 
@@ -888,7 +1155,7 @@ def generate_summary(services: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
     return summary
 
 
-def create_detailed_export(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+def create_detailed_export(services: dict[str, dict[str, Any]]) -> pd.DataFrame:
     """Create detailed services DataFrame."""
     rows = []
 
@@ -909,7 +1176,7 @@ def create_detailed_export(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.DataFrame]:
+def create_category_sheets(services: dict[str, dict[str, Any]]) -> dict[str, pd.DataFrame]:
     """Create separate sheets for each category."""
     sheets = {}
 
@@ -938,7 +1205,7 @@ def create_category_sheets(services: Dict[str, Dict[str, Any]]) -> Dict[str, pd.
     return sheets
 
 
-def create_recommendations_sheet(services: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+def create_recommendations_sheet(services: dict[str, dict[str, Any]]) -> pd.DataFrame:
     """
     Generate Smart Scan recommendations based on discovered services.
 

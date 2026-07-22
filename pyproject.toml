@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stratusscancli-aws"
-version = "0.5.0-beta"
+version = "0.6.0-beta"
 description = "AWS defensive security scanning and auditing tool for resource exports"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "GPL-3.0"}
 
 authors = [
@@ -32,7 +32,6 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -117,8 +116,23 @@ exclude = '''
 # Ruff - Fast linter (replaces flake8, isort, etc.)
 [tool.ruff]
 line-length = 100
+# Linter target stays at py39 for now; runtime floor is 3.10 (see requires-python).
+# Annotation modernization (UP045 Optional -> X | None) is tracked separately.
 target-version = "py39"
 
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
 # Enable specific rule sets
 select = [
     "E",   # pycodestyle errors
@@ -138,23 +152,14 @@ ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
     "N806",  # SCRIPT_START_TIME is an intentional UPPERCASE local constant convention across all exporters
-]
-
-# Exclude directories
-exclude = [
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    "*.egg-info",
+    "N818",  # navigation/control-flow signals (BackSignal, ExitToMainSignal, QuitSignal, …) are intentionally not *Error
 ]
 
 # Ruff per-file ignores
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]  # Unused imports in __init__.py are okay
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]     # Unused imports in __init__.py are okay
+"stratusscan.py" = ["E402"]  # imports intentionally follow sys.path setup + logging init
+"tests/**/*.py" = ["E402"]   # test modules import after sys.path manipulation
 
 # Mypy - Static type checker
 [tool.mypy]

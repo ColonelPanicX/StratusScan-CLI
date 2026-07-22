@@ -30,7 +30,7 @@ Prerequisites:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -47,65 +47,85 @@ except ImportError:
 args = utils.parse_script_args("Export Amazon Detective graphs and findings to Excel")
 
 
-@utils.aws_error_handler("Collecting Detective graphs", default_return=[])
-def collect_graphs(region: str) -> List[Dict[str, Any]]:
+def _scan_graphs_region(region: str) -> list[dict[str, Any]]:
     """
-    Collect Detective graphs from a specific region.
+    Collect Detective graphs from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Detective graphs" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed graphs are skipped (logged) rather than aborting the
+    whole region.
 
     Args:
         region: AWS region to collect graphs from
 
     Returns:
         list: List of graph information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
-    graphs_data = []
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     client = utils.get_boto3_client('detective', region_name=region)
 
-    try:
-        # List graphs
-        response = client.list_graphs()
-        graphs = response.get('GraphList', [])
+    response = client.list_graphs()
+    graphs = response.get('GraphList', [])
 
-        if not graphs:
-            utils.log_info(f"No Detective graphs found in {region}")
-            return []
+    if not graphs:
+        utils.log_info(f"No Detective graphs found in {region}")
+        return []
 
-        utils.log_info(f"Found {len(graphs)} Detective graph(s) in {region}")
+    utils.log_info(f"Found {len(graphs)} Detective graph(s) in {region}")
 
-        for graph in graphs:
-            graph_arn = graph.get('Arn', 'N/A')
-
-            # Get member count by listing members
-            member_count = 0
-            try:
-                members_response = client.list_members(GraphArn=graph_arn)
-                member_count = len(members_response.get('MemberDetails', []))
-            except Exception as e:
-                utils.log_debug(f"Could not get member count for graph {graph_arn}: {e}")
-
-            graph_info = {
-                'Region': region,
-                'Graph ARN': graph_arn,
-                'Created Time': graph.get('CreatedTime', 'N/A'),
-                'Status': 'Active',  # Graphs returned by list_graphs are active
-                'Member Count': member_count,
-                'Tags': format_tags(graph_arn, client)
-            }
-
-            graphs_data.append(graph_info)
-
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'AccessDeniedException':
-            utils.log_warning(f"Detective not available or access denied in {region}")
-        else:
-            utils.log_error(f"Error collecting Detective graphs from {region}: {error_code}")
+    graphs_data = []
+    for graph in graphs:
+        try:
+            graphs_data.append(_build_graph_row(graph, region, client))
+        except Exception as e:
+            # One malformed graph is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed Detective graph in {region}: "
+                f"{graph.get('Arn', '<unknown>')}",
+                e,
+            )
+            continue
 
     return graphs_data
 
 
+def _build_graph_row(graph: dict, region: str, client) -> dict[str, Any]:
+    """Build a single Detective graph export row."""
+    graph_arn = graph.get('Arn', 'N/A')
+
+    # Get member count by listing members (enrichment — degrades gracefully)
+    member_count = 0
+    try:
+        members_response = client.list_members(GraphArn=graph_arn)
+        member_count = len(members_response.get('MemberDetails', []))
+    except Exception as e:
+        utils.log_debug(f"Could not get member count for graph {graph_arn}: {e}")
+
+    return {
+        'Region': region,
+        'Graph ARN': graph_arn,
+        'Created Time': graph.get('CreatedTime', 'N/A'),
+        'Status': 'Active',  # Graphs returned by list_graphs are active
+        'Member Count': member_count,
+        'Tags': format_tags(graph_arn, client)
+    }
+
+
 @utils.aws_error_handler("Collecting Detective members", default_return=[])
-def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
+def collect_members(region: str, graph_arn: str) -> list[dict[str, Any]]:
     """
     Collect member accounts for a Detective graph.
 
@@ -121,9 +141,13 @@ def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
 
     try:
         # List members using paginator
-        paginator = client.get_paginator('list_members')
-
-        for page in paginator.paginate(GraphArn=graph_arn):
+        next_token = None
+        while True:
+            params = {'GraphArn': graph_arn}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = client.list_members(**params)
             members = page.get('MemberDetails', [])
 
             for member in members:
@@ -144,6 +168,10 @@ def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
 
                 members_data.append(member_info)
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_error(f"Error collecting members for graph {graph_arn}", e)
 
@@ -151,7 +179,7 @@ def collect_members(region: str, graph_arn: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Detective invitations", default_return=[])
-def collect_invitations(region: str) -> List[Dict[str, Any]]:
+def collect_invitations(region: str) -> list[dict[str, Any]]:
     """
     Collect pending invitations in the account.
 
@@ -202,7 +230,7 @@ def collect_invitations(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting organization configuration", default_return={})
-def collect_organization_config(region: str, graph_arn: str) -> Dict[str, Any]:
+def collect_organization_config(region: str, graph_arn: str) -> dict[str, Any]:
     """
     Collect organization configuration for a Detective graph.
 
@@ -270,23 +298,29 @@ def format_tags(resource_arn: str, client) -> str:
         return 'N/A'
 
 
-def collect_all_graphs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_graphs(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Detective graphs using concurrent scanning.
+    Collect Detective graphs across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of all graph information from all regions
+        tuple: ``(graphs, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING DETECTIVE GRAPHS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Detective graphs...")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
-        scan_function=collect_graphs,
-        show_progress=True
+        scan_function=_scan_graphs_region,
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -295,10 +329,10 @@ def collect_all_graphs(regions: List[str]) -> List[Dict[str, Any]]:
         all_graphs.extend(graphs_in_region)
 
     utils.log_success(f"Total Detective graphs collected: {len(all_graphs)}")
-    return all_graphs
+    return all_graphs, failed_regions
 
 
-def collect_all_invitations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_all_invitations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Detective invitations using concurrent scanning.
 
@@ -327,9 +361,9 @@ def collect_all_invitations(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 def export_to_excel(
-    graphs_data: List[Dict[str, Any]],
-    members_data: List[Dict[str, Any]],
-    invitations_data: List[Dict[str, Any]],
+    graphs_data: list[dict[str, Any]],
+    members_data: list[dict[str, Any]],
+    invitations_data: list[dict[str, Any]],
     account_name: str
 ) -> str:
     """
@@ -488,10 +522,13 @@ def main():
 
         utils.log_info(f"Will scan Detective in regions: {', '.join(regions)}")
 
-        # Collect graphs concurrently
-        all_graphs_data = collect_all_graphs(regions)
+        # Collect graphs concurrently (primary scope — region failures must
+        # propagate as failed_regions, never collapse into "empty").
+        all_graphs_data, failed_regions = collect_graphs(regions)
 
-        # For each graph, collect members (members need graph ARNs, so sequential is OK)
+        # For each graph, collect members (members need graph ARNs, so
+        # sequential is OK). Enrichment — a per-graph failure degrades
+        # gracefully and does not fail the whole export.
         all_members_data = []
         for graph in all_graphs_data:
             graph_arn = graph.get('Graph ARN')
@@ -504,32 +541,46 @@ def main():
         # Collect invitations concurrently
         all_invitations_data = collect_all_invitations(regions)
 
-        # Check if any data was collected
-        if not all_graphs_data and not all_invitations_data:
+        # Export whatever succeeded first — a partial export is required even
+        # when some regions failed (see the silent-collection-failure
+        # blast-radius audit).
+        if all_graphs_data or all_invitations_data:
+            print("\n====================================================================")
+            print("COLLECTION COMPLETE")
+            print("====================================================================")
+
+            # Export to Excel
+            filename = export_to_excel(
+                all_graphs_data,
+                all_members_data,
+                all_invitations_data,
+                account_name
+            )
+
+            if filename:
+                utils.log_info(f"Total graphs processed: {len(all_graphs_data)}")
+                utils.log_info(f"Total members processed: {len(all_members_data)}")
+                utils.log_info(f"Total invitations processed: {len(all_invitations_data)}")
+                print("\nScript execution completed.")
+            else:
+                utils.log_error("Export failed. Please check the logs.")
+        elif not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
             utils.log_warning("No Detective data found in any region.")
             utils.log_info("Detective may not be enabled in this account.")
             utils.log_info("To enable Detective, visit the AWS Console > Detective > Enable Detective")
-            return
 
-        print("\n====================================================================")
-        print("COLLECTION COMPLETE")
-        print("====================================================================")
-
-        # Export to Excel
-        filename = export_to_excel(
-            all_graphs_data,
-            all_members_data,
-            all_invitations_data,
-            account_name
-        )
-
-        if filename:
-            utils.log_info(f"Total graphs processed: {len(all_graphs_data)}")
-            utils.log_info(f"Total members processed: {len(all_members_data)}")
-            utils.log_info(f"Total invitations processed: {len(all_invitations_data)}")
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Export failed. Please check the logs.")
+        # If ANY region failed the primary graphs scope collection, make it
+        # loud: write a marker and exit non-zero, even if some data was
+        # exported. A partial export that looks complete is exactly the
+        # failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'detective', failed_regions)
+            print(
+                "\nERROR: Detective export completed with failures — data is incomplete. "
+                "See the *-detective-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")

@@ -10,10 +10,11 @@ Tests cover:
 - Logging setup
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
 import sys
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -180,7 +181,7 @@ class TestBoto3ClientCreation:
         mock_session.return_value = mock_boto_session
 
         # Test
-        client = utils.get_boto3_client('ec2', region_name='us-east-1')
+        utils.get_boto3_client('ec2', region_name='us-east-1')
 
         # Verify
         mock_boto_session.client.assert_called_once()
@@ -202,7 +203,7 @@ class TestBoto3ClientCreation:
         mock_session.return_value = mock_boto_session
 
         # Test
-        client = utils.get_boto3_client('s3')
+        utils.get_boto3_client('s3')
 
         # Verify config was created with retries
         call_args = mock_boto_session.client.call_args
@@ -210,6 +211,36 @@ class TestBoto3ClientCreation:
 
         assert config is not None
         assert hasattr(config, 'retries')
+
+
+class TestCrossAccountSession:
+    """Test the STRATUSSCAN_ROLE_ARN env-var injection path in get_aws_session."""
+
+    @patch('utils._assume_role_cached')
+    @patch('utils.boto3.Session')
+    def test_role_arn_env_var_does_not_raise(self, mock_session, mock_assume, monkeypatch):
+        """
+        Regression: get_aws_session() must not NameError on the
+        STRATUSSCAN_ROLE_ARN branch (org-scan / cross-account subprocess path).
+
+        Exporters call get_boto3_client() without role_arn, so role_arn arrives
+        as None; org-scan injects the role via the env var. The debug-log line
+        on that branch previously referenced an undefined ``log`` symbol.
+        """
+        role = "arn:aws:iam::123456789012:role/CrossAccountAudit"
+        monkeypatch.setenv("STRATUSSCAN_ROLE_ARN", role)
+
+        mock_assume.return_value = {
+            "AccessKeyId": "AKIA_TEST",
+            "SecretAccessKey": "secret",
+            "SessionToken": "token",
+        }
+
+        # Should complete without NameError and assume the env-supplied role.
+        utils.get_aws_session(region_name="us-east-1")
+
+        mock_assume.assert_called_once()
+        assert mock_assume.call_args[0][0] == role
 
 
 class TestLogging:
@@ -302,14 +333,12 @@ class TestPromptMenu:
         assert result == 1
 
     def test_back_raises_signal(self):
-        with patch('builtins.input', return_value='b'):
-            with pytest.raises(utils.BackSignal):
-                utils.prompt_menu("TEST MENU", ["Option A"])
+        with patch('builtins.input', return_value='b'), pytest.raises(utils.BackSignal):
+            utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_exit_raises_signal(self):
-        with patch('builtins.input', return_value='x'):
-            with pytest.raises(utils.QuitSignal):
-                utils.prompt_menu("TEST MENU", ["Option A"])
+        with patch('builtins.input', return_value='x'), pytest.raises(utils.QuitSignal):
+            utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_invalid_then_valid(self):
         with patch('builtins.input', side_effect=['z', '2']):
@@ -498,7 +527,7 @@ class TestParseScriptArgs:
     def test_sets_module_global(self, monkeypatch):
         """parse_script_args() must populate utils._SCRIPT_ARGS."""
         utils._SCRIPT_ARGS = None
-        args = self._parse(["--region", "eu-west-1"], monkeypatch)
+        self._parse(["--region", "eu-west-1"], monkeypatch)
         assert utils._SCRIPT_ARGS is not None
         assert utils._SCRIPT_ARGS.region == "eu-west-1"
         assert utils.get_script_args() is utils._SCRIPT_ARGS
@@ -510,13 +539,13 @@ class TestParseScriptArgs:
 
     def test_prompt_region_selection_respects_region_flag(self, monkeypatch):
         """prompt_region_selection() must return single-item list when --region set."""
-        args = self._parse(["--region", "ap-southeast-1"], monkeypatch)
+        self._parse(["--region", "ap-southeast-1"], monkeypatch)
         result = utils.prompt_region_selection()
         assert result == ["ap-southeast-1"]
 
     def test_prompt_region_selection_respects_regions_flag(self, monkeypatch):
         """prompt_region_selection() must return list when --regions set."""
-        args = self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
+        self._parse(["--regions", "us-east-1,eu-west-1"], monkeypatch)
         result = utils.prompt_region_selection()
         assert result == ["us-east-1", "eu-west-1"]
 

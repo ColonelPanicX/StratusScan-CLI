@@ -25,7 +25,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,112 +46,165 @@ except ImportError:
 args = utils.parse_script_args("Export Elastic Container Registry repositories and images to Excel")
 
 
-def scan_ecr_repositories_in_region(region: str) -> List[Dict[str, Any]]:
+def _build_repo_row(repo: dict[str, Any], region: str, ecr_client=None) -> dict[str, Any]:
+    """
+    Build a single ECR repository export row from a describe_repositories entry.
+
+    Extracted so the per-repository processing can be wrapped in try/except by
+    the caller: a malformed repository entry is logged and skipped rather than
+    discarding the whole region's results.
+
+    Args:
+        repo: A single repository entry from describe_repositories.
+        region: AWS region name.
+        ecr_client: Optional pre-built ECR client (reused across repos in a
+            region to avoid recreating one per row). Created on demand if
+            not supplied.
+
+    Returns:
+        dict: The assembled repository row.
+    """
+    repository_name = repo.get('repositoryName', '')
+    print(f"  Processing repository: {repository_name}")
+
+    # Basic information
+    repository_arn = repo.get('repositoryArn', '')
+    repository_uri = repo.get('repositoryUri', '')
+    registry_id = repo.get('registryId', '')
+
+    # Creation date
+    created_at = repo.get('createdAt', '')
+    if created_at:
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
+
+    # Image tag mutability
+    image_tag_mutability = repo.get('imageTagMutability', 'MUTABLE')
+
+    # Image scanning configuration
+    image_scanning_config = repo.get('imageScanningConfiguration', {})
+    scan_on_push = image_scanning_config.get('scanOnPush', False)
+
+    # Encryption configuration
+    encryption_config = repo.get('encryptionConfiguration', {})
+    encryption_type = encryption_config.get('encryptionType', 'AES256')
+    kms_key = encryption_config.get('kmsKey', 'N/A')
+
+    # Get image count (paginated — maxResults=1000 was silently capping).
+    # Per-field enrichment: gracefully degrades to 'Unknown' rather than
+    # failing the whole repository row.
+    image_count: Any
+    try:
+        image_count = 0
+        client = ecr_client if ecr_client is not None else utils.get_boto3_client('ecr', region_name=region)
+        image_paginator = client.get_paginator('describe_images')
+        for img_page in image_paginator.paginate(repositoryName=repository_name):
+            image_count += len(img_page.get('imageDetails', []))
+    except Exception:
+        image_count = 'Unknown'
+
+    return {
+        'Region': region,
+        'Repository Name': repository_name,
+        'Repository URI': repository_uri,
+        'Registry ID': registry_id,
+        'Image Count': image_count,
+        'Image Tag Mutability': image_tag_mutability,
+        'Scan on Push': scan_on_push,
+        'Encryption Type': encryption_type,
+        'KMS Key': kms_key,
+        'Created At': created_at,
+        'Repository ARN': repository_arn
+    }
+
+
+def scan_ecr_repositories_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR repositories in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no ECR repositories" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed repositories are skipped (logged) rather than
+    aborting the whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with ECR repository information from this region
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    ecr_client = utils.get_boto3_client('ecr', region_name=region)
+
+    # Get ECR repositories
+    paginator = ecr_client.get_paginator('describe_repositories')
     regional_repos = []
+    repo_count = 0
 
-    try:
-        ecr_client = utils.get_boto3_client('ecr', region_name=region)
+    for page in paginator.paginate():
+        repositories = page.get('repositories', [])
+        repo_count += len(repositories)
 
-        # Get ECR repositories
-        paginator = ecr_client.get_paginator('describe_repositories')
-        repo_count = 0
+        for repo in repositories:
+            try:
+                regional_repos.append(_build_repo_row(repo, region, ecr_client))
+            except Exception as e:
+                # One malformed repository is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed ECR repository in {region}: "
+                    f"{repo.get('repositoryName', '<unknown>')}",
+                    e,
+                )
+                continue
 
-        for page in paginator.paginate():
-            repositories = page.get('repositories', [])
-            repo_count += len(repositories)
-
-            for repo in repositories:
-                repository_name = repo.get('repositoryName', '')
-                print(f"  Processing repository: {repository_name}")
-
-                # Basic information
-                repository_arn = repo.get('repositoryArn', '')
-                repository_uri = repo.get('repositoryUri', '')
-                registry_id = repo.get('registryId', '')
-
-                # Creation date
-                created_at = repo.get('createdAt', '')
-                if created_at:
-                    created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
-
-                # Image tag mutability
-                image_tag_mutability = repo.get('imageTagMutability', 'MUTABLE')
-
-                # Image scanning configuration
-                image_scanning_config = repo.get('imageScanningConfiguration', {})
-                scan_on_push = image_scanning_config.get('scanOnPush', False)
-
-                # Encryption configuration
-                encryption_config = repo.get('encryptionConfiguration', {})
-                encryption_type = encryption_config.get('encryptionType', 'AES256')
-                kms_key = encryption_config.get('kmsKey', 'N/A')
-
-                # Get image count (paginated — maxResults=1000 was silently capping)
-                try:
-                    image_count = 0
-                    image_paginator = ecr_client.get_paginator('describe_images')
-                    for img_page in image_paginator.paginate(repositoryName=repository_name):
-                        image_count += len(img_page.get('imageDetails', []))
-                except Exception:
-                    image_count = 'Unknown'
-
-                regional_repos.append({
-                    'Region': region,
-                    'Repository Name': repository_name,
-                    'Repository URI': repository_uri,
-                    'Registry ID': registry_id,
-                    'Image Count': image_count,
-                    'Image Tag Mutability': image_tag_mutability,
-                    'Scan on Push': scan_on_push,
-                    'Encryption Type': encryption_type,
-                    'KMS Key': kms_key,
-                    'Created At': created_at,
-                    'Repository ARN': repository_arn
-                })
-
-        utils.log_info(f"Found {repo_count} ECR repositories in {region}")
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for ECR repositories", e)
-
+    utils.log_info(f"Found {repo_count} ECR repositories in {region}")
     return regional_repos
 
 
-@utils.aws_error_handler("Collecting ECR repositories", default_return=[])
-def collect_ecr_repositories(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ecr_repositories(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect ECR repository information from AWS regions using concurrent scanning.
+    Collect ECR repository information from AWS regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with ECR repository information
+        tuple: ``(repos, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING ECR REPOSITORIES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_repos = []
-    for region_repos in utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_ecr_repositories_in_region,
-    ):
-        all_repos.extend(region_repos)
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_repos = [repo for result in region_results for repo in result]
 
     utils.log_success(f"Total ECR repositories collected: {len(all_repos)}")
-    return all_repos
+    return all_repos, failed_regions
 
 
-def scan_ecr_images_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_ecr_images_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR images in a single region.
 
@@ -240,7 +293,7 @@ def scan_ecr_images_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting ECR images", default_return=[])
-def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_ecr_images(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECR image information from AWS regions using concurrent scanning.
 
@@ -264,7 +317,7 @@ def collect_ecr_images(regions: List[str]) -> List[Dict[str, Any]]:
     return all_images
 
 
-def scan_lifecycle_policies_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_lifecycle_policies_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ECR lifecycle policies in a single region.
 
@@ -338,7 +391,7 @@ def scan_lifecycle_policies_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting lifecycle policies", default_return=[])
-def collect_lifecycle_policies(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_lifecycle_policies(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect ECR lifecycle policy information from AWS regions using concurrent scanning.
 
@@ -379,58 +432,75 @@ def export_ecr_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect ECR repositories
-    repos = collect_ecr_repositories(regions)
+    # STEP 1: Collect ECR repositories (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    repos, failed_regions = collect_ecr_repositories(regions)
     if repos:
         data_frames['ECR Repositories'] = pd.DataFrame(repos)
 
-    # STEP 2: Collect images
+    # STEP 2: Collect images (enrichment — degrades gracefully; a region-level
+    # failure here does not fail the whole export).
     images = collect_ecr_images(regions)
     if images:
         data_frames['Images'] = pd.DataFrame(images)
 
-    # STEP 3: Collect lifecycle policies
+    # STEP 3: Collect lifecycle policies (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     policies = collect_lifecycle_policies(regions)
     if policies:
         data_frames['Lifecycle Policies'] = pd.DataFrame(policies)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius
+    # audit).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'ecr',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("ECR data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No ECR data was collected. Nothing to export.")
         print("\nNo ECR repositories found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'ecr',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("ECR data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the ECR Repositories scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data (from this
+    # scope or the enrichment sheets) was exported. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ecr', failed_regions)
+        print(
+            "\nERROR: ECR export completed with failures — data is incomplete. "
+            "See the *-ecr-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -448,10 +518,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export ECR data
         export_ecr_data(account_id, account_name)

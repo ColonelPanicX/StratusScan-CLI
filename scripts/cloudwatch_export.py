@@ -22,7 +22,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -43,108 +43,155 @@ except ImportError:
 args = utils.parse_script_args("Export CloudWatch alarms and dashboards to Excel")
 
 
-def _scan_cloudwatch_alarms_region(region: str) -> List[Dict[str, Any]]:
-    """Scan a single region for CloudWatch alarms."""
+def _build_alarm_row(alarm: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single CloudWatch alarm (metric or composite).
+
+    Extracted so the per-alarm processing can be wrapped in try/except by the
+    caller: a malformed alarm entry is logged and skipped rather than
+    discarding the whole region's results. Every field is read with ``.get()``
+    and a safe default for the same reason (including the ``Dimensions``
+    list, which previously used hard subscripts ``d['Name']``/``d['Value']``
+    — a confirmed KeyError candidate per the silent-collection-failure audit).
+
+    Args:
+        alarm: A single alarm entry from describe_alarms (Metric or Composite).
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled alarm row.
+    """
+    alarm_name = alarm.get('AlarmName', 'N/A')
+    alarm_type = 'Composite' if 'AlarmRule' in alarm else 'Metric'
+    alarm_arn = alarm.get('AlarmArn', 'N/A')
+    description = alarm.get('AlarmDescription', 'N/A')
+    state = alarm.get('StateValue', 'UNKNOWN')
+    state_reason = alarm.get('StateReason', 'N/A')
+
+    state_updated = alarm.get('StateUpdatedTimestamp', '')
+    if state_updated:
+        state_updated = state_updated.strftime('%Y-%m-%d %H:%M:%S') if isinstance(state_updated, datetime.datetime) else str(state_updated)
+
+    actions_enabled = alarm.get('ActionsEnabled', False)
+
+    if alarm_type == 'Metric':
+        metric_name = alarm.get('MetricName', 'N/A')
+        namespace = alarm.get('Namespace', 'N/A')
+        statistic = alarm.get('Statistic', alarm.get('ExtendedStatistic', 'N/A'))
+        comparison_operator = alarm.get('ComparisonOperator', 'N/A')
+        threshold = alarm.get('Threshold', 'N/A')
+        evaluation_periods = alarm.get('EvaluationPeriods', 'N/A')
+        period = alarm.get('Period', 'N/A')
+        treat_missing_data = alarm.get('TreatMissingData', 'notBreaching')
+        dimensions = alarm.get('Dimensions', [])
+        dimensions_str = ', '.join(
+            [f"{d.get('Name', 'N/A')}={d.get('Value', 'N/A')}" for d in dimensions]
+        ) if dimensions else 'None'
+
+        return {
+            'Region': region,
+            'Alarm Name': alarm_name,
+            'Alarm Type': alarm_type,
+            'State': state,
+            'State Reason': state_reason,
+            'State Updated': state_updated if state_updated else 'N/A',
+            'Actions Enabled': actions_enabled,
+            'Metric Name': metric_name,
+            'Namespace': namespace,
+            'Statistic': statistic,
+            'Comparison': comparison_operator,
+            'Threshold': threshold,
+            'Evaluation Periods': evaluation_periods,
+            'Period (sec)': period,
+            'Treat Missing Data': treat_missing_data,
+            'Dimensions': dimensions_str,
+            'Description': description,
+            'Alarm ARN': alarm_arn
+        }
+    else:
+        alarm_rule = alarm.get('AlarmRule', 'N/A')
+        return {
+            'Region': region,
+            'Alarm Name': alarm_name,
+            'Alarm Type': alarm_type,
+            'State': state,
+            'State Reason': state_reason,
+            'State Updated': state_updated if state_updated else 'N/A',
+            'Actions Enabled': actions_enabled,
+            'Alarm Rule': alarm_rule,
+            'Description': description,
+            'Alarm ARN': alarm_arn
+        }
+
+
+def _scan_cloudwatch_alarms_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect CloudWatch alarms from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no alarms" (the silent-
+    collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed alarms are skipped (logged) rather than aborting the
+    whole region.
+    """
     alarms_data = []
 
     if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
         return alarms_data
 
-    try:
-        cw_client = utils.get_boto3_client('cloudwatch', region_name=region)
-        paginator = cw_client.get_paginator('describe_alarms')
+    cw_client = utils.get_boto3_client('cloudwatch', region_name=region)
+    paginator = cw_client.get_paginator('describe_alarms')
 
-        for page in paginator.paginate():
-            alarms = page.get('MetricAlarms', []) + page.get('CompositeAlarms', [])
+    for page in paginator.paginate():
+        alarms = page.get('MetricAlarms', []) + page.get('CompositeAlarms', [])
 
-            for alarm in alarms:
-                alarm_name = alarm.get('AlarmName', 'N/A')
-                alarm_type = 'Composite' if 'AlarmRule' in alarm else 'Metric'
-                alarm_arn = alarm.get('AlarmArn', 'N/A')
-                description = alarm.get('AlarmDescription', 'N/A')
-                state = alarm.get('StateValue', 'UNKNOWN')
-                state_reason = alarm.get('StateReason', 'N/A')
-
-                state_updated = alarm.get('StateUpdatedTimestamp', '')
-                if state_updated:
-                    state_updated = state_updated.strftime('%Y-%m-%d %H:%M:%S') if isinstance(state_updated, datetime.datetime) else str(state_updated)
-
-                actions_enabled = alarm.get('ActionsEnabled', False)
-
-                if alarm_type == 'Metric':
-                    metric_name = alarm.get('MetricName', 'N/A')
-                    namespace = alarm.get('Namespace', 'N/A')
-                    statistic = alarm.get('Statistic', alarm.get('ExtendedStatistic', 'N/A'))
-                    comparison_operator = alarm.get('ComparisonOperator', 'N/A')
-                    threshold = alarm.get('Threshold', 'N/A')
-                    evaluation_periods = alarm.get('EvaluationPeriods', 'N/A')
-                    period = alarm.get('Period', 'N/A')
-                    treat_missing_data = alarm.get('TreatMissingData', 'notBreaching')
-                    dimensions = alarm.get('Dimensions', [])
-                    dimensions_str = ', '.join([f"{d['Name']}={d['Value']}" for d in dimensions]) if dimensions else 'None'
-
-                    alarms_data.append({
-                        'Region': region,
-                        'Alarm Name': alarm_name,
-                        'Alarm Type': alarm_type,
-                        'State': state,
-                        'State Reason': state_reason,
-                        'State Updated': state_updated if state_updated else 'N/A',
-                        'Actions Enabled': actions_enabled,
-                        'Metric Name': metric_name,
-                        'Namespace': namespace,
-                        'Statistic': statistic,
-                        'Comparison': comparison_operator,
-                        'Threshold': threshold,
-                        'Evaluation Periods': evaluation_periods,
-                        'Period (sec)': period,
-                        'Treat Missing Data': treat_missing_data,
-                        'Dimensions': dimensions_str,
-                        'Description': description,
-                        'Alarm ARN': alarm_arn
-                    })
-                else:
-                    alarm_rule = alarm.get('AlarmRule', 'N/A')
-                    alarms_data.append({
-                        'Region': region,
-                        'Alarm Name': alarm_name,
-                        'Alarm Type': alarm_type,
-                        'State': state,
-                        'State Reason': state_reason,
-                        'State Updated': state_updated if state_updated else 'N/A',
-                        'Actions Enabled': actions_enabled,
-                        'Alarm Rule': alarm_rule,
-                        'Description': description,
-                        'Alarm ARN': alarm_arn
-                    })
-    except Exception as e:
-        utils.log_error(f"Error scanning CloudWatch alarms in {region}", e)
+        for alarm in alarms:
+            try:
+                alarms_data.append(_build_alarm_row(alarm, region))
+            except Exception as e:
+                # One malformed alarm is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed CloudWatch alarm in {region}: "
+                    f"{alarm.get('AlarmName', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return alarms_data
 
 
-@utils.aws_error_handler("Collecting CloudWatch alarms", default_return=[])
-def collect_cloudwatch_alarms(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_cloudwatch_alarms(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect CloudWatch alarm information from AWS regions.
+    Collect CloudWatch alarm information across regions, surfacing failures.
 
-    Args:
-        regions: List of AWS regions to scan
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Returns:
-        list: List of dictionaries with alarm information
+        tuple: ``(alarms, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING CLOUDWATCH ALARMS ===")
 
-    # Use concurrent scanning for better performance
-    results = utils.scan_regions_concurrent(regions, _scan_cloudwatch_alarms_region)
-    all_alarms = [alarm for result in results for alarm in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_cloudwatch_alarms_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_alarms = [alarm for result in region_results for alarm in result]
 
     utils.log_success(f"Total CloudWatch alarms collected: {len(all_alarms)}")
-    return all_alarms
+    return all_alarms, failed_regions
 
 
-def _scan_log_groups_region(region: str) -> List[Dict[str, Any]]:
+def _scan_log_groups_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch log groups."""
     log_groups_data = []
 
@@ -194,7 +241,7 @@ def _scan_log_groups_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch log groups", default_return=[])
-def collect_log_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_log_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch log group information from AWS regions.
 
@@ -214,7 +261,7 @@ def collect_log_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_log_groups
 
 
-def _scan_dashboards_region(region: str) -> List[Dict[str, Any]]:
+def _scan_dashboards_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch dashboards."""
     dashboards_data = []
 
@@ -241,7 +288,7 @@ def _scan_dashboards_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch dashboards", default_return=[])
-def collect_dashboards(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_dashboards(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch dashboard information from AWS regions.
 
@@ -260,7 +307,7 @@ def collect_dashboards(regions: List[str]) -> List[Dict[str, Any]]:
     return all_dashboards
 
 
-def _scan_metric_filters_region(region: str) -> List[Dict[str, Any]]:
+def _scan_metric_filters_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for CloudWatch Logs metric filters."""
     filters_data = []
 
@@ -295,7 +342,7 @@ def _scan_metric_filters_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudWatch metric filters", default_return=[])
-def collect_metric_filters(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_metric_filters(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudWatch Logs metric filter information from AWS regions.
 
@@ -331,63 +378,60 @@ def export_cloudwatch_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect alarms
-    alarms = collect_cloudwatch_alarms(regions)
+    # STEP 1: Collect alarms (primary scope — region failures must propagate
+    # as failed_regions, never collapse into "empty").
+    alarms, failed_regions = collect_cloudwatch_alarms(regions)
     if alarms:
         data_frames['CloudWatch Alarms'] = pd.DataFrame(alarms)
 
-    # STEP 2: Collect log groups
+    # STEP 2: Collect log groups (enrichment — degrades gracefully).
     log_groups = collect_log_groups(regions)
     if log_groups:
         data_frames['Log Groups'] = pd.DataFrame(log_groups)
 
-    # STEP 3: Collect dashboards
+    # STEP 3: Collect dashboards (enrichment — degrades gracefully).
     dashboards = collect_dashboards(regions)
     if dashboards:
         data_frames['Dashboards'] = pd.DataFrame(dashboards)
 
-    # STEP 4: Collect metric filters
+    # STEP 4: Collect metric filters (enrichment — degrades gracefully).
     metric_filters = collect_metric_filters(regions)
     if metric_filters:
         data_frames['Metric Filters'] = pd.DataFrame(metric_filters)
 
-    # STEP 5: Create summary
-    if alarms or log_groups or dashboards or metric_filters:
-        summary_data = []
+    # STEP 5: Create summary. Always written (even when every scope came back
+    # empty) so the workbook always lands — this is the Tier-3 forced-Summary
+    # behavior that must be preserved. A zero-row/zero-count Summary is not
+    # itself a failure signal; the failed_regions check below is.
+    summary_data = []
 
-        total_alarms = len(alarms)
-        total_log_groups = len(log_groups)
+    total_alarms = len(alarms)
+    total_log_groups = len(log_groups)
 
-        # Alarm states
-        alarm_states = {}
-        for alarm in alarms:
-            state = alarm.get('State', 'UNKNOWN')
-            alarm_states[state] = alarm_states.get(state, 0) + 1
+    # Alarm states
+    alarm_states = {}
+    for alarm in alarms:
+        state = alarm.get('State', 'UNKNOWN')
+        alarm_states[state] = alarm_states.get(state, 0) + 1
 
-        # Alarm types
-        metric_alarms = sum(1 for a in alarms if a.get('Alarm Type') == 'Metric')
-        composite_alarms = sum(1 for a in alarms if a.get('Alarm Type') == 'Composite')
+    # Alarm types
+    metric_alarms = sum(1 for a in alarms if a.get('Alarm Type') == 'Metric')
+    composite_alarms = sum(1 for a in alarms if a.get('Alarm Type') == 'Composite')
 
-        # Log group storage
-        total_log_storage_mb = sum(float(lg.get('Stored Size (MB)', 0)) for lg in log_groups)
+    # Log group storage
+    total_log_storage_mb = sum(float(lg.get('Stored Size (MB)', 0)) for lg in log_groups)
 
-        summary_data.append({'Metric': 'Total CloudWatch Alarms', 'Value': total_alarms})
-        summary_data.append({'Metric': 'Metric Alarms', 'Value': metric_alarms})
-        summary_data.append({'Metric': 'Composite Alarms', 'Value': composite_alarms})
-        for state, count in alarm_states.items():
-            summary_data.append({'Metric': f'Alarms in {state} State', 'Value': count})
-        summary_data.append({'Metric': 'Total Log Groups', 'Value': total_log_groups})
-        summary_data.append({'Metric': 'Total Log Storage (MB)', 'Value': round(total_log_storage_mb, 2)})
-        summary_data.append({'Metric': 'Total Dashboards', 'Value': len(dashboards)})
-        summary_data.append({'Metric': 'Total Metric Filters', 'Value': len(metric_filters)})
+    summary_data.append({'Metric': 'Total CloudWatch Alarms', 'Value': total_alarms})
+    summary_data.append({'Metric': 'Metric Alarms', 'Value': metric_alarms})
+    summary_data.append({'Metric': 'Composite Alarms', 'Value': composite_alarms})
+    for state, count in alarm_states.items():
+        summary_data.append({'Metric': f'Alarms in {state} State', 'Value': count})
+    summary_data.append({'Metric': 'Total Log Groups', 'Value': total_log_groups})
+    summary_data.append({'Metric': 'Total Log Storage (MB)', 'Value': round(total_log_storage_mb, 2)})
+    summary_data.append({'Metric': 'Total Dashboards', 'Value': len(dashboards)})
+    summary_data.append({'Metric': 'Total Metric Filters', 'Value': len(metric_filters)})
 
-        data_frames['Summary'] = pd.DataFrame(summary_data)
-
-    # Check if we have any data
-    if not data_frames:
-        utils.log_warning("No CloudWatch data was collected. Nothing to export.")
-        print("\nNo CloudWatch resources found in the selected region(s).")
-        return
+    data_frames['Summary'] = pd.DataFrame(summary_data)
 
     # STEP 4: Prepare all DataFrames for export
     for sheet_name in data_frames:
@@ -421,6 +465,18 @@ def export_cloudwatch_data(account_id: str, account_name: str):
     except Exception as e:
         utils.log_error("Error creating Excel file", e)
 
+    # If ANY region failed the CloudWatch Alarms scope collection, make it
+    # loud: write a marker and exit non-zero, even though the Summary sheet
+    # (and possibly other data) was still exported. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'cloudwatch', failed_regions)
+        print(
+            "\nERROR: CloudWatch export completed with failures — data is incomplete. "
+            "See the *-cloudwatch-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
+
 
 def main():
     # Initialize logging
@@ -437,10 +493,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export CloudWatch data
         export_cloudwatch_data(account_id, account_name)

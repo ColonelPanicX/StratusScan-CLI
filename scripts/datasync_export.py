@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -79,99 +79,168 @@ def determine_location_type(location_arn: str) -> str:
     # Type is not directly in ARN, need to use describe operations
     return "Unknown"
 
-@utils.aws_error_handler("Collecting DataSync tasks", default_return=[])
-def collect_datasync_tasks(region: str) -> List[Dict[str, Any]]:
+def _build_task_row(item: str, region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single DataSync task.
+
+    ``item`` is the task ARN (from ``list_tasks``); this issues the
+    ``describe_task`` call and assembles the row. Extracted so the caller can
+    wrap each task in try/except: a task that fails to describe or process is
+    logged and skipped rather than discarding the whole region's results.
+    Every field is read with ``.get()`` and a safe default for the same
+    reason.
+
+    Args:
+        item: DataSync task ARN.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled task row.
+    """
+    task_arn = item
+    datasync = utils.get_boto3_client('datasync', region_name=region)
+
+    # Get detailed task information
+    task_details = datasync.describe_task(TaskArn=task_arn)
+
+    # Extract task name from tags
+    task_name = 'N/A'
+    for tag in task_details.get('Tags', []):
+        if tag.get('Key') == 'Name':
+            task_name = tag.get('Value', 'N/A')
+            break
+
+    # Parse schedule if present
+    schedule = task_details.get('Schedule', {}) or {}
+    schedule_expression = schedule.get('ScheduleExpression', 'None')
+
+    # Parse options
+    options = task_details.get('Options', {}) or {}
+
+    # Get filter rules
+    includes = task_details.get('Includes', [])
+    excludes = task_details.get('Excludes', [])
+    filter_summary = f"Includes: {len(includes)}, Excludes: {len(excludes)}"
+
+    return {
+        'Task Name': task_name,
+        'Task ARN': task_arn,
+        'Status': task_details.get('Status', 'N/A'),
+        'Source Location ARN': task_details.get('SourceLocationArn', 'N/A'),
+        'Destination Location ARN': task_details.get('DestinationLocationArn', 'N/A'),
+        'Schedule': schedule_expression,
+        'CloudWatch Log Group': task_details.get('CloudWatchLogGroupArn', 'N/A'),
+        'Current Status': task_details.get('CurrentTaskExecutionArn', 'N/A'),
+        'Creation Time': task_details.get('CreationTime', 'N/A'),
+        'Verify Mode': options.get('VerifyMode', 'N/A'),
+        'Overwrite Mode': options.get('OverwriteMode', 'N/A'),
+        'Atime': options.get('Atime', 'N/A'),
+        'Mtime': options.get('Mtime', 'N/A'),
+        'UID': options.get('Uid', 'N/A'),
+        'GID': options.get('Gid', 'N/A'),
+        'Preserve Deleted Files': options.get('PreserveDeletedFiles', 'N/A'),
+        'Filter Rules': filter_summary,
+        'Region': region
+    }
+
+
+def collect_datasync_tasks(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync tasks in a region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that the caller cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so ``scan_regions_concurrent`` can record
+    the region as FAILED rather than empty. Per-task errors are contained
+    internally (logged and skipped) via ``_build_task_row``.
 
     Args:
         region: AWS region name
 
     Returns:
         List of task dictionaries with detailed information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     datasync = utils.get_boto3_client('datasync', region_name=region)
     tasks_data = []
 
-    try:
-        # List all tasks with pagination
-        paginator = datasync.get_paginator('list_tasks')
+    # List all tasks with pagination
+    paginator = datasync.get_paginator('list_tasks')
 
-        # Count tasks first
-        task_arns = []
-        for page in paginator.paginate():
-            task_arns.extend([task['TaskArn'] for task in page.get('Tasks', [])])
+    task_arns = []
+    for page in paginator.paginate():
+        task_arns.extend([task.get('TaskArn') for task in page.get('Tasks', []) if task.get('TaskArn')])
 
-        total_tasks = len(task_arns)
-        if total_tasks == 0:
-            utils.log_info(f"No DataSync tasks found in {region}")
-            return tasks_data
+    total_tasks = len(task_arns)
+    if total_tasks == 0:
+        utils.log_info(f"No DataSync tasks found in {region}")
+        return tasks_data
 
-        utils.log_info(f"Found {total_tasks} DataSync tasks in {region}")
+    utils.log_info(f"Found {total_tasks} DataSync tasks in {region}")
 
-        # Process each task
-        for idx, task_arn in enumerate(task_arns, 1):
-            progress = (idx / total_tasks) * 100
-            utils.log_info(f"[{progress:.1f}%] Processing task {idx}/{total_tasks} in {region}")
+    # Process each task. One malformed/failed task must not sink the region,
+    # so each is built inside try/except; failures are logged and skipped.
+    skipped = 0
+    for idx, task_arn in enumerate(task_arns, 1):
+        progress = (idx / total_tasks) * 100
+        utils.log_info(f"[{progress:.1f}%] Processing task {idx}/{total_tasks} in {region}")
 
-            try:
-                # Get detailed task information
-                task_details = datasync.describe_task(TaskArn=task_arn)
+        try:
+            tasks_data.append(_build_task_row(task_arn, region))
+        except Exception as e:
+            skipped += 1
+            utils.log_warning(f"Skipping task {task_arn} in {region} due to a processing error: {e}")
+            continue
 
-                # Extract task name from tags
-                task_name = 'N/A'
-                if 'Tags' in task_details:
-                    for tag in task_details['Tags']:
-                        if tag['Key'] == 'Name':
-                            task_name = tag['Value']
-                            break
-
-                # Parse schedule if present
-                schedule = task_details.get('Schedule', {})
-                schedule_expression = schedule.get('ScheduleExpression', 'None')
-
-                # Parse options
-                options = task_details.get('Options', {})
-
-                # Get filter rules
-                includes = task_details.get('Includes', [])
-                excludes = task_details.get('Excludes', [])
-                filter_summary = f"Includes: {len(includes)}, Excludes: {len(excludes)}"
-
-                task_data = {
-                    'Task Name': task_name,
-                    'Task ARN': task_arn,
-                    'Status': task_details.get('Status', 'N/A'),
-                    'Source Location ARN': task_details.get('SourceLocationArn', 'N/A'),
-                    'Destination Location ARN': task_details.get('DestinationLocationArn', 'N/A'),
-                    'Schedule': schedule_expression,
-                    'CloudWatch Log Group': task_details.get('CloudWatchLogGroupArn', 'N/A'),
-                    'Current Status': task_details.get('CurrentTaskExecutionArn', 'N/A'),
-                    'Creation Time': task_details.get('CreationTime', 'N/A'),
-                    'Verify Mode': options.get('VerifyMode', 'N/A'),
-                    'Overwrite Mode': options.get('OverwriteMode', 'N/A'),
-                    'Atime': options.get('Atime', 'N/A'),
-                    'Mtime': options.get('Mtime', 'N/A'),
-                    'UID': options.get('Uid', 'N/A'),
-                    'GID': options.get('Gid', 'N/A'),
-                    'Preserve Deleted Files': options.get('PreserveDeletedFiles', 'N/A'),
-                    'Filter Rules': filter_summary,
-                    'Region': region
-                }
-
-                tasks_data.append(task_data)
-
-            except Exception as e:
-                utils.log_warning(f"Error processing task {task_arn} in {region}: {e}")
-                continue
-
-    except Exception as e:
-        utils.log_error(f"Error listing tasks in {region}", e)
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_tasks} DataSync task(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining tasks were still collected."
+        )
 
     return tasks_data
 
+
+def collect_datasync_tasks_all_regions(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect DataSync tasks across regions, surfacing failures.
+
+    Uses ``collect_failures=True``: ``collect_datasync_tasks`` raises on a
+    region-level failure so that failure is recorded and surfaced by the
+    caller, never silently collapsed into "no tasks" (see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+
+    Args:
+        regions: List of AWS regions to scan
+
+    Returns:
+        tuple: (tasks, failed_regions) where failed_regions is a list of
+            (region, error_message) tuples for regions whose scan raised.
+    """
+    print("\n=== COLLECTING DATASYNC TASKS ===")
+
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=collect_datasync_tasks,
+        show_progress=True,
+        collect_failures=True,
+    )
+
+    all_tasks = [task for result in region_results for task in result]
+
+    utils.log_success(f"Total DataSync tasks collected: {len(all_tasks)}")
+    return all_tasks, failed_regions
+
 @utils.aws_error_handler("Collecting DataSync locations", default_return=[])
-def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
+def collect_datasync_locations(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync locations in a region.
 
@@ -372,7 +441,7 @@ def collect_datasync_locations(region: str) -> List[Dict[str, Any]]:
     return locations_data
 
 @utils.aws_error_handler("Collecting DataSync agents", default_return=[])
-def collect_datasync_agents(region: str) -> List[Dict[str, Any]]:
+def collect_datasync_agents(region: str) -> list[dict[str, Any]]:
     """
     Collect all DataSync agents in a region.
 
@@ -450,7 +519,7 @@ def collect_datasync_agents(region: str) -> List[Dict[str, Any]]:
     return agents_data
 
 @utils.aws_error_handler("Collecting task executions", default_return=[])
-def collect_task_executions(region: str, task_arns: List[str]) -> List[Dict[str, Any]]:
+def collect_task_executions(region: str, task_arns: list[str]) -> list[dict[str, Any]]:
     """
     Collect recent task executions (last 30 days) for all tasks in a region.
 
@@ -537,8 +606,8 @@ def collect_task_executions(region: str, task_arns: List[str]) -> List[Dict[str,
 
     return executions_data
 
-def create_summary_data(tasks: List[Dict], locations: List[Dict],
-                       agents: List[Dict], executions: List[Dict]) -> Dict[str, Any]:
+def create_summary_data(tasks: list[dict], locations: list[dict],
+                       agents: list[dict], executions: list[dict]) -> dict[str, Any]:
     """
     Create summary statistics from collected data.
 
@@ -618,14 +687,19 @@ def create_summary_data(tasks: List[Dict], locations: List[Dict],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect DataSync data and write the Excel export."""
     import pandas as pd
 
     utils.log_info(f"Scanning {len(regions)} region(s): {', '.join(regions)}")
 
-    # Collect data from all regions
-    all_tasks = []
+    # Collect tasks (primary scope — region failures must propagate as
+    # failed_regions, never collapse into "empty"). See
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md.
+    all_tasks, failed_regions = collect_datasync_tasks_all_regions(regions)
+
+    # Collect locations, agents, and executions (enrichment — degrades
+    # gracefully; a region-level failure here does not fail the whole export).
     all_locations = []
     all_agents = []
     all_executions = []
@@ -633,10 +707,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     for region in regions:
         utils.log_info(f"Processing region: {region}")
         utils.log_section(f"DataSync data collection - {region}")
-
-        # Collect tasks
-        tasks = collect_datasync_tasks(region)
-        all_tasks.extend(tasks)
 
         # Collect locations
         locations = collect_datasync_locations(region)
@@ -647,15 +717,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         all_agents.extend(agents)
 
         # Collect executions for tasks in this region
-        task_arns = [t['Task ARN'] for t in tasks]
-        if task_arns:
-            executions = collect_task_executions(region, task_arns)
+        region_task_arns = [t['Task ARN'] for t in all_tasks if t.get('Region') == region]
+        if region_task_arns:
+            executions = collect_task_executions(region, region_task_arns)
             all_executions.extend(executions)
-
-    # Check if we have any data
-    if not all_tasks and not all_locations and not all_agents:
-        utils.log_warning("No DataSync resources found in any region. Exiting...")
-        return
 
     utils.log_success("Collection complete:")
     utils.log_info(f"  Tasks: {len(all_tasks)}")
@@ -663,68 +728,87 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.log_info(f"  Agents: {len(all_agents)}")
     utils.log_info(f"  Executions (30 days): {len(all_executions)}")
 
-    # Create DataFrames
-    utils.log_info("Preparing data for export...")
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see .collab/audit/07.16.2026-...).
+    if all_tasks or all_locations or all_agents:
+        # Create DataFrames
+        utils.log_info("Preparing data for export...")
 
-    dataframes = {}
+        dataframes = {}
 
-    # Summary sheet
-    summary_data = create_summary_data(all_tasks, all_locations, all_agents, all_executions)
-    summary_df = pd.DataFrame(summary_data)
-    dataframes['Summary'] = utils.prepare_dataframe_for_export(summary_df)
+        # Summary sheet
+        summary_data = create_summary_data(all_tasks, all_locations, all_agents, all_executions)
+        summary_df = pd.DataFrame(summary_data)
+        dataframes['Summary'] = utils.prepare_dataframe_for_export(summary_df)
 
-    # Tasks sheet
-    if all_tasks:
-        tasks_df = pd.DataFrame(all_tasks)
-        dataframes['Tasks'] = utils.prepare_dataframe_for_export(tasks_df)
+        # Tasks sheet
+        if all_tasks:
+            tasks_df = pd.DataFrame(all_tasks)
+            dataframes['Tasks'] = utils.prepare_dataframe_for_export(tasks_df)
 
-    # Locations sheet
-    if all_locations:
-        locations_df = pd.DataFrame(all_locations)
-        dataframes['Locations'] = utils.prepare_dataframe_for_export(locations_df)
+        # Locations sheet
+        if all_locations:
+            locations_df = pd.DataFrame(all_locations)
+            dataframes['Locations'] = utils.prepare_dataframe_for_export(locations_df)
 
-    # Agents sheet
-    if all_agents:
-        agents_df = pd.DataFrame(all_agents)
-        dataframes['Agents'] = utils.prepare_dataframe_for_export(agents_df)
+        # Agents sheet
+        if all_agents:
+            agents_df = pd.DataFrame(all_agents)
+            dataframes['Agents'] = utils.prepare_dataframe_for_export(agents_df)
 
-    # Recent Executions sheet
-    if all_executions:
-        executions_df = pd.DataFrame(all_executions)
-        dataframes['Recent Executions'] = utils.prepare_dataframe_for_export(executions_df)
+        # Recent Executions sheet
+        if all_executions:
+            executions_df = pd.DataFrame(all_executions)
+            dataframes['Recent Executions'] = utils.prepare_dataframe_for_export(executions_df)
 
-    # Active Tasks sheet (AVAILABLE status)
-    active_tasks = [t for t in all_tasks if t.get('Status') == 'AVAILABLE']
-    if active_tasks:
-        active_tasks_df = pd.DataFrame(active_tasks)
-        dataframes['Active Tasks'] = utils.prepare_dataframe_for_export(active_tasks_df)
+        # Active Tasks sheet (AVAILABLE status)
+        active_tasks = [t for t in all_tasks if t.get('Status') == 'AVAILABLE']
+        if active_tasks:
+            active_tasks_df = pd.DataFrame(active_tasks)
+            dataframes['Active Tasks'] = utils.prepare_dataframe_for_export(active_tasks_df)
 
-    # Failed Executions sheet
-    failed_executions = [e for e in all_executions if e.get('Status') == 'ERROR']
-    if failed_executions:
-        failed_df = pd.DataFrame(failed_executions)
-        dataframes['Failed Executions'] = utils.prepare_dataframe_for_export(failed_df)
+        # Failed Executions sheet
+        failed_executions = [e for e in all_executions if e.get('Status') == 'ERROR']
+        if failed_executions:
+            failed_df = pd.DataFrame(failed_executions)
+            dataframes['Failed Executions'] = utils.prepare_dataframe_for_export(failed_df)
 
-    # Generate filename
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    filename = utils.create_export_filename(
-        account_name,
-        "datasync",
-        "all",
-        current_date
-    )
+        # Generate filename
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        filename = utils.create_export_filename(
+            account_name,
+            "datasync",
+            "all",
+            current_date
+        )
 
-    # Export to Excel
-    output_path = utils.save_multiple_dataframes_to_excel(dataframes, filename)
+        # Export to Excel
+        output_path = utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
-    if output_path:
-        utils.log_success("AWS DataSync data exported successfully!")
-        utils.log_success(f"File location: {output_path}")
-        utils.log_info(f"Export contains data from {len(regions)} region(s)")
-        utils.log_info(f"Total sheets: {len(dataframes)}")
-        print("\nScript execution completed.")
-    else:
-        utils.log_error("Error exporting data. Please check the logs.")
+        if output_path:
+            utils.log_success("AWS DataSync data exported successfully!")
+            utils.log_success(f"File location: {output_path}")
+            utils.log_info(f"Export contains data from {len(regions)} region(s)")
+            utils.log_info(f"Total sheets: {len(dataframes)}")
+            print("\nScript execution completed.")
+        else:
+            utils.log_error("Error exporting data. Please check the logs.")
+            sys.exit(1)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
+        utils.log_warning("No DataSync resources found in any region. Exiting...")
+        print("\nNo DataSync resources found in the selected region(s).")
+
+    # If ANY region failed the Tasks scope collection, make it loud: write a
+    # marker and exit non-zero, even if some data (from this scope or the
+    # enrichment sheets) was exported. A partial export that looks complete
+    # is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'datasync', failed_regions)
+        print(
+            "\nERROR: DataSync export completed with failures — data is incomplete. "
+            "See the *-datasync-FAILED-*.txt marker in the output directory."
+        )
         sys.exit(1)
 
 

@@ -22,7 +22,7 @@ Output: Excel file with 6 worksheets
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -45,75 +45,102 @@ except ImportError:
 utils.setup_logging("macie-export")
 
 
-@utils.aws_error_handler("Collecting Macie status from region", default_return=[])
-def collect_macie_status_from_region(region: str) -> List[Dict[str, Any]]:
-    """Collect Macie account status from a single AWS region."""
+def _build_macie_status_row(status_response: dict, region: str) -> dict[str, Any]:
+    """Build a single Macie status export row from a get_macie_session response."""
+    status = status_response.get('status', 'N/A')
+    finding_publishing_frequency = status_response.get('findingPublishingFrequency', 'N/A')
+    service_role = status_response.get('serviceRole', 'N/A')
+
+    # Extract role name
+    role_name = 'N/A'
+    if service_role != 'N/A' and '/' in service_role:
+        role_name = service_role.split('/')[-1]
+
+    # Created and updated timestamps
+    created_at = status_response.get('createdAt')
+    created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else 'N/A'
+
+    updated_at = status_response.get('updatedAt')
+    updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S') if updated_at else 'N/A'
+
+    return {
+        'Region': region,
+        'Status': status,
+        'Finding Publishing Frequency': finding_publishing_frequency,
+        'Service Role': role_name,
+        'Created': created_at_str,
+        'Updated': updated_at_str,
+    }
+
+
+def collect_macie_status_from_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Macie account status from a single AWS region.
+
+    This is the primary scope collector. A real API error (throttling,
+    access-denied, etc.) is deliberately NOT swallowed here: it must
+    propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records the region as failed instead of silently reporting "no Macie
+    status" (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Macie simply not being enabled in a region is a legitimate, non-failure
+    state and is reported as a normal 'Not Enabled' row, not a failed scope.
+    """
     if not utils.is_aws_region(region):
         return []
 
-    status_data = []
     macie_client = utils.get_boto3_client('macie2', region_name=region)
 
     try:
-        # Get Macie status
         status_response = macie_client.get_macie_session()
-
-        status = status_response.get('status', 'N/A')
-        finding_publishing_frequency = status_response.get('findingPublishingFrequency', 'N/A')
-        service_role = status_response.get('serviceRole', 'N/A')
-
-        # Extract role name
-        role_name = 'N/A'
-        if service_role != 'N/A' and '/' in service_role:
-            role_name = service_role.split('/')[-1]
-
-        # Created and updated timestamps
-        created_at = status_response.get('createdAt')
-        if created_at:
-            created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            created_at_str = 'N/A'
-
-        updated_at = status_response.get('updatedAt')
-        if updated_at:
-            updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            updated_at_str = 'N/A'
-
-        status_data.append({
-            'Region': region,
-            'Status': status,
-            'Finding Publishing Frequency': finding_publishing_frequency,
-            'Service Role': role_name,
-            'Created': created_at_str,
-            'Updated': updated_at_str,
-        })
-
     except Exception as e:
-        # Macie might not be enabled in this region
-        utils.log_warning(f"Macie not enabled or error in {region}: {str(e)}")
-        status_data.append({
-            'Region': region,
-            'Status': 'Not Enabled',
-            'Finding Publishing Frequency': 'N/A',
-            'Service Role': 'N/A',
-            'Created': 'N/A',
-            'Updated': 'N/A',
-        })
+        error_code = getattr(e, 'response', {}).get('Error', {}).get('Code', '') if hasattr(e, 'response') else ''
+        if error_code == 'ResourceNotFoundException':
+            # This is the documented GetMacieSession signal for "Macie is not
+            # enabled for this account in this region" — a legitimate,
+            # non-failure, disabled state. Report it as a normal row.
+            utils.log_info(f"Macie not enabled in {region}: {str(e)}")
+            return [{
+                'Region': region,
+                'Status': 'Not Enabled',
+                'Finding Publishing Frequency': 'N/A',
+                'Service Role': 'N/A',
+                'Created': 'N/A',
+                'Updated': 'N/A',
+            }]
+        # A real API error (throttling, access-denied, etc.) — let it
+        # propagate so the region is recorded as failed rather than
+        # silently reported as empty/disabled.
+        raise
 
+    status_data = [_build_macie_status_row(status_response, region)]
     utils.log_info(f"Found {len(status_data)} status entries in {region}")
     return status_data
 
 
-def collect_macie_status(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Macie account status using concurrent scanning."""
+def collect_macie_status(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Macie account status across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result. A region where Macie is simply not enabled is NOT a failure —
+    it comes back as a normal 'Not Enabled' row from
+    ``collect_macie_status_from_region``.
+
+    Returns:
+        tuple: ``(status_entries, failed_regions)`` where ``failed_regions``
+        is a list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING MACIE STATUS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie status...")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_macie_status_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -122,11 +149,11 @@ def collect_macie_status(regions: List[str]) -> List[Dict[str, Any]]:
         all_status.extend(status_in_region)
 
     utils.log_success(f"Total Macie status entries collected: {len(all_status)}")
-    return all_status
+    return all_status, failed_regions
 
 
 @utils.aws_error_handler("Collecting Macie classification jobs from region", default_return=[])
-def collect_classification_jobs_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_classification_jobs_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie classification job information from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -205,7 +232,7 @@ def collect_classification_jobs_from_region(region: str) -> List[Dict[str, Any]]
     return jobs_data
 
 
-def collect_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_classification_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie classification job information using concurrent scanning."""
     print("\n=== COLLECTING CLASSIFICATION JOBS ===")
     utils.log_info(f"Scanning {len(regions)} regions for classification jobs...")
@@ -226,7 +253,7 @@ def collect_classification_jobs(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie findings from region", default_return=[])
-def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_findings_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie finding information from a single AWS region (recent findings only)."""
     if not utils.is_aws_region(region):
         return []
@@ -265,16 +292,10 @@ def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
 
                 # Timestamps
                 created_at = finding.get('createdAt')
-                if created_at:
-                    created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    created_at_str = 'N/A'
+                created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else 'N/A'
 
                 updated_at = finding.get('updatedAt')
-                if updated_at:
-                    updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    updated_at_str = 'N/A'
+                updated_at_str = updated_at.strftime('%Y-%m-%d %H:%M:%S') if updated_at else 'N/A'
 
                 # Description
                 description = finding.get('description', 'N/A')
@@ -300,7 +321,7 @@ def collect_findings_from_region(region: str) -> List[Dict[str, Any]]:
     return findings_data
 
 
-def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_findings(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie finding information using concurrent scanning."""
     print("\n=== COLLECTING FINDINGS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie findings...")
@@ -321,7 +342,7 @@ def collect_findings(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie S3 buckets from region", default_return=[])
-def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_s3_buckets_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie S3 bucket inventory from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -381,7 +402,7 @@ def collect_s3_buckets_from_region(region: str) -> List[Dict[str, Any]]:
     return buckets_data
 
 
-def collect_s3_buckets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_s3_buckets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie S3 bucket inventory using concurrent scanning."""
     print("\n=== COLLECTING S3 BUCKETS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Macie S3 buckets...")
@@ -402,7 +423,7 @@ def collect_s3_buckets(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Macie custom data identifiers from region", default_return=[])
-def collect_custom_data_identifiers_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_custom_data_identifiers_from_region(region: str) -> list[dict[str, Any]]:
     """Collect Macie custom data identifier information from a single AWS region."""
     if not utils.is_aws_region(region):
         return []
@@ -465,7 +486,7 @@ def collect_custom_data_identifiers_from_region(region: str) -> List[Dict[str, A
     return identifiers_data
 
 
-def collect_custom_data_identifiers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_custom_data_identifiers(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Macie custom data identifier information using concurrent scanning."""
     print("\n=== COLLECTING CUSTOM DATA IDENTIFIERS ===")
     utils.log_info(f"Scanning {len(regions)} regions for custom data identifiers...")
@@ -485,11 +506,11 @@ def collect_custom_data_identifiers(regions: List[str]) -> List[Dict[str, Any]]:
     return all_identifiers
 
 
-def generate_summary(status: List[Dict[str, Any]],
-                     jobs: List[Dict[str, Any]],
-                     findings: List[Dict[str, Any]],
-                     buckets: List[Dict[str, Any]],
-                     identifiers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(status: list[dict[str, Any]],
+                     jobs: list[dict[str, Any]],
+                     findings: list[dict[str, Any]],
+                     buckets: list[dict[str, Any]],
+                     identifiers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Macie resources."""
     summary = []
 
@@ -560,7 +581,7 @@ def generate_summary(status: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Macie data and write the Excel export."""
     # Check dependencies
     if not utils.ensure_dependencies('pandas', 'openpyxl', 'boto3'):
@@ -568,8 +589,10 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         return
 
     # Collect data
+    # STEP 1: Collect Macie status (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty"/"not enabled").
     print("\n=== Collecting Macie Data ===")
-    status = collect_macie_status(regions)
+    status, failed_regions = collect_macie_status(regions)
     jobs = collect_classification_jobs(regions)
     findings = collect_findings(regions)
     buckets = collect_s3_buckets(regions)
@@ -616,6 +639,21 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY region failed the Macie status scope collection, make it loud:
+    # write a marker and exit non-zero, even though the Summary sheet always
+    # lands. A complete-looking workbook with silently missing regions is
+    # exactly the failure mode this guards against. A region where Macie is
+    # simply not enabled is NOT in failed_regions (see
+    # collect_macie_status_from_region) and does not trigger this path.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'macie', failed_regions)
+        print(
+            "\nERROR: Macie export completed with failures — data is incomplete. "
+            "See the *-macie-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
+
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

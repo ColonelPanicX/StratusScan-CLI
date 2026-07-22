@@ -66,7 +66,6 @@ utils.log_system_info()
 from utils import BackSignal, ExitToMainSignal, QuitSignal
 
 
-
 def prompt_with_navigation(prompt_text: str) -> str:
     """
     Wrap input() and raise navigation signals for b, x, and q.
@@ -184,10 +183,10 @@ def print_header():
 def check_dependency(dependency):
     """
     Check if a Python dependency is installed.
-    
+
     Args:
         dependency: Name of the Python package to check
-        
+
     Returns:
         bool: True if installed, False otherwise
     """
@@ -200,16 +199,16 @@ def check_dependency(dependency):
 def install_dependency(dependency):
     """
     Install a Python dependency after user confirmation.
-    
+
     Args:
         dependency: Name of the Python package to install
-        
+
     Returns:
         bool: True if installed successfully, False otherwise
     """
     print(f"\nPackage '{dependency}' is required but not installed.")
     response = input(f"Would you like to install {dependency}? (y/n): ").lower()
-    
+
     if response == 'y':
         try:
             import subprocess
@@ -243,34 +242,41 @@ def ensure_directory_structure():
     """
     Ensure the required directory structure exists.
     Creates the scripts and output directories if they don't exist.
-    
+
     Returns:
         tuple: (scripts_dir, output_dir) - Paths to the scripts and output directories
     """
     # Get the base directory (where this script is located)
     base_dir = Path(__file__).parent.absolute()
-    
+
     # Create scripts directory if it doesn't exist
     scripts_dir = base_dir / "scripts"
     if not scripts_dir.exists():
         print(f"Creating scripts directory: {scripts_dir}")
         scripts_dir.mkdir(exist_ok=True)
-    
+
     # Create output directory if it doesn't exist
     output_dir = base_dir / "output"
     if not output_dir.exists():
         print(f"Creating output directory: {output_dir}")
         output_dir.mkdir(exist_ok=True)
-    
+
     # Check if config.json exists, create default if it doesn't
     config_path = base_dir / "config.json"
 
     if not config_path.exists():
-        print(f"No configuration file found. The config.json file should exist.")
-        print(f"Please ensure config.json is present in the StratusScan directory.")
-        print(f"You may want to edit this file to add your account mappings.")
-    
+        print("No configuration file found. The config.json file should exist.")
+        print("Please ensure config.json is present in the StratusScan directory.")
+        print("You may want to edit this file to add your account mappings.")
+
     return scripts_dir, output_dir
+
+
+# Root-level scripts (siblings of stratusscan.py, not under scripts/) that the
+# main menu is allowed to launch. Kept as an explicit allowlist so the CWE-78
+# containment guard in execute_script() can positively validate them by name.
+ROOT_ENTRY_POINT_SCRIPTS = frozenset({"configure.py", "smart_scan.py"})
+
 
 def execute_script(script_path):
     """
@@ -285,6 +291,31 @@ def execute_script(script_path):
     start_time = datetime.datetime.now()
     script_name = script_path.name
 
+    # Security guard (CWE-78 containment): script_path is built from a static
+    # menu of hardcoded filenames, but validate positively before it ever
+    # reaches subprocess. Permit only (a) an existing .py file located directly
+    # in this project's scripts/ directory, or (b) one of the known root-level
+    # entry-point scripts the main menu launches (Configure, Service Discovery).
+    # Anything else is refused. Downstream execution uses `resolved_path`.
+    project_root = Path(__file__).parent.resolve()
+    scripts_dir = (project_root / "scripts").resolve()
+    resolved_path = Path(script_path).resolve()
+    in_scripts_dir = resolved_path.parent == scripts_dir
+    is_root_entry_point = (
+        resolved_path.parent == project_root
+        and resolved_path.name in ROOT_ENTRY_POINT_SCRIPTS
+    )
+    if (
+        not (in_scripts_dir or is_root_entry_point)
+        or resolved_path.suffix != ".py"
+        or not resolved_path.is_file()
+    ):
+        utils.log_error(
+            f"Refused to execute script outside the allowed set: {script_path}"
+        )
+        print(f"Error: '{script_name}' is not a recognized StratusScan script; refusing to run.")
+        return False
+
     try:
         # Log script execution start
         utils.log_section(f"EXECUTING SCRIPT: {script_name}")
@@ -297,8 +328,8 @@ def execute_script(script_path):
         print(f"Executing: {script_path.name}")
         print("─" * 70)
 
-        # Execute the script as a subprocess
-        result = subprocess.run([sys.executable, str(script_path)],
+        # Execute the script as a subprocess (validated path only)
+        result = subprocess.run([sys.executable, str(resolved_path)],
                               check=True,
                               timeout=1800)  # 30-minute timeout, consistent with smart_scan/executor.py
 
@@ -313,9 +344,9 @@ def execute_script(script_path):
 
     except subprocess.CalledProcessError as e:
         if e.returncode == 10:
-            raise BackSignal
+            raise BackSignal from None
         if e.returncode == 11:
-            raise ExitToMainSignal
+            raise ExitToMainSignal from None
         print(f"Error executing script: {e}")
         utils.log_error(f"Script execution error: {script_name}", e)
         return False
@@ -333,54 +364,54 @@ def execute_script(script_path):
 def create_output_archive(account_name):
     """
     Create a zip archive of the output directory.
-    
+
     Args:
         account_name: The AWS account name to use in the filename
-        
+
     Returns:
         bool: True if archive was created successfully, False otherwise
     """
     try:
         # Clear the screen
         clear_screen()
-        
+
         print_section("CREATING OUTPUT ARCHIVE")
 
         # Get the output directory path
         output_dir = Path(__file__).parent / "output"
-        
+
         # Check if output directory exists and has files
         if not output_dir.exists():
             print(f"Output directory not found: {output_dir}")
             return False
-        
+
         files = list(output_dir.glob("*.*"))
         if not files:
             print("No files found in the output directory to archive.")
             return False
-        
+
         print(f"Found {len(files)} files to archive.")
-        
+
         # Create filename with current date
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
         zip_filename = f"{account_name}-export-{current_date}.zip"
         zip_path = Path(__file__).parent / zip_filename
-        
+
         # Create the zip file
         print(f"Creating archive: {zip_filename}")
         print("Please wait...")
-        
+
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file in files:
                 # Archive file with relative path inside the zip
                 zipf.write(file, arcname=file.name)
                 print(f"  Added: {file.name}")
-        
+
         print("\nArchive creation completed successfully!")
         print(f"Archive saved to: {zip_path}")
-        
+
         return True
-    
+
     except Exception as e:
         print(f"Error creating archive: {e}")
         return False
@@ -513,6 +544,7 @@ def get_menu_structure():
                         "11": {"name": "AWS Config", "file": scripts_dir / "config_export.py", "description": "Export Config rules and compliance"},
                     }
                 },
+                "3": {"name": "All Security & Compliance", "file": scripts_dir / "security_compliance_resources.py", "description": "Export all security & compliance resources in one report"},
             }
         },
         "4": {
@@ -528,6 +560,7 @@ def get_menu_structure():
                     "file": scripts_dir / "iam_identity_center_export.py",
                     "description": "Export IAM Identity Center users, groups, and permission sets"
                 },
+                "3": {"name": "All IAM Resources", "file": scripts_dir / "iam_resources.py", "description": "Export all IAM resources in one report"},
             }
         },
         "5": {
@@ -542,6 +575,7 @@ def get_menu_structure():
                 "7": {"name": "Reserved Instances", "file": scripts_dir / "reserved_instances_export.py", "description": "Export Reserved Instances"},
                 "8": {"name": "Cost Categories", "file": scripts_dir / "cost_categories_export.py", "description": "Export Cost Categories"},
                 "9": {"name": "Cost Anomaly Detection", "file": scripts_dir / "cost_anomaly_detection_export.py", "description": "Export Cost Anomaly Detection"},
+                "10": {"name": "All Cost Management", "file": scripts_dir / "cost_resources.py", "description": "Export all cost management resources in one report"},
             }
         },
         "6": {
@@ -558,6 +592,7 @@ def get_menu_structure():
                 "9": {"name": "Cloud Map", "file": scripts_dir / "cloudmap_export.py", "description": "Export Cloud Map service discovery"},
                 "10": {"name": "SES", "file": scripts_dir / "ses_export.py", "description": "Export SES email identities"},
                 "11": {"name": "SES & Pinpoint", "file": scripts_dir / "ses_pinpoint_export.py", "description": "Export SES and Pinpoint combined"},
+                "12": {"name": "All Application Services", "file": scripts_dir / "application_resources.py", "description": "Export all application services resources in one report"},
             }
         },
         "7": {
@@ -573,6 +608,7 @@ def get_menu_structure():
                 "8": {"name": "Rekognition", "file": scripts_dir / "rekognition_export.py", "description": "Export Rekognition computer vision"},
                 "9": {"name": "CloudWatch", "file": scripts_dir / "cloudwatch_export.py", "description": "Export CloudWatch alarms and logs"},
                 "10": {"name": "X-Ray", "file": scripts_dir / "xray_export.py", "description": "Export X-Ray distributed tracing"},
+                "11": {"name": "All Data & Analytics", "file": scripts_dir / "analytics_resources.py", "description": "Export all data & analytics resources in one report"},
             }
         },
         "8": {
@@ -582,6 +618,7 @@ def get_menu_structure():
                 "2": {"name": "CodePipeline", "file": scripts_dir / "codepipeline_export.py", "description": "Export CodePipeline pipelines"},
                 "3": {"name": "CodeCommit", "file": scripts_dir / "codecommit_export.py", "description": "Export CodeCommit repositories"},
                 "4": {"name": "CodeDeploy", "file": scripts_dir / "codedeploy_export.py", "description": "Export CodeDeploy applications"},
+                "5": {"name": "All DevOps Services", "file": scripts_dir / "devops_resources.py", "description": "Export all DevOps services resources in one report"},
             }
         },
         "9": {
@@ -594,6 +631,7 @@ def get_menu_structure():
                 "5": {"name": "AWS Marketplace", "file": scripts_dir / "marketplace_export.py", "description": "Export AWS Marketplace configuration"},
                 "6": {"name": "AWS Control Tower", "file": scripts_dir / "controltower_export.py", "description": "Export Control Tower landing zone"},
                 "7": {"name": "Systems Manager Fleet", "file": scripts_dir / "ssm_fleet_export.py", "description": "Export SSM managed instances"},
+                "8": {"name": "All Management & Governance", "file": scripts_dir / "governance_resources.py", "description": "Export all management & governance resources in one report"},
             }
         },
         "10": {
@@ -604,13 +642,13 @@ def get_menu_structure():
     }
 
     # Verify the script files exist (only for actual scripts)
-    for main_option, main_info in menu_structure.items():
+    for _main_option, main_info in menu_structure.items():
         if "submenu" in main_info:
             # Check first level submenus
-            for sub_option, sub_info in main_info["submenu"].items():
+            for _sub_option, sub_info in main_info["submenu"].items():
                 if "submenu" in sub_info:
                     # Check nested submenus
-                    for nested_option, nested_info in sub_info["submenu"].items():
+                    for _nested_option, nested_info in sub_info["submenu"].items():
                         if nested_info.get("file") and not nested_info["file"].exists():
                             print(f"Warning: Script file {nested_info['file']} not found!")
                 elif sub_info.get("file") and not sub_info["file"].exists():
@@ -931,7 +969,7 @@ def run_org_scan() -> None:
     utils.complete_scan_session(session)
 
     # Summary
-    print(f"\nORG SCAN COMPLETE")
+    print("\nORG SCAN COMPLETE")
     print(SEP)
     for r in results:
         icon = "✅" if r["exit_code"] == 0 else "❌"
@@ -1065,7 +1103,7 @@ def _resume_org_scan_from_session(session: dict) -> None:
         results.append({"acct_id": acct_id, "acct_name": acct_name, "exit_code": exit_code})
 
     utils.complete_scan_session(session)
-    print(f"\n  RESUME COMPLETE")
+    print("\n  RESUME COMPLETE")
     print(f"  {SEP}")
     for r in results:
         icon = "✅" if r["exit_code"] == 0 else "❌"
@@ -1094,7 +1132,7 @@ def _startup_interrupted_check() -> None:
     SEP = "─" * 60
     print()
     print(f"  {SEP}")
-    print(f"  ⚠  INTERRUPTED SCAN DETECTED")
+    print("  ⚠  INTERRUPTED SCAN DETECTED")
     print(f"  {SEP}")
     print(f"  {label}")
     print(f"  Started: {ts}  |  Completed: {n_done}/{n_total}")
@@ -1252,14 +1290,14 @@ def _run_dry_run() -> None:
         print("\nDry run failed. Configure credentials before running.")
         sys.exit(1)
 
-    print(f"  [✓] AWS credentials: valid")
+    print("  [✓] AWS credentials: valid")
     print(f"  [✓] Account: {account_name} ({account_id})")
 
     partition = utils.detect_partition()
     print(f"  [✓] Partition: {partition}")
 
     config, _ = utils.get_config()
-    print(f"  [✓] Config: loaded")
+    print("  [✓] Config: loaded")
 
     # Count available scripts
     scripts_dir = Path(__file__).parent / "scripts"

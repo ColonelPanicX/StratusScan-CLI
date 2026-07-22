@@ -24,17 +24,16 @@ Usage:
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Tuple, Optional, List
+from pathlib import Path
+from typing import Optional
 
 # Try to import boto3, but don't fail if it's missing (will be caught later)
 try:
-    import boto3
+    import boto3  # noqa: F401  # imported to probe availability; not used directly here
     from botocore.exceptions import ClientError, NoCredentialsError
     BOTO3_AVAILABLE = True
 except ImportError:
@@ -65,7 +64,7 @@ _config_modified = False   # Track if config has unsaved changes
 # AWS PARTITION & IDENTITY DETECTION
 # ============================================================================
 
-def detect_aws_partition() -> Tuple[str, str]:
+def detect_aws_partition() -> tuple[str, str]:
     """
     Detect the AWS partition (commercial vs govcloud) from caller identity.
 
@@ -76,7 +75,7 @@ def detect_aws_partition() -> Tuple[str, str]:
     default_region = 'us-gov-west-1' if partition == 'aws-us-gov' else 'us-east-1'
     return partition, default_region
 
-def get_aws_identity() -> Optional[Dict]:
+def get_aws_identity() -> Optional[dict]:
     """
     Get current AWS identity information.
 
@@ -111,6 +110,14 @@ def get_aws_identity() -> Optional[Dict]:
 # ============================================================================
 # VISUAL HELPERS
 # ============================================================================
+
+def clear_screen():
+    """
+    Clear the terminal screen using ANSI escape codes (avoids os.system shell call).
+    Works on Windows 10+, Linux, and macOS terminals.
+    """
+    print('\033[2J\033[H', end='', flush=True)
+
 
 def print_box(title: str, width: int = 70):
     """Print a box with title."""
@@ -151,22 +158,18 @@ def print_status_line(label: str, status: str, width: int = 70):
 
 def get_status_icon(status: str) -> str:
     """Get status icon based on status string."""
-    if status == "ok":
-        return "✅"
-    elif status == "warning":
-        return "⚠️ "
-    elif status == "error":
-        return "❌"
-    elif status == "unknown":
-        return "❓"
-    else:
-        return "  "
+    return {
+        "ok": "✅",
+        "warning": "⚠️ ",
+        "error": "❌",
+        "unknown": "❓",
+    }.get(status, "  ")
 
 # ============================================================================
 # BACKGROUND CHECKS
 # ============================================================================
 
-def check_dependencies_silent() -> Dict:
+def check_dependencies_silent() -> dict:
     """
     Check dependencies without user interaction.
 
@@ -197,7 +200,7 @@ def check_dependencies_silent() -> Dict:
         'installed_packages': installed_packages
     }
 
-def check_permissions_silent() -> Dict:
+def check_permissions_silent() -> dict:
     """
     Check AWS permissions without user interaction.
 
@@ -216,9 +219,7 @@ def check_permissions_silent() -> Dict:
             'error': 'No AWS credentials configured'
         }
 
-    partition = identity['partition']
     test_region = identity['default_region']
-    is_govcloud = partition == 'aws-us-gov'
 
     # Simplified permission tests (subset for speed)
     permission_tests = {
@@ -245,7 +246,7 @@ def check_permissions_silent() -> Dict:
     optional_passed = 0
     optional_failed = 0
 
-    for permission, config in permission_tests.items():
+    for _permission, config in permission_tests.items():
         try:
             config['test_function']()
             if config['required']:
@@ -286,7 +287,7 @@ def get_config_path() -> Path:
     script_dir = Path(__file__).parent.absolute()
     return script_dir / "config.json"
 
-def load_existing_config(config_path: Path) -> Dict:
+def load_existing_config(config_path: Path) -> dict:
     """
     Load existing configuration file if it exists.
 
@@ -311,7 +312,7 @@ def load_existing_config(config_path: Path) -> Dict:
         "default_regions": ["us-east-1", "us-east-2", "us-west-1", "us-west-2"],
     }
 
-def save_configuration(config: Dict, config_path: Path) -> bool:
+def save_configuration(config: dict, config_path: Path) -> bool:
     """
     Save the configuration to the JSON file.
 
@@ -343,7 +344,7 @@ def save_configuration(config: Dict, config_path: Path) -> bool:
         print(f"❌ Error saving configuration: {e}")
         return False
 
-def get_config_status(config: Dict, config_path: Path) -> str:
+def get_config_status(config: dict, config_path: Path) -> str:
     """
     Get configuration status string.
 
@@ -393,7 +394,7 @@ def validate_account_id(account_id: str) -> bool:
 # MAIN MENU & DASHBOARD
 # ============================================================================
 
-def print_dashboard(config: Dict, config_path: Path):
+def print_dashboard(config: dict, config_path: Path):
     """
     Print the main dashboard.
 
@@ -401,7 +402,7 @@ def print_dashboard(config: Dict, config_path: Path):
         config (dict): Configuration dictionary
         config_path (Path): Path to config file
     """
-    os.system('cls' if os.name == 'nt' else 'clear')
+    clear_screen()
     identity = get_aws_identity()
 
     # Header
@@ -494,7 +495,7 @@ def print_dashboard(config: Dict, config_path: Path):
 
     print("\n" + "═" * 70)
 
-def configure_output_settings(config: Dict):
+def configure_output_settings(config: dict):
     """
     Configure the export output format (xlsx or csv).
 
@@ -541,14 +542,15 @@ def configure_output_settings(config: Dict):
     input("\nPress Enter to return to menu...")
 
 
-def config_wizard(config: Dict):
+def config_wizard(config: dict):
     """
     First-run wizard: account mappings → export format → default regions → deps → perms → cross-account roles.
 
     Steps the user through six essential setup tasks in sequence.
     Re-entrant — safe to run on an already-configured system.
     """
-    _clr = lambda: os.system('cls' if os.name == 'nt' else 'clear')
+    def _clr():
+        return clear_screen()
 
     _clr()
     print_section("CONFIG WIZARD")
@@ -587,7 +589,7 @@ def config_wizard(config: Dict):
     input("Press Enter to return to the main menu...")
 
 
-def main_menu_loop(config: Dict, config_path: Path):
+def main_menu_loop(config: dict, config_path: Path):
     """
     Main menu loop.
 
@@ -661,7 +663,7 @@ def main_menu_loop(config: Dict, config_path: Path):
 # CONFIGURATION VIEWERS & EDITORS
 # ============================================================================
 
-def view_configuration(config: Dict):
+def view_configuration(config: dict):
     """View current configuration."""
     print("\n" + "═" * 70)
     print("CURRENT CONFIGURATION")
@@ -669,7 +671,7 @@ def view_configuration(config: Dict):
     display_summary(config)
     input("\nPress Enter to return to menu...")
 
-def display_summary(config: Dict):
+def display_summary(config: dict):
     """
     Display a summary of the current configuration.
 
@@ -690,12 +692,12 @@ def display_summary(config: Dict):
     else:
         print("  None configured")
 
-def manage_account_mappings(config: Dict):
+def manage_account_mappings(config: dict):
     """Manage account mappings."""
     global _config_modified
 
     while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
+        clear_screen()
         print_section("MANAGE ACCOUNT MAPPINGS")
 
         mappings = config.get('account_mappings', {})
@@ -807,17 +809,14 @@ def manage_account_mappings(config: Dict):
         else:
             print("\n❌ Invalid choice. Please select A/E/D/B.")
 
-def configure_default_regions(config: Dict):
+def configure_default_regions(config: dict):
     """Configure default regions."""
     global _config_modified
 
     print_section("CONFIGURE DEFAULT REGIONS")
 
     identity = get_aws_identity()
-    if identity:
-        is_govcloud = identity['partition'] == 'aws-us-gov'
-    else:
-        is_govcloud = False
+    is_govcloud = identity['partition'] == 'aws-us-gov' if identity else False
 
     current_regions = config.get('default_regions', [])
     print(f"\nCurrent default regions: {', '.join(current_regions) if current_regions else 'None'}")
@@ -883,7 +882,7 @@ def configure_default_regions(config: Dict):
 _ROLE_ARN_RE = re.compile(r"^arn:(aws|aws-us-gov):iam::\d{12}:role/.+$")
 
 
-def manage_cross_account_roles(config: Dict):
+def manage_cross_account_roles(config: dict):
     """
     Interactive menu for managing cross-account IAM role mappings.
 
@@ -1001,7 +1000,7 @@ def dependency_management_menu():
         global _dependency_status
         _dependency_status = check_dependencies_silent()
 
-        print(f"\nChecking required StratusScan dependencies...")
+        print("\nChecking required StratusScan dependencies...")
 
         for package in _dependency_status['installed_packages']:
             print(f"  ✅ {package['name']} - {package['description']}")
@@ -1034,7 +1033,7 @@ def dependency_management_menu():
             print("\nRun the following commands in your terminal:\n")
             for package in _dependency_status['missing_packages']:
                 print(f"pip install {package['name']}")
-            print(f"\nAlternatively, install all at once:")
+            print("\nAlternatively, install all at once:")
             print(f"pip install {' '.join([p['name'] for p in _dependency_status['missing_packages']])}")
             input("\nPress Enter to continue...")
         elif choice == '3':
@@ -1046,7 +1045,7 @@ def dependency_management_menu():
             print("\n❌ Invalid choice. Please select 1-3 or B.")
             input("Press Enter to continue...")
 
-def install_dependencies(missing_packages: List[Dict]) -> bool:
+def install_dependencies(missing_packages: list[dict]) -> bool:
     """
     Install missing dependencies with user confirmation.
 
@@ -1074,14 +1073,14 @@ def install_dependencies(missing_packages: List[Dict]) -> bool:
         input("Press Enter to continue...")
         return False
 
-    print(f"\n🔧 Installing packages using pip...")
+    print("\n🔧 Installing packages using pip...")
 
     all_successful = True
 
     for package in missing_packages:
         print(f"\n[INSTALLING] {package['name']}...")
         try:
-            result = subprocess.run([
+            subprocess.run([
                 sys.executable, "-m", "pip", "install", package['name']
             ], capture_output=True, text=True, check=True)
 
@@ -1104,9 +1103,9 @@ def install_dependencies(missing_packages: List[Dict]) -> bool:
             all_successful = False
 
     if all_successful:
-        print(f"\n✅ All dependencies installed successfully!")
+        print("\n✅ All dependencies installed successfully!")
     else:
-        print(f"\n⚠️  Some dependencies failed to install.")
+        print("\n⚠️  Some dependencies failed to install.")
         print("You may need to install them manually or check your Python environment.")
 
     input("\nPress Enter to continue...")
@@ -1156,7 +1155,7 @@ def permissions_management_menu():
         print(f"Account ID: {identity['account_id']}")
         print(f"Partition: {identity['partition_name']}")
 
-        print(f"\nPermission Status:")
+        print("\nPermission Status:")
         print(f"  Required permissions: {_permission_status['required_passed']}/{_permission_status['required_passed'] + _permission_status['required_failed']} passed")
         print(f"  Optional permissions: {_permission_status['optional_passed']}/{_permission_status['optional_passed'] + _permission_status['optional_failed']} passed")
 
@@ -1278,7 +1277,7 @@ def quick_edit_account(account_id: str, account_name: str) -> bool:
         print(f"\n✅ Account mapping added: {account_id} → {account_name}")
         return True
     else:
-        print(f"\n❌ Failed to add account mapping")
+        print("\n❌ Failed to add account mapping")
         return False
 
 def quick_edit_region(region: str) -> bool:
@@ -1306,7 +1305,7 @@ def quick_edit_region(region: str) -> bool:
         print(f"\n✅ Default regions updated: {region}, {secondary_region}")
         return True
     else:
-        print(f"\n❌ Failed to update default regions")
+        print("\n❌ Failed to update default regions")
         return False
 
 def validate_only() -> bool:

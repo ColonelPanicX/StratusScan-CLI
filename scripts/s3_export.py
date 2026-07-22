@@ -78,7 +78,7 @@ def get_bucket_region(bucket_name):
 
     # Get the bucket's location
     response = s3_client.get_bucket_location(Bucket=bucket_name)
-    location = response['LocationConstraint']
+    location = response.get('LocationConstraint')
 
     # In AWS, handle the location constraint differently
     if location is None:
@@ -192,7 +192,10 @@ def get_latest_storage_lens_data(account_id):
 
         # Get list of all buckets (global S3 call)
         s3_client = utils.get_boto3_client('s3')
-        all_bucket_names = [bucket['Name'] for bucket in s3_client.list_buckets()['Buckets']]
+        all_bucket_names = [
+            bucket.get('Name') for bucket in s3_client.list_buckets().get('Buckets', [])
+            if bucket.get('Name')
+        ]
 
         # Define function to collect metrics for a single region (Phase 4B)
         def collect_cloudwatch_metrics_for_region(region):
@@ -302,30 +305,113 @@ def _load_s3_standard_rate() -> float:
     """Load S3 Standard storage rate from pricing JSON, falling back to built-in default."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 's3-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         return float(data.get('rates', {}).get('STANDARD', 0.023))
     except Exception:
         return 0.023
 
 
-@utils.aws_error_handler("Collecting S3 buckets", default_return=[])
+def _build_bucket_row(bucket, region, storage_lens_data, standard_rate, account_id):
+    """
+    Build the export row for a single S3 bucket.
+
+    Extracted so the per-bucket processing can be wrapped in try/except by the
+    caller: a malformed bucket entry (e.g. missing an expected field, or a
+    per-field lookup that degrades but still raises unexpectedly) is logged and
+    skipped rather than discarding every other bucket already collected. Required
+    fields are read with ``.get()`` and a safe default for the same reason.
+
+    Args:
+        bucket (dict): A single Buckets entry from list_buckets().
+        region (str): AWS region the bucket resolved to.
+        storage_lens_data (dict): Bucket-name-keyed Storage Lens/CloudWatch metrics.
+        standard_rate (float): S3 Standard storage rate ($/GB/month).
+        account_id (str): AWS account ID (for owner formatting).
+
+    Returns:
+        dict: The assembled bucket row.
+    """
+    bucket_name = bucket.get('Name', 'Unknown')
+    creation_date = bucket.get('CreationDate', 'N/A')
+
+    # Initialize size and object count
+    size_bytes = 0
+    object_count = 0
+
+    # Try to get info from Storage Lens if available
+    if bucket_name in storage_lens_data:
+        size_bytes = storage_lens_data[bucket_name].get('size_bytes', 0)
+        object_count = storage_lens_data[bucket_name].get('object_count', 0)
+        size_source = "Storage Lens/CloudWatch"
+    else:
+        # Fall back to counting objects directly
+        object_count = get_bucket_object_count(bucket_name, region)
+        size_source = "Not Available"
+
+    # Convert size to MB
+    size_mb = convert_to_mb(size_bytes)
+
+    # Get owner information
+    owner_id = utils.get_account_name_formatted(account_id)
+
+    # Estimate monthly storage cost (Standard tier only)
+    if size_source != "Not Available" and size_mb > 0:
+        monthly_cost = round(size_mb / 1024 * standard_rate, 4)
+        cost_note = 'Standard storage estimate only'
+    elif size_source != "Not Available":
+        monthly_cost = 0.0
+        cost_note = 'Standard storage estimate only'
+    else:
+        monthly_cost = 'N/A'
+        cost_note = 'Size data unavailable'
+
+    return {
+        'Bucket Name': bucket_name,
+        'Region': region,
+        'Creation Date': creation_date,
+        'Object Count': object_count,
+        'Size (MB)': size_mb,
+        'Size Source': size_source,
+        'Owner': owner_id,
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Cost Note': cost_note,
+    }
+
+
 def get_s3_buckets_info(use_storage_lens=False, target_region=None):
     """
-    Collect information about S3 buckets across AWS regions or a specific AWS region
+    Collect information about S3 buckets across AWS regions or a specific AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return an
+    empty list that ``main()`` cannot distinguish from a genuinely empty account,
+    producing silent data loss (no file written). Top-level failures (e.g. a
+    throttled ``list_buckets`` call) are allowed to raise so the caller sees a
+    real failure rather than "zero buckets." Per-bucket errors are contained
+    internally: they are logged, the bucket is skipped, and it is reported back
+    to the caller via the ``failed_buckets`` return value instead of aborting the
+    whole collection.
 
     Args:
         use_storage_lens (bool): Whether to try using Storage Lens for size metrics
         target_region (str): Specific AWS region to target or None for all AWS regions
 
     Returns:
-        list: List of dictionaries containing bucket information
+        tuple: (buckets_info, failed_buckets)
+            buckets_info (list): List of dictionaries containing bucket information.
+            failed_buckets (list): List of (bucket_name, error_message) tuples for
+                buckets that raised while being processed.
+
+    Raises:
+        Exception: Any AWS API error not scoped to a single bucket (e.g. listing
+            buckets, client creation) propagates to the caller.
     """
     # Initialize global S3 client to list all buckets
     s3_client = utils.get_boto3_client('s3')
     standard_rate = _load_s3_standard_rate()
 
     all_buckets_info = []
+    failed_buckets = []
     storage_lens_data = {}
 
     # Get account ID
@@ -334,19 +420,22 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
     # Validate target region if specified
     if target_region and not utils.is_aws_region(target_region):
         utils.log_error(f"Invalid AWS region: {target_region}")
-        return []
+        return [], []
 
     # Try to get Storage Lens data if requested
     if use_storage_lens:
         storage_lens_data = get_latest_storage_lens_data(account_id)
 
-    # Get the list of all buckets
+    # Get the list of all buckets. Not guarded here — a failure must propagate
+    # (see docstring) rather than be swallowed into an empty result.
     response = s3_client.list_buckets()
 
     # Filter the buckets based on the target AWS region
     buckets_to_process = []
-    for bucket in response['Buckets']:
-        bucket_name = bucket['Name']
+    for bucket in response.get('Buckets', []):
+        bucket_name = bucket.get('Name')
+        if not bucket_name:
+            continue
 
         # Get the bucket's region if we need to filter
         if target_region:
@@ -366,67 +455,38 @@ def get_s3_buckets_info(use_storage_lens=False, target_region=None):
           (f" in AWS region {target_region}" if target_region else " across all AWS regions") +
           ". Gathering details for each bucket...")
 
-    # Process each bucket
+    # Process each bucket. One malformed bucket must not discard every other
+    # bucket already collected, so each is built inside try/except; failures
+    # are logged, skipped, and tracked in failed_buckets.
+    skipped = 0
     for i, bucket in enumerate(buckets_to_process, 1):
-        bucket_name = bucket['Name']
-        creation_date = bucket['CreationDate']
+        bucket_name = bucket.get('Name', 'Unknown')
 
-        progress = (i / total_buckets) * 100
+        progress = (i / total_buckets) * 100 if total_buckets > 0 else 0
         utils.log_info(f"[{progress:.1f}%] Processing bucket {i}/{total_buckets}: {bucket_name}")
 
         # Get the bucket's region if we haven't already
-        if target_region:
-            region = target_region
-        else:
-            region = get_bucket_region(bucket_name)
+        region = target_region or get_bucket_region(bucket_name)
 
-        # Initialize size and object count
-        size_bytes = 0
-        object_count = 0
-
-        # Try to get info from Storage Lens if available
-        if bucket_name in storage_lens_data:
-            size_bytes = storage_lens_data[bucket_name]['size_bytes']
-            object_count = storage_lens_data[bucket_name]['object_count']
-            size_source = "Storage Lens/CloudWatch"
-        else:
-            # Fall back to counting objects directly
-            object_count = get_bucket_object_count(bucket_name, region)
-            size_source = "Not Available"
-
-        # Convert size to MB
-        size_mb = convert_to_mb(size_bytes)
-
-        # Get owner information
-        owner_id = utils.get_account_name_formatted(account_id)
-
-        # Estimate monthly storage cost (Standard tier only)
-        if size_source != "Not Available" and size_mb > 0:
-            monthly_cost = round(size_mb / 1024 * standard_rate, 4)
-            cost_note = 'Standard storage estimate only'
-        elif size_source != "Not Available":
-            monthly_cost = 0.0
-            cost_note = 'Standard storage estimate only'
-        else:
-            monthly_cost = 'N/A'
-            cost_note = 'Size data unavailable'
-
-        # Add bucket info to our list
-        bucket_info = {
-            'Bucket Name': bucket_name,
-            'Region': region,
-            'Creation Date': creation_date,
-            'Object Count': object_count,
-            'Size (MB)': size_mb,
-            'Size Source': size_source,
-            'Owner': owner_id,
-            'Monthly Cost (On-Demand)': monthly_cost,
-            'Cost Note': cost_note,
-        }
+        try:
+            bucket_info = _build_bucket_row(
+                bucket, region, storage_lens_data, standard_rate, account_id
+            )
+        except Exception as e:
+            skipped += 1
+            failed_buckets.append((bucket_name, str(e)))
+            utils.log_error(f"Skipping S3 bucket '{bucket_name}' due to a processing error", e)
+            continue
 
         all_buckets_info.append(bucket_info)
 
-    return all_buckets_info
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_buckets} S3 bucket(s) were skipped due to "
+            "processing errors (see log above); the remaining buckets were still collected."
+        )
+
+    return all_buckets_info, failed_buckets
 
 def export_to_excel(buckets_info, account_name, target_region=None):
     """
@@ -669,12 +729,11 @@ def main():
                     print(f"Please enter a valid number (1-{len(all_available_regions)}).")
 
     # Validate region if a specific one was provided
-    if target_region:
-        if not is_valid_aws_region(target_region):
-            utils.log_warning(f"'{target_region}' is not a valid AWS region.")
-            utils.log_info(f"Valid AWS regions include: {example_regions}")
-            utils.log_info("Checking all AWS regions instead.")
-            target_region = None
+    if target_region and not is_valid_aws_region(target_region):
+        utils.log_warning(f"'{target_region}' is not a valid AWS region.")
+        utils.log_info(f"Valid AWS regions include: {example_regions}")
+        utils.log_info("Checking all AWS regions instead.")
+        target_region = None
 
     utils.log_info("Checking for S3 Storage Lens availability in AWS...")
     use_storage_lens = check_storage_lens_availability()
@@ -685,28 +744,45 @@ def main():
     utils.log_info("This may take some time depending on the number of buckets...")
 
     # Get information about S3 buckets in AWS
-    buckets_info = get_s3_buckets_info(use_storage_lens=use_storage_lens, target_region=target_region)
+    buckets_info, failed_buckets = get_s3_buckets_info(
+        use_storage_lens=use_storage_lens, target_region=target_region
+    )
 
-    # Check if we found any buckets
-    if not buckets_info:
+    # Check if we found any buckets. A genuinely empty account (no failures,
+    # no buckets) still gets the original no-file warning. A failed collection
+    # is handled below even if buckets_info is empty or partial — partial data
+    # is exported first, then the failure is surfaced loudly.
+    if not buckets_info and not failed_buckets:
         utils.log_warning("No S3 buckets found in AWS regions or unable to retrieve bucket information.")
         return
 
-    utils.log_success(f"Found {len(buckets_info)} S3 buckets" +
-          (f" in AWS region {target_region}." if target_region else " across all AWS regions."))
+    if buckets_info:
+        utils.log_success(f"Found {len(buckets_info)} S3 buckets" +
+              (f" in AWS region {target_region}." if target_region else " across all AWS regions."))
 
-    # Export the data to the selected format
-    if args.format == 'xlsx':
-        output_file = export_to_excel(buckets_info, account_name, target_region)
-    else:
-        output_file = export_to_csv(buckets_info, account_name, target_region)
+        # Export the data to the selected format
+        if args.format == 'xlsx':
+            output_file = export_to_excel(buckets_info, account_name, target_region)
+        else:
+            output_file = export_to_csv(buckets_info, account_name, target_region)
 
-    if output_file:
-        utils.log_info("Export contains data from AWS region(s)")
-        utils.log_info(f"Total S3 buckets exported: {len(buckets_info)}")
-        print("\nScript execution completed successfully.")
-    else:
-        utils.log_error("Failed to export data. Please check the logs.")
+        if output_file:
+            utils.log_info("Export contains data from AWS region(s)")
+            utils.log_info(f"Total S3 buckets exported: {len(buckets_info)}")
+            print("\nScript execution completed successfully.")
+        else:
+            utils.log_error("Failed to export data. Please check the logs.")
+
+    # If ANY bucket failed to process, make it loud: write a marker and exit
+    # non-zero, even if some data was exported. A partial export that looks
+    # complete is exactly the failure mode this guards against.
+    if failed_buckets:
+        utils.report_collection_failures(account_name, "s3-buckets", failed_buckets)
+        print(
+            "\nERROR: S3 export completed with failures — data is incomplete. "
+            "See the *-s3-buckets-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:

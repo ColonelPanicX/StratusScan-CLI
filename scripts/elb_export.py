@@ -21,7 +21,6 @@ import datetime
 import sys
 from pathlib import Path
 
-
 # Add path to import utils module
 try:
     # Try to import directly (if utils.py is in Python path)
@@ -90,16 +89,88 @@ def get_security_group_names(security_group_ids, region):
 
     return sg_mapping
 
-@utils.aws_error_handler("Collecting Classic Load Balancers", default_return=[])
+def _build_classic_lb_row(lb, region):
+    """
+    Build the export row for a single Classic Load Balancer.
+
+    Extracted so the per-LB processing can be wrapped in try/except by the
+    caller: a malformed load balancer must not sink the whole region's
+    results. Every field is read with ``.get()`` and a safe default.
+
+    Args:
+        lb (dict): A single LoadBalancerDescriptions entry.
+        region (str): AWS region name.
+
+    Returns:
+        dict: The assembled load balancer row.
+    """
+    # Get security group names for the security group IDs
+    sg_ids = lb.get('SecurityGroups', [])
+    sg_mapping = get_security_group_names(sg_ids, region)
+
+    # Format security groups as "sg-name (sg-id), ..."
+    security_groups = []
+    for sg_id in sg_ids:
+        sg_name = sg_mapping.get(sg_id, "Unknown")
+        security_groups.append(f"{sg_name} ({sg_id})")
+
+    # Format availability zones as "subnet-id (az), ..."
+    availability_zones = []
+    for az in lb.get('AvailabilityZones', []):
+        availability_zones.append(f"{az}")
+
+    # Add subnets if available (VPC Classic ELB)
+    for subnet_id in lb.get('Subnets', []):
+        # For VPC Classic ELBs, we need to get the AZ for each subnet
+        try:
+            ec2 = utils.get_boto3_client('ec2', region_name=region)
+            subnet_response = ec2.describe_subnets(SubnetIds=[subnet_id])
+            subnet_az = subnet_response.get('Subnets', [{}])[0].get('AvailabilityZone', 'Unknown')
+            availability_zones.append(f"{subnet_id} ({subnet_az})")
+        except Exception as e:
+            utils.log_warning(f"Could not get AZ for subnet {subnet_id}: {e}")
+            availability_zones.append(f"{subnet_id} (Unknown AZ)")
+
+    # Get creation time
+    created_time = lb.get('CreatedTime', datetime.datetime.now())
+
+    # Get owner information
+    owner_id = lb.get('OwnerId', 'N/A')
+    owner_name = utils.get_account_name_formatted(owner_id)
+
+    return {
+        'Region': region,
+        'Name': lb.get('LoadBalancerName', ''),
+        'DNS Name': lb.get('DNSName', ''),
+        'VPC ID': lb.get('VPCId', 'N/A'),
+        'Availability Zones': ', '.join(availability_zones),
+        'Type': 'Classic',
+        'Date Created': created_time.strftime('%Y-%m-%d'),
+        'Security Groups': ', '.join(security_groups) if security_groups else 'N/A',
+        'Owner': owner_name
+    }
+
+
 def get_classic_load_balancers(region):
     """
-    Get information about Classic Load Balancers in the specified AWS region
+    Get information about Classic Load Balancers in the specified AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that ``main()`` cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so the caller can record the region as
+    *failed* rather than *empty*. Per-LB errors are contained internally
+    (logged and skipped).
 
     Args:
         region (str): AWS region
 
     Returns:
         list: List of dictionaries containing Classic Load Balancer information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -117,66 +188,113 @@ def get_classic_load_balancers(region):
     for page in paginator.paginate():
         all_lbs.extend(page.get('LoadBalancerDescriptions', []))
 
+    # Process each LB. One malformed LB must not sink the region, so each is
+    # built inside try/except; failures are logged and skipped.
+    skipped = 0
     for lb in all_lbs:
-        # Get security group names for the security group IDs
-        sg_ids = lb.get('SecurityGroups', [])
-        sg_mapping = get_security_group_names(sg_ids, region)
+        lb_name = lb.get('LoadBalancerName', 'Unknown')
+        try:
+            elb_data.append(_build_classic_lb_row(lb, region))
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping Classic Load Balancer '{lb_name}' in {region} due to a processing error", e
+            )
+            continue
 
-        # Format security groups as "sg-name (sg-id), ..."
-        security_groups = []
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(all_lbs)} Classic Load Balancer(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining load balancers were still collected."
+        )
+
+    return elb_data
+
+def _build_albnlb_row(lb, region):
+    """
+    Build the export row for a single ALB/NLB.
+
+    Extracted so the per-LB processing can be wrapped in try/except by the
+    caller: a malformed load balancer must not sink the whole region's
+    results. Every field is read with ``.get()`` and a safe default.
+
+    Args:
+        lb (dict): A single LoadBalancers entry from describe_load_balancers (elbv2).
+        region (str): AWS region name.
+
+    Returns:
+        dict: The assembled load balancer row.
+    """
+    # Get load balancer type
+    lb_type = lb.get('Type', 'Unknown')
+
+    # Get security group names for ALBs (NLBs don't have security groups)
+    sg_ids = lb.get('SecurityGroups', [])
+    security_groups = []
+
+    if sg_ids:
+        sg_mapping = get_security_group_names(sg_ids, region)
         for sg_id in sg_ids:
             sg_name = sg_mapping.get(sg_id, "Unknown")
             security_groups.append(f"{sg_name} ({sg_id})")
 
-        # Format availability zones as "subnet-id (az), ..."
-        availability_zones = []
-        for az in lb.get('AvailabilityZones', []):
-            availability_zones.append(f"{az}")
+    # Get subnet information
+    availability_zones = []
+    for az_info in lb.get('AvailabilityZones', []):
+        subnet_id = az_info.get('SubnetId', '')
+        zone_name = az_info.get('ZoneName', '')
+        availability_zones.append(f"{subnet_id} ({zone_name})")
 
-        # Add subnets if available (VPC Classic ELB)
-        for subnet_id in lb.get('Subnets', []):
-            # For VPC Classic ELBs, we need to get the AZ for each subnet
-            try:
-                ec2 = utils.get_boto3_client('ec2', region_name=region)
-                subnet_response = ec2.describe_subnets(SubnetIds=[subnet_id])
-                subnet_az = subnet_response['Subnets'][0]['AvailabilityZone']
-                availability_zones.append(f"{subnet_id} ({subnet_az})")
-            except Exception as e:
-                utils.log_warning(f"Could not get AZ for subnet {subnet_id}: {e}")
-                availability_zones.append(f"{subnet_id} (Unknown AZ)")
+    # Get creation time
+    created_time = lb.get('CreatedTime', datetime.datetime.now())
 
-        # Get creation time
-        created_time = lb.get('CreatedTime', datetime.datetime.now())
+    # Get owner information from the ARN
+    lb_arn = lb.get('LoadBalancerArn', '')
+    owner_name = 'N/A'
+    if lb_arn:
+        # Parse owner from ARN
+        try:
+            arn_parts = lb_arn.split(':')
+            if len(arn_parts) >= 5:
+                owner_id = arn_parts[4]
+                owner_name = utils.get_account_name_formatted(owner_id)
+        except Exception:
+            owner_name = 'N/A'
 
-        # Get owner information
-        owner_id = lb.get('OwnerId', 'N/A')
-        owner_name = utils.get_account_name_formatted(owner_id)
+    return {
+        'Region': region,
+        'Name': lb.get('LoadBalancerName', ''),
+        'DNS Name': lb.get('DNSName', ''),
+        'VPC ID': lb.get('VpcId', 'N/A'),
+        'Availability Zones': ', '.join(availability_zones),
+        'Type': lb_type,
+        'Date Created': created_time.strftime('%Y-%m-%d'),
+        'Security Groups': ', '.join(security_groups) if security_groups else 'N/A',
+        'Owner': owner_name
+    }
 
-        # Add load balancer data to the list
-        elb_data.append({
-            'Region': region,
-            'Name': lb.get('LoadBalancerName', ''),
-            'DNS Name': lb.get('DNSName', ''),
-            'VPC ID': lb.get('VPCId', 'N/A'),
-            'Availability Zones': ', '.join(availability_zones),
-            'Type': 'Classic',
-            'Date Created': created_time.strftime('%Y-%m-%d'),
-            'Security Groups': ', '.join(security_groups) if security_groups else 'N/A',
-            'Owner': owner_name
-        })
 
-    return elb_data
-
-@utils.aws_error_handler("Collecting Application and Network Load Balancers", default_return=[])
 def get_application_network_load_balancers(region):
     """
-    Get information about Application and Network Load Balancers in the specified AWS region
+    Get information about Application and Network Load Balancers in the
+    specified AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that ``main()`` cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so the caller can record the region as
+    *failed* rather than *empty*. Per-LB errors are contained internally
+    (logged and skipped).
 
     Args:
         region (str): AWS region
 
     Returns:
         list: List of dictionaries containing ALB/NLB information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -194,58 +312,25 @@ def get_application_network_load_balancers(region):
     for page in paginator.paginate():
         all_lbs.extend(page.get('LoadBalancers', []))
 
+    # Process each LB. One malformed LB must not sink the region, so each is
+    # built inside try/except; failures are logged and skipped.
+    skipped = 0
     for lb in all_lbs:
-        # Get load balancer type
-        lb_type = lb.get('Type', 'Unknown')
+        lb_name = lb.get('LoadBalancerName', 'Unknown')
+        try:
+            elb_data.append(_build_albnlb_row(lb, region))
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping Application/Network Load Balancer '{lb_name}' in {region} due to a processing error", e
+            )
+            continue
 
-        # Get security group names for ALBs (NLBs don't have security groups)
-        sg_ids = lb.get('SecurityGroups', [])
-        security_groups = []
-
-        if sg_ids:
-            sg_mapping = get_security_group_names(sg_ids, region)
-            for sg_id in sg_ids:
-                sg_name = sg_mapping.get(sg_id, "Unknown")
-                security_groups.append(f"{sg_name} ({sg_id})")
-
-        # Get subnet information
-        availability_zones = []
-        for az_info in lb.get('AvailabilityZones', []):
-            subnet_id = az_info.get('SubnetId', '')
-            zone_name = az_info.get('ZoneName', '')
-            availability_zones.append(f"{subnet_id} ({zone_name})")
-
-        # Get creation time
-        created_time = lb.get('CreatedTime', datetime.datetime.now())
-
-        # Get owner information from the ARN
-        lb_arn = lb.get('LoadBalancerArn', '')
-        if lb_arn:
-            # Parse owner from ARN
-            try:
-                arn_parts = lb_arn.split(':')
-                if len(arn_parts) >= 5:
-                    owner_id = arn_parts[4]
-                    owner_name = utils.get_account_name_formatted(owner_id)
-                else:
-                    owner_name = 'N/A'
-            except Exception:
-                owner_name = 'N/A'
-        else:
-            owner_name = 'N/A'
-
-        # Add load balancer data to the list
-        elb_data.append({
-            'Region': region,
-            'Name': lb.get('LoadBalancerName', ''),
-            'DNS Name': lb.get('DNSName', ''),
-            'VPC ID': lb.get('VpcId', 'N/A'),
-            'Availability Zones': ', '.join(availability_zones),
-            'Type': lb_type,
-            'Date Created': created_time.strftime('%Y-%m-%d'),
-            'Security Groups': ', '.join(security_groups) if security_groups else 'N/A',
-            'Owner': owner_name
-        })
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(all_lbs)} Application/Network Load Balancer(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining load balancers were still collected."
+        )
 
     return elb_data
 
@@ -372,11 +457,15 @@ def main():
 
         return region_elbs
 
-    # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
+    # Use concurrent region scanning (with automatic fallback to sequential on
+    # errors). collect_failures=True returns the regions that raised so a
+    # failed collection is distinguishable from a genuinely empty account
+    # (silent-data-loss bug, 07.15.2026 audit).
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_region_elbs,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results and count totals
@@ -392,66 +481,77 @@ def main():
                 total_elbv2s += 1
         all_elb_data.extend(region_elbs)
 
-    # If no ELBs found, exit
-    if not all_elb_data:
+    # Export whatever succeeded, then decide on exit status based on failures.
+    if all_elb_data:
+        # Convert to DataFrame
+        df = pd.DataFrame(all_elb_data)
+        df = df.sort_values(by=['Region', 'Type', 'Name'])
+
+        # Collect target groups and listeners (Phase F: API coverage fix)
+        utils.log_info("Collecting target groups...")
+        tg_results = utils.scan_regions_concurrent(
+            regions=regions,
+            scan_function=get_target_groups,
+            show_progress=True
+        )
+        all_tg_data = [tg for result in tg_results for tg in result]
+        utils.log_success(f"Total target groups collected: {len(all_tg_data)}")
+
+        utils.log_info("Collecting listeners...")
+        listener_results = utils.scan_regions_concurrent(
+            regions=regions,
+            scan_function=get_listeners,
+            show_progress=True
+        )
+        all_listener_data = [listener for result in listener_results for listener in result]
+        utils.log_success(f"Total listeners collected: {len(all_listener_data)}")
+
+        # Generate filename with current date
+        current_date = datetime.datetime.now().strftime('%m.%d.%Y')
+        filename = utils.create_export_filename(
+            account_name,
+            "elb",
+            region_suffix,
+            current_date
+        )
+
+        # Build multi-sheet workbook
+        data_frames = {'Load Balancers': df}
+        if all_tg_data:
+            tg_df = pd.DataFrame(all_tg_data)
+            tg_df = tg_df.sort_values(by=['Region', 'Target Group Name'])
+            data_frames['Target Groups'] = tg_df
+        if all_listener_data:
+            listener_df = pd.DataFrame(all_listener_data)
+            listener_df = listener_df.sort_values(by=['Region', 'Load Balancer Name', 'Port'])
+            data_frames['Listeners'] = listener_df
+
+        output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
+
+        if output_path:
+            utils.log_success("AWS ELB data exported successfully!")
+            utils.log_success(f"File location: {output_path}")
+            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+            utils.log_info(f"Total Classic ELBs: {total_classic_elbs}")
+            utils.log_info(f"Total ALB/NLB: {total_elbv2s}")
+            utils.log_info(f"Total Load Balancers: {len(all_elb_data)}")
+            print("\nScript execution completed.")
+        else:
+            utils.log_error("Failed to save the Excel file.")
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Elastic Load Balancers found in any AWS region.")
-        return
 
-    # Convert to DataFrame
-    df = pd.DataFrame(all_elb_data)
-    df = df.sort_values(by=['Region', 'Type', 'Name'])
-
-    # Collect target groups and listeners (Phase F: API coverage fix)
-    utils.log_info("Collecting target groups...")
-    tg_results = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=get_target_groups,
-        show_progress=True
-    )
-    all_tg_data = [tg for result in tg_results for tg in result]
-    utils.log_success(f"Total target groups collected: {len(all_tg_data)}")
-
-    utils.log_info("Collecting listeners...")
-    listener_results = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=get_listeners,
-        show_progress=True
-    )
-    all_listener_data = [listener for result in listener_results for listener in result]
-    utils.log_success(f"Total listeners collected: {len(all_listener_data)}")
-
-    # Generate filename with current date
-    current_date = datetime.datetime.now().strftime('%m.%d.%Y')
-    filename = utils.create_export_filename(
-        account_name,
-        "elb",
-        region_suffix,
-        current_date
-    )
-
-    # Build multi-sheet workbook
-    data_frames = {'Load Balancers': df}
-    if all_tg_data:
-        tg_df = pd.DataFrame(all_tg_data)
-        tg_df = tg_df.sort_values(by=['Region', 'Target Group Name'])
-        data_frames['Target Groups'] = tg_df
-    if all_listener_data:
-        listener_df = pd.DataFrame(all_listener_data)
-        listener_df = listener_df.sort_values(by=['Region', 'Load Balancer Name', 'Port'])
-        data_frames['Listeners'] = listener_df
-
-    output_path = utils.save_multiple_dataframes_to_excel(data_frames, filename)
-
-    if output_path:
-        utils.log_success("AWS ELB data exported successfully!")
-        utils.log_success(f"File location: {output_path}")
-        utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-        utils.log_info(f"Total Classic ELBs: {total_classic_elbs}")
-        utils.log_info(f"Total ALB/NLB: {total_elbv2s}")
-        utils.log_info(f"Total Load Balancers: {len(all_elb_data)}")
-        print("\nScript execution completed.")
-    else:
-        utils.log_error("Failed to save the Excel file.")
+    # If ANY region failed, make it loud: write a marker and exit non-zero,
+    # even if some data was exported. A partial export that looks complete is
+    # exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, "elb", failed_regions)
+        print(
+            "\nERROR: ELB export completed with failures — data is incomplete. "
+            "See the *-elb-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:

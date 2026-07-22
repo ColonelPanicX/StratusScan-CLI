@@ -22,7 +22,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -43,41 +43,93 @@ except ImportError:
 args = utils.parse_script_args("Export EventBridge event buses and rules to Excel")
 
 
-def _scan_event_buses_region(region: str) -> List[Dict[str, Any]]:
-    """Scan a single region for EventBridge event buses."""
+def _scan_event_buses_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect EventBridge event buses from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no event buses" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed event buses are skipped (logged) rather than
+    aborting the whole region.
+    """
     buses_data = []
     if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
         return buses_data
 
-    try:
-        events_client = utils.get_boto3_client('events', region_name=region)
-        paginator = events_client.get_paginator('list_event_buses')
+    print(f"\nProcessing region: {region}")
 
-        for page in paginator.paginate():
-            for bus in page.get('EventBuses', []):
-                buses_data.append({
-                    'Region': region,
-                    'Event Bus Name': bus.get('Name', 'N/A'),
-                    'Event Bus ARN': bus.get('Arn', 'N/A'),
-                    'Has Policy': 'Yes' if bus.get('Policy') else 'No'
-                })
-    except Exception as e:
-        utils.log_error(f"Error scanning event buses in {region}", e)
+    events_client = utils.get_boto3_client('events', region_name=region)
+    next_token = None
+    bus_count = 0
+    while True:
+        params = {}
+        if next_token:
+            params['NextToken'] = next_token
+        page = events_client.list_event_buses(**params)
+        page_buses = page.get('EventBuses', [])
+        bus_count += len(page_buses)
 
+        for bus in page_buses:
+            try:
+                buses_data.append(_build_event_bus_row(bus, region))
+            except Exception as e:
+                # One malformed event bus is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed event bus in {region}: "
+                    f"{bus.get('Name', '<unknown>')}",
+                    e,
+                )
+                continue
+
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
+
+    print(f"  Found {bus_count} event buses")
     return buses_data
 
 
-@utils.aws_error_handler("Collecting event buses", default_return=[])
-def collect_event_buses(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect EventBridge event bus information from AWS regions."""
+def _build_event_bus_row(item: dict, region: str) -> dict[str, Any]:
+    """Build a single event bus export row from a list_event_buses entry."""
+    return {
+        'Region': region,
+        'Event Bus Name': item.get('Name', 'N/A'),
+        'Event Bus ARN': item.get('Arn', 'N/A'),
+        'Has Policy': 'Yes' if item.get('Policy') else 'No'
+    }
+
+
+def collect_event_buses(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect EventBridge event bus information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(buses, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING EVENT BUSES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_event_buses_region)
-    all_buses = [b for result in results for b in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_event_buses_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_buses = [b for result in region_results for b in result]
     utils.log_success(f"Total event buses collected: {len(all_buses)}")
-    return all_buses
+    return all_buses, failed_regions
 
 
-def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
+def _scan_event_rules_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for EventBridge rules."""
     rules_data = []
     if not utils.is_aws_region(region):
@@ -86,9 +138,16 @@ def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
         buses = []
-        buses_paginator = events_client.get_paginator('list_event_buses')
-        for page in buses_paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = events_client.list_event_buses(**params)
             buses.extend(page.get('EventBuses', []))
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
         for bus in buses:
             bus_name = bus.get('Name', 'default')
@@ -122,7 +181,7 @@ def _scan_event_rules_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting event rules", default_return=[])
-def collect_event_rules(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_rules(regions: list[str]) -> list[dict[str, Any]]:
     """Collect EventBridge rule information from AWS regions."""
     print("\n=== COLLECTING EVENT RULES ===")
     results = utils.scan_regions_concurrent(regions, _scan_event_rules_region)
@@ -131,7 +190,7 @@ def collect_event_rules(regions: List[str]) -> List[Dict[str, Any]]:
     return all_rules
 
 
-def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
+def _scan_rule_targets_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for EventBridge rule targets."""
     targets_data = []
     if not utils.is_aws_region(region):
@@ -140,9 +199,16 @@ def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
     try:
         events_client = utils.get_boto3_client('events', region_name=region)
         buses = []
-        buses_paginator = events_client.get_paginator('list_event_buses')
-        for page in buses_paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = events_client.list_event_buses(**params)
             buses.extend(page.get('EventBuses', []))
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
 
         for bus in buses:
             bus_name = bus.get('Name', 'default')
@@ -198,7 +264,7 @@ def _scan_rule_targets_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting rule targets", default_return=[])
-def collect_rule_targets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_rule_targets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect EventBridge rule target information from AWS regions."""
     print("\n=== COLLECTING RULE TARGETS ===")
     results = utils.scan_regions_concurrent(regions, _scan_rule_targets_region)
@@ -224,17 +290,20 @@ def export_eventbridge_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect event buses
-    buses = collect_event_buses(regions)
+    # STEP 1: Collect event buses (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    buses, failed_regions = collect_event_buses(regions)
     if buses:
         data_frames['Event Buses'] = pd.DataFrame(buses)
 
-    # STEP 2: Collect event rules
+    # STEP 2: Collect event rules (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     rules = collect_event_rules(regions)
     if rules:
         data_frames['Event Rules'] = pd.DataFrame(rules)
 
-    # STEP 3: Collect rule targets
+    # STEP 3: Collect rule targets (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     targets = collect_rule_targets(regions)
     if targets:
         data_frames['Rule Targets'] = pd.DataFrame(targets)
@@ -248,12 +317,12 @@ def export_eventbridge_data(account_id: str, account_name: str):
         total_targets = len(targets)
 
         # Rules by state
-        enabled_rules = sum(1 for r in rules if r['State'] == 'ENABLED')
-        disabled_rules = sum(1 for r in rules if r['State'] == 'DISABLED')
+        enabled_rules = sum(1 for r in rules if r.get('State') == 'ENABLED')
+        disabled_rules = sum(1 for r in rules if r.get('State') == 'DISABLED')
 
         # Rules by type
-        pattern_rules = sum(1 for r in rules if r['Rule Type'] == 'Event Pattern')
-        schedule_rules = sum(1 for r in rules if r['Rule Type'] == 'Schedule')
+        pattern_rules = sum(1 for r in rules if r.get('Rule Type') == 'Event Pattern')
+        schedule_rules = sum(1 for r in rules if r.get('Rule Type') == 'Schedule')
 
         summary_data.append({'Metric': 'Total Event Buses', 'Value': total_buses})
         summary_data.append({'Metric': 'Total Event Rules', 'Value': total_rules})
@@ -265,43 +334,55 @@ def export_eventbridge_data(account_id: str, account_name: str):
 
         data_frames['Summary'] = pd.DataFrame(summary_data)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even when
+    # some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'eventbridge',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("EventBridge data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No EventBridge data was collected. Nothing to export.")
         print("\nNo EventBridge resources found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'eventbridge',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("EventBridge data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the Event Buses scope collection, make it loud:
+    # write a marker and exit non-zero, even if some data was exported. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'eventbridge', failed_regions)
+        print(
+            "\nERROR: EventBridge export completed with failures — data is incomplete. "
+            "See the *-eventbridge-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -319,10 +400,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export EventBridge data
         export_eventbridge_data(account_id, account_name)

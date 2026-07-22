@@ -121,7 +121,7 @@ def load_ebs_pricing_data():
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         pricing_data = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded pricing data for {len(pricing_data)} EBS volume types")
@@ -177,16 +177,113 @@ def calculate_ebs_monthly_cost(volume_type, size_gb, state, pricing_data):
     total_cost = price_per_gb * size_gb
     return round(total_cost, 2)
 
-@utils.aws_error_handler("Collecting EBS volumes", default_return=[])
+def _build_volume_data(volume, region, pricing_data):
+    """
+    Build the export row for a single EBS volume.
+
+    Extracted so the per-volume processing can be wrapped in try/except by the
+    caller: a malformed volume must be logged and skipped rather than
+    discarding the whole region's results. Every required field is read with
+    ``.get()`` and a safe default for the same reason.
+
+    Args:
+        volume (dict): A single Volumes entry from describe_volumes.
+        region (str): AWS region name.
+        pricing_data (dict): EBS pricing data.
+
+    Returns:
+        dict: The assembled volume row.
+    """
+    volume_id = volume.get('VolumeId', 'Unknown')
+
+    # Initialize variables for volume data
+    volume_name = get_volume_name(volume)
+    instance_id = "Not attached"
+    device_name = "N/A"
+    attachment_state = "N/A"
+
+    # Get attachment information if the volume is attached
+    attachments = volume.get('Attachments', [])
+    if attachments:
+        attachment = attachments[0]
+        instance_id = attachment.get('InstanceId', 'Unknown')
+        device_name = attachment.get('Device', 'N/A')
+        attachment_state = attachment.get('State', 'N/A')
+
+    # Get KMS key information for encrypted volumes
+    kms_key_id = volume.get('KmsKeyId', 'N/A') if volume.get('Encrypted', False) else 'N/A'
+
+    # Get IOPS information
+    iops = volume.get('Iops', 'N/A')
+
+    # Get throughput information (for gp3 volumes)
+    throughput = volume.get('Throughput', 'N/A')
+
+    # Get multi-attach enabled status
+    multi_attach = 'Yes' if volume.get('MultiAttachEnabled', False) else 'No'
+
+    # Format tags
+    volume_tags = format_tags(volume.get('Tags', []))
+
+    # Get owner information
+    owner_id = utils.get_account_name_formatted(volume.get('OwnerId', 'N/A'))
+
+    # Format creation time
+    create_time = volume['CreateTime'].strftime('%Y-%m-%d %H:%M:%S') if 'CreateTime' in volume else 'N/A'
+
+    # Required fields read defensively: a missing field yields 'N/A' (or a
+    # sane default), not a KeyError that would sink the entire region.
+    size_gb = volume.get('Size', 'N/A')
+    volume_type = volume.get('VolumeType', 'N/A')
+    state = volume.get('State', 'N/A')
+
+    # Calculate monthly cost
+    monthly_cost = calculate_ebs_monthly_cost(volume_type, size_gb, state, pricing_data)
+
+    return {
+        'Region': region,
+        'Volume ID': volume_id,
+        'Name': volume_name,
+        'Size (GB)': size_gb,
+        'Volume Type': volume_type,
+        'Monthly Cost': monthly_cost,
+        'State': state,
+        'Attached To': instance_id,
+        'Device Name': device_name,
+        'Attachment State': attachment_state,
+        'IOPS': iops,
+        'Throughput (MiB/s)': throughput,
+        'Encrypted': 'Yes' if volume.get('Encrypted', False) else 'No',
+        'KMS Key ID': kms_key_id,
+        'Multi-Attach': multi_attach,
+        'Create Time': create_time,
+        'Availability Zone': volume.get('AvailabilityZone', 'N/A'),
+        'Snapshot ID': volume.get('SnapshotId', 'N/A'),
+        'Owner ID': owner_id,
+        'Tags': volume_tags
+    }
+
+
 def get_ebs_volumes(region):
     """
     Get all EBS volumes in a specific AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that ``main()`` cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so the caller can record the region as
+    *failed* rather than *empty*. Per-volume errors are contained internally
+    (logged and skipped).
 
     Args:
         region (str): AWS region name
 
     Returns:
         list: List of volume dictionaries with relevant information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -204,73 +301,31 @@ def get_ebs_volumes(region):
 
     # Use pagination to handle large numbers of volumes
     paginator = ec2_client.get_paginator('describe_volumes')
+    all_volumes = []
     for page in paginator.paginate():
-        for volume in page['Volumes']:
-            # Initialize variables for volume data
-            volume_name = get_volume_name(volume)
-            instance_id = "Not attached"
-            device_name = "N/A"
-            attachment_state = "N/A"
+        all_volumes.extend(page['Volumes'])
 
-            # Get attachment information if the volume is attached
-            if volume['Attachments']:
-                attachment = volume['Attachments'][0]
-                instance_id = attachment['InstanceId']
-                device_name = attachment['Device']
-                attachment_state = attachment['State']
-
-            # Get KMS key information for encrypted volumes
-            kms_key_id = volume.get('KmsKeyId', 'N/A') if volume.get('Encrypted', False) else 'N/A'
-
-            # Get IOPS information
-            iops = volume.get('Iops', 'N/A')
-
-            # Get throughput information (for gp3 volumes)
-            throughput = volume.get('Throughput', 'N/A')
-
-            # Get multi-attach enabled status
-            multi_attach = 'Yes' if volume.get('MultiAttachEnabled', False) else 'No'
-
-            # Format tags
-            volume_tags = format_tags(volume.get('Tags', []))
-
-            # Get owner information
-            owner_id = utils.get_account_name_formatted(volume.get('OwnerId', 'N/A'))
-
-            # Format creation time
-            create_time = volume['CreateTime'].strftime('%Y-%m-%d %H:%M:%S') if 'CreateTime' in volume else 'N/A'
-
-            # Calculate monthly cost
-            monthly_cost = calculate_ebs_monthly_cost(
-                volume['VolumeType'],
-                volume['Size'],
-                volume['State'],
-                pricing_data
+    # Process each volume. One malformed volume must not sink the region, so
+    # each is built inside try/except; failures are logged and skipped.
+    skipped = 0
+    for volume in all_volumes:
+        volume_id = volume.get('VolumeId', 'Unknown')
+        try:
+            volume_data = _build_volume_data(volume, region, pricing_data)
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping EBS volume '{volume_id}' in {region} due to a processing error", e
             )
+            continue
 
-            # Add volume data to the list with comprehensive information
-            volumes_data.append({
-                'Region': region,
-                'Volume ID': volume['VolumeId'],
-                'Name': volume_name,
-                'Size (GB)': volume['Size'],
-                'Volume Type': volume['VolumeType'],
-                'Monthly Cost': monthly_cost,
-                'State': volume['State'],
-                'Attached To': instance_id,
-                'Device Name': device_name,
-                'Attachment State': attachment_state,
-                'IOPS': iops,
-                'Throughput (MiB/s)': throughput,
-                'Encrypted': 'Yes' if volume['Encrypted'] else 'No',
-                'KMS Key ID': kms_key_id,
-                'Multi-Attach': multi_attach,
-                'Create Time': create_time,
-                'Availability Zone': volume['AvailabilityZone'],
-                'Snapshot ID': volume.get('SnapshotId', 'N/A'),
-                'Owner ID': owner_id,
-                'Tags': volume_tags
-            })
+        volumes_data.append(volume_data)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(all_volumes)} EBS volume(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining volumes were still collected."
+        )
 
     return volumes_data
 
@@ -356,18 +411,24 @@ def main():
         # Collect EBS volume data from all regions (Phase 4B: concurrent)
         utils.log_info("Collecting EBS volume data from all regions...")
 
-        # Define region scan function
+        # Define region scan function for concurrent execution. It lets
+        # get_ebs_volumes raise on a region-level failure so the scanner
+        # records that region as FAILED — a failed region must never be
+        # collapsed into "empty," which is the silent-data-loss bug.
         def scan_region_ebs_volumes(region):
             utils.log_info(f"Collecting EBS volume data from {region}")
             region_volumes = get_ebs_volumes(region)
             utils.log_info(f"Found {len(region_volumes)} volumes in {region}")
             return region_volumes
 
-        # Use concurrent region scanning
-        region_results = utils.scan_regions_concurrent(
+        # Use concurrent region scanning. collect_failures=True returns the
+        # regions that raised so a failed collection is distinguishable from
+        # a genuinely empty account.
+        region_results, failed_regions = utils.scan_regions_concurrent(
             regions=regions,
             scan_function=scan_region_ebs_volumes,
-            show_progress=True
+            show_progress=True,
+            collect_failures=True,
         )
 
         # Flatten results
@@ -378,22 +439,34 @@ def main():
         # Print summary of collected data
         utils.log_success(f"Total EBS volumes found across all AWS regions: {len(all_volumes)}")
 
-        if not all_volumes:
+        # Export whatever succeeded, then decide on exit status based on failures.
+        if all_volumes:
+            # Export data to Excel file
+            utils.log_info("Exporting data to Excel format...")
+            excel_path = create_excel_file(account_name, all_volumes, region_input)
+
+            if excel_path:
+                utils.log_success("AWS EBS volume data exported successfully!")
+                utils.log_success(f"File location: {excel_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+                utils.log_info(f"Total volumes exported: {len(all_volumes)}")
+                print("\nScript execution completed.")
+            else:
+                utils.log_error("Error exporting data. Please check the logs.")
+                sys.exit(1)
+        elif not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
             utils.log_warning("No volumes found in any AWS region. Exiting...")
-            sys.exit(0)
 
-        # Export data to Excel file
-        utils.log_info("Exporting data to Excel format...")
-        excel_path = create_excel_file(account_name, all_volumes, region_input)
-
-        if excel_path:
-            utils.log_success("AWS EBS volume data exported successfully!")
-            utils.log_success(f"File location: {excel_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-            utils.log_info(f"Total volumes exported: {len(all_volumes)}")
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Error exporting data. Please check the logs.")
+        # If ANY region failed, make it loud: write a marker and exit non-zero,
+        # even if some data was exported. A partial export that looks complete
+        # is exactly the failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, "ebs-volumes", failed_regions)
+            print(
+                "\nERROR: EBS volumes export completed with failures — data is incomplete. "
+                "See the *-ebs-volumes-FAILED-*.txt marker in the output directory."
+            )
             sys.exit(1)
 
     except KeyboardInterrupt:

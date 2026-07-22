@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodeDeploy resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -26,59 +26,106 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CodeDeploy applications and deployments to Excel")
 
-@utils.aws_error_handler("Collecting CodeDeploy applications", default_return=[])
-def collect_applications(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect CodeDeploy application information from AWS regions."""
-    all_applications = []
+def _build_application_row(app: dict, region: str) -> dict[str, Any]:
+    """Build a single CodeDeploy application export row from a batch_get response entry."""
+    app_name = app.get('applicationName', 'N/A')
+    app_id = app.get('applicationId', 'N/A')
+    compute_platform = app.get('computePlatform', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Collecting CodeDeploy applications in {region}...")
-        codedeploy_client = utils.get_boto3_client('codedeploy', region_name=region)
+    created_time = app.get('createTime', 'N/A')
+    if created_time != 'N/A':
+        created_time = created_time.strftime('%Y-%m-%d %H:%M:%S')
 
-        try:
-            # List all applications
-            paginator = codedeploy_client.get_paginator('list_applications')
-            for page in paginator.paginate():
-                app_names = page.get('applications', [])
+    # Linked to GitHub
+    linked_to_github = app.get('linkedToGitHub', False)
+    github_account_name = app.get('gitHubAccountName', 'N/A')
 
-                # Batch get application details
-                if app_names:
-                    apps_response = codedeploy_client.batch_get_applications(applicationNames=app_names)
-                    applications = apps_response.get('applicationsInfo', [])
+    return {
+        'Region': region,
+        'Application Name': app_name,
+        'Application ID': app_id,
+        'Compute Platform': compute_platform,
+        'Created': created_time,
+        'Linked to GitHub': linked_to_github,
+        'GitHub Account': github_account_name
+    }
 
-                    for app in applications:
-                        app_name = app.get('applicationName', 'N/A')
-                        app_id = app.get('applicationId', 'N/A')
-                        compute_platform = app.get('computePlatform', 'N/A')
 
-                        created_time = app.get('createTime', 'N/A')
-                        if created_time != 'N/A':
-                            created_time = created_time.strftime('%Y-%m-%d %H:%M:%S')
+def _scan_applications_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect CodeDeploy applications from a single region.
 
-                        # Linked to GitHub
-                        linked_to_github = app.get('linkedToGitHub', False)
-                        github_account_name = app.get('gitHubAccountName', 'N/A')
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no applications" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
-                        all_applications.append({
-                            'Region': region,
-                            'Application Name': app_name,
-                            'Application ID': app_id,
-                            'Compute Platform': compute_platform,
-                            'Created': created_time,
-                            'Linked to GitHub': linked_to_github,
-                            'GitHub Account': github_account_name
-                        })
+    Individual malformed applications are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-        except Exception as e:
-            utils.log_warning(f"Error collecting CodeDeploy applications in {region}: {str(e)}")
+    utils.log_info(f"Collecting CodeDeploy applications in {region}...")
+    codedeploy_client = utils.get_boto3_client('codedeploy', region_name=region)
+
+    region_applications = []
+
+    # List all applications
+    paginator = codedeploy_client.get_paginator('list_applications')
+    for page in paginator.paginate():
+        app_names = page.get('applications', [])
+
+        # Batch get application details
+        if not app_names:
             continue
 
+        apps_response = codedeploy_client.batch_get_applications(applicationNames=app_names)
+        applications = apps_response.get('applicationsInfo', [])
+
+        for app in applications:
+            try:
+                region_applications.append(_build_application_row(app, region))
+            except Exception as e:
+                # One malformed application is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed CodeDeploy application in {region}: "
+                    f"{app.get('applicationName', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    return region_applications
+
+
+def collect_applications(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect CodeDeploy application information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(applications, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_applications_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_applications = [app for result in region_results for app in result]
     utils.log_info(f"Collected {len(all_applications)} CodeDeploy applications")
-    return all_applications
+    return all_applications, failed_regions
 
 
 @utils.aws_error_handler("Collecting deployment groups", default_return=[])
-def collect_deployment_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_deployment_groups(regions: list[str]) -> list[dict[str, Any]]:
     """Collect CodeDeploy deployment group information."""
     all_deployment_groups = []
 
@@ -189,7 +236,7 @@ def collect_deployment_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting deployments", default_return=[])
-def collect_deployments(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_deployments(regions: list[str]) -> list[dict[str, Any]]:
     """Collect recent deployment information (limited to 30 most recent per region)."""
     all_deployments = []
 
@@ -312,9 +359,9 @@ def collect_deployments(regions: List[str]) -> List[Dict[str, Any]]:
     return all_deployments
 
 
-def generate_summary(applications: List[Dict[str, Any]],
-                     deployment_groups: List[Dict[str, Any]],
-                     deployments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(applications: list[dict[str, Any]],
+                     deployment_groups: list[dict[str, Any]],
+                     deployments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodeDeploy resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -403,8 +450,15 @@ def main():
     # Collect data
     print("\nCollecting AWS CodeDeploy data...")
 
-    applications = collect_applications(regions)
+    # STEP 1: Collect applications (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    applications, failed_regions = collect_applications(regions)
+
+    # STEP 2: Collect deployment groups (enrichment — degrades gracefully;
+    # a region-level failure here does not fail the whole export).
     deployment_groups = collect_deployment_groups(regions)
+
+    # STEP 3: Collect deployments (enrichment — degrades gracefully).
     deployments = collect_deployments(regions)
     summary = generate_summary(applications, deployment_groups, deployments)
 
@@ -433,7 +487,8 @@ def main():
         df_summary = utils.prepare_dataframe_for_export(df_summary)
         dataframes['Summary'] = df_summary
 
-    # Export to Excel
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius audit).
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'codedeploy', region_suffix)
@@ -442,8 +497,22 @@ def main():
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
 
         # Log summary
-    else:
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No AWS CodeDeploy data found to export")
+        print("\nNo AWS CodeDeploy data found to export.")
+
+    # If ANY region failed the applications scope collection, make it loud:
+    # write a marker and exit non-zero, even if some data (from this scope or
+    # the enrichment sheets) was exported. A partial export that looks
+    # complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'codedeploy', failed_regions)
+        print(
+            "\nERROR: CodeDeploy export completed with failures — data is incomplete. "
+            "See the *-codedeploy-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("AWS CodeDeploy export completed successfully")
 

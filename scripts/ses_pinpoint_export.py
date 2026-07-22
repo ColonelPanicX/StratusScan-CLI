@@ -24,7 +24,7 @@ Note: SES is regional, Pinpoint applications are regional
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -41,69 +41,139 @@ args = utils.parse_script_args("Export Amazon SES and Pinpoint resources to Exce
 utils.setup_logging('ses-pinpoint-export')
 
 
-@utils.aws_error_handler("Collecting SES identities", default_return=[])
-def collect_ses_identities(region: str) -> List[Dict[str, Any]]:
-    """Collect SES email identities (v2 API)."""
+def _build_identity_row(identity: dict[str, Any], region: str, sesv2_client: Any) -> dict[str, Any]:
+    """
+    Build a single SES identity export row.
+
+    The detail lookup (``get_email_identity``) is best-effort: if it fails,
+    the row still includes the summary fields (with detail fields set to
+    'N/A') rather than being dropped — a detail-fetch failure for one
+    identity must not discard the whole identity.
+    """
+    identity_name = identity.get('IdentityName', 'N/A')
+    identity_type = identity.get('IdentityType', 'N/A')
+    sending_enabled = identity.get('SendingEnabled', False)
+
+    try:
+        detail = sesv2_client.get_email_identity(EmailIdentity=identity_name)
+
+        # Extract DKIM attributes
+        dkim = detail.get('DkimAttributes', {})
+        mail_from = detail.get('MailFromAttributes', {})
+
+        return {
+            'Region': region,
+            'IdentityName': identity_name,
+            'IdentityType': identity_type,
+            'SendingEnabled': sending_enabled,
+            'VerificationStatus': detail.get('VerifiedForSendingStatus', False),
+            'DkimEnabled': dkim.get('SigningEnabled', False),
+            'DkimStatus': dkim.get('Status', 'N/A'),
+            'DkimTokens': ', '.join(dkim.get('Tokens', [])) if dkim.get('Tokens') else 'N/A',
+            'MailFromDomain': mail_from.get('MailFromDomain', 'N/A'),
+            'MailFromStatus': mail_from.get('MailFromDomainStatus', 'N/A'),
+            'FeedbackForwardingEnabled': detail.get('FeedbackForwardingStatus', False),
+        }
+    except Exception:
+        # Fallback to summary data — the detail lookup failing is not a
+        # reason to drop the identity itself.
+        return {
+            'Region': region,
+            'IdentityName': identity_name,
+            'IdentityType': identity_type,
+            'SendingEnabled': sending_enabled,
+            'VerificationStatus': 'N/A',
+            'DkimEnabled': 'N/A',
+            'DkimStatus': 'N/A',
+            'DkimTokens': 'N/A',
+            'MailFromDomain': 'N/A',
+            'MailFromStatus': 'N/A',
+            'FeedbackForwardingEnabled': 'N/A',
+        }
+
+
+def _scan_ses_identities_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect SES email identities from a single region (v2 API).
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no SES identities" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed identities are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     identities = []
 
-    try:
-        paginator = sesv2.get_paginator('list_email_identities')
-        for page in paginator.paginate():
-            for identity in page.get('EmailIdentities', []):
-                identity_name = identity.get('IdentityName', 'N/A')
+    next_token = None
+    while True:
+        params = {}
+        if next_token:
+            params['NextToken'] = next_token
+        page = sesv2.list_email_identities(**params)
 
-                # Get detailed identity information
-                try:
-                    detail = sesv2.get_email_identity(EmailIdentity=identity_name)
+        for identity in page.get('EmailIdentities', []):
+            try:
+                identities.append(_build_identity_row(identity, region, sesv2))
+            except Exception as e:
+                # One malformed identity is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed SES identity in {region}: "
+                    f"{identity.get('IdentityName', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                    # Extract DKIM attributes
-                    dkim = detail.get('DkimAttributes', {})
-                    mail_from = detail.get('MailFromAttributes', {})
-
-                    identities.append({
-                        'Region': region,
-                        'IdentityName': identity_name,
-                        'IdentityType': identity.get('IdentityType', 'N/A'),
-                        'SendingEnabled': identity.get('SendingEnabled', False),
-                        'VerificationStatus': detail.get('VerifiedForSendingStatus', False),
-                        'DkimEnabled': dkim.get('SigningEnabled', False),
-                        'DkimStatus': dkim.get('Status', 'N/A'),
-                        'DkimTokens': ', '.join(dkim.get('Tokens', [])) if dkim.get('Tokens') else 'N/A',
-                        'MailFromDomain': mail_from.get('MailFromDomain', 'N/A'),
-                        'MailFromStatus': mail_from.get('MailFromDomainStatus', 'N/A'),
-                        'FeedbackForwardingEnabled': detail.get('FeedbackForwardingStatus', False),
-                    })
-                except Exception:
-                    # Fallback to summary data
-                    identities.append({
-                        'Region': region,
-                        'IdentityName': identity_name,
-                        'IdentityType': identity.get('IdentityType', 'N/A'),
-                        'SendingEnabled': identity.get('SendingEnabled', False),
-                        'VerificationStatus': 'N/A',
-                        'DkimEnabled': 'N/A',
-                        'DkimStatus': 'N/A',
-                        'DkimTokens': 'N/A',
-                        'MailFromDomain': 'N/A',
-                        'MailFromStatus': 'N/A',
-                        'FeedbackForwardingEnabled': 'N/A',
-                    })
-    except Exception as e:
-        utils.log_warning(f"Error collecting SES identities in region {region}: {e}")
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
 
     return identities
 
 
+def collect_ses_identities(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect SES email identities across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(identities, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_ses_identities_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_identities = [identity for result in region_results for identity in result]
+    return all_identities, failed_regions
+
+
 @utils.aws_error_handler("Collecting SES configuration sets", default_return=[])
-def collect_ses_config_sets(region: str) -> List[Dict[str, Any]]:
+def collect_ses_config_sets(region: str) -> list[dict[str, Any]]:
     """Collect SES configuration sets."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     config_sets = []
 
     try:
-        paginator = sesv2.get_paginator('list_configuration_sets')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = sesv2.list_configuration_sets(**params)
             for config_set_name in page.get('ConfigurationSets', []):
                 # Get detailed configuration set information
                 try:
@@ -138,6 +208,10 @@ def collect_ses_config_sets(region: str) -> List[Dict[str, Any]]:
                         'LastFreshStart': 'N/A',
                         'SuppressionListReasons': 'N/A',
                     })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -145,7 +219,7 @@ def collect_ses_config_sets(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting SES account sending quota", default_return={})
-def collect_ses_account_info(region: str) -> Dict[str, Any]:
+def collect_ses_account_info(region: str) -> dict[str, Any]:
     """Collect SES account sending quota and statistics."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
 
@@ -177,14 +251,18 @@ def collect_ses_account_info(region: str) -> Dict[str, Any]:
 
 
 @utils.aws_error_handler("Collecting SES email templates", default_return=[])
-def collect_ses_templates(region: str) -> List[Dict[str, Any]]:
+def collect_ses_templates(region: str) -> list[dict[str, Any]]:
     """Collect SES email templates."""
     sesv2 = utils.get_boto3_client('sesv2', region_name=region)
     templates = []
 
     try:
-        paginator = sesv2.get_paginator('list_email_templates')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = sesv2.list_email_templates(**params)
             for template in page.get('TemplatesMetadata', []):
                 template_name = template.get('TemplateName', 'N/A')
 
@@ -193,6 +271,10 @@ def collect_ses_templates(region: str) -> List[Dict[str, Any]]:
                     'TemplateName': template_name,
                     'CreatedTimestamp': template.get('CreatedTimestamp', 'N/A'),
                 })
+
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -200,7 +282,7 @@ def collect_ses_templates(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Pinpoint applications", default_return=[])
-def collect_pinpoint_apps(region: str) -> List[Dict[str, Any]]:
+def collect_pinpoint_apps(region: str) -> list[dict[str, Any]]:
     """Collect Pinpoint applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     apps = []
@@ -242,7 +324,7 @@ def collect_pinpoint_apps(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Pinpoint campaigns", default_return=[])
-def collect_pinpoint_campaigns(region: str, app_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_pinpoint_campaigns(region: str, app_ids: list[str]) -> list[dict[str, Any]]:
     """Collect Pinpoint campaigns for all applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     campaigns = []
@@ -276,7 +358,7 @@ def collect_pinpoint_campaigns(region: str, app_ids: List[str]) -> List[Dict[str
 
 
 @utils.aws_error_handler("Collecting Pinpoint segments", default_return=[])
-def collect_pinpoint_segments(region: str, app_ids: List[str]) -> List[Dict[str, Any]]:
+def collect_pinpoint_segments(region: str, app_ids: list[str]) -> list[dict[str, Any]]:
     """Collect Pinpoint segments for all applications."""
     pinpoint = utils.get_boto3_client('pinpoint', region_name=region)
     segments = []
@@ -301,10 +383,17 @@ def collect_pinpoint_segments(region: str, app_ids: List[str]) -> List[Dict[str,
     return segments
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect SES and Pinpoint data and write the Excel export."""
-    # Collect all resources
-    all_ses_identities = []
+    # STEP 1: Collect SES identities (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    utils.log_info("=== COLLECTING SES IDENTITIES ===")
+    all_ses_identities, failed_regions = collect_ses_identities(regions)
+    utils.log_success(f"Total SES identities collected: {len(all_ses_identities)}")
+
+    # STEP 2: Enrichment collections (SES config sets/templates/account info,
+    # Pinpoint apps/campaigns/segments) — secondary scopes that degrade
+    # gracefully and do not affect failed_regions tracking.
     all_ses_config_sets = []
     all_ses_templates = []
     all_ses_account = []
@@ -314,12 +403,6 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
     for idx, region in enumerate(regions, 1):
         utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-        # Collect SES resources
-        identities = collect_ses_identities(region)
-        if identities:
-            utils.log_info(f"  Found {len(identities)} SES identit(ies)")
-            all_ses_identities.extend(identities)
 
         config_sets = collect_ses_config_sets(region)
         if config_sets:
@@ -342,7 +425,7 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
             all_pinpoint_apps.extend(pinpoint_apps)
 
             # Get app IDs for campaigns and segments
-            app_ids = [app['ApplicationId'] for app in pinpoint_apps if app['ApplicationId'] != 'N/A']
+            app_ids = [app.get('ApplicationId', 'N/A') for app in pinpoint_apps if app.get('ApplicationId', 'N/A') != 'N/A']
 
             # Collect campaigns and segments
             campaigns = collect_pinpoint_campaigns(region, app_ids)
@@ -351,7 +434,8 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
             segments = collect_pinpoint_segments(region, app_ids)
             all_pinpoint_segments.extend(segments)
 
-    if not all_ses_identities and not all_pinpoint_apps:
+    if not all_ses_identities and not all_pinpoint_apps and not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No SES or Pinpoint resources found in any selected region.")
         utils.log_info("Creating empty export file...")
 
@@ -383,12 +467,12 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
 
     if not df_ses_identities.empty:
         verified_identities = len(df_ses_identities[df_ses_identities['VerificationStatus'] == 'Success'])
-        dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])
+        dkim_enabled = len(df_ses_identities[df_ses_identities['DkimEnabled'] == True])  # noqa: E712  pandas boolean mask — column dtype may be object/NaN, so `== True` is required
         summary_data.append({'Metric': 'Verified Identities', 'Value': verified_identities})
         summary_data.append({'Metric': 'DKIM Enabled Identities', 'Value': dkim_enabled})
 
     if not df_ses_account.empty:
-        production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])
+        production_regions = len(df_ses_account[df_ses_account['ProductionAccess'] == True])  # noqa: E712  pandas boolean mask — column dtype may be object/NaN, so `== True` is required
         summary_data.append({'Metric': 'Regions with Production Access', 'Value': production_regions})
 
     if not df_pinpoint_campaigns.empty:
@@ -426,6 +510,20 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     utils.log_success("SES/Pinpoint export completed successfully!")
+
+    # If ANY region failed the primary SES-identities scope collection, make
+    # it loud: write a marker and exit non-zero, even though the workbook
+    # (including the always-written Summary sheet) has already landed. A
+    # complete-looking file that silently omits failed-region data is
+    # exactly the failure mode this guards against. Genuinely-empty stays
+    # exit 0 with no marker.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ses-pinpoint', failed_regions)
+        print(
+            "\nERROR: SES/Pinpoint export completed with failures — data is incomplete. "
+            "See the *-ses-pinpoint-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

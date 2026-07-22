@@ -10,10 +10,12 @@ import sys
 from pathlib import Path
 
 import boto3
+import botocore
 import pytest
 from moto import mock_aws
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+import rds_export  # noqa: E402
 from rds_export import get_rds_instances  # noqa: E402
 
 REGION = "us-east-1"
@@ -93,3 +95,61 @@ class TestGetRdsInstances:
         """Region with no RDS instances returns an empty list."""
         result = get_rds_instances(REGION)
         assert result == []
+
+
+class TestSilentCollectionFailureRegression:
+    """
+    Regression tests for the 07.15.2026 audit: RDS data silently lost because a
+    collection error was swallowed to an empty list, indistinguishable from a
+    genuinely empty region. See .collab/audit/07.15.2026-rds-silent-collection-failure.md
+    """
+
+    @mock_aws
+    def test_malformed_instance_is_skipped_not_fatal(self, monkeypatch):
+        """
+        One instance that fails to process must not discard the whole region's
+        results — the healthy instances are still collected.
+        """
+        rds = boto3.client("rds", region_name=REGION)
+        for name in ("good-db", "bad-db"):
+            rds.create_db_instance(
+                DBInstanceIdentifier=name,
+                DBInstanceClass="db.t3.micro",
+                Engine="postgres",
+                MasterUsername="admin",
+                MasterUserPassword="password123",
+                AllocatedStorage=20,
+            )
+
+        original = rds_export._build_instance_data
+
+        def raise_for_bad(instance, *args, **kwargs):
+            if instance.get("DBInstanceIdentifier") == "bad-db":
+                raise KeyError("SomeEngineSpecificField")
+            return original(instance, *args, **kwargs)
+
+        monkeypatch.setattr(rds_export, "_build_instance_data", raise_for_bad)
+
+        result = get_rds_instances(REGION)
+
+        ids = {row["DB Identifier"] for row in result}
+        assert "good-db" in ids, "healthy instance was lost when a sibling failed"
+        assert "bad-db" not in ids, "malformed instance should have been skipped"
+
+    @mock_aws
+    def test_region_api_failure_raises_not_empty(self, monkeypatch):
+        """
+        A region-level API failure must propagate (so the caller can record a
+        FAILED region) rather than being swallowed into an empty list.
+        """
+
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "Throttling", "Message": "Rate exceeded"}},
+                "DescribeDBInstances",
+            )
+
+        monkeypatch.setattr(rds_export.utils, "get_boto3_client", boom)
+
+        with pytest.raises(botocore.exceptions.ClientError):
+            get_rds_instances(REGION)

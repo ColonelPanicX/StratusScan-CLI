@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,11 +31,11 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Neptune clusters to Excel")
 
-def load_neptune_pricing_data(region: str) -> Dict[str, float]:
+def load_neptune_pricing_data(region: str) -> dict[str, float]:
     """Load Neptune on-demand monthly pricing for the given region's partition."""
     pricing_file = Path(__file__).parent.parent / 'reference' / 'neptune-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)
@@ -50,7 +50,7 @@ def load_neptune_pricing_data(region: str) -> Dict[str, float]:
         return {}
 
 
-def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: Dict[str, float]):
+def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: dict[str, float]):
     """Return monthly on-demand cost for a single Neptune instance, or 'N/A'."""
     monthly = pricing_data.get(instance_class)
     if monthly is None:
@@ -58,131 +58,179 @@ def calculate_neptune_instance_monthly_cost(instance_class: str, pricing_data: D
     return round(float(monthly), 2)
 
 
-@utils.aws_error_handler("Collecting Neptune clusters", default_return=[])
-def collect_neptune_clusters(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect Neptune cluster information from AWS regions."""
-    all_clusters = []
+def _build_cluster_row(cluster: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Neptune cluster export row from a describe response."""
+    cluster_id = cluster.get('DBClusterIdentifier', 'N/A')
 
-    for region in regions:
-        utils.log_info(f"Scanning Neptune clusters in {region}...")
-        neptune_client = utils.get_boto3_client('neptune', region_name=region)
+    # Basic cluster information
+    engine = cluster.get('Engine', 'N/A')
+    engine_version = cluster.get('EngineVersion', 'N/A')
+    status = cluster.get('Status', 'unknown')
 
-        paginator = neptune_client.get_paginator('describe_db_clusters')
-        for page in paginator.paginate():
-            db_clusters = page.get('DBClusters', [])
+    # Endpoint information
+    endpoint = cluster.get('Endpoint', 'N/A')
+    reader_endpoint = cluster.get('ReaderEndpoint', 'N/A')
+    port = cluster.get('Port', 0)
 
-            for cluster in db_clusters:
-                cluster_id = cluster.get('DBClusterIdentifier', 'N/A')
+    # Member instances
+    cluster_members = cluster.get('DBClusterMembers', [])
+    member_count = len(cluster_members)
 
-                # Basic cluster information
-                engine = cluster.get('Engine', 'N/A')
-                engine_version = cluster.get('EngineVersion', 'N/A')
-                status = cluster.get('Status', 'unknown')
+    # Primary instance identifier
+    primary_instance = 'N/A'
+    for member in cluster_members:
+        if member.get('IsClusterWriter', False):
+            primary_instance = member.get('DBInstanceIdentifier', 'N/A')
+            break
 
-                # Endpoint information
-                endpoint = cluster.get('Endpoint', 'N/A')
-                reader_endpoint = cluster.get('ReaderEndpoint', 'N/A')
-                port = cluster.get('Port', 0)
+    # Multi-AZ and availability zones
+    multi_az = cluster.get('MultiAZ', False)
+    availability_zones = cluster.get('AvailabilityZones', [])
+    az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
 
-                # Member instances
-                cluster_members = cluster.get('DBClusterMembers', [])
-                member_count = len(cluster_members)
+    # Backup configuration
+    backup_retention_period = cluster.get('BackupRetentionPeriod', 0)
+    preferred_backup_window = cluster.get('PreferredBackupWindow', 'N/A')
+    preferred_maintenance_window = cluster.get('PreferredMaintenanceWindow', 'N/A')
 
-                # Primary instance identifier
-                primary_instance = 'N/A'
-                for member in cluster_members:
-                    if member.get('IsClusterWriter', False):
-                        primary_instance = member.get('DBInstanceIdentifier', 'N/A')
-                        break
+    # Encryption
+    storage_encrypted = cluster.get('StorageEncrypted', False)
+    kms_key_id = cluster.get('KmsKeyId', 'N/A')
+    if kms_key_id != 'N/A' and '/' in kms_key_id:
+        kms_key_id = kms_key_id.split('/')[-1]  # Extract key ID from ARN
 
-                # Multi-AZ and availability zones
-                multi_az = cluster.get('MultiAZ', False)
-                availability_zones = cluster.get('AvailabilityZones', [])
-                az_list = ', '.join(availability_zones) if availability_zones else 'N/A'
+    # IAM database authentication
+    iam_database_authentication_enabled = cluster.get('IAMDatabaseAuthenticationEnabled', False)
 
-                # Backup configuration
-                backup_retention_period = cluster.get('BackupRetentionPeriod', 0)
-                preferred_backup_window = cluster.get('PreferredBackupWindow', 'N/A')
-                preferred_maintenance_window = cluster.get('PreferredMaintenanceWindow', 'N/A')
+    # Deletion protection
+    deletion_protection = cluster.get('DeletionProtection', False)
 
-                # Encryption
-                storage_encrypted = cluster.get('StorageEncrypted', False)
-                kms_key_id = cluster.get('KmsKeyId', 'N/A')
-                if kms_key_id != 'N/A' and '/' in kms_key_id:
-                    kms_key_id = kms_key_id.split('/')[-1]  # Extract key ID from ARN
+    # Cluster creation time
+    cluster_create_time = cluster.get('ClusterCreateTime')
+    if cluster_create_time:
+        cluster_create_time_str = cluster_create_time.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        cluster_create_time_str = 'N/A'
 
-                # IAM database authentication
-                iam_database_authentication_enabled = cluster.get('IAMDatabaseAuthenticationEnabled', False)
+    # VPC security groups
+    vpc_security_groups = cluster.get('VpcSecurityGroups', [])
+    security_group_ids = [sg.get('VpcSecurityGroupId', '') for sg in vpc_security_groups]
+    security_groups_str = ', '.join(security_group_ids) if security_group_ids else 'N/A'
 
-                # Deletion protection
-                deletion_protection = cluster.get('DeletionProtection', False)
+    # DB subnet group
+    db_subnet_group = cluster.get('DBSubnetGroup', 'N/A')
 
-                # Cluster creation time
-                cluster_create_time = cluster.get('ClusterCreateTime')
-                if cluster_create_time:
-                    cluster_create_time_str = cluster_create_time.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    cluster_create_time_str = 'N/A'
+    # Cluster parameter group
+    db_cluster_parameter_group = cluster.get('DBClusterParameterGroup', 'N/A')
 
-                # VPC security groups
-                vpc_security_groups = cluster.get('VpcSecurityGroups', [])
-                security_group_ids = [sg.get('VpcSecurityGroupId', '') for sg in vpc_security_groups]
-                security_groups_str = ', '.join(security_group_ids) if security_group_ids else 'N/A'
+    # Enabled CloudWatch logs exports
+    enabled_cloudwatch_logs_exports = cluster.get('EnabledCloudwatchLogsExports', [])
+    logs_exports_str = ', '.join(enabled_cloudwatch_logs_exports) if enabled_cloudwatch_logs_exports else 'None'
 
-                # DB subnet group
-                db_subnet_group = cluster.get('DBSubnetGroup', 'N/A')
+    # Serverless v2 scaling configuration
+    serverless_v2_scaling = cluster.get('ServerlessV2ScalingConfiguration', {})
+    if serverless_v2_scaling:
+        min_capacity = serverless_v2_scaling.get('MinCapacity', 'N/A')
+        max_capacity = serverless_v2_scaling.get('MaxCapacity', 'N/A')
+        serverless_config = f"Min: {min_capacity}, Max: {max_capacity}"
+    else:
+        serverless_config = 'N/A'
 
-                # Cluster parameter group
-                db_cluster_parameter_group = cluster.get('DBClusterParameterGroup', 'N/A')
+    return {
+        'Region': region,
+        'Cluster ID': cluster_id,
+        'Engine': engine,
+        'Engine Version': engine_version,
+        'Status': status,
+        'Endpoint': endpoint,
+        'Reader Endpoint': reader_endpoint,
+        'Port': port,
+        'Member Instances': member_count,
+        'Primary Instance': primary_instance,
+        'Multi-AZ': 'Yes' if multi_az else 'No',
+        'Availability Zones': az_list,
+        'Backup Retention (Days)': backup_retention_period,
+        'Backup Window': preferred_backup_window,
+        'Maintenance Window': preferred_maintenance_window,
+        'Storage Encrypted': 'Yes' if storage_encrypted else 'No',
+        'KMS Key ID': kms_key_id if storage_encrypted else 'N/A',
+        'IAM Auth Enabled': 'Yes' if iam_database_authentication_enabled else 'No',
+        'Deletion Protection': 'Yes' if deletion_protection else 'No',
+        'Serverless v2 Config': serverless_config,
+        'Created': cluster_create_time_str,
+        'Security Groups': security_groups_str,
+        'Subnet Group': db_subnet_group,
+        'Parameter Group': db_cluster_parameter_group,
+        'CloudWatch Logs': logs_exports_str,
+    }
 
-                # Enabled CloudWatch logs exports
-                enabled_cloudwatch_logs_exports = cluster.get('EnabledCloudwatchLogsExports', [])
-                logs_exports_str = ', '.join(enabled_cloudwatch_logs_exports) if enabled_cloudwatch_logs_exports else 'None'
 
-                # Serverless v2 scaling configuration
-                serverless_v2_scaling = cluster.get('ServerlessV2ScalingConfiguration', {})
-                if serverless_v2_scaling:
-                    min_capacity = serverless_v2_scaling.get('MinCapacity', 'N/A')
-                    max_capacity = serverless_v2_scaling.get('MaxCapacity', 'N/A')
-                    serverless_config = f"Min: {min_capacity}, Max: {max_capacity}"
-                else:
-                    serverless_config = 'N/A'
+def _scan_neptune_clusters_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Neptune clusters from a single region.
 
-                all_clusters.append({
-                    'Region': region,
-                    'Cluster ID': cluster_id,
-                    'Engine': engine,
-                    'Engine Version': engine_version,
-                    'Status': status,
-                    'Endpoint': endpoint,
-                    'Reader Endpoint': reader_endpoint,
-                    'Port': port,
-                    'Member Instances': member_count,
-                    'Primary Instance': primary_instance,
-                    'Multi-AZ': 'Yes' if multi_az else 'No',
-                    'Availability Zones': az_list,
-                    'Backup Retention (Days)': backup_retention_period,
-                    'Backup Window': preferred_backup_window,
-                    'Maintenance Window': preferred_maintenance_window,
-                    'Storage Encrypted': 'Yes' if storage_encrypted else 'No',
-                    'KMS Key ID': kms_key_id if storage_encrypted else 'N/A',
-                    'IAM Auth Enabled': 'Yes' if iam_database_authentication_enabled else 'No',
-                    'Deletion Protection': 'Yes' if deletion_protection else 'No',
-                    'Serverless v2 Config': serverless_config,
-                    'Created': cluster_create_time_str,
-                    'Security Groups': security_groups_str,
-                    'Subnet Group': db_subnet_group,
-                    'Parameter Group': db_cluster_parameter_group,
-                    'CloudWatch Logs': logs_exports_str,
-                })
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Neptune clusters" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
 
-        utils.log_success(f"Collected {len([c for c in all_clusters if c['Region'] == region])} Neptune clusters from {region}")
+    Individual malformed clusters are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-    return all_clusters
+    utils.log_info(f"Scanning Neptune clusters in {region}...")
+    neptune_client = utils.get_boto3_client('neptune', region_name=region)
+
+    region_clusters = []
+    paginator = neptune_client.get_paginator('describe_db_clusters')
+    for page in paginator.paginate():
+        db_clusters = page.get('DBClusters', [])
+
+        for cluster in db_clusters:
+            try:
+                region_clusters.append(_build_cluster_row(cluster, region))
+            except Exception as e:
+                # One malformed cluster is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Neptune cluster in {region}: "
+                    f"{cluster.get('DBClusterIdentifier', '<unknown>')}",
+                    e,
+                )
+                continue
+
+    utils.log_success(f"Collected {len(region_clusters)} Neptune clusters from {region}")
+    return region_clusters
+
+
+def collect_neptune_clusters(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Neptune cluster information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(clusters, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_neptune_clusters_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_clusters = [cluster for result in region_results for cluster in result]
+    return all_clusters, failed_regions
 
 
 @utils.aws_error_handler("Collecting Neptune instances", default_return=[])
-def collect_neptune_instances(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_instances(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune instance information from AWS regions."""
     all_instances = []
     pricing_data = load_neptune_pricing_data(regions[0]) if regions else {}
@@ -276,7 +324,7 @@ def collect_neptune_instances(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Neptune snapshots", default_return=[])
-def collect_neptune_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_snapshots(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune cluster snapshot information from AWS regions."""
     all_snapshots = []
 
@@ -355,7 +403,7 @@ def collect_neptune_snapshots(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Neptune cluster endpoints", default_return=[])
-def collect_neptune_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_endpoints(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune cluster custom endpoint information from AWS regions."""
     all_endpoints = []
 
@@ -416,10 +464,10 @@ def collect_neptune_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
     return all_endpoints
 
 
-def generate_summary(clusters: List[Dict[str, Any]],
-                     instances: List[Dict[str, Any]],
-                     snapshots: List[Dict[str, Any]],
-                     endpoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(clusters: list[dict[str, Any]],
+                     instances: list[dict[str, Any]],
+                     snapshots: list[dict[str, Any]],
+                     endpoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Neptune resources."""
     summary = []
 
@@ -539,7 +587,7 @@ def generate_summary(clusters: List[Dict[str, Any]],
 
 
 @utils.aws_error_handler("Collecting Neptune Analytics graphs", default_return=[])
-def collect_neptune_graphs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_neptune_graphs(regions: list[str]) -> list[dict[str, Any]]:
     """Collect Neptune Analytics (neptune-graph) graph information from AWS regions."""
     all_graphs = []
 
@@ -583,10 +631,12 @@ def collect_neptune_graphs(regions: List[str]) -> List[Dict[str, Any]]:
     return all_graphs
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Neptune data and write the Excel export."""
     print("\n=== Collecting Neptune Data ===")
-    clusters = collect_neptune_clusters(regions)
+    # PRIMARY scope: region failures must propagate as failed_regions, never
+    # collapse into "empty" (see the silent-collection-failure blast-radius audit).
+    clusters, failed_regions = collect_neptune_clusters(regions)
     instances = collect_neptune_instances(regions)
     snapshots = collect_neptune_snapshots(regions)
     endpoints = collect_neptune_endpoints(regions)
@@ -621,7 +671,8 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     region_suffix = regions[0] if len(regions) == 1 else 'all-regions'
     filename = utils.create_export_filename(account_name, 'neptune', region_suffix)
 
-    # Save to Excel with multiple sheets
+    # Save to Excel with multiple sheets — the Summary sheet is always written
+    # (even zero-row) so the workbook always lands; PRESERVE that behavior.
     print("\n=== Exporting to Excel ===")
     dataframes = {
         'Neptune Clusters': clusters_df,
@@ -633,6 +684,20 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY region failed the primary Neptune Clusters scope collection,
+    # make it loud: write a marker and exit non-zero, even though the
+    # workbook was written. A complete-looking file with silently missing
+    # cluster data is exactly the failure mode this guards against. A
+    # genuinely empty account (no failures, zero clusters) stays exit 0.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'neptune', failed_regions)
+        print(
+            "\nERROR: Neptune export completed with failures — data is incomplete. "
+            "See the *-neptune-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
+
 
 def main():
     """Main execution function — 3-step state machine (region -> confirm -> export)."""

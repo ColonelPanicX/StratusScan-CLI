@@ -106,7 +106,10 @@ def get_user_groups(iam_client, username):
         str: Comma-separated list of group names or descriptive string
     """
     groups = []
-    paginator = iam_client.get_paginator('get_groups_for_user')
+    # IAM's operation is ListGroupsForUser — there is no get_groups_for_user
+    # (issue #208 class). The wrong name made every user's groups export as the
+    # error-handler default instead of real data.
+    paginator = iam_client.get_paginator('list_groups_for_user')
     for page in paginator.paginate(UserName=username):
         groups.extend([group['GroupName'] for group in page.get('Groups', [])])
     return ", ".join(groups) if groups else "None"
@@ -214,79 +217,116 @@ def get_access_key_info(iam_client, username):
     return access_key_ids, active_key_age, access_key_last_used
 
 
+def _build_user_row(iam_client, user):
+    """
+    Build the export row for a single IAM user.
+
+    Extracted so per-user processing can be wrapped in try/except by the
+    caller: a malformed user entry (e.g. a missing field) must not sink the
+    whole account-level collection. Required fields are read with ``.get()``
+    and a safe default for the same reason.
+
+    Args:
+        iam_client: The boto3 IAM client.
+        user (dict): A single Users entry from list_users.
+
+    Returns:
+        dict: The assembled user row.
+    """
+    username = user.get('UserName', 'Unknown')
+
+    create_date = user.get('CreateDate')
+    creation_date = create_date.strftime('%Y-%m-%d %H:%M:%S UTC') if create_date else "Unknown"
+    password_last_used = user.get('PasswordLastUsed')
+
+    if password_last_used:
+        console_last_signin = password_last_used.strftime('%Y-%m-%d %H:%M:%S UTC')
+    else:
+        console_last_signin = "Never"
+
+    groups = get_user_groups(iam_client, username)
+    mfa_status = get_user_mfa_devices(iam_client, username)
+    password_age, console_access = get_password_info(iam_client, username)
+    access_key_id, active_key_age, access_key_last_used = get_access_key_info(iam_client, username)
+    permission_policies = get_user_policies(iam_client, username)
+
+    return {
+        'User Name': username,
+        'Groups': groups,
+        'MFA': mfa_status,
+        'Password Age': f"{password_age} days" if isinstance(password_age, int) else password_age,
+        'Console Last Sign-in': console_last_signin,
+        'Access Key ID': access_key_id,
+        'Active Key Age': f"{active_key_age} days" if isinstance(active_key_age, int) else active_key_age,
+        'Access Key Last Used': access_key_last_used,
+        'Creation Date': creation_date,
+        'Console Access': console_access,
+        'Permission Policies': permission_policies
+    }
+
+
 def collect_iam_user_information():
     """
     Collect IAM user information from AWS.
 
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account, producing silent data loss (see the 07.15.2026
+    / 07.16.2026 silent-collection-failure audits). Account-scope failures
+    (client creation, pagination) are allowed to raise so the caller can
+    record this scope as *failed* rather than *empty*. Per-user errors are
+    contained internally (logged and skipped).
+
     Returns:
         list: List of dictionaries containing user information
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     utils.log_info("Collecting IAM user information from AWS environment...")
 
-    try:
-        home_region = utils.get_partition_default_region()
-        iam_client = utils.get_boto3_client('iam', region_name=home_region)
-    except Exception as e:
-        utils.log_error("Error creating IAM client", e)
-        return []
+    home_region = utils.get_partition_default_region()
+    iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
     user_data = []
 
-    try:
-        paginator = iam_client.get_paginator('list_users')
+    paginator = iam_client.get_paginator('list_users')
 
-        total_users = 0
-        for page in paginator.paginate():
-            total_users += len(page['Users'])
+    total_users = 0
+    for page in paginator.paginate():
+        total_users += len(page['Users'])
 
-        utils.log_info(f"Found {total_users} IAM users to process")
+    utils.log_info(f"Found {total_users} IAM users to process")
 
-        paginator = iam_client.get_paginator('list_users')
-        processed = 0
+    paginator = iam_client.get_paginator('list_users')
+    processed = 0
+    skipped = 0
 
-        for page in paginator.paginate():
-            users = page['Users']
+    for page in paginator.paginate():
+        users = page['Users']
 
-            for user in users:
-                username = user['UserName']
-                processed += 1
-                progress = (processed / total_users) * 100 if total_users > 0 else 0
+        for user in users:
+            username = user.get('UserName', 'Unknown')
+            processed += 1
+            progress = (processed / total_users) * 100 if total_users > 0 else 0
 
-                utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {username}")
+            utils.log_info(f"[{progress:.1f}%] Processing user {processed}/{total_users}: {username}")
 
-                creation_date = user['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if user['CreateDate'] else "Unknown"
-                password_last_used = user.get('PasswordLastUsed')
+            try:
+                user_info = _build_user_row(iam_client, user)
+            except Exception as e:
+                skipped += 1
+                utils.log_error(f"Skipping IAM user '{username}' due to a processing error", e)
+                continue
 
-                if password_last_used:
-                    console_last_signin = password_last_used.strftime('%Y-%m-%d %H:%M:%S UTC')
-                else:
-                    console_last_signin = "Never"
+            user_data.append(user_info)
 
-                groups = get_user_groups(iam_client, username)
-                mfa_status = get_user_mfa_devices(iam_client, username)
-                password_age, console_access = get_password_info(iam_client, username)
-                access_key_id, active_key_age, access_key_last_used = get_access_key_info(iam_client, username)
-                permission_policies = get_user_policies(iam_client, username)
-
-                user_info = {
-                    'User Name': username,
-                    'Groups': groups,
-                    'MFA': mfa_status,
-                    'Password Age': f"{password_age} days" if isinstance(password_age, int) else password_age,
-                    'Console Last Sign-in': console_last_signin,
-                    'Access Key ID': access_key_id,
-                    'Active Key Age': f"{active_key_age} days" if isinstance(active_key_age, int) else active_key_age,
-                    'Access Key Last Used': access_key_last_used,
-                    'Creation Date': creation_date,
-                    'Console Access': console_access,
-                    'Permission Policies': permission_policies
-                }
-
-                user_data.append(user_info)
-
-    except Exception as e:
-        utils.log_error("Error collecting IAM user information", e)
-        return []
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_users} IAM user(s) were skipped due to processing "
+            "errors (see log above); the remaining users were still collected."
+        )
 
     utils.log_success(f"Successfully collected information for {len(user_data)} users")
     return user_data
@@ -502,13 +542,86 @@ def get_role_tags(iam_client, role_name):
     return ", ".join(tag_strings) if tag_strings else "None"
 
 
-@utils.aws_error_handler("Collecting IAM role information", default_return=[])
+def _build_role_row(iam_client, role):
+    """
+    Build the export row for a single IAM role.
+
+    Extracted so per-role processing can be wrapped in try/except by the
+    caller: a malformed role entry must not sink the whole account-level
+    collection. Required fields are read with ``.get()`` and a safe default
+    for the same reason.
+
+    Args:
+        iam_client: The boto3 IAM client.
+        role (dict): A single Roles entry from list_roles.
+
+    Returns:
+        dict: The assembled role row.
+    """
+    role_name = role.get('RoleName', 'Unknown')
+    create_date = role.get('CreateDate')
+    creation_date = create_date.strftime('%Y-%m-%d %H:%M:%S UTC') if create_date else "Unknown"
+    role_path = role.get('Path', '/')
+    description = role.get('Description', 'None')
+    max_session_duration = role.get('MaxSessionDuration', 3600) // 3600
+
+    trust_policy_doc = role.get('AssumeRolePolicyDocument', {})
+    trusted_entities, trust_summary, cross_account_info, service_usage = analyze_trust_policy(trust_policy_doc)
+
+    role_type = determine_role_type(role_name, role_path, trust_policy_doc)
+
+    try:
+        role_usage = iam_client.get_role(RoleName=role_name)
+        role_last_used = role_usage['Role'].get('RoleLastUsed', {})
+        last_used_date = role_last_used.get('LastUsedDate')
+
+        if last_used_date:
+            last_used_str = last_used_date.strftime('%Y-%m-%d %H:%M:%S UTC')
+            days_since_used = calculate_days_since_last_used(last_used_date)
+        else:
+            last_used_str = "Never"
+            days_since_used = "Never"
+
+    except Exception as e:
+        utils.log_warning(f"Could not get usage info for role {role_name}: {e}")
+        last_used_str = "Unknown"
+        days_since_used = "Unknown"
+
+    permission_policies = get_role_policies(iam_client, role_name)
+    tags = get_role_tags(iam_client, role_name)
+
+    return {
+        'Role Name': role_name,
+        'Role Type': role_type,
+        'Trusted Entities': trusted_entities,
+        'Trust Policy Summary': trust_summary,
+        'Permission Policies': permission_policies,
+        'Last Used': last_used_str,
+        'Days Since Last Used': days_since_used,
+        'Max Session Duration (Hours)': max_session_duration,
+        'Cross-Account Access': cross_account_info,
+        'Service Usage': service_usage,
+        'Creation Date': creation_date,
+        'Path': role_path,
+        'Description': description,
+        'Tags': tags
+    }
+
+
 def collect_iam_role_information():
     """
     Collect IAM role information from AWS.
 
+    Not wrapped in ``aws_error_handler``: see collect_iam_user_information for
+    rationale. Account-scope failures (client creation, pagination) raise so
+    the caller can record this scope as *failed* rather than *empty*.
+    Per-role errors are contained internally (logged and skipped).
+
     Returns:
         list: List of dictionaries containing role information
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope.
     """
     utils.log_info("Collecting IAM role information from AWS environment...")
 
@@ -526,65 +639,32 @@ def collect_iam_role_information():
 
     paginator = iam_client.get_paginator('list_roles')
     processed = 0
+    skipped = 0
 
     for page in paginator.paginate():
         roles = page['Roles']
 
         for role in roles:
-            role_name = role['RoleName']
+            role_name = role.get('RoleName', 'Unknown')
             processed += 1
             progress = (processed / total_roles) * 100 if total_roles > 0 else 0
 
             utils.log_info(f"[{progress:.1f}%] Processing role {processed}/{total_roles}: {role_name}")
 
-            creation_date = role['CreateDate'].strftime('%Y-%m-%d %H:%M:%S UTC') if role['CreateDate'] else "Unknown"
-            role_path = role.get('Path', '/')
-            description = role.get('Description', 'None')
-            max_session_duration = role.get('MaxSessionDuration', 3600) // 3600
-
-            trust_policy_doc = role.get('AssumeRolePolicyDocument', {})
-            trusted_entities, trust_summary, cross_account_info, service_usage = analyze_trust_policy(trust_policy_doc)
-
-            role_type = determine_role_type(role_name, role_path, trust_policy_doc)
-
             try:
-                role_usage = iam_client.get_role(RoleName=role_name)
-                role_last_used = role_usage['Role'].get('RoleLastUsed', {})
-                last_used_date = role_last_used.get('LastUsedDate')
-
-                if last_used_date:
-                    last_used_str = last_used_date.strftime('%Y-%m-%d %H:%M:%S UTC')
-                    days_since_used = calculate_days_since_last_used(last_used_date)
-                else:
-                    last_used_str = "Never"
-                    days_since_used = "Never"
-
+                role_info = _build_role_row(iam_client, role)
             except Exception as e:
-                utils.log_warning(f"Could not get usage info for role {role_name}: {e}")
-                last_used_str = "Unknown"
-                days_since_used = "Unknown"
-
-            permission_policies = get_role_policies(iam_client, role_name)
-            tags = get_role_tags(iam_client, role_name)
-
-            role_info = {
-                'Role Name': role_name,
-                'Role Type': role_type,
-                'Trusted Entities': trusted_entities,
-                'Trust Policy Summary': trust_summary,
-                'Permission Policies': permission_policies,
-                'Last Used': last_used_str,
-                'Days Since Last Used': days_since_used,
-                'Max Session Duration (Hours)': max_session_duration,
-                'Cross-Account Access': cross_account_info,
-                'Service Usage': service_usage,
-                'Creation Date': creation_date,
-                'Path': role_path,
-                'Description': description,
-                'Tags': tags
-            }
+                skipped += 1
+                utils.log_error(f"Skipping IAM role '{role_name}' due to a processing error", e)
+                continue
 
             role_data.append(role_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_roles} IAM role(s) were skipped due to processing "
+            "errors (see log above); the remaining roles were still collected."
+        )
 
     utils.log_success(f"Successfully collected information for {len(role_data)} roles")
     return role_data
@@ -755,10 +835,17 @@ def get_policy_entities(iam_client, policy_arn):
     )
 
 
-@utils.aws_error_handler("Collecting managed policies", default_return=[])
 def collect_managed_policies(iam_client, include_aws_managed=False):
     """
     Collect customer managed and optionally AWS managed policies.
+
+    Not wrapped in ``aws_error_handler``: see collect_iam_user_information for
+    rationale. Account-scope failures (pagination) raise so the caller can
+    record this scope as *failed* rather than *empty*. Per-policy processing
+    is delegated to ``process_managed_policy``, which already contains its
+    own try/except and returns ``None`` on a per-item failure (skipped
+    rather than sinking the whole scope); the call is additionally wrapped
+    here as a defensive guard.
 
     Args:
         iam_client: The boto3 IAM client
@@ -766,6 +853,9 @@ def collect_managed_policies(iam_client, include_aws_managed=False):
 
     Returns:
         list: List of policy information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope.
     """
     policies_data = []
 
@@ -783,6 +873,7 @@ def collect_managed_policies(iam_client, include_aws_managed=False):
     utils.log_info(f"Found {total_policies} managed policies to process")
 
     processed = 0
+    skipped = 0
 
     paginator = iam_client.get_paginator('list_policies')
     for page in paginator.paginate(Scope='Local'):
@@ -790,9 +881,14 @@ def collect_managed_policies(iam_client, include_aws_managed=False):
         for policy in policies:
             processed += 1
             progress = (processed / total_policies) * 100 if total_policies > 0 else 0
-            policy_name = policy['PolicyName']
+            policy_name = policy.get('PolicyName', 'Unknown')
             utils.log_info(f"[{progress:.1f}%] Processing policy {processed}/{total_policies}: {policy_name}")
-            policy_info = process_managed_policy(iam_client, policy, 'Customer Managed')
+            try:
+                policy_info = process_managed_policy(iam_client, policy, 'Customer Managed')
+            except Exception as e:
+                skipped += 1
+                utils.log_error(f"Skipping managed policy '{policy_name}' due to a processing error", e)
+                continue
             if policy_info:
                 policies_data.append(policy_info)
 
@@ -803,11 +899,22 @@ def collect_managed_policies(iam_client, include_aws_managed=False):
             for policy in policies:
                 processed += 1
                 progress = (processed / total_policies) * 100 if total_policies > 0 else 0
-                policy_name = policy['PolicyName']
+                policy_name = policy.get('PolicyName', 'Unknown')
                 utils.log_info(f"[{progress:.1f}%] Processing AWS policy {processed}/{total_policies}: {policy_name}")
-                policy_info = process_managed_policy(iam_client, policy, 'AWS Managed')
+                try:
+                    policy_info = process_managed_policy(iam_client, policy, 'AWS Managed')
+                except Exception as e:
+                    skipped += 1
+                    utils.log_error(f"Skipping AWS managed policy '{policy_name}' due to a processing error", e)
+                    continue
                 if policy_info:
                     policies_data.append(policy_info)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_policies} managed polic(ies) were skipped due to "
+            "processing errors (see log above); the remaining policies were still collected."
+        )
 
     return policies_data
 
@@ -888,16 +995,26 @@ def process_managed_policy(iam_client, policy, policy_type):
         return None
 
 
-@utils.aws_error_handler("Collecting inline policies", default_return=[])
 def collect_inline_policies(iam_client):
     """
     Collect inline policies from users, groups, and roles.
+
+    Not wrapped in ``aws_error_handler``: see collect_iam_user_information for
+    rationale. Account-scope failures (pagination) raise so the caller can
+    record this scope as *failed* rather than *empty*. Per-entity policy
+    listing failures are already contained by the try/except around each
+    ``list_*_policies`` call below (logged and the loop continues); entity
+    names are read with ``.get()`` so a malformed entity does not raise
+    before reaching that guard.
 
     Args:
         iam_client: The boto3 IAM client
 
     Returns:
         list: List of inline policy information dictionaries
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope.
     """
     inline_policies = []
 
@@ -925,7 +1042,7 @@ def collect_inline_policies(iam_client):
         for user in page['Users']:
             processed += 1
             progress = (processed / total_entities) * 100 if total_entities > 0 else 0
-            username = user['UserName']
+            username = user.get('UserName', 'Unknown')
             utils.log_info(f"[{progress:.1f}%] Checking user {processed}/{total_entities}: {username}")
 
             try:
@@ -942,7 +1059,7 @@ def collect_inline_policies(iam_client):
         for group in page['Groups']:
             processed += 1
             progress = (processed / total_entities) * 100 if total_entities > 0 else 0
-            groupname = group['GroupName']
+            groupname = group.get('GroupName', 'Unknown')
             utils.log_info(f"[{progress:.1f}%] Checking group {processed}/{total_entities}: {groupname}")
 
             try:
@@ -959,7 +1076,7 @@ def collect_inline_policies(iam_client):
         for role in page['Roles']:
             processed += 1
             progress = (processed / total_entities) * 100 if total_entities > 0 else 0
-            rolename = role['RoleName']
+            rolename = role.get('RoleName', 'Unknown')
             utils.log_info(f"[{progress:.1f}%] Checking role {processed}/{total_entities}: {rolename}")
 
             try:
@@ -1435,66 +1552,147 @@ def _export_comprehensive_to_excel(users_data, roles_data, policies_data, accoun
 # ---------------------------------------------------------------------------
 
 def _run_users_export(account_id, account_name):
-    """Collect IAM users and export to Excel."""
+    """Collect IAM users and export to Excel.
+
+    IAM is a global/account-scope service (not multi-region), so failures are
+    tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent``. A failed collection is exported as a
+    partial result (if any data was collected) and always surfaced via
+    ``utils.report_collection_failures`` + a non-zero exit — it must never be
+    silently collapsed into "no data" (07.15.2026 / 07.16.2026 audits).
+    """
     utils.log_info("Starting IAM user information collection from AWS...")
-    user_data = collect_iam_user_information()
 
-    if not user_data:
+    failed_scopes = []
+    try:
+        user_data = collect_iam_user_information()
+    except Exception as e:
+        failed_scopes.append(("iam-users", str(e)))
+        user_data = []
+
+    if user_data:
+        _export_users_to_excel(user_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No IAM user data collected.")
-        return
 
-    _export_users_to_excel(user_data, account_id, account_name)
+    if failed_scopes:
+        utils.report_collection_failures(account_name, "iam-users", failed_scopes)
+        print(
+            "\nERROR: IAM export completed with failures — data is incomplete. "
+            "See the *-iam-users-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def _run_roles_export(account_id, account_name):
-    """Collect IAM roles and export to Excel."""
+    """Collect IAM roles and export to Excel. See _run_users_export for the
+    account-scope failure-handling rationale."""
     utils.log_info("Starting IAM role information collection from AWS...")
-    role_data = collect_iam_role_information()
 
-    if not role_data:
+    failed_scopes = []
+    try:
+        role_data = collect_iam_role_information()
+    except Exception as e:
+        failed_scopes.append(("iam-roles", str(e)))
+        role_data = []
+
+    if role_data:
+        _export_roles_to_excel(role_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No IAM role data collected.")
-        return
 
-    _export_roles_to_excel(role_data, account_id, account_name)
+    if failed_scopes:
+        utils.report_collection_failures(account_name, "iam-roles", failed_scopes)
+        print(
+            "\nERROR: IAM export completed with failures — data is incomplete. "
+            "See the *-iam-roles-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def _run_policies_export(account_id, account_name, include_aws_managed=False):
-    """Collect IAM policies and export to Excel."""
+    """Collect IAM policies and export to Excel. See _run_users_export for the
+    account-scope failure-handling rationale. Managed and inline policies are
+    tracked as separate scopes so a failure in one does not discard data
+    already collected from the other."""
     utils.log_info("Starting IAM policy information collection from AWS...")
 
     home_region = utils.get_partition_default_region()
     iam_client = utils.get_boto3_client('iam', region_name=home_region)
 
-    managed_policies = collect_managed_policies(iam_client, include_aws_managed)
-    inline_policies = collect_inline_policies(iam_client)
+    failed_scopes = []
 
-    if not managed_policies and not inline_policies:
+    try:
+        managed_policies = collect_managed_policies(iam_client, include_aws_managed)
+    except Exception as e:
+        failed_scopes.append(("iam-managed-policies", str(e)))
+        managed_policies = []
+
+    try:
+        inline_policies = collect_inline_policies(iam_client)
+    except Exception as e:
+        failed_scopes.append(("iam-inline-policies", str(e)))
+        inline_policies = []
+
+    if managed_policies or inline_policies:
+        _export_policies_to_excel(managed_policies, inline_policies, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No IAM policy data collected.")
-        return
 
-    _export_policies_to_excel(managed_policies, inline_policies, account_id, account_name)
+    if failed_scopes:
+        utils.report_collection_failures(account_name, "iam-policies", failed_scopes)
+        print(
+            "\nERROR: IAM export completed with failures — data is incomplete. "
+            "See the *-iam-policies-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def _run_comprehensive_export(account_id, account_name):
-    """Collect all IAM resources and export to a single comprehensive workbook."""
+    """Collect all IAM resources and export to a single comprehensive
+    workbook. See _run_users_export for the account-scope failure-handling
+    rationale. Users, roles, and managed policies are tracked as separate
+    scopes so a failure in one phase does not discard data already collected
+    from the others."""
     utils.log_info("Starting comprehensive IAM information collection from AWS...")
 
+    failed_scopes = []
+
     utils.log_info("Phase 1: Collecting IAM Users...")
-    users_data = collect_iam_user_information()
+    try:
+        users_data = collect_iam_user_information()
+    except Exception as e:
+        failed_scopes.append(("iam-users", str(e)))
+        users_data = []
 
     utils.log_info("Phase 2: Collecting IAM Roles...")
-    roles_data = collect_iam_role_information()
+    try:
+        roles_data = collect_iam_role_information()
+    except Exception as e:
+        failed_scopes.append(("iam-roles", str(e)))
+        roles_data = []
 
     utils.log_info("Phase 3: Collecting IAM Policies (Customer Managed)...")
-    home_region = utils.get_partition_default_region()
-    iam_client = utils.get_boto3_client('iam', region_name=home_region)
-    policies_data = collect_managed_policies(iam_client, include_aws_managed=False)
+    try:
+        home_region = utils.get_partition_default_region()
+        iam_client = utils.get_boto3_client('iam', region_name=home_region)
+        policies_data = collect_managed_policies(iam_client, include_aws_managed=False)
+    except Exception as e:
+        failed_scopes.append(("iam-managed-policies", str(e)))
+        policies_data = []
 
-    if not users_data and not roles_data and not policies_data:
+    if users_data or roles_data or policies_data:
+        _export_comprehensive_to_excel(users_data, roles_data, policies_data, account_id, account_name)
+    elif not failed_scopes:
         utils.log_warning("No IAM data collected.")
-        return
 
-    _export_comprehensive_to_excel(users_data, roles_data, policies_data, account_id, account_name)
+    if failed_scopes:
+        utils.report_collection_failures(account_name, "iam-comprehensive", failed_scopes)
+        print(
+            "\nERROR: IAM export completed with failures — data is incomplete. "
+            "See the *-iam-comprehensive-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------

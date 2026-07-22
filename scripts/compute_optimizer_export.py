@@ -17,7 +17,7 @@ The data is exported to an Excel file with separate tabs for each recommendation
 import datetime
 import sys
 from pathlib import Path
-
+from typing import Any, Callable
 
 # Add path to import utils module
 try:
@@ -80,10 +80,59 @@ def check_compute_optimizer_availability(region):
         print(f"Compute Optimizer is not active in {region} (Status: {status})")
         return False
 
-@utils.aws_error_handler("Fetching EC2 instance recommendations", default_return=[])
-def get_ec2_recommendations(region):
+def _build_ec2_recommendation_row(recommendation: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single EC2 instance recommendation export row."""
+    current_instance = recommendation.get('currentInstanceType', 'Unknown')
+    instance_id = recommendation.get('instanceArn', 'Unknown').split('/')[-1]
+
+    # Process recommendation options
+    rec_options = recommendation.get('recommendationOptions', [])
+    if rec_options:
+        top_recommendation = rec_options[0]
+        recommended_type = top_recommendation.get('instanceType', 'Unknown')
+        savings_opportunity = top_recommendation.get('savingsOpportunity', {})
+        savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
+        estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
+        performance_risk = top_recommendation.get('performanceRisk', 'Unknown')
+    else:
+        recommended_type = 'No recommendation'
+        savings_percentage = 0
+        estimated_monthly_savings = 0
+        performance_risk = 'Unknown'
+
+    # Get utilization metrics
+    metrics = recommendation.get('utilizationMetrics', [])
+    cpu_utilization = next((m.get('value') for m in metrics if m.get('name') == 'CPU'), 0)
+    memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'MEMORY'), 0)
+
+    return {
+        'Region': region,
+        'Instance ID': instance_id,
+        'Current Instance Type': current_instance,
+        'Recommended Instance Type': recommended_type,
+        'Finding': recommendation.get('finding', 'Unknown'),
+        'Performance Risk': performance_risk,
+        'CPU Utilization (%)': cpu_utilization,
+        'Memory Utilization (%)': memory_utilization,
+        'Savings Percentage (%)': round(savings_percentage, 2),
+        'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
+        'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
+    }
+
+
+def get_ec2_recommendations(region: str) -> list[dict[str, Any]]:
     """
-    Get EC2 instance recommendations from Compute Optimizer.
+    Get EC2 instance recommendations from Compute Optimizer for a single region.
+
+    This is a primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no recommendations" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed recommendations are skipped (logged) rather than
+    aborting the whole region.
 
     Args:
         region (str): AWS region name
@@ -91,63 +140,83 @@ def get_ec2_recommendations(region):
     Returns:
         list: List of dictionaries containing EC2 recommendations
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Fetching EC2 instance recommendations for region {region}")
     recommendations = []
 
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ec2_instance_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ec2_instance_recommendations(**params)
         for recommendation in page.get('instanceRecommendations', []):
-            current_instance = recommendation.get('currentInstanceType', 'Unknown')
-            instance_id = recommendation.get('instanceArn', 'Unknown').split('/')[-1]
+            try:
+                recommendations.append(_build_ec2_recommendation_row(recommendation, region))
+            except Exception as e:
+                utils.log_error(f"Skipping malformed EC2 recommendation in {region}", e)
+                continue
 
-            # Process recommendation options
-            rec_options = recommendation.get('recommendationOptions', [])
-            if rec_options:
-                top_recommendation = rec_options[0]
-                recommended_type = top_recommendation.get('instanceType', 'Unknown')
-                savings_opportunity = top_recommendation.get('savingsOpportunity', {})
-                savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
-                estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-                performance_risk = top_recommendation.get('performanceRisk', 'Unknown')
-            else:
-                recommended_type = 'No recommendation'
-                savings_percentage = 0
-                estimated_monthly_savings = 0
-                performance_risk = 'Unknown'
-
-            # Get utilization metrics
-            metrics = recommendation.get('utilizationMetrics', [])
-            cpu_utilization = next((m.get('value') for m in metrics if m.get('name') == 'CPU'), 0)
-            memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'MEMORY'), 0)
-
-            # Create recommendation entry
-            rec_entry = {
-                'Region': region,
-                'Instance ID': instance_id,
-                'Current Instance Type': current_instance,
-                'Recommended Instance Type': recommended_type,
-                'Finding': recommendation.get('finding', 'Unknown'),
-                'Performance Risk': performance_risk,
-                'CPU Utilization (%)': cpu_utilization,
-                'Memory Utilization (%)': memory_utilization,
-                'Savings Percentage (%)': round(savings_percentage, 2),
-                'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
-                'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
-            }
-
-            recommendations.append(rec_entry)
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} EC2 instance recommendations in {region}")
     return recommendations
 
-@utils.aws_error_handler("Fetching Auto Scaling Group recommendations", default_return=[])
-def get_asg_recommendations(region):
+def _build_asg_recommendation_row(recommendation: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Auto Scaling Group recommendation export row."""
+    asg_name = recommendation.get('autoScalingGroupName', 'Unknown')
+    current_instances = recommendation.get('currentInstanceType', ['Unknown'])
+
+    # Process recommendation options
+    rec_options = recommendation.get('recommendationOptions', [])
+    if rec_options:
+        top_recommendation = rec_options[0]
+        recommended_types = top_recommendation.get('instanceType', ['Unknown'])
+        savings_opportunity = top_recommendation.get('savingsOpportunity', {})
+        savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
+        estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
+    else:
+        recommended_types = ['No recommendation']
+        savings_percentage = 0
+        estimated_monthly_savings = 0
+
+    # Get current configuration
+    current_config = recommendation.get('currentConfiguration', {})
+    min_size = current_config.get('desiredCapacity', 'Unknown')
+    max_size = current_config.get('maxSize', 'Unknown')
+
+    return {
+        'Region': region,
+        'Auto Scaling Group Name': asg_name,
+        'Current Instance Types': ', '.join(current_instances),
+        'Recommended Instance Types': ', '.join(recommended_types),
+        'Desired Capacity': min_size,
+        'Max Size': max_size,
+        'Finding': recommendation.get('finding', 'Unknown'),
+        'Savings Percentage (%)': round(savings_percentage, 2),
+        'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
+        'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
+    }
+
+
+def get_asg_recommendations(region: str) -> list[dict[str, Any]]:
     """
-    Get Auto Scaling Group recommendations from Compute Optimizer.
+    Get Auto Scaling Group recommendations from Compute Optimizer for a
+    single region.
+
+    This is a primary scope collector — see ``get_ec2_recommendations`` for
+    the silent-collection-loss rationale. Region-level failures propagate;
+    individual malformed recommendations are skipped (logged) instead of
+    aborting the whole region.
 
     Args:
         region (str): AWS region name
@@ -155,60 +224,100 @@ def get_asg_recommendations(region):
     Returns:
         list: List of dictionaries containing ASG recommendations
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Fetching Auto Scaling Group recommendations for region {region}")
     recommendations = []
 
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_auto_scaling_group_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_auto_scaling_group_recommendations(**params)
         for recommendation in page.get('autoScalingGroupRecommendations', []):
-            asg_name = recommendation.get('autoScalingGroupName', 'Unknown')
-            current_instances = recommendation.get('currentInstanceType', ['Unknown'])
+            try:
+                recommendations.append(_build_asg_recommendation_row(recommendation, region))
+            except Exception as e:
+                utils.log_error(f"Skipping malformed Auto Scaling Group recommendation in {region}", e)
+                continue
 
-            # Process recommendation options
-            rec_options = recommendation.get('recommendationOptions', [])
-            if rec_options:
-                top_recommendation = rec_options[0]
-                recommended_types = top_recommendation.get('instanceType', ['Unknown'])
-                savings_opportunity = top_recommendation.get('savingsOpportunity', {})
-                savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
-                estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-            else:
-                recommended_types = ['No recommendation']
-                savings_percentage = 0
-                estimated_monthly_savings = 0
-
-            # Get current configuration
-            current_config = recommendation.get('currentConfiguration', {})
-            min_size = current_config.get('desiredCapacity', 'Unknown')
-            max_size = current_config.get('maxSize', 'Unknown')
-
-            # Create recommendation entry
-            rec_entry = {
-                'Region': region,
-                'Auto Scaling Group Name': asg_name,
-                'Current Instance Types': ', '.join(current_instances),
-                'Recommended Instance Types': ', '.join(recommended_types),
-                'Desired Capacity': min_size,
-                'Max Size': max_size,
-                'Finding': recommendation.get('finding', 'Unknown'),
-                'Savings Percentage (%)': round(savings_percentage, 2),
-                'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
-                'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
-            }
-
-            recommendations.append(rec_entry)
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} Auto Scaling Group recommendations in {region}")
     return recommendations
 
-@utils.aws_error_handler("Fetching EBS volume recommendations", default_return=[])
-def get_ebs_recommendations(region):
+def _build_ebs_recommendation_row(recommendation: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single EBS volume recommendation export row."""
+    volume_arn = recommendation.get('volumeArn', 'Unknown')
+    volume_id = volume_arn.split('/')[-1]
+    current_config = recommendation.get('currentConfiguration', {})
+    current_volume_type = current_config.get('volumeType', 'Unknown')
+    current_volume_size = current_config.get('volumeSize', 0)
+    current_volume_iops = current_config.get('volumeBaselineIOPS', 0)
+
+    # Process recommendation options
+    rec_options = recommendation.get('volumeRecommendationOptions', [])
+    if rec_options:
+        top_recommendation = rec_options[0]
+        recommended_config = top_recommendation.get('configuration', {})
+        recommended_type = recommended_config.get('volumeType', 'Unknown')
+        recommended_size = recommended_config.get('volumeSize', 0)
+        recommended_iops = recommended_config.get('volumeBaselineIOPS', 0)
+        savings_opportunity = top_recommendation.get('savingsOpportunity', {})
+        savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
+        estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
+    else:
+        recommended_type = 'No recommendation'
+        recommended_size = current_volume_size
+        recommended_iops = current_volume_iops
+        savings_percentage = 0
+        estimated_monthly_savings = 0
+
+    # Get utilization metrics
+    if 'utilizationMetrics' in recommendation:
+        metrics = recommendation.get('utilizationMetrics', [])
+        read_ops_per_second = next((m.get('value') for m in metrics if m.get('name') == 'VolumeReadOpsPerSecond'), 0)
+        write_ops_per_second = next((m.get('value') for m in metrics if m.get('name') == 'VolumeWriteOpsPerSecond'), 0)
+    else:
+        read_ops_per_second = 0
+        write_ops_per_second = 0
+
+    return {
+        'Region': region,
+        'Volume ID': volume_id,
+        'Current Volume Type': current_volume_type,
+        'Current Size (GB)': current_volume_size,
+        'Current IOPS': current_volume_iops,
+        'Recommended Volume Type': recommended_type,
+        'Recommended Size (GB)': recommended_size,
+        'Recommended IOPS': recommended_iops,
+        'Read Ops/Sec': read_ops_per_second,
+        'Write Ops/Sec': write_ops_per_second,
+        'Finding': recommendation.get('finding', 'Unknown'),
+        'Savings Percentage (%)': round(savings_percentage, 2),
+        'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
+        'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
+    }
+
+
+def get_ebs_recommendations(region: str) -> list[dict[str, Any]]:
     """
-    Get EBS volume recommendations from Compute Optimizer.
+    Get EBS volume recommendations from Compute Optimizer for a single
+    region.
+
+    This is a primary scope collector — see ``get_ec2_recommendations`` for
+    the silent-collection-loss rationale. Region-level failures propagate;
+    individual malformed recommendations are skipped (logged) instead of
+    aborting the whole region.
 
     Args:
         region (str): AWS region name
@@ -216,77 +325,86 @@ def get_ebs_recommendations(region):
     Returns:
         list: List of dictionaries containing EBS recommendations
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Fetching EBS volume recommendations for region {region}")
     recommendations = []
 
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ebs_volume_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ebs_volume_recommendations(**params)
         for recommendation in page.get('volumeRecommendations', []):
-            volume_arn = recommendation.get('volumeArn', 'Unknown')
-            volume_id = volume_arn.split('/')[-1]
-            current_config = recommendation.get('currentConfiguration', {})
-            current_volume_type = current_config.get('volumeType', 'Unknown')
-            current_volume_size = current_config.get('volumeSize', 0)
-            current_volume_iops = current_config.get('volumeBaselineIOPS', 0)
+            try:
+                recommendations.append(_build_ebs_recommendation_row(recommendation, region))
+            except Exception as e:
+                utils.log_error(f"Skipping malformed EBS volume recommendation in {region}", e)
+                continue
 
-            # Process recommendation options
-            rec_options = recommendation.get('volumeRecommendationOptions', [])
-            if rec_options:
-                top_recommendation = rec_options[0]
-                recommended_config = top_recommendation.get('configuration', {})
-                recommended_type = recommended_config.get('volumeType', 'Unknown')
-                recommended_size = recommended_config.get('volumeSize', 0)
-                recommended_iops = recommended_config.get('volumeBaselineIOPS', 0)
-                savings_opportunity = top_recommendation.get('savingsOpportunity', {})
-                savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
-                estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-            else:
-                recommended_type = 'No recommendation'
-                recommended_size = current_volume_size
-                recommended_iops = current_volume_iops
-                savings_percentage = 0
-                estimated_monthly_savings = 0
-
-            # Get utilization metrics
-            if 'utilizationMetrics' in recommendation:
-                metrics = recommendation.get('utilizationMetrics', [])
-                read_ops_per_second = next((m.get('value') for m in metrics if m.get('name') == 'VolumeReadOpsPerSecond'), 0)
-                write_ops_per_second = next((m.get('value') for m in metrics if m.get('name') == 'VolumeWriteOpsPerSecond'), 0)
-            else:
-                read_ops_per_second = 0
-                write_ops_per_second = 0
-
-            # Create recommendation entry
-            rec_entry = {
-                'Region': region,
-                'Volume ID': volume_id,
-                'Current Volume Type': current_volume_type,
-                'Current Size (GB)': current_volume_size,
-                'Current IOPS': current_volume_iops,
-                'Recommended Volume Type': recommended_type,
-                'Recommended Size (GB)': recommended_size,
-                'Recommended IOPS': recommended_iops,
-                'Read Ops/Sec': read_ops_per_second,
-                'Write Ops/Sec': write_ops_per_second,
-                'Finding': recommendation.get('finding', 'Unknown'),
-                'Savings Percentage (%)': round(savings_percentage, 2),
-                'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
-                'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
-            }
-
-            recommendations.append(rec_entry)
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} EBS volume recommendations in {region}")
     return recommendations
 
-@utils.aws_error_handler("Fetching Lambda function recommendations", default_return=[])
-def get_lambda_recommendations(region):
+def _build_lambda_recommendation_row(recommendation: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single Lambda function recommendation export row."""
+    function_arn = recommendation.get('functionArn', 'Unknown')
+    function_name = function_arn.split(':')[-1]
+
+    # Get current configuration
+    current_config = recommendation.get('currentConfiguration', {})
+    current_memory = current_config.get('memorySize', 0)
+
+    # Process recommendation options
+    rec_options = recommendation.get('functionRecommendationOptions', [])
+    if rec_options:
+        top_recommendation = rec_options[0]
+        recommended_config = top_recommendation.get('configuration', {})
+        recommended_memory = recommended_config.get('memorySize', 0)
+        savings_opportunity = top_recommendation.get('savingsOpportunity', {})
+        savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
+        estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
+    else:
+        recommended_memory = current_memory
+        savings_percentage = 0
+        estimated_monthly_savings = 0
+
+    # Get utilization metrics
+    metrics = recommendation.get('utilizationMetrics', [])
+    memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'Memory'), 0)
+
+    return {
+        'Region': region,
+        'Function Name': function_name,
+        'Current Memory (MB)': current_memory,
+        'Recommended Memory (MB)': recommended_memory,
+        'Memory Utilization (%)': memory_utilization,
+        'Finding': recommendation.get('finding', 'Unknown'),
+        'Savings Percentage (%)': round(savings_percentage, 2),
+        'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
+        'Last Invocation Time': recommendation.get('lastRefreshTimestamp', 'Unknown')
+    }
+
+
+def get_lambda_recommendations(region: str) -> list[dict[str, Any]]:
     """
-    Get Lambda function recommendations from Compute Optimizer.
+    Get Lambda function recommendations from Compute Optimizer for a single
+    region.
+
+    This is a primary scope collector — see ``get_ec2_recommendations`` for
+    the silent-collection-loss rationale. Region-level failures propagate;
+    individual malformed recommendations are skipped (logged) instead of
+    aborting the whole region.
 
     Args:
         region (str): AWS region name
@@ -294,6 +412,10 @@ def get_lambda_recommendations(region):
     Returns:
         list: List of dictionaries containing Lambda recommendations
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Fetching Lambda function recommendations for region {region}")
     recommendations = []
 
@@ -304,53 +426,73 @@ def get_lambda_recommendations(region):
 
     for page in paginator.paginate():
         for recommendation in page.get('lambdaFunctionRecommendations', []):
-            function_arn = recommendation.get('functionArn', 'Unknown')
-            function_name = function_arn.split(':')[-1]
-
-            # Get current configuration
-            current_config = recommendation.get('currentConfiguration', {})
-            current_memory = current_config.get('memorySize', 0)
-
-            # Process recommendation options
-            rec_options = recommendation.get('functionRecommendationOptions', [])
-            if rec_options:
-                top_recommendation = rec_options[0]
-                recommended_config = top_recommendation.get('configuration', {})
-                recommended_memory = recommended_config.get('memorySize', 0)
-                savings_opportunity = top_recommendation.get('savingsOpportunity', {})
-                savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
-                estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-            else:
-                recommended_memory = current_memory
-                savings_percentage = 0
-                estimated_monthly_savings = 0
-
-            # Get utilization metrics
-            metrics = recommendation.get('utilizationMetrics', [])
-            memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'Memory'), 0)
-
-            # Create recommendation entry
-            rec_entry = {
-                'Region': region,
-                'Function Name': function_name,
-                'Current Memory (MB)': current_memory,
-                'Recommended Memory (MB)': recommended_memory,
-                'Memory Utilization (%)': memory_utilization,
-                'Finding': recommendation.get('finding', 'Unknown'),
-                'Savings Percentage (%)': round(savings_percentage, 2),
-                'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
-                'Last Invocation Time': recommendation.get('lastRefreshTimestamp', 'Unknown')
-            }
-
-            recommendations.append(rec_entry)
+            try:
+                recommendations.append(_build_lambda_recommendation_row(recommendation, region))
+            except Exception as e:
+                utils.log_error(f"Skipping malformed Lambda function recommendation in {region}", e)
+                continue
 
     utils.log_success(f"Found {len(recommendations)} Lambda function recommendations in {region}")
     return recommendations
 
-@utils.aws_error_handler("Fetching ECS service recommendations", default_return=[])
-def get_ecs_recommendations(region):
+def _build_ecs_recommendation_row(recommendation: dict[str, Any], region: str) -> dict[str, Any]:
+    """Build a single ECS service recommendation export row."""
+    service_arn = recommendation.get('serviceArn', 'Unknown')
+    service_name = service_arn.split('/')[-1]
+    cluster_name = service_arn.split('/')[-2]
+
+    # Get current configuration
+    current_config = recommendation.get('currentServiceConfiguration', {})
+    current_cpu = current_config.get('cpu', 'Unknown')
+    current_memory = current_config.get('memory', 'Unknown')
+
+    # Process recommendation options
+    rec_options = recommendation.get('serviceRecommendationOptions', [])
+    if rec_options:
+        top_recommendation = rec_options[0]
+        recommended_config = top_recommendation.get('serviceConfiguration', {})
+        recommended_cpu = recommended_config.get('cpu', 'Unknown')
+        recommended_memory = recommended_config.get('memory', 'Unknown')
+        savings_opportunity = top_recommendation.get('savingsOpportunity', {})
+        savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
+        estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
+    else:
+        recommended_cpu = current_cpu
+        recommended_memory = current_memory
+        savings_percentage = 0
+        estimated_monthly_savings = 0
+
+    # Get utilization metrics
+    metrics = recommendation.get('utilizationMetrics', [])
+    cpu_utilization = next((m.get('value') for m in metrics if m.get('name') == 'CPU'), 0)
+    memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'MEMORY'), 0)
+
+    return {
+        'Region': region,
+        'Cluster Name': cluster_name,
+        'Service Name': service_name,
+        'Current CPU': current_cpu,
+        'Current Memory': current_memory,
+        'Recommended CPU': recommended_cpu,
+        'Recommended Memory': recommended_memory,
+        'CPU Utilization (%)': cpu_utilization,
+        'Memory Utilization (%)': memory_utilization,
+        'Finding': recommendation.get('finding', 'Unknown'),
+        'Savings Percentage (%)': round(savings_percentage, 2),
+        'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
+        'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
+    }
+
+
+def get_ecs_recommendations(region: str) -> list[dict[str, Any]]:
     """
-    Get ECS service recommendations from Compute Optimizer.
+    Get ECS service recommendations from Compute Optimizer for a single
+    region.
+
+    This is a primary scope collector — see ``get_ec2_recommendations`` for
+    the silent-collection-loss rationale. Region-level failures propagate;
+    individual malformed recommendations are skipped (logged) instead of
+    aborting the whole region.
 
     Args:
         region (str): AWS region name
@@ -358,67 +500,101 @@ def get_ecs_recommendations(region):
     Returns:
         list: List of dictionaries containing ECS recommendations
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Fetching ECS service recommendations for region {region}")
     recommendations = []
 
     compute_optimizer = utils.get_boto3_client('compute-optimizer', region_name=region)
 
     # Use pagination to handle large number of recommendations
-    paginator = compute_optimizer.get_paginator('get_ecs_service_recommendations')
-
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['maxResults'] = 100
+        if next_token:
+            params['nextToken'] = next_token
+        page = compute_optimizer.get_ecs_service_recommendations(**params)
         for recommendation in page.get('ecsServiceRecommendations', []):
-            service_arn = recommendation.get('serviceArn', 'Unknown')
-            service_name = service_arn.split('/')[-1]
-            cluster_name = service_arn.split('/')[-2]
+            try:
+                recommendations.append(_build_ecs_recommendation_row(recommendation, region))
+            except Exception as e:
+                utils.log_error(f"Skipping malformed ECS service recommendation in {region}", e)
+                continue
 
-            # Get current configuration
-            current_config = recommendation.get('currentServiceConfiguration', {})
-            current_cpu = current_config.get('cpu', 'Unknown')
-            current_memory = current_config.get('memory', 'Unknown')
-
-            # Process recommendation options
-            rec_options = recommendation.get('serviceRecommendationOptions', [])
-            if rec_options:
-                top_recommendation = rec_options[0]
-                recommended_config = top_recommendation.get('serviceConfiguration', {})
-                recommended_cpu = recommended_config.get('cpu', 'Unknown')
-                recommended_memory = recommended_config.get('memory', 'Unknown')
-                savings_opportunity = top_recommendation.get('savingsOpportunity', {})
-                savings_percentage = savings_opportunity.get('savingsPercentage', 0) * 100
-                estimated_monthly_savings = savings_opportunity.get('estimatedMonthlySavings', {}).get('value', 0)
-            else:
-                recommended_cpu = current_cpu
-                recommended_memory = current_memory
-                savings_percentage = 0
-                estimated_monthly_savings = 0
-
-            # Get utilization metrics
-            metrics = recommendation.get('utilizationMetrics', [])
-            cpu_utilization = next((m.get('value') for m in metrics if m.get('name') == 'CPU'), 0)
-            memory_utilization = next((m.get('value') for m in metrics if m.get('name') == 'MEMORY'), 0)
-
-            # Create recommendation entry
-            rec_entry = {
-                'Region': region,
-                'Cluster Name': cluster_name,
-                'Service Name': service_name,
-                'Current CPU': current_cpu,
-                'Current Memory': current_memory,
-                'Recommended CPU': recommended_cpu,
-                'Recommended Memory': recommended_memory,
-                'CPU Utilization (%)': cpu_utilization,
-                'Memory Utilization (%)': memory_utilization,
-                'Finding': recommendation.get('finding', 'Unknown'),
-                'Savings Percentage (%)': round(savings_percentage, 2),
-                'Estimated Monthly Savings ($)': round(estimated_monthly_savings, 2),
-                'Reason': recommendation.get('findingReasonCodes', ['Unknown'])[0] if recommendation.get('findingReasonCodes') else 'Unknown'
-            }
-
-            recommendations.append(rec_entry)
+        next_token = page.get('nextToken')
+        if not next_token:
+            break
 
     utils.log_success(f"Found {len(recommendations)} ECS service recommendations in {region}")
     return recommendations
+
+
+def _scope_collect(
+    label: str,
+    regions: list[str],
+    scan_function: Callable[[str], list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Shared scope wrapper: run ``scan_function`` concurrently across
+    ``regions`` and surface failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result. The scope ``label`` is tagged onto each failure's error message
+    (not the region name) so a combined ``failed_regions`` list — built by
+    merging the five recommendation scopes in this file — still reads
+    unambiguously in the failure marker.
+
+    Args:
+        label: Short scope label used in progress output and failure tags
+            (e.g. ``"EC2"``, ``"Lambda"``).
+        regions: List of AWS regions to scan (already filtered to
+            Compute-Optimizer-active regions).
+        scan_function: Per-region collector, e.g. ``get_ec2_recommendations``.
+
+    Returns:
+        tuple: ``(recommendations, failed_regions)`` where ``failed_regions``
+        is a list of ``(region, error_message)`` tuples.
+    """
+    print(f"\n=== COLLECTING {label.upper()} RECOMMENDATIONS ===")
+    region_results, raw_failed = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=scan_function,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_recs = [rec for result in region_results for rec in result]
+    utils.log_success(f"Total {label} recommendations collected: {len(all_recs)}")
+    failed_regions = [(region, f"[{label}] {err}") for region, err in raw_failed]
+    return all_recs, failed_regions
+
+
+def collect_ec2_recommendations(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Scope wrapper: EC2 instance recommendations across regions."""
+    return _scope_collect("EC2", regions, get_ec2_recommendations)
+
+
+def collect_asg_recommendations(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Scope wrapper: Auto Scaling Group recommendations across regions."""
+    return _scope_collect("ASG", regions, get_asg_recommendations)
+
+
+def collect_ebs_recommendations(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Scope wrapper: EBS volume recommendations across regions."""
+    return _scope_collect("EBS", regions, get_ebs_recommendations)
+
+
+def collect_lambda_recommendations(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Scope wrapper: Lambda function recommendations across regions."""
+    return _scope_collect("Lambda", regions, get_lambda_recommendations)
+
+
+def collect_ecs_recommendations(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Scope wrapper: ECS service recommendations across regions."""
+    return _scope_collect("ECS", regions, get_ecs_recommendations)
 
 def export_recommendations_to_excel(all_recommendations, account_name):
     """
@@ -476,12 +652,23 @@ def export_recommendations_to_excel(all_recommendations, account_name):
         print("Error exporting recommendations to Excel.")
         return None
 
-def get_recommendations_for_all_regions():
+def get_recommendations_for_all_regions() -> tuple[dict[str, list], list[tuple[str, str]]]:
     """
     Get Compute Optimizer recommendations for all supported regions.
 
+    Runs each of the five recommendation types (EC2, ASG, EBS, Lambda, ECS)
+    as its own scope collector via ``scan_regions_concurrent(...,
+    collect_failures=True)``, then merges all five scopes' failed regions
+    into a single combined list. This is what lets the caller (``main`` /
+    ``export_recommendations_to_excel``) tell a FAILED collection apart from
+    a genuinely empty account — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``.
+
     Returns:
-        dict: Dictionary containing recommendations for each resource type
+        tuple: ``(all_recommendations, failed_regions)`` where
+        ``all_recommendations`` is a dict keyed by resource type, and
+        ``failed_regions`` is the combined list of ``(region, error_message)``
+        tuples across all five scopes.
     """
     # Dictionary to store recommendations for each resource type
     all_recommendations = {
@@ -496,26 +683,40 @@ def get_recommendations_for_all_regions():
     regions = get_all_regions()
     print(f"Found {len(regions)} AWS regions.")
 
-    # For each region, check if Compute Optimizer is available and get recommendations
+    # Determine which regions have Compute Optimizer active. A region that
+    # is simply not enrolled is not a collection failure, so this gating
+    # step stays outside the failed_regions contract.
+    active_regions = []
     for region in regions:
         print(f"\nChecking Compute Optimizer availability in region: {region}")
-
         if check_compute_optimizer_availability(region):
-            # Get recommendations for each resource type
-            ec2_recommendations = get_ec2_recommendations(region)
-            all_recommendations['EC2'].extend(ec2_recommendations)
+            active_regions.append(region)
 
-            asg_recommendations = get_asg_recommendations(region)
-            all_recommendations['ASG'].extend(asg_recommendations)
+    if not active_regions:
+        print("\nCompute Optimizer is not active in any checked region.")
+        return all_recommendations, []
 
-            ebs_recommendations = get_ebs_recommendations(region)
-            all_recommendations['EBS'].extend(ebs_recommendations)
+    failed_regions: list[tuple[str, str]] = []
 
-            lambda_recommendations = get_lambda_recommendations(region)
-            all_recommendations['Lambda'].extend(lambda_recommendations)
+    ec2_recommendations, ec2_failed = collect_ec2_recommendations(active_regions)
+    all_recommendations['EC2'] = ec2_recommendations
+    failed_regions.extend(ec2_failed)
 
-            ecs_recommendations = get_ecs_recommendations(region)
-            all_recommendations['ECS'].extend(ecs_recommendations)
+    asg_recommendations, asg_failed = collect_asg_recommendations(active_regions)
+    all_recommendations['ASG'] = asg_recommendations
+    failed_regions.extend(asg_failed)
+
+    ebs_recommendations, ebs_failed = collect_ebs_recommendations(active_regions)
+    all_recommendations['EBS'] = ebs_recommendations
+    failed_regions.extend(ebs_failed)
+
+    lambda_recommendations, lambda_failed = collect_lambda_recommendations(active_regions)
+    all_recommendations['Lambda'] = lambda_recommendations
+    failed_regions.extend(lambda_failed)
+
+    ecs_recommendations, ecs_failed = collect_ecs_recommendations(active_regions)
+    all_recommendations['ECS'] = ecs_recommendations
+    failed_regions.extend(ecs_failed)
 
     # Print summary
     print("\n=== RECOMMENDATIONS SUMMARY ===")
@@ -525,7 +726,7 @@ def get_recommendations_for_all_regions():
     print(f"Lambda Function recommendations: {len(all_recommendations['Lambda'])}")
     print(f"ECS Service recommendations: {len(all_recommendations['ECS'])}")
 
-    return all_recommendations
+    return all_recommendations, failed_regions
 
 def main():
     """
@@ -572,12 +773,16 @@ def main():
             print("Please enable Compute Optimizer first, then run this script again.")
             return
 
-        # Get recommendations for all regions
+        # Get recommendations for all regions. Region failures across any of
+        # the five recommendation scopes are collected into failed_regions
+        # rather than silently collapsed into "no recommendations".
         print("\nGetting AWS Compute Optimizer recommendations...")
         utils.log_info("Starting Compute Optimizer recommendations collection")
-        all_recommendations = get_recommendations_for_all_regions()
+        all_recommendations, failed_regions = get_recommendations_for_all_regions()
 
-        # Export recommendations to Excel
+        # Export whatever succeeded — a partial export is required even when
+        # some regions failed (see the silent-collection-failure blast-radius
+        # audit).
         print("\nExporting recommendations to Excel...")
         output_path = export_recommendations_to_excel(all_recommendations, account_name)
 
@@ -585,9 +790,23 @@ def main():
             print("\nExport completed successfully!")
             print(f"Recommendations exported to: {output_path}")
             utils.log_success(f"Compute Optimizer recommendations exported to: {output_path}")
-        else:
+        elif not failed_regions:
+            # Genuinely empty account: every scanned region succeeded (or
+            # none were active) and returned nothing.
             print("\nNo recommendations were exported. Please check if Compute Optimizer is enabled for your account.")
             utils.log_warning("No Compute Optimizer recommendations found")
+
+        # If ANY region failed any of the five recommendation scopes, make it
+        # loud: write a marker and exit non-zero, even if some data was
+        # exported. A partial export that looks complete is exactly the
+        # failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'compute-optimizer', failed_regions)
+            print(
+                "\nERROR: Compute Optimizer export completed with failures — data is incomplete. "
+                "See the *-compute-optimizer-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

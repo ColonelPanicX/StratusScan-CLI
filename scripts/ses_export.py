@@ -15,7 +15,7 @@ Output: Multi-worksheet Excel file with SES resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,101 +31,145 @@ args = utils.parse_script_args("Export Amazon SES identities and configuration t
 # Setup logging
 logger = utils.setup_logging('ses-export')
 
-def _scan_email_identities_region(region: str) -> List[Dict[str, Any]]:
-    """Scan email identities in a single region."""
+def _scan_email_identities_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect SES email identities from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no identities" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed identities are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_identities = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
-    try:
-        paginator = ses_client.get_paginator('list_email_identities')
-        for page in paginator.paginate():
-            identities = page.get('EmailIdentities', [])
+    next_token = None
+    while True:
+        params = {}
+        if next_token:
+            params['NextToken'] = next_token
+        page = ses_client.list_email_identities(**params)
+        identities = page.get('EmailIdentities', [])
 
-            for identity_summary in identities:
-                identity_name = identity_summary.get('IdentityName', 'N/A')
-                identity_type = identity_summary.get('IdentityType', 'N/A')
+        for identity_summary in identities:
+            identity_name = identity_summary.get('IdentityName', '<unknown>')
+            try:
+                regional_identities.append(
+                    _build_identity_row(identity_summary, region, ses_client)
+                )
+            except Exception as e:
+                # One malformed/inaccessible identity is skipped, not fatal
+                # to the region.
+                utils.log_error(
+                    f"Skipping SES identity in {region}: {identity_name}", e
+                )
+                continue
 
-                try:
-                    # Get detailed identity information
-                    identity_response = ses_client.get_email_identity(
-                        EmailIdentity=identity_name
-                    )
-
-                    verified = identity_response.get('VerifiedForSendingStatus', False)
-                    dkim_enabled = False
-                    dkim_status = 'N/A'
-                    dkim_tokens = 'N/A'
-
-                    dkim_attributes = identity_response.get('DkimAttributes', {})
-                    if dkim_attributes:
-                        dkim_enabled = dkim_attributes.get('SigningEnabled', False)
-                        dkim_status = dkim_attributes.get('Status', 'N/A')
-                        tokens = dkim_attributes.get('Tokens', [])
-                        if tokens:
-                            dkim_tokens = ', '.join(tokens[:3])  # First 3 tokens
-
-                    # Mail FROM domain
-                    mail_from_attributes = identity_response.get('MailFromAttributes', {})
-                    mail_from_domain = mail_from_attributes.get('MailFromDomain', 'N/A')
-                    mail_from_status = mail_from_attributes.get('MailFromDomainStatus', 'N/A')
-
-                    # Feedback forwarding
-                    feedback_attributes = identity_response.get('FeedbackForwardingStatus', False)
-
-                    # Get tags
-                    tags_str = 'N/A'
-                    try:
-                        tags_response = ses_client.list_tags_for_resource(
-                            ResourceArn=identity_response.get('IdentityArn', '')
-                        )
-                        tags = tags_response.get('Tags', [])
-                        if tags:
-                            tags_str = ', '.join([f"{tag['Key']}={tag['Value']}" for tag in tags])
-                    except Exception:
-                        pass
-
-                    regional_identities.append({
-                        'Region': region,
-                        'Identity Name': identity_name,
-                        'Identity Type': identity_type,
-                        'Verified': verified,
-                        'DKIM Enabled': dkim_enabled,
-                        'DKIM Status': dkim_status,
-                        'DKIM Tokens': dkim_tokens,
-                        'Mail From Domain': mail_from_domain,
-                        'Mail From Status': mail_from_status,
-                        'Feedback Forwarding': feedback_attributes,
-                        'Tags': tags_str
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for identity {identity_name} in {region}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error listing email identities in {region}: {str(e)}")
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
 
     return regional_identities
 
 
-@utils.aws_error_handler("Collecting email identities", default_return=[])
-def collect_email_identities(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SES email identity information from AWS regions."""
+def _build_identity_row(identity_summary: dict, region: str, ses_client) -> dict[str, Any]:
+    """Build a single SES email identity export row (includes detail lookups)."""
+    identity_name = identity_summary.get('IdentityName', 'N/A')
+    identity_type = identity_summary.get('IdentityType', 'N/A')
+
+    # Get detailed identity information
+    identity_response = ses_client.get_email_identity(EmailIdentity=identity_name)
+
+    verified = identity_response.get('VerifiedForSendingStatus', False)
+    dkim_enabled = False
+    dkim_status = 'N/A'
+    dkim_tokens = 'N/A'
+
+    dkim_attributes = identity_response.get('DkimAttributes', {})
+    if dkim_attributes:
+        dkim_enabled = dkim_attributes.get('SigningEnabled', False)
+        dkim_status = dkim_attributes.get('Status', 'N/A')
+        tokens = dkim_attributes.get('Tokens', [])
+        if tokens:
+            dkim_tokens = ', '.join(tokens[:3])  # First 3 tokens
+
+    # Mail FROM domain
+    mail_from_attributes = identity_response.get('MailFromAttributes', {})
+    mail_from_domain = mail_from_attributes.get('MailFromDomain', 'N/A')
+    mail_from_status = mail_from_attributes.get('MailFromDomainStatus', 'N/A')
+
+    # Feedback forwarding
+    feedback_attributes = identity_response.get('FeedbackForwardingStatus', False)
+
+    # Get tags
+    tags_str = 'N/A'
+    try:
+        tags_response = ses_client.list_tags_for_resource(
+            ResourceArn=identity_response.get('IdentityArn', '')
+        )
+        tags = tags_response.get('Tags', [])
+        if tags:
+            tags_str = ', '.join([f"{tag.get('Key')}={tag.get('Value')}" for tag in tags])
+    except Exception:
+        pass
+
+    return {
+        'Region': region,
+        'Identity Name': identity_name,
+        'Identity Type': identity_type,
+        'Verified': verified,
+        'DKIM Enabled': dkim_enabled,
+        'DKIM Status': dkim_status,
+        'DKIM Tokens': dkim_tokens,
+        'Mail From Domain': mail_from_domain,
+        'Mail From Status': mail_from_status,
+        'Feedback Forwarding': feedback_attributes,
+        'Tags': tags_str
+    }
+
+
+def collect_email_identities(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect SES email identity information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(identities, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING EMAIL IDENTITIES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_email_identities_region)
+    results, failed_regions = utils.scan_regions_concurrent(
+        regions, _scan_email_identities_region, collect_failures=True
+    )
     all_identities = [identity for result in results for identity in result]
     utils.log_success(f"Total email identities collected: {len(all_identities)}")
-    return all_identities
+    return all_identities, failed_regions
 
 
-def _scan_configuration_sets_region(region: str) -> List[Dict[str, Any]]:
+def _scan_configuration_sets_region(region: str) -> list[dict[str, Any]]:
     """Scan configuration sets in a single region."""
     regional_config_sets = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
     try:
-        paginator = ses_client.get_paginator('list_configuration_sets')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = ses_client.list_configuration_sets(**params)
             config_sets = page.get('ConfigurationSets', [])
 
             for config_set_name in config_sets:
@@ -190,6 +234,10 @@ def _scan_configuration_sets_region(region: str) -> List[Dict[str, Any]]:
                     utils.log_warning(f"Could not get details for configuration set {config_set_name} in {region}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_warning(f"Error listing configuration sets in {region}: {str(e)}")
 
@@ -197,7 +245,7 @@ def _scan_configuration_sets_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting configuration sets", default_return=[])
-def collect_configuration_sets(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_configuration_sets(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES configuration set information from AWS regions."""
     print("\n=== COLLECTING CONFIGURATION SETS ===")
     results = utils.scan_regions_concurrent(regions, _scan_configuration_sets_region)
@@ -206,14 +254,18 @@ def collect_configuration_sets(regions: List[str]) -> List[Dict[str, Any]]:
     return all_config_sets
 
 
-def _scan_email_templates_region(region: str) -> List[Dict[str, Any]]:
+def _scan_email_templates_region(region: str) -> list[dict[str, Any]]:
     """Scan email templates in a single region."""
     regional_templates = []
     ses_client = utils.get_boto3_client('sesv2', region_name=region)
 
     try:
-        paginator = ses_client.get_paginator('list_email_templates')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+            page = ses_client.list_email_templates(**params)
             templates = page.get('TemplatesMetadata', [])
 
             for template_metadata in templates:
@@ -252,6 +304,10 @@ def _scan_email_templates_region(region: str) -> List[Dict[str, Any]]:
                     utils.log_warning(f"Could not get details for template {template_name} in {region}: {str(e)}")
                     continue
 
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
+
     except Exception as e:
         utils.log_warning(f"Error listing email templates in {region}: {str(e)}")
 
@@ -259,7 +315,7 @@ def _scan_email_templates_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting email templates", default_return=[])
-def collect_email_templates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_email_templates(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES email template information from AWS regions."""
     print("\n=== COLLECTING EMAIL TEMPLATES ===")
     results = utils.scan_regions_concurrent(regions, _scan_email_templates_region)
@@ -269,7 +325,7 @@ def collect_email_templates(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting sending quotas", default_return=[])
-def collect_sending_quotas(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_sending_quotas(regions: list[str]) -> list[dict[str, Any]]:
     """Collect SES sending quota information from AWS regions."""
     print("\n=== COLLECTING SENDING QUOTAS ===")
     all_quotas = []
@@ -316,10 +372,10 @@ def collect_sending_quotas(regions: List[str]) -> List[Dict[str, Any]]:
     return all_quotas
 
 
-def generate_summary(identities: List[Dict[str, Any]],
-                     config_sets: List[Dict[str, Any]],
-                     templates: List[Dict[str, Any]],
-                     quotas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(identities: list[dict[str, Any]],
+                     config_sets: list[dict[str, Any]],
+                     templates: list[dict[str, Any]],
+                     quotas: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for SES resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -401,7 +457,11 @@ def main():
     # Collect data
     print("\nCollecting SES data...")
 
-    identities = collect_email_identities(regions)
+    # PRIMARY scope: region failures must propagate as failed_regions, never
+    # collapse into "empty" (see .collab/audit/07.16.2026-...).
+    identities, failed_regions = collect_email_identities(regions)
+    # Enrichment scopes: degrade gracefully; a region-level failure here does
+    # not fail the whole export.
     config_sets = collect_configuration_sets(regions)
     templates = collect_email_templates(regions)
     quotas = collect_sending_quotas(regions)
@@ -437,7 +497,9 @@ def main():
         df_quotas = utils.prepare_dataframe_for_export(df_quotas)
         dataframes['Sending Quotas'] = df_quotas
 
-    # Export to Excel
+    # Export to Excel. The Summary sheet is always populated (forced), so a
+    # workbook always lands here even when identities/config_sets/templates
+    # are empty — that behavior is preserved as-is.
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'ses', region_suffix)
@@ -450,6 +512,19 @@ def main():
         utils.log_warning("No SES data found to export")
 
     utils.log_success("SES export completed successfully")
+
+    # If ANY region failed the Email Identities scope collection, make it
+    # loud: write a marker and exit non-zero, even though the always-written
+    # Summary sheet (and possibly other data) still landed. A workbook that
+    # looks complete but silently hides a zero-row/incomplete data sheet is
+    # exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ses', failed_regions)
+        print(
+            "\nERROR: SES export completed with failures — data is incomplete. "
+            "See the *-ses-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

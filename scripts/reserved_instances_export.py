@@ -26,7 +26,7 @@ Features:
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -43,205 +43,397 @@ args = utils.parse_script_args("Export EC2 Reserved Instances to Excel")
 utils.setup_logging('reserved-instances-export')
 
 
-@utils.aws_error_handler("Collecting EC2 Reserved Instances", default_return=[])
-def collect_ec2_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect EC2 Reserved Instances."""
+def _build_ec2_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single EC2 Reserved Instance export row."""
+    return {
+        'Service': 'EC2',
+        'Region': region,
+        'ReservationID': ri.get('ReservedInstancesId', 'N/A'),
+        'InstanceType': ri.get('InstanceType', 'N/A'),
+        'InstanceCount': ri.get('InstanceCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('Start'),
+        'End': ri.get('End'),
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('OfferingType', 'N/A'),
+        'OfferingClass': ri.get('OfferingClass', 'N/A'),
+        'FixedPrice': ri.get('FixedPrice', 0),
+        'UsagePrice': ri.get('UsagePrice', 0),
+        'CurrencyCode': ri.get('CurrencyCode', 'USD'),
+        'ProductDescription': ri.get('ProductDescription', 'N/A'),
+        'Scope': ri.get('Scope', 'N/A'),
+        'AvailabilityZone': ri.get('AvailabilityZone', 'N/A'),
+        'InstanceTenancy': ri.get('InstanceTenancy', 'default'),
+    }
+
+
+def _scan_ec2_ri_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect EC2 Reserved Instances from a single region.
+
+    This is a primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no Reserved Instances"
+    (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed RIs are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reserved_instances = []
 
     response = ec2.describe_reserved_instances()
 
     for ri in response.get('ReservedInstances', []):
-        reserved_instances.append({
-            'Service': 'EC2',
-            'Region': region,
-            'ReservationID': ri.get('ReservedInstancesId', 'N/A'),
-            'InstanceType': ri.get('InstanceType', 'N/A'),
-            'InstanceCount': ri.get('InstanceCount', 0),
-            'State': ri.get('State', 'N/A'),
-            'Start': ri.get('Start'),
-            'End': ri.get('End'),
-            'Duration': f"{ri.get('Duration', 0) // 86400} days",
-            'OfferingType': ri.get('OfferingType', 'N/A'),
-            'OfferingClass': ri.get('OfferingClass', 'N/A'),
-            'FixedPrice': ri.get('FixedPrice', 0),
-            'UsagePrice': ri.get('UsagePrice', 0),
-            'CurrencyCode': ri.get('CurrencyCode', 'USD'),
-            'ProductDescription': ri.get('ProductDescription', 'N/A'),
-            'Scope': ri.get('Scope', 'N/A'),
-            'AvailabilityZone': ri.get('AvailabilityZone', 'N/A'),
-            'InstanceTenancy': ri.get('InstanceTenancy', 'default'),
-        })
+        try:
+            reserved_instances.append(_build_ec2_ri_row(ri, region))
+        except Exception as e:
+            utils.log_error(
+                f"Skipping malformed EC2 Reserved Instance in {region}: "
+                f"{ri.get('ReservedInstancesId', '<unknown>')}",
+                e,
+            )
+            continue
 
     return reserved_instances
 
 
-@utils.aws_error_handler("Collecting RDS Reserved DB Instances", default_return=[])
-def collect_rds_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect RDS Reserved DB Instances."""
+def collect_ec2_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect EC2 Reserved Instances across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(reserved_instances, failed_regions)`` where ``failed_regions``
+        is a list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_ec2_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"EC2 RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
+
+
+def _build_rds_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single RDS Reserved DB Instance export row."""
+    return {
+        'Service': 'RDS',
+        'Region': region,
+        'ReservationID': ri.get('ReservedDBInstanceId', 'N/A'),
+        'InstanceType': ri.get('DBInstanceClass', 'N/A'),
+        'InstanceCount': ri.get('DBInstanceCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('StartTime'),
+        'End': None,  # RDS doesn't expose end time directly
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('OfferingType', 'N/A'),
+        'OfferingClass': 'N/A',  # Not applicable for RDS
+        'FixedPrice': ri.get('FixedPrice', 0),
+        'UsagePrice': ri.get('UsagePrice', 0),
+        'CurrencyCode': ri.get('CurrencyCode', 'USD'),
+        'ProductDescription': ri.get('ProductDescription', 'N/A'),
+        'Scope': 'Regional',  # RDS RIs are always regional
+        'AvailabilityZone': 'N/A',
+        'InstanceTenancy': 'N/A',
+        'MultiAZ': ri.get('MultiAZ', False),
+        'Engine': ri.get('ProductDescription', 'N/A'),
+    }
+
+
+def _scan_rds_ri_region(region: str) -> list[dict[str, Any]]:
+    """Collect RDS Reserved DB Instances from a single region. Raises on failure — see _scan_ec2_ri_region."""
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     rds = utils.get_boto3_client('rds', region_name=region)
     reserved_instances = []
 
     paginator = rds.get_paginator('describe_reserved_db_instances')
     for page in paginator.paginate():
         for ri in page.get('ReservedDBInstances', []):
-            reserved_instances.append({
-                'Service': 'RDS',
-                'Region': region,
-                'ReservationID': ri.get('ReservedDBInstanceId', 'N/A'),
-                'InstanceType': ri.get('DBInstanceClass', 'N/A'),
-                'InstanceCount': ri.get('DBInstanceCount', 0),
-                'State': ri.get('State', 'N/A'),
-                'Start': ri.get('StartTime'),
-                'End': None,  # RDS doesn't expose end time directly
-                'Duration': f"{ri.get('Duration', 0) // 86400} days",
-                'OfferingType': ri.get('OfferingType', 'N/A'),
-                'OfferingClass': 'N/A',  # Not applicable for RDS
-                'FixedPrice': ri.get('FixedPrice', 0),
-                'UsagePrice': ri.get('UsagePrice', 0),
-                'CurrencyCode': ri.get('CurrencyCode', 'USD'),
-                'ProductDescription': ri.get('ProductDescription', 'N/A'),
-                'Scope': 'Regional',  # RDS RIs are always regional
-                'AvailabilityZone': 'N/A',
-                'InstanceTenancy': 'N/A',
-                'MultiAZ': ri.get('MultiAZ', False),
-                'Engine': ri.get('ProductDescription', 'N/A'),
-            })
+            try:
+                reserved_instances.append(_build_rds_ri_row(ri, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed RDS Reserved Instance in {region}: "
+                    f"{ri.get('ReservedDBInstanceId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reserved_instances
 
 
-@utils.aws_error_handler("Collecting ElastiCache Reserved Cache Nodes", default_return=[])
-def collect_elasticache_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect ElastiCache Reserved Cache Nodes."""
+def collect_rds_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect RDS Reserved DB Instances across regions, surfacing failures."""
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_rds_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"RDS RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
+
+
+def _build_elasticache_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single ElastiCache Reserved Cache Node export row."""
+    return {
+        'Service': 'ElastiCache',
+        'Region': region,
+        'ReservationID': ri.get('ReservedCacheNodeId', 'N/A'),
+        'InstanceType': ri.get('CacheNodeType', 'N/A'),
+        'InstanceCount': ri.get('CacheNodeCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('StartTime'),
+        'End': None,
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('OfferingType', 'N/A'),
+        'OfferingClass': 'N/A',
+        'FixedPrice': ri.get('FixedPrice', 0),
+        'UsagePrice': ri.get('UsagePrice', 0),
+        'CurrencyCode': 'USD',
+        'ProductDescription': ri.get('ProductDescription', 'N/A'),
+        'Scope': 'Regional',
+        'AvailabilityZone': 'N/A',
+        'InstanceTenancy': 'N/A',
+        'Engine': ri.get('ProductDescription', 'N/A'),
+    }
+
+
+def _scan_elasticache_ri_region(region: str) -> list[dict[str, Any]]:
+    """Collect ElastiCache Reserved Cache Nodes from a single region. Raises on failure — see _scan_ec2_ri_region."""
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     elasticache = utils.get_boto3_client('elasticache', region_name=region)
     reserved_instances = []
 
     paginator = elasticache.get_paginator('describe_reserved_cache_nodes')
     for page in paginator.paginate():
         for ri in page.get('ReservedCacheNodes', []):
-            reserved_instances.append({
-                'Service': 'ElastiCache',
-                'Region': region,
-                'ReservationID': ri.get('ReservedCacheNodeId', 'N/A'),
-                'InstanceType': ri.get('CacheNodeType', 'N/A'),
-                'InstanceCount': ri.get('CacheNodeCount', 0),
-                'State': ri.get('State', 'N/A'),
-                'Start': ri.get('StartTime'),
-                'End': None,
-                'Duration': f"{ri.get('Duration', 0) // 86400} days",
-                'OfferingType': ri.get('OfferingType', 'N/A'),
-                'OfferingClass': 'N/A',
-                'FixedPrice': ri.get('FixedPrice', 0),
-                'UsagePrice': ri.get('UsagePrice', 0),
-                'CurrencyCode': 'USD',
-                'ProductDescription': ri.get('ProductDescription', 'N/A'),
-                'Scope': 'Regional',
-                'AvailabilityZone': 'N/A',
-                'InstanceTenancy': 'N/A',
-                'Engine': ri.get('ProductDescription', 'N/A'),
-            })
+            try:
+                reserved_instances.append(_build_elasticache_ri_row(ri, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed ElastiCache Reserved Cache Node in {region}: "
+                    f"{ri.get('ReservedCacheNodeId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reserved_instances
 
 
-@utils.aws_error_handler("Collecting OpenSearch Reserved Instances", default_return=[])
-def collect_opensearch_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect OpenSearch Reserved Instances."""
+def collect_elasticache_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect ElastiCache Reserved Cache Nodes across regions, surfacing failures."""
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_elasticache_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"ElastiCache RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
+
+
+def _build_opensearch_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single OpenSearch Reserved Instance export row."""
+    return {
+        'Service': 'OpenSearch',
+        'Region': region,
+        'ReservationID': ri.get('ReservedElasticsearchInstanceId', 'N/A'),
+        'InstanceType': ri.get('ElasticsearchInstanceType', 'N/A'),
+        'InstanceCount': ri.get('ElasticsearchInstanceCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('StartTime'),
+        'End': None,
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('PaymentOption', 'N/A'),
+        'OfferingClass': 'N/A',
+        'FixedPrice': ri.get('FixedPrice', 0),
+        'UsagePrice': ri.get('UsagePrice', 0),
+        'CurrencyCode': ri.get('CurrencyCode', 'USD'),
+        'ProductDescription': 'OpenSearch',
+        'Scope': 'Regional',
+        'AvailabilityZone': 'N/A',
+        'InstanceTenancy': 'N/A',
+    }
+
+
+def _scan_opensearch_ri_region(region: str) -> list[dict[str, Any]]:
+    """Collect OpenSearch Reserved Instances from a single region. Raises on failure — see _scan_ec2_ri_region."""
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     opensearch = utils.get_boto3_client('es', region_name=region)  # 'es' is the service name
     reserved_instances = []
 
     response = opensearch.describe_reserved_elasticsearch_instances()
 
     for ri in response.get('ReservedElasticsearchInstances', []):
-        reserved_instances.append({
-            'Service': 'OpenSearch',
-            'Region': region,
-            'ReservationID': ri.get('ReservedElasticsearchInstanceId', 'N/A'),
-            'InstanceType': ri.get('ElasticsearchInstanceType', 'N/A'),
-            'InstanceCount': ri.get('ElasticsearchInstanceCount', 0),
-            'State': ri.get('State', 'N/A'),
-            'Start': ri.get('StartTime'),
-            'End': None,
-            'Duration': f"{ri.get('Duration', 0) // 86400} days",
-            'OfferingType': ri.get('PaymentOption', 'N/A'),
-            'OfferingClass': 'N/A',
-            'FixedPrice': ri.get('FixedPrice', 0),
-            'UsagePrice': ri.get('UsagePrice', 0),
-            'CurrencyCode': ri.get('CurrencyCode', 'USD'),
-            'ProductDescription': 'OpenSearch',
-            'Scope': 'Regional',
-            'AvailabilityZone': 'N/A',
-            'InstanceTenancy': 'N/A',
-        })
+        try:
+            reserved_instances.append(_build_opensearch_ri_row(ri, region))
+        except Exception as e:
+            utils.log_error(
+                f"Skipping malformed OpenSearch Reserved Instance in {region}: "
+                f"{ri.get('ReservedElasticsearchInstanceId', '<unknown>')}",
+                e,
+            )
+            continue
 
     return reserved_instances
 
 
-@utils.aws_error_handler("Collecting Redshift Reserved Nodes", default_return=[])
-def collect_redshift_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect Redshift Reserved Nodes."""
+def collect_opensearch_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect OpenSearch Reserved Instances across regions, surfacing failures."""
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_opensearch_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"OpenSearch RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
+
+
+def _build_redshift_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single Redshift Reserved Node export row."""
+    return {
+        'Service': 'Redshift',
+        'Region': region,
+        'ReservationID': ri.get('ReservedNodeId', 'N/A'),
+        'InstanceType': ri.get('NodeType', 'N/A'),
+        'InstanceCount': ri.get('NodeCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('StartTime'),
+        'End': None,
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('OfferingType', 'N/A'),
+        'OfferingClass': 'N/A',
+        'FixedPrice': ri.get('FixedPrice', 0),
+        'UsagePrice': ri.get('UsagePrice', 0),
+        'CurrencyCode': ri.get('CurrencyCode', 'USD'),
+        'ProductDescription': 'Redshift',
+        'Scope': 'Regional',
+        'AvailabilityZone': 'N/A',
+        'InstanceTenancy': 'N/A',
+    }
+
+
+def _scan_redshift_ri_region(region: str) -> list[dict[str, Any]]:
+    """Collect Redshift Reserved Nodes from a single region. Raises on failure — see _scan_ec2_ri_region."""
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     redshift = utils.get_boto3_client('redshift', region_name=region)
     reserved_instances = []
 
     paginator = redshift.get_paginator('describe_reserved_nodes')
     for page in paginator.paginate():
         for ri in page.get('ReservedNodes', []):
-            reserved_instances.append({
-                'Service': 'Redshift',
-                'Region': region,
-                'ReservationID': ri.get('ReservedNodeId', 'N/A'),
-                'InstanceType': ri.get('NodeType', 'N/A'),
-                'InstanceCount': ri.get('NodeCount', 0),
-                'State': ri.get('State', 'N/A'),
-                'Start': ri.get('StartTime'),
-                'End': None,
-                'Duration': f"{ri.get('Duration', 0) // 86400} days",
-                'OfferingType': ri.get('OfferingType', 'N/A'),
-                'OfferingClass': 'N/A',
-                'FixedPrice': ri.get('FixedPrice', 0),
-                'UsagePrice': ri.get('UsagePrice', 0),
-                'CurrencyCode': ri.get('CurrencyCode', 'USD'),
-                'ProductDescription': 'Redshift',
-                'Scope': 'Regional',
-                'AvailabilityZone': 'N/A',
-                'InstanceTenancy': 'N/A',
-            })
+            try:
+                reserved_instances.append(_build_redshift_ri_row(ri, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed Redshift Reserved Node in {region}: "
+                    f"{ri.get('ReservedNodeId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reserved_instances
 
 
-@utils.aws_error_handler("Collecting MemoryDB Reserved Nodes", default_return=[])
-def collect_memorydb_reserved_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect MemoryDB Reserved Nodes."""
+def collect_redshift_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect Redshift Reserved Nodes across regions, surfacing failures."""
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_redshift_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"Redshift RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
+
+
+def _build_memorydb_ri_row(ri: dict, region: str) -> dict[str, Any]:
+    """Build a single MemoryDB Reserved Node export row."""
+    return {
+        'Service': 'MemoryDB',
+        'Region': region,
+        'ReservationID': ri.get('ReservedNodeId', 'N/A'),
+        'InstanceType': ri.get('NodeType', 'N/A'),
+        'InstanceCount': ri.get('NodeCount', 0),
+        'State': ri.get('State', 'N/A'),
+        'Start': ri.get('StartTime'),
+        'End': None,
+        'Duration': f"{ri.get('Duration', 0) // 86400} days",
+        'OfferingType': ri.get('OfferingType', 'N/A'),
+        'OfferingClass': 'N/A',
+        'FixedPrice': 0,  # Not exposed by MemoryDB API
+        'UsagePrice': 0,
+        'CurrencyCode': 'USD',
+        'ProductDescription': 'MemoryDB',
+        'Scope': 'Regional',
+        'AvailabilityZone': 'N/A',
+        'InstanceTenancy': 'N/A',
+    }
+
+
+def _scan_memorydb_ri_region(region: str) -> list[dict[str, Any]]:
+    """Collect MemoryDB Reserved Nodes from a single region. Raises on failure — see _scan_ec2_ri_region."""
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     memorydb = utils.get_boto3_client('memorydb', region_name=region)
     reserved_instances = []
 
     paginator = memorydb.get_paginator('describe_reserved_nodes')
     for page in paginator.paginate():
         for ri in page.get('ReservedNodes', []):
-            reserved_instances.append({
-                'Service': 'MemoryDB',
-                'Region': region,
-                'ReservationID': ri.get('ReservedNodeId', 'N/A'),
-                'InstanceType': ri.get('NodeType', 'N/A'),
-                'InstanceCount': ri.get('NodeCount', 0),
-                'State': ri.get('State', 'N/A'),
-                'Start': ri.get('StartTime'),
-                'End': None,
-                'Duration': f"{ri.get('Duration', 0) // 86400} days",
-                'OfferingType': ri.get('OfferingType', 'N/A'),
-                'OfferingClass': 'N/A',
-                'FixedPrice': 0,  # Not exposed by MemoryDB API
-                'UsagePrice': 0,
-                'CurrencyCode': 'USD',
-                'ProductDescription': 'MemoryDB',
-                'Scope': 'Regional',
-                'AvailabilityZone': 'N/A',
-                'InstanceTenancy': 'N/A',
-            })
+            try:
+                reserved_instances.append(_build_memorydb_ri_row(ri, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed MemoryDB Reserved Node in {region}: "
+                    f"{ri.get('ReservedNodeId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reserved_instances
+
+
+def collect_memorydb_reserved_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect MemoryDB Reserved Nodes across regions, surfacing failures."""
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_memorydb_ri_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_ris = [ri for result in region_results for ri in result]
+    failed_regions = [(region, f"MemoryDB RI: {error}") for region, error in failed_regions]
+    return all_ris, failed_regions
 
 
 def calculate_expiration_status(end_date) -> str:
@@ -270,42 +462,45 @@ def calculate_expiration_status(end_date) -> str:
         return 'Unknown'
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Reserved Instance data and write the Excel export."""
     utils.log_info(f"Exporting Reserved Instance data for account: {account_name} ({utils.mask_account_id(account_id)})")
     utils.log_info(f"Scanning {len(regions)} region(s) for Reserved Instances...")
 
-    # Collect all RIs across all services and regions
+    # Collect each RI scope (EC2, RDS, ElastiCache, OpenSearch, Redshift,
+    # MemoryDB). Each scope wrapper uses scan_regions_concurrent(...,
+    # collect_failures=True) so a region-level API failure is surfaced as a
+    # failed region rather than silently collapsed into "no RIs" (the
+    # silent-collection-loss bug — see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    ec2_ris, ec2_failed = collect_ec2_reserved_instances(regions)
+    rds_ris, rds_failed = collect_rds_reserved_instances(regions)
+    elasticache_ris, elasticache_failed = collect_elasticache_reserved_instances(regions)
+    opensearch_ris, opensearch_failed = collect_opensearch_reserved_instances(regions)
+    redshift_ris, redshift_failed = collect_redshift_reserved_instances(regions)
+    memorydb_ris, memorydb_failed = collect_memorydb_reserved_instances(regions)
+
+    utils.log_info(f"  EC2: {len(ec2_ris)}, RDS: {len(rds_ris)}, "
+                 f"ElastiCache: {len(elasticache_ris)}, OpenSearch: {len(opensearch_ris)}, "
+                 f"Redshift: {len(redshift_ris)}, MemoryDB: {len(memorydb_ris)}")
+
     all_ris = []
+    all_ris.extend(ec2_ris)
+    all_ris.extend(rds_ris)
+    all_ris.extend(elasticache_ris)
+    all_ris.extend(opensearch_ris)
+    all_ris.extend(redshift_ris)
+    all_ris.extend(memorydb_ris)
 
-    for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    # Merge every scope's failed regions into ONE combined list, so a single
+    # failure marker + non-zero exit covers all RI services.
+    failed_regions = (
+        ec2_failed + rds_failed + elasticache_failed +
+        opensearch_failed + redshift_failed + memorydb_failed
+    )
 
-        # Collect from each service
-        ec2_ris = collect_ec2_reserved_instances(region)
-        rds_ris = collect_rds_reserved_instances(region)
-        elasticache_ris = collect_elasticache_reserved_instances(region)
-        opensearch_ris = collect_opensearch_reserved_instances(region)
-        redshift_ris = collect_redshift_reserved_instances(region)
-        memorydb_ris = collect_memorydb_reserved_instances(region)
-
-        region_count = (len(ec2_ris) + len(rds_ris) + len(elasticache_ris) +
-                      len(opensearch_ris) + len(redshift_ris) + len(memorydb_ris))
-
-        if region_count > 0:
-            utils.log_info(f"  Found {region_count} Reserved Instances in {region}")
-            utils.log_info(f"    EC2: {len(ec2_ris)}, RDS: {len(rds_ris)}, "
-                         f"ElastiCache: {len(elasticache_ris)}, OpenSearch: {len(opensearch_ris)}, "
-                         f"Redshift: {len(redshift_ris)}, MemoryDB: {len(memorydb_ris)}")
-
-        all_ris.extend(ec2_ris)
-        all_ris.extend(rds_ris)
-        all_ris.extend(elasticache_ris)
-        all_ris.extend(opensearch_ris)
-        all_ris.extend(redshift_ris)
-        all_ris.extend(memorydb_ris)
-
-    if not all_ris:
+    if not all_ris and not failed_regions:
+        # Genuinely empty account: every scope/region succeeded and returned nothing.
         utils.log_warning("No Reserved Instances found in any selected region.")
         utils.log_info("Creating empty export file...")
 
@@ -381,6 +576,19 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
         utils.log_warning(f"  {len(df_expiring)} Reserved Instance(s) expiring within 90 days")
 
     utils.log_success("Reserved Instances export completed successfully!")
+
+    # If ANY RI scope failed for ANY region, make it loud: write a marker and
+    # exit non-zero, even though the always-written Summary sheet above means
+    # a workbook still lands (Tier-3 PARTIAL). A zero-row-looking sheet that
+    # is actually a failed scope is exactly the silent-loss failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'reserved-instances', failed_regions)
+        print(
+            "\nERROR: Reserved Instances export completed with failures — data is incomplete. "
+            "See the *-reserved-instances-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

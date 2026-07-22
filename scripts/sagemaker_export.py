@@ -16,7 +16,7 @@ Output: Multi-worksheet Excel file with SageMaker resources
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,7 +31,7 @@ args = utils.parse_script_args("Export Amazon SageMaker resources to Excel")
 
 
 
-def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
+def _load_sagemaker_pricing_data(region: str) -> dict[str, dict[str, float]]:
     """Load SageMaker on-demand pricing for ml.* instance types.
 
     Returns dict: {instance_type: {'hourly': float, 'monthly': float}}
@@ -40,7 +40,7 @@ def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
     """
     pricing_file = Path(__file__).parent.parent / 'reference' / 'sagemaker-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         records = data.get('records', {})
         partition = utils.detect_partition(region)
@@ -61,544 +61,605 @@ def _load_sagemaker_pricing_data(region: str) -> Dict[str, Dict[str, float]]:
         return {}
 
 
-def _scan_notebook_instances_region(region: str) -> List[Dict[str, Any]]:
-    """Scan SageMaker notebook instances in a single region."""
+def _build_notebook_row(notebook: dict, region: str, sagemaker_client, sm_pricing_data: dict) -> dict[str, Any]:
+    """
+    Build the export row for a single SageMaker notebook instance.
+
+    Extracted so per-notebook processing can be wrapped in try/except by the
+    caller: a malformed/unreachable notebook is logged and skipped rather
+    than discarding the whole region's results.
+    """
+    notebook_name = notebook.get('NotebookInstanceName', 'N/A')
+
+    notebook_response = sagemaker_client.describe_notebook_instance(
+        NotebookInstanceName=notebook_name
+    )
+
+    instance_type = notebook_response.get('InstanceType', 'N/A')
+    status = notebook_response.get('NotebookInstanceStatus', 'N/A')
+    arn = notebook_response.get('NotebookInstanceArn', 'N/A')
+
+    creation_time = notebook_response.get('CreationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_modified = notebook_response.get('LastModifiedTime', 'N/A')
+    if last_modified != 'N/A':
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Network configuration
+    subnet_id = notebook_response.get('SubnetId', 'N/A')
+    security_groups = notebook_response.get('SecurityGroups', [])
+    security_groups_str = ', '.join(security_groups) if security_groups else 'None'
+
+    # Access settings
+    direct_internet_access = notebook_response.get('DirectInternetAccess', 'Enabled')
+    root_access = notebook_response.get('RootAccess', 'Enabled')
+
+    # IAM role
+    role_arn = notebook_response.get('RoleArn', 'N/A')
+
+    # Volume settings
+    volume_size_gb = notebook_response.get('VolumeSizeInGB', 'N/A')
+
+    # Platform identifier
+    platform_identifier = notebook_response.get('PlatformIdentifier', 'N/A')
+
+    # URL
+    url = notebook_response.get('Url', 'N/A')
+
+    # Lifecycle config
+    lifecycle_config = notebook_response.get('NotebookInstanceLifecycleConfigName', 'None')
+
+    # KMS key
+    kms_key = notebook_response.get('KmsKeyId', 'None')
+
+    # Failure reason
+    failure_reason = notebook_response.get('FailureReason', 'N/A')
+
+    # Cost estimation — monthly if always running; $0 when stopped
+    nb_pricing = sm_pricing_data.get(instance_type, {})
+    if status == 'InService' and nb_pricing:
+        monthly_cost = nb_pricing['monthly']
+        cost_note = 'Estimate: monthly if running 24/7; $0 when stopped'
+    elif status == 'Stopped':
+        monthly_cost = 0.0
+        cost_note = 'No compute charge while stopped'
+    elif nb_pricing:
+        monthly_cost = 'N/A'
+        cost_note = f'Status={status}; cost not estimated'
+    else:
+        monthly_cost = 'N/A'
+        cost_note = 'Instance type not in pricing data'
+
+    return {
+        'Region': region,
+        'Notebook Name': notebook_name,
+        'ARN': arn,
+        'Status': status,
+        'Instance Type': instance_type,
+        'Platform': platform_identifier,
+        'Created': creation_time,
+        'Last Modified': last_modified,
+        'Volume Size (GB)': volume_size_gb,
+        'Direct Internet Access': direct_internet_access,
+        'Root Access': root_access,
+        'Subnet ID': subnet_id,
+        'Security Groups': security_groups_str,
+        'IAM Role ARN': role_arn,
+        'Lifecycle Config': lifecycle_config,
+        'KMS Key': kms_key,
+        'URL': url,
+        'Failure Reason': failure_reason,
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Cost Note': cost_note,
+    }
+
+
+def _scan_notebook_instances_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan SageMaker notebook instances in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no notebook instances"
+    (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed/unreachable notebook instances are skipped (logged)
+    rather than aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_notebooks = []
+    sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+    sm_pricing_data = _load_sagemaker_pricing_data(region)
 
-    try:
-        sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
-        sm_pricing_data = _load_sagemaker_pricing_data(region)
+    paginator = sagemaker_client.get_paginator('list_notebook_instances')
+    for page in paginator.paginate():
+        notebooks = page.get('NotebookInstances', [])
 
-        try:
-            paginator = sagemaker_client.get_paginator('list_notebook_instances')
-            for page in paginator.paginate():
-                notebooks = page.get('NotebookInstances', [])
-
-                for notebook in notebooks:
-                    notebook_name = notebook.get('NotebookInstanceName', 'N/A')
-
-                    # Get detailed notebook information
-                    try:
-                        notebook_response = sagemaker_client.describe_notebook_instance(
-                            NotebookInstanceName=notebook_name
-                        )
-
-                        instance_type = notebook_response.get('InstanceType', 'N/A')
-                        status = notebook_response.get('NotebookInstanceStatus', 'N/A')
-                        arn = notebook_response.get('NotebookInstanceArn', 'N/A')
-
-                        creation_time = notebook_response.get('CreationTime', 'N/A')
-                        if creation_time != 'N/A':
-                            creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                        last_modified = notebook_response.get('LastModifiedTime', 'N/A')
-                        if last_modified != 'N/A':
-                            last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-
-                        # Network configuration
-                        subnet_id = notebook_response.get('SubnetId', 'N/A')
-                        security_groups = notebook_response.get('SecurityGroups', [])
-                        security_groups_str = ', '.join(security_groups) if security_groups else 'None'
-
-                        # Access settings
-                        direct_internet_access = notebook_response.get('DirectInternetAccess', 'Enabled')
-                        root_access = notebook_response.get('RootAccess', 'Enabled')
-
-                        # IAM role
-                        role_arn = notebook_response.get('RoleArn', 'N/A')
-
-                        # Volume settings
-                        volume_size_gb = notebook_response.get('VolumeSizeInGB', 'N/A')
-
-                        # Platform identifier
-                        platform_identifier = notebook_response.get('PlatformIdentifier', 'N/A')
-
-                        # URL
-                        url = notebook_response.get('Url', 'N/A')
-
-                        # Lifecycle config
-                        lifecycle_config = notebook_response.get('NotebookInstanceLifecycleConfigName', 'None')
-
-                        # KMS key
-                        kms_key = notebook_response.get('KmsKeyId', 'None')
-
-                        # Failure reason
-                        failure_reason = notebook_response.get('FailureReason', 'N/A')
-
-                        # Cost estimation — monthly if always running; $0 when stopped
-                        nb_pricing = sm_pricing_data.get(instance_type, {})
-                        if status == 'InService' and nb_pricing:
-                            monthly_cost = nb_pricing['monthly']
-                            cost_note = 'Estimate: monthly if running 24/7; $0 when stopped'
-                        elif status == 'Stopped':
-                            monthly_cost = 0.0
-                            cost_note = 'No compute charge while stopped'
-                        elif nb_pricing:
-                            monthly_cost = 'N/A'
-                            cost_note = f'Status={status}; cost not estimated'
-                        else:
-                            monthly_cost = 'N/A'
-                            cost_note = 'Instance type not in pricing data'
-
-                        regional_notebooks.append({
-                            'Region': region,
-                            'Notebook Name': notebook_name,
-                            'ARN': arn,
-                            'Status': status,
-                            'Instance Type': instance_type,
-                            'Platform': platform_identifier,
-                            'Created': creation_time,
-                            'Last Modified': last_modified,
-                            'Volume Size (GB)': volume_size_gb,
-                            'Direct Internet Access': direct_internet_access,
-                            'Root Access': root_access,
-                            'Subnet ID': subnet_id,
-                            'Security Groups': security_groups_str,
-                            'IAM Role ARN': role_arn,
-                            'Lifecycle Config': lifecycle_config,
-                            'KMS Key': kms_key,
-                            'URL': url,
-                            'Failure Reason': failure_reason,
-                            'Monthly Cost (On-Demand)': monthly_cost,
-                            'Cost Note': cost_note,
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for notebook {notebook_name} in {region}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Error listing notebook instances in {region}: {str(e)}")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting notebook instances in {region}", e)
+        for notebook in notebooks:
+            notebook_name = notebook.get('NotebookInstanceName', '<unknown>')
+            try:
+                regional_notebooks.append(
+                    _build_notebook_row(notebook, region, sagemaker_client, sm_pricing_data)
+                )
+            except Exception as e:
+                utils.log_warning(f"Could not get details for notebook {notebook_name} in {region}: {str(e)}")
+                continue
 
     return regional_notebooks
 
 
-@utils.aws_error_handler("Collecting SageMaker notebook instances", default_return=[])
-def collect_notebook_instances(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker notebook instance information from AWS regions."""
+def collect_notebook_instances(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect SageMaker notebook instance information across regions, surfacing
+    failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(notebooks, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING SAGEMAKER NOTEBOOK INSTANCES ===")
-    results = utils.scan_regions_concurrent(regions, _scan_notebook_instances_region)
-    all_notebooks = [nb for result in results for nb in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_notebook_instances_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_notebooks = [nb for result in region_results for nb in result]
     utils.log_success(f"Total notebook instances collected: {len(all_notebooks)}")
-    return all_notebooks
+    return all_notebooks, failed_regions
 
 
-def _scan_training_jobs_region(region: str) -> List[Dict[str, Any]]:
-    """Scan SageMaker training jobs in a single region (limited to 50 most recent)."""
+def _build_training_job_row(job: dict, region: str, sagemaker_client, sm_pricing_data: dict) -> dict[str, Any]:
+    """Build the export row for a single SageMaker training job."""
+    job_name = job.get('TrainingJobName', 'N/A')
+
+    job_response = sagemaker_client.describe_training_job(TrainingJobName=job_name)
+
+    status = job_response.get('TrainingJobStatus', 'N/A')
+    arn = job_response.get('TrainingJobArn', 'N/A')
+
+    creation_time = job_response.get('CreationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    training_start = job_response.get('TrainingStartTime', 'N/A')
+    if training_start != 'N/A':
+        training_start = training_start.strftime('%Y-%m-%d %H:%M:%S')
+
+    training_end = job_response.get('TrainingEndTime', 'N/A')
+    if training_end != 'N/A':
+        training_end = training_end.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Training duration
+    training_time_seconds = job_response.get('TrainingTimeInSeconds', 0)
+    training_time_str = f"{training_time_seconds / 60:.1f} minutes" if training_time_seconds else 'N/A'
+
+    # Billable time
+    billable_seconds = job_response.get('BillableTimeInSeconds', 0)
+    billable_time_str = f"{billable_seconds / 60:.1f} minutes" if billable_seconds else 'N/A'
+
+    # Algorithm
+    algorithm_spec = job_response.get('AlgorithmSpecification', {})
+    training_image = algorithm_spec.get('TrainingImage', 'N/A')
+    algorithm_name = algorithm_spec.get('AlgorithmName', 'N/A')
+
+    # Extract algorithm type from image
+    algorithm_type = 'Custom'
+    if 'xgboost' in training_image.lower():
+        algorithm_type = 'XGBoost'
+    elif 'blazingtext' in training_image.lower():
+        algorithm_type = 'BlazingText'
+    elif 'linear-learner' in training_image.lower():
+        algorithm_type = 'Linear Learner'
+    elif algorithm_name != 'N/A':
+        algorithm_type = algorithm_name
+
+    # Resource config
+    resource_config = job_response.get('ResourceConfig', {})
+    instance_type = resource_config.get('InstanceType', 'N/A')
+    instance_count = resource_config.get('InstanceCount', 0)
+    volume_size_gb = resource_config.get('VolumeSizeInGB', 'N/A')
+
+    # Hyperparameters
+    hyperparameters = job_response.get('HyperParameters', {})
+    hyperparam_count = len(hyperparameters)
+
+    # Metrics
+    final_metrics = job_response.get('FinalMetricDataList', [])
+    metric_count = len(final_metrics)
+
+    # Output
+    model_artifacts = job_response.get('ModelArtifacts', {})
+    s3_model_artifacts = model_artifacts.get('S3ModelArtifacts', 'N/A')
+
+    # Failure reason
+    failure_reason = job_response.get('FailureReason', 'N/A')
+
+    # Actual job cost from billable seconds (only meaningful for Completed)
+    tj_pricing = sm_pricing_data.get(instance_type, {})
+    if status == 'Completed' and billable_seconds and instance_count and tj_pricing:
+        actual_cost = round((billable_seconds / 3600) * instance_count * tj_pricing['hourly'], 4)
+        cost_note = 'Actual: (billable_sec / 3600) x instances x on-demand rate'
+    elif status == 'Completed' and not tj_pricing:
+        actual_cost = 'N/A'
+        cost_note = 'Instance type not in pricing data'
+    else:
+        actual_cost = 'N/A'
+        cost_note = f'Status={status}; actual cost unavailable'
+
+    return {
+        'Region': region,
+        'Job Name': job_name,
+        'ARN': arn,
+        'Status': status,
+        'Algorithm Type': algorithm_type,
+        'Instance Type': instance_type,
+        'Instance Count': instance_count,
+        'Volume Size (GB)': volume_size_gb,
+        'Created': creation_time,
+        'Training Start': training_start,
+        'Training End': training_end,
+        'Training Time': training_time_str,
+        'Billable Time': billable_time_str,
+        'Hyperparameters': hyperparam_count,
+        'Final Metrics': metric_count,
+        'Model Artifacts': s3_model_artifacts,
+        'Failure Reason': failure_reason,
+        'Job Cost (On-Demand)': actual_cost,
+        'Cost Note': cost_note,
+    }
+
+
+def _scan_training_jobs_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan SageMaker training jobs in a single region (limited to 50 most
+    recent). Raises on scope-level failure; per-job failures are skipped.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_jobs = []
+    sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+    sm_pricing_data = _load_sagemaker_pricing_data(region)
 
-    try:
-        sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
-        sm_pricing_data = _load_sagemaker_pricing_data(region)
+    paginator = sagemaker_client.get_paginator('list_training_jobs')
+    job_count = 0
+    for page in paginator.paginate(
+        SortBy='CreationTime',
+        SortOrder='Descending',
+        PaginationConfig={'MaxItems': 50}
+    ):
+        jobs = page.get('TrainingJobSummaries', [])
 
-        try:
-            # List recent training jobs (limit to 50)
-            paginator = sagemaker_client.get_paginator('list_training_jobs')
-            job_count = 0
-            for page in paginator.paginate(
-                SortBy='CreationTime',
-                SortOrder='Descending',
-                PaginationConfig={'MaxItems': 50}
-            ):
-                jobs = page.get('TrainingJobSummaries', [])
+        for job in jobs:
+            job_name = job.get('TrainingJobName', '<unknown>')
+            try:
+                regional_jobs.append(
+                    _build_training_job_row(job, region, sagemaker_client, sm_pricing_data)
+                )
+            except Exception as e:
+                utils.log_warning(f"Could not get details for training job {job_name}: {str(e)}")
+                continue
 
-                for job in jobs:
-                    job_name = job.get('TrainingJobName', 'N/A')
+            job_count += 1
 
-                    # Get detailed job information
-                    try:
-                        job_response = sagemaker_client.describe_training_job(
-                            TrainingJobName=job_name
-                        )
-
-                        status = job_response.get('TrainingJobStatus', 'N/A')
-                        arn = job_response.get('TrainingJobArn', 'N/A')
-
-                        creation_time = job_response.get('CreationTime', 'N/A')
-                        if creation_time != 'N/A':
-                            creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                        training_start = job_response.get('TrainingStartTime', 'N/A')
-                        if training_start != 'N/A':
-                            training_start = training_start.strftime('%Y-%m-%d %H:%M:%S')
-
-                        training_end = job_response.get('TrainingEndTime', 'N/A')
-                        if training_end != 'N/A':
-                            training_end = training_end.strftime('%Y-%m-%d %H:%M:%S')
-
-                        # Training duration
-                        training_time_seconds = job_response.get('TrainingTimeInSeconds', 0)
-                        training_time_str = f"{training_time_seconds / 60:.1f} minutes" if training_time_seconds else 'N/A'
-
-                        # Billable time
-                        billable_seconds = job_response.get('BillableTimeInSeconds', 0)
-                        billable_time_str = f"{billable_seconds / 60:.1f} minutes" if billable_seconds else 'N/A'
-
-                        # Algorithm
-                        algorithm_spec = job_response.get('AlgorithmSpecification', {})
-                        training_image = algorithm_spec.get('TrainingImage', 'N/A')
-                        algorithm_name = algorithm_spec.get('AlgorithmName', 'N/A')
-
-                        # Extract algorithm type from image
-                        algorithm_type = 'Custom'
-                        if 'xgboost' in training_image.lower():
-                            algorithm_type = 'XGBoost'
-                        elif 'blazingtext' in training_image.lower():
-                            algorithm_type = 'BlazingText'
-                        elif 'linear-learner' in training_image.lower():
-                            algorithm_type = 'Linear Learner'
-                        elif algorithm_name != 'N/A':
-                            algorithm_type = algorithm_name
-
-                        # Resource config
-                        resource_config = job_response.get('ResourceConfig', {})
-                        instance_type = resource_config.get('InstanceType', 'N/A')
-                        instance_count = resource_config.get('InstanceCount', 0)
-                        volume_size_gb = resource_config.get('VolumeSizeInGB', 'N/A')
-
-                        # Hyperparameters
-                        hyperparameters = job_response.get('HyperParameters', {})
-                        hyperparam_count = len(hyperparameters)
-
-                        # Metrics
-                        final_metrics = job_response.get('FinalMetricDataList', [])
-                        metric_count = len(final_metrics)
-
-                        # Output
-                        model_artifacts = job_response.get('ModelArtifacts', {})
-                        s3_model_artifacts = model_artifacts.get('S3ModelArtifacts', 'N/A')
-
-                        # Failure reason
-                        failure_reason = job_response.get('FailureReason', 'N/A')
-
-                        # Actual job cost from billable seconds (only meaningful for Completed)
-                        tj_pricing = sm_pricing_data.get(instance_type, {})
-                        if status == 'Completed' and billable_seconds and instance_count and tj_pricing:
-                            actual_cost = round((billable_seconds / 3600) * instance_count * tj_pricing['hourly'], 4)
-                            cost_note = 'Actual: (billable_sec / 3600) x instances x on-demand rate'
-                        elif status == 'Completed' and not tj_pricing:
-                            actual_cost = 'N/A'
-                            cost_note = 'Instance type not in pricing data'
-                        else:
-                            actual_cost = 'N/A'
-                            cost_note = f'Status={status}; actual cost unavailable'
-
-                        regional_jobs.append({
-                            'Region': region,
-                            'Job Name': job_name,
-                            'ARN': arn,
-                            'Status': status,
-                            'Algorithm Type': algorithm_type,
-                            'Instance Type': instance_type,
-                            'Instance Count': instance_count,
-                            'Volume Size (GB)': volume_size_gb,
-                            'Created': creation_time,
-                            'Training Start': training_start,
-                            'Training End': training_end,
-                            'Training Time': training_time_str,
-                            'Billable Time': billable_time_str,
-                            'Hyperparameters': hyperparam_count,
-                            'Final Metrics': metric_count,
-                            'Model Artifacts': s3_model_artifacts,
-                            'Failure Reason': failure_reason,
-                            'Job Cost (On-Demand)': actual_cost,
-                            'Cost Note': cost_note,
-                        })
-
-                        job_count += 1
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for training job {job_name}: {str(e)}")
-                        continue
-
-                if job_count >= 50:
-                    break
-
-        except Exception as e:
-            utils.log_warning(f"Error listing training jobs in {region}: {str(e)}")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting training jobs in {region}", e)
+        if job_count >= 50:
+            break
 
     return regional_jobs
 
 
-@utils.aws_error_handler("Collecting SageMaker training jobs", default_return=[])
-def collect_training_jobs(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker training job information (limited to recent 50 per region)."""
+def collect_training_jobs(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect SageMaker training job information (limited to recent 50 per region), surfacing failures."""
     print("\n=== COLLECTING SAGEMAKER TRAINING JOBS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_training_jobs_region)
-    all_jobs = [job for result in results for job in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_training_jobs_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_jobs = [job for result in region_results for job in result]
     utils.log_success(f"Total training jobs collected: {len(all_jobs)} (limited to 50 per region)")
-    return all_jobs
+    return all_jobs, failed_regions
 
 
-def _scan_models_region(region: str) -> List[Dict[str, Any]]:
-    """Scan SageMaker models in a single region."""
+def _build_model_row(model: dict, region: str, sagemaker_client) -> dict[str, Any]:
+    """Build the export row for a single SageMaker model."""
+    model_name = model.get('ModelName', 'N/A')
+
+    model_response = sagemaker_client.describe_model(ModelName=model_name)
+
+    arn = model_response.get('ModelArn', 'N/A')
+    role_arn = model_response.get('ExecutionRoleArn', 'N/A')
+
+    creation_time = model_response.get('CreationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Primary container
+    primary_container = model_response.get('PrimaryContainer', {})
+    container_image = primary_container.get('Image', 'N/A')
+    model_data_url = primary_container.get('ModelDataUrl', 'N/A')
+    container_mode = primary_container.get('Mode', 'N/A')
+
+    # VPC config
+    vpc_config = model_response.get('VpcConfig', {})
+    subnets = vpc_config.get('Subnets', [])
+    vpc_enabled = 'Yes' if subnets else 'No'
+
+    # Network isolation
+    enable_network_isolation = model_response.get('EnableNetworkIsolation', False)
+
+    # Containers
+    containers = model_response.get('Containers', [])
+    container_count = len(containers) if containers else (1 if primary_container else 0)
+
+    return {
+        'Region': region,
+        'Model Name': model_name,
+        'ARN': arn,
+        'Created': creation_time,
+        'Execution Role ARN': role_arn,
+        'Container Image': container_image,
+        'Model Data URL': model_data_url,
+        'Container Mode': container_mode,
+        'Container Count': container_count,
+        'VPC Enabled': vpc_enabled,
+        'Network Isolation': enable_network_isolation
+    }
+
+
+def _scan_models_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan SageMaker models in a single region. Raises on scope-level failure;
+    per-model failures are skipped.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_models = []
+    sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
-    try:
-        sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+    paginator = sagemaker_client.get_paginator('list_models')
+    for page in paginator.paginate():
+        models = page.get('Models', [])
 
-        try:
-            paginator = sagemaker_client.get_paginator('list_models')
-            for page in paginator.paginate():
-                models = page.get('Models', [])
-
-                for model in models:
-                    model_name = model.get('ModelName', 'N/A')
-
-                    # Get detailed model information
-                    try:
-                        model_response = sagemaker_client.describe_model(ModelName=model_name)
-
-                        arn = model_response.get('ModelArn', 'N/A')
-                        role_arn = model_response.get('ExecutionRoleArn', 'N/A')
-
-                        creation_time = model_response.get('CreationTime', 'N/A')
-                        if creation_time != 'N/A':
-                            creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                        # Primary container
-                        primary_container = model_response.get('PrimaryContainer', {})
-                        container_image = primary_container.get('Image', 'N/A')
-                        model_data_url = primary_container.get('ModelDataUrl', 'N/A')
-                        container_mode = primary_container.get('Mode', 'N/A')
-
-                        # VPC config
-                        vpc_config = model_response.get('VpcConfig', {})
-                        subnets = vpc_config.get('Subnets', [])
-                        vpc_enabled = 'Yes' if subnets else 'No'
-
-                        # Network isolation
-                        enable_network_isolation = model_response.get('EnableNetworkIsolation', False)
-
-                        # Containers
-                        containers = model_response.get('Containers', [])
-                        container_count = len(containers) if containers else (1 if primary_container else 0)
-
-                        regional_models.append({
-                            'Region': region,
-                            'Model Name': model_name,
-                            'ARN': arn,
-                            'Created': creation_time,
-                            'Execution Role ARN': role_arn,
-                            'Container Image': container_image,
-                            'Model Data URL': model_data_url,
-                            'Container Mode': container_mode,
-                            'Container Count': container_count,
-                            'VPC Enabled': vpc_enabled,
-                            'Network Isolation': enable_network_isolation
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for model {model_name}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Error listing models in {region}: {str(e)}")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting models in {region}", e)
+        for model in models:
+            model_name = model.get('ModelName', '<unknown>')
+            try:
+                regional_models.append(_build_model_row(model, region, sagemaker_client))
+            except Exception as e:
+                utils.log_warning(f"Could not get details for model {model_name}: {str(e)}")
+                continue
 
     return regional_models
 
 
-@utils.aws_error_handler("Collecting SageMaker models", default_return=[])
-def collect_models(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker model information."""
+def collect_models(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect SageMaker model information, surfacing failures."""
     print("\n=== COLLECTING SAGEMAKER MODELS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_models_region)
-    all_models = [model for result in results for model in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_models_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_models = [model for result in region_results for model in result]
     utils.log_success(f"Total models collected: {len(all_models)}")
-    return all_models
+    return all_models, failed_regions
 
 
-def _scan_endpoints_region(region: str) -> List[Dict[str, Any]]:
-    """Scan SageMaker endpoints in a single region."""
+def _build_endpoint_row(endpoint: dict, region: str, sagemaker_client, sm_pricing_data: dict) -> dict[str, Any]:
+    """Build the export row for a single SageMaker endpoint."""
+    endpoint_name = endpoint.get('EndpointName', 'N/A')
+
+    endpoint_response = sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
+
+    status = endpoint_response.get('EndpointStatus', 'N/A')
+    arn = endpoint_response.get('EndpointArn', 'N/A')
+    config_name = endpoint_response.get('EndpointConfigName', 'N/A')
+
+    creation_time = endpoint_response.get('CreationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_modified = endpoint_response.get('LastModifiedTime', 'N/A')
+    if last_modified != 'N/A':
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Production variants
+    production_variants = endpoint_response.get('ProductionVariants', [])
+    variant_count = len(production_variants)
+
+    # Get instance info from first variant
+    instance_type = 'N/A'
+    current_instance_count = 0
+    desired_instance_count = 0
+
+    if production_variants:
+        first_variant = production_variants[0]
+        instance_type = first_variant.get('InstanceType', 'N/A')
+        current_instance_count = first_variant.get('CurrentInstanceCount', 0)
+        desired_instance_count = first_variant.get('DesiredInstanceCount', 0)
+
+    # Data capture config
+    data_capture_config = endpoint_response.get('DataCaptureConfig', {})
+    data_capture_enabled = data_capture_config.get('EnableCapture', False)
+
+    # Failure reason
+    failure_reason = endpoint_response.get('FailureReason', 'N/A')
+
+    # Monthly cost for InService endpoints (first variant × current count)
+    ep_pricing = sm_pricing_data.get(instance_type, {})
+    instance_count_for_cost = current_instance_count or desired_instance_count
+    if status == 'InService' and ep_pricing and instance_count_for_cost:
+        monthly_cost = round(ep_pricing['monthly'] * instance_count_for_cost, 2)
+        cost_note = 'Estimate: first variant × instance count × 730 hr/mo; multi-variant may be higher'
+    elif status == 'InService' and not ep_pricing:
+        monthly_cost = 'N/A'
+        cost_note = 'Instance type not in pricing data'
+    else:
+        monthly_cost = 'N/A'
+        cost_note = f'Status={status}; cost not estimated'
+
+    return {
+        'Region': region,
+        'Endpoint Name': endpoint_name,
+        'ARN': arn,
+        'Status': status,
+        'Config Name': config_name,
+        'Created': creation_time,
+        'Last Modified': last_modified,
+        'Instance Type': instance_type,
+        'Current Instances': current_instance_count,
+        'Desired Instances': desired_instance_count,
+        'Production Variants': variant_count,
+        'Data Capture Enabled': data_capture_enabled,
+        'Failure Reason': failure_reason,
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Cost Note': cost_note,
+    }
+
+
+def _scan_endpoints_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan SageMaker endpoints in a single region. Raises on scope-level
+    failure; per-endpoint failures are skipped.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_endpoints = []
+    sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+    sm_pricing_data = _load_sagemaker_pricing_data(region)
 
-    try:
-        sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
-        sm_pricing_data = _load_sagemaker_pricing_data(region)
+    paginator = sagemaker_client.get_paginator('list_endpoints')
+    for page in paginator.paginate():
+        endpoints = page.get('Endpoints', [])
 
-        try:
-            paginator = sagemaker_client.get_paginator('list_endpoints')
-            for page in paginator.paginate():
-                endpoints = page.get('Endpoints', [])
-
-                for endpoint in endpoints:
-                    endpoint_name = endpoint.get('EndpointName', 'N/A')
-
-                    # Get detailed endpoint information
-                    try:
-                        endpoint_response = sagemaker_client.describe_endpoint(
-                            EndpointName=endpoint_name
-                        )
-
-                        status = endpoint_response.get('EndpointStatus', 'N/A')
-                        arn = endpoint_response.get('EndpointArn', 'N/A')
-                        config_name = endpoint_response.get('EndpointConfigName', 'N/A')
-
-                        creation_time = endpoint_response.get('CreationTime', 'N/A')
-                        if creation_time != 'N/A':
-                            creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                        last_modified = endpoint_response.get('LastModifiedTime', 'N/A')
-                        if last_modified != 'N/A':
-                            last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-
-                        # Production variants
-                        production_variants = endpoint_response.get('ProductionVariants', [])
-                        variant_count = len(production_variants)
-
-                        # Get instance info from first variant
-                        instance_type = 'N/A'
-                        current_instance_count = 0
-                        desired_instance_count = 0
-
-                        if production_variants:
-                            first_variant = production_variants[0]
-                            instance_type = first_variant.get('InstanceType', 'N/A')
-                            current_instance_count = first_variant.get('CurrentInstanceCount', 0)
-                            desired_instance_count = first_variant.get('DesiredInstanceCount', 0)
-
-                        # Data capture config
-                        data_capture_config = endpoint_response.get('DataCaptureConfig', {})
-                        data_capture_enabled = data_capture_config.get('EnableCapture', False)
-
-                        # Failure reason
-                        failure_reason = endpoint_response.get('FailureReason', 'N/A')
-
-                        # Monthly cost for InService endpoints (first variant × current count)
-                        ep_pricing = sm_pricing_data.get(instance_type, {})
-                        instance_count_for_cost = current_instance_count or desired_instance_count
-                        if status == 'InService' and ep_pricing and instance_count_for_cost:
-                            monthly_cost = round(ep_pricing['monthly'] * instance_count_for_cost, 2)
-                            cost_note = 'Estimate: first variant × instance count × 730 hr/mo; multi-variant may be higher'
-                        elif status == 'InService' and not ep_pricing:
-                            monthly_cost = 'N/A'
-                            cost_note = 'Instance type not in pricing data'
-                        else:
-                            monthly_cost = 'N/A'
-                            cost_note = f'Status={status}; cost not estimated'
-
-                        regional_endpoints.append({
-                            'Region': region,
-                            'Endpoint Name': endpoint_name,
-                            'ARN': arn,
-                            'Status': status,
-                            'Config Name': config_name,
-                            'Created': creation_time,
-                            'Last Modified': last_modified,
-                            'Instance Type': instance_type,
-                            'Current Instances': current_instance_count,
-                            'Desired Instances': desired_instance_count,
-                            'Production Variants': variant_count,
-                            'Data Capture Enabled': data_capture_enabled,
-                            'Failure Reason': failure_reason,
-                            'Monthly Cost (On-Demand)': monthly_cost,
-                            'Cost Note': cost_note,
-                        })
-
-                    except Exception as e:
-                        utils.log_warning(f"Could not get details for endpoint {endpoint_name}: {str(e)}")
-                        continue
-
-        except Exception as e:
-            utils.log_warning(f"Error listing endpoints in {region}: {str(e)}")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting endpoints in {region}", e)
+        for endpoint in endpoints:
+            endpoint_name = endpoint.get('EndpointName', '<unknown>')
+            try:
+                regional_endpoints.append(
+                    _build_endpoint_row(endpoint, region, sagemaker_client, sm_pricing_data)
+                )
+            except Exception as e:
+                utils.log_warning(f"Could not get details for endpoint {endpoint_name}: {str(e)}")
+                continue
 
     return regional_endpoints
 
 
-@utils.aws_error_handler("Collecting SageMaker endpoints", default_return=[])
-def collect_endpoints(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker endpoint information."""
+def collect_endpoints(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect SageMaker endpoint information, surfacing failures."""
     print("\n=== COLLECTING SAGEMAKER ENDPOINTS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_endpoints_region)
-    all_endpoints = [ep for result in results for ep in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_endpoints_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_endpoints = [ep for result in region_results for ep in result]
     utils.log_success(f"Total endpoints collected: {len(all_endpoints)}")
-    return all_endpoints
+    return all_endpoints, failed_regions
 
 
-def _scan_processing_jobs_region(region: str) -> List[Dict[str, Any]]:
-    """Scan SageMaker processing jobs in a single region (limited to 30 most recent)."""
+def _build_processing_job_row(job: dict, region: str) -> dict[str, Any]:
+    """Build the export row for a single SageMaker processing job summary."""
+    job_name = job.get('ProcessingJobName', 'N/A')
+    status = job.get('ProcessingJobStatus', 'N/A')
+    arn = job.get('ProcessingJobArn', 'N/A')
+
+    creation_time = job.get('CreationTime', 'N/A')
+    if creation_time != 'N/A':
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    processing_end = job.get('ProcessingEndTime', 'N/A')
+    if processing_end != 'N/A':
+        processing_end = processing_end.strftime('%Y-%m-%d %H:%M:%S')
+
+    failure_reason = job.get('FailureReason', 'N/A')
+
+    return {
+        'Region': region,
+        'Job Name': job_name,
+        'ARN': arn,
+        'Status': status,
+        'Created': creation_time,
+        'Processing End': processing_end,
+        'Failure Reason': failure_reason
+    }
+
+
+def _scan_processing_jobs_region(region: str) -> list[dict[str, Any]]:
+    """
+    Scan SageMaker processing jobs in a single region (limited to 30 most
+    recent). Raises on scope-level failure; per-job failures are skipped.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_jobs = []
+    sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
 
-    try:
-        sagemaker_client = utils.get_boto3_client('sagemaker', region_name=region)
+    paginator = sagemaker_client.get_paginator('list_processing_jobs')
+    job_count = 0
+    for page in paginator.paginate(
+        SortBy='CreationTime',
+        SortOrder='Descending',
+        PaginationConfig={'MaxItems': 30}
+    ):
+        jobs = page.get('ProcessingJobSummaries', [])
 
-        try:
-            # List recent processing jobs (limit to 30)
-            paginator = sagemaker_client.get_paginator('list_processing_jobs')
-            job_count = 0
-            for page in paginator.paginate(
-                SortBy='CreationTime',
-                SortOrder='Descending',
-                PaginationConfig={'MaxItems': 30}
-            ):
-                jobs = page.get('ProcessingJobSummaries', [])
+        for job in jobs:
+            job_name = job.get('ProcessingJobName', '<unknown>')
+            try:
+                regional_jobs.append(_build_processing_job_row(job, region))
+            except Exception as e:
+                utils.log_warning(f"Skipping malformed processing job {job_name} in {region}: {str(e)}")
+                continue
 
-                for job in jobs:
-                    job_name = job.get('ProcessingJobName', 'N/A')
-                    status = job.get('ProcessingJobStatus', 'N/A')
-                    arn = job.get('ProcessingJobArn', 'N/A')
-
-                    creation_time = job.get('CreationTime', 'N/A')
-                    if creation_time != 'N/A':
-                        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S')
-
-                    processing_end = job.get('ProcessingEndTime', 'N/A')
-                    if processing_end != 'N/A':
-                        processing_end = processing_end.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # Get additional details if needed
-                    failure_reason = job.get('FailureReason', 'N/A')
-
-                    regional_jobs.append({
-                        'Region': region,
-                        'Job Name': job_name,
-                        'ARN': arn,
-                        'Status': status,
-                        'Created': creation_time,
-                        'Processing End': processing_end,
-                        'Failure Reason': failure_reason
-                    })
-
-                    job_count += 1
-                    if job_count >= 30:
-                        break
-
-        except Exception as e:
-            utils.log_warning(f"Error listing processing jobs in {region}: {str(e)}")
-
-    except Exception as e:
-        utils.log_error(f"Error collecting processing jobs in {region}", e)
+            job_count += 1
+            if job_count >= 30:
+                break
 
     return regional_jobs
 
 
-@utils.aws_error_handler("Collecting SageMaker processing jobs", default_return=[])
-def collect_processing_jobs(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect SageMaker processing job information (limited to recent 30 per region)."""
+def collect_processing_jobs(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """Collect SageMaker processing job information (limited to recent 30 per region), surfacing failures."""
     print("\n=== COLLECTING SAGEMAKER PROCESSING JOBS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_processing_jobs_region)
-    all_jobs = [job for result in results for job in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_processing_jobs_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_jobs = [job for result in region_results for job in result]
     utils.log_success(f"Total processing jobs collected: {len(all_jobs)} (limited to 30 per region)")
-    return all_jobs
+    return all_jobs, failed_regions
 
 
-def generate_summary(notebooks: List[Dict[str, Any]],
-                     training_jobs: List[Dict[str, Any]],
-                     models: List[Dict[str, Any]],
-                     endpoints: List[Dict[str, Any]],
-                     processing_jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(notebooks: list[dict[str, Any]],
+                     training_jobs: list[dict[str, Any]],
+                     models: list[dict[str, Any]],
+                     endpoints: list[dict[str, Any]],
+                     processing_jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for SageMaker resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -693,14 +754,20 @@ def main():
 
     # Detect partition for region examples
     regions = utils.prompt_region_selection()
-    # Collect data
+    # Collect data. Each scope collector surfaces its own failed regions
+    # (rather than swallowing collection errors into an empty result — see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md);
+    # all scopes' failures are merged below into one combined list.
     print("\nCollecting SageMaker data...")
 
-    notebooks = collect_notebook_instances(regions)
-    training_jobs = collect_training_jobs(regions)
-    models = collect_models(regions)
-    endpoints = collect_endpoints(regions)
-    processing_jobs = collect_processing_jobs(regions)
+    notebooks, failed_notebooks = collect_notebook_instances(regions)
+    training_jobs, failed_training = collect_training_jobs(regions)
+    models, failed_models = collect_models(regions)
+    endpoints, failed_endpoints = collect_endpoints(regions)
+    processing_jobs, failed_processing = collect_processing_jobs(regions)
+
+    failed_regions = failed_notebooks + failed_training + failed_models + failed_endpoints + failed_processing
+
     summary = generate_summary(notebooks, training_jobs, models, endpoints, processing_jobs)
 
     # Create DataFrames
@@ -733,6 +800,9 @@ def main():
         df_processing = utils.prepare_dataframe_for_export(df_processing)
         dataframes['Processing Jobs'] = df_processing
 
+    # The Summary sheet is always built (even when every scope is empty), so
+    # a workbook always lands. Preserve that: it is what keeps this exporter
+    # a PARTIAL rather than a VULNERABLE case in the audit.
     if summary:
         df_summary = pd.DataFrame(summary)
         df_summary = utils.prepare_dataframe_for_export(df_summary)
@@ -749,6 +819,19 @@ def main():
         # Log summary
     else:
         utils.log_warning("No SageMaker data found to export")
+
+    # If ANY scope failed to collect in ANY region, make it loud: write a
+    # failure marker and exit non-zero, even though the Summary sheet made
+    # the workbook look complete. A zero-row sheet that is actually a failed
+    # collection (not a genuinely empty account) is exactly the failure mode
+    # this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'sagemaker', failed_regions)
+        print(
+            "\nERROR: SageMaker export completed with failures — data is incomplete. "
+            "See the *-sagemaker-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("SageMaker export completed successfully")
 

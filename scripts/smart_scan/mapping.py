@@ -7,7 +7,6 @@ StratusScan export scripts. Includes service aliases and categorization.
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +22,24 @@ ALWAYS_RUN_SCRIPTS = [
     "route_tables_export.py",
     "trusted_advisor_cost_optimization_export.py",
     "budgets_export.py",
+    # Every commercial account has a bill, so billing is always worth pulling —
+    # it doubles as a ground-truth cross-check on what is actually running.
+    # The script skips itself cleanly in GovCloud (no Cost Explorer) and on
+    # missing Cost Explorer permissions, so making it mandatory is safe.
+    "billing_export.py",
 ]
 
 # Service name aliases and variations
 # Maps common service name variations to canonical names
-SERVICE_ALIASES: Dict[str, str] = {
+SERVICE_ALIASES: dict[str, str] = {
     # EC2 and Compute
     "ec2": "Amazon Elastic Compute Cloud",
     "amazon ec2": "Amazon Elastic Compute Cloud",
     "elastic compute cloud": "Amazon Elastic Compute Cloud",
     "lambda": "AWS Lambda",
     "eks": "Amazon Elastic Kubernetes Service",
-    "Amazon EKS": "Amazon Elastic Kubernetes Service",
     "kubernetes": "Amazon Elastic Kubernetes Service",
     "ecs": "Amazon Elastic Container Service",
-    "Amazon ECS": "Amazon Elastic Container Service",
     "fargate": "AWS Fargate",
     "app runner": "AWS App Runner",
     "apprunner": "AWS App Runner",
@@ -147,12 +149,34 @@ SERVICE_ALIASES: Dict[str, str] = {
     "elastic container registry": "Amazon Elastic Container Registry",
     "elastic container service": "Amazon Elastic Container Service",
     "elastic kubernetes service": "Amazon Elastic Kubernetes Service",
+
+    # Short "marketing" names emitted by the service-discovery catalog in
+    # services_in_use_export.py. The catalog keys on friendly names (e.g.
+    # "Amazon RDS") for human-readable reports, while SERVICE_SCRIPT_MAP keys
+    # on full canonical names. Alias lookup is case-insensitive (input is
+    # lowercased), so these MUST be lowercase. Without them, discovered
+    # services map to zero scripts and are silently dropped from Deep Scan.
+    # The test_discovery_catalog_resolves guard keeps this list in sync.
+    "amazon rds": "Amazon Relational Database Service",
+    "amazon ecs": "Amazon Elastic Container Service",
+    "amazon eks": "Amazon Elastic Kubernetes Service",
+    "amazon ebs": "Amazon Elastic Block Store",
+    "amazon efs": "Amazon Elastic File System",
+    "amazon glacier": "Amazon S3 Glacier",
+    "amazon vpc": "Amazon Virtual Private Cloud",
+    "aws vpn": "AWS Virtual Private Network",
+    "aws iam": "AWS Identity and Access Management",
+    "aws kms": "AWS Key Management Service",
+    "amazon opensearch": "Amazon OpenSearch Service",
+    "amazon sns": "Amazon Simple Notification Service",
+    "amazon sqs": "Amazon Simple Queue Service",
+    "amazon appsync": "AWS AppSync",
 }
 
 # Primary mapping: Service name → list of export scripts
 # Only references scripts that exist on disk. Entries for services whose
 # scripts have not yet been created are omitted until those scripts are added.
-SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
+SERVICE_SCRIPT_MAP: dict[str, list[str]] = {
     # Compute Services
     "Amazon Elastic Compute Cloud": [
         "ec2_export.py",
@@ -304,7 +328,7 @@ SERVICE_SCRIPT_MAP: Dict[str, List[str]] = {
 }
 
 # Script categories for organization
-SCRIPT_CATEGORIES: Dict[str, List[str]] = {
+SCRIPT_CATEGORIES: dict[str, list[str]] = {
     "Security & Compliance": [
         "iam_export.py",
         "guardduty_export.py",
@@ -423,7 +447,7 @@ SCRIPT_CATEGORIES: Dict[str, List[str]] = {
 }
 
 
-def get_all_scripts() -> Set[str]:
+def get_all_scripts() -> set[str]:
     """Get a set of all unique script names from the mapping."""
     scripts = set()
     for script_list in SERVICE_SCRIPT_MAP.values():
@@ -454,7 +478,7 @@ def get_canonical_service_name(service_name: str) -> str:
     return service_name
 
 
-def get_scripts_for_service(service_name: str) -> List[str]:
+def get_scripts_for_service(service_name: str) -> list[str]:
     """
     Get export scripts for a given service name.
 
@@ -484,7 +508,7 @@ def get_category_for_script(script_name: str) -> str:
     return "Other"
 
 
-def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
+def validate_script_mappings(scripts_dir: Path = None) -> dict[str, list[str]]:
     """
     Validate that all scripts referenced in SERVICE_SCRIPT_MAP exist on disk.
 
@@ -504,7 +528,7 @@ def validate_script_mappings(scripts_dir: Path = None) -> Dict[str, List[str]]:
         # so the scripts dir is two levels up from this file
         scripts_dir = Path(__file__).parent.parent
 
-    result: Dict[str, List[str]] = {"missing": [], "found": []}
+    result: dict[str, list[str]] = {"missing": [], "found": []}
 
     for script in get_all_scripts():
         script_path = scripts_dir / script

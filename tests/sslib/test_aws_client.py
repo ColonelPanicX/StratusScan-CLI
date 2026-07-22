@@ -8,29 +8,22 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import utils as aws_mod
 from utils import (
     _DEFAULT_REGIONS,
     _GOVCLOUD_DEFAULT_REGIONS,
-    build_arn,
-    check_aws_region_access,
     detect_partition,
-    get_aws_regions,
     get_boto3_client,
     get_cached_account_info,
     get_partition_default_region,
     get_partition_regions,
     is_auto_run,
-    is_aws_commercial_environment,
     is_aws_region,
     is_service_available_in_partition,
     validate_aws_credentials,
     validate_aws_region,
 )
-
 
 # ---------------------------------------------------------------------------
 # Environment helpers
@@ -124,9 +117,8 @@ class TestGetBoto3ClientFips:
         mock_client = MagicMock()
         mock_session.client.return_value = mock_client
 
-        with patch("utils.boto3.Session", return_value=mock_session):
-            with patch("utils.config_value", return_value={}):
-                get_boto3_client("ec2", region_name="us-gov-west-1")
+        with patch("utils.boto3.Session", return_value=mock_session), patch("utils.config_value", return_value={}):
+            get_boto3_client("ec2", region_name="us-gov-west-1")
 
         call_kwargs = mock_session.client.call_args[1]
         assert "use_fips_endpoint" not in call_kwargs, (
@@ -141,9 +133,8 @@ class TestGetBoto3ClientFips:
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("utils.boto3.Session", return_value=mock_session):
-            with patch("utils.config_value", return_value={}):
-                get_boto3_client("s3", region_name="us-gov-east-1")
+        with patch("utils.boto3.Session", return_value=mock_session), patch("utils.config_value", return_value={}):
+            get_boto3_client("s3", region_name="us-gov-east-1")
 
         call_kwargs = mock_session.client.call_args[1]
         assert "use_fips_endpoint" not in call_kwargs
@@ -154,9 +145,8 @@ class TestGetBoto3ClientFips:
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("utils.boto3.Session", return_value=mock_session):
-            with patch("utils.config_value", return_value={}):
-                get_boto3_client("ec2", region_name="us-east-1")
+        with patch("utils.boto3.Session", return_value=mock_session), patch("utils.config_value", return_value={}):
+            get_boto3_client("ec2", region_name="us-east-1")
 
         call_kwargs = mock_session.client.call_args[1]
         assert "use_fips_endpoint" not in call_kwargs
@@ -166,9 +156,8 @@ class TestGetBoto3ClientFips:
         mock_session = MagicMock()
         mock_session.client.return_value = MagicMock()
 
-        with patch("utils.boto3.Session", return_value=mock_session):
-            with patch("utils.config_value", return_value={}):
-                get_boto3_client("iam")
+        with patch("utils.boto3.Session", return_value=mock_session), patch("utils.config_value", return_value={}):
+            get_boto3_client("iam")
 
         call_kwargs = mock_session.client.call_args[1]
         assert "config" in call_kwargs
@@ -284,11 +273,8 @@ class TestGetCachedAccountInfo:
         mock_sts = Mock()
         mock_sts.get_caller_identity.return_value = {"Account": "999999999999"}
 
-        with patch.object(aws_mod, "_account_info_cache", None):
-            with patch("utils.get_boto3_client", return_value=mock_sts):
-                with patch("utils.get_account_name", return_value="PROD"):
-                    with patch("utils.detect_partition", return_value="aws"):
-                        account_id, account_name, partition = get_cached_account_info()
+        with patch.object(aws_mod, "_account_info_cache", None), patch("utils.get_boto3_client", return_value=mock_sts), patch("utils.get_account_name", return_value="PROD"), patch("utils.detect_partition", return_value="aws"):
+            account_id, account_name, partition = get_cached_account_info()
 
         assert account_id == "999999999999"
         assert account_name == "PROD"
@@ -297,9 +283,8 @@ class TestGetCachedAccountInfo:
         aws_mod._account_info_cache = None
 
     def test_returns_defaults_on_failure(self):
-        with patch.object(aws_mod, "_account_info_cache", None):
-            with patch("utils.get_boto3_client", side_effect=Exception("boom")):
-                account_id, account_name, partition = get_cached_account_info()
+        with patch.object(aws_mod, "_account_info_cache", None), patch("utils.get_boto3_client", side_effect=Exception("boom")):
+            account_id, account_name, partition = get_cached_account_info()
 
         assert account_id == "UNKNOWN"
         assert account_name == "UNKNOWN-ACCOUNT"

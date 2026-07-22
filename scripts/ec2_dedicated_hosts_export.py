@@ -25,7 +25,7 @@ Note: Requires ec2:DescribeHosts and ec2:DescribeHostReservations permissions
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -42,14 +42,14 @@ args = utils.parse_script_args("Export EC2 Dedicated Hosts to Excel")
 utils.setup_logging('ec2-dedicated-hosts-export')
 
 
-def _load_dedicated_host_pricing() -> Dict[str, Dict[str, float]]:
+def _load_dedicated_host_pricing() -> dict[str, dict[str, float]]:
     """Load per-family dedicated host on-demand rates (us-east-1).
 
     Returns dict: {family: {'hourly': float, 'monthly': float}}
     """
     pricing_file = Path(__file__).parent.parent / 'reference' / 'dedicated-host-pricing.json'
     try:
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         rates = data.get('rates', {})
         return {
@@ -63,144 +63,238 @@ def _load_dedicated_host_pricing() -> Dict[str, Dict[str, float]]:
         return {}
 
 
-@utils.aws_error_handler("Collecting dedicated hosts", default_return=[])
-def collect_dedicated_hosts(region: str) -> List[Dict[str, Any]]:
-    """Collect all EC2 Dedicated Hosts in a region."""
+def _build_host_row(host: dict, region: str, host_pricing: dict, is_govcloud: bool) -> dict[str, Any]:
+    """Build a single dedicated-host export row from a describe_hosts entry."""
+    # Extract capacity information
+    available_capacity = host.get('AvailableCapacity', {})
+    capacity_details = []
+
+    for vcpu in available_capacity.get('AvailableVCpus', []):
+        capacity_details.append(
+            f"{vcpu.get('InstanceType', 'N/A')}: {vcpu.get('AvailableVCpus', 0)} vCPUs"
+        )
+
+    # Extract instance information
+    instances = host.get('Instances', [])
+    instance_ids = [inst.get('InstanceId', 'N/A') for inst in instances]
+    instance_types = list({inst.get('InstanceType', 'N/A') for inst in instances})
+
+    # Calculate utilization
+    total_capacity = available_capacity.get('AvailableInstanceCapacity', [])
+    total_vcpus = sum([cap.get('TotalCapacity', 0) for cap in total_capacity])
+    available_vcpus = sum([cap.get('AvailableCapacity', 0) for cap in total_capacity])
+    used_vcpus = total_vcpus - available_vcpus
+    utilization_pct = (used_vcpus / total_vcpus * 100) if total_vcpus > 0 else 0
+
+    # Extract properties
+    properties = host.get('HostProperties', {})
+
+    # Format tags
+    tags = []
+    for tag in host.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    # Cost estimation — per-host flat rate keyed by InstanceFamily
+    state = host.get('State', 'N/A')
+    instance_family = properties.get('InstanceFamily', 'N/A')
+    family_pricing = host_pricing.get(instance_family)
+    if state == 'released':
+        monthly_cost = 0.0
+        cost_note = 'Host released; no longer billed'
+    elif family_pricing:
+        monthly_cost = family_pricing['monthly']
+        gc_note = ' (us-east-1 rates; GovCloud may differ)' if is_govcloud else ''
+        cost_note = f'Estimate: flat per-host rate × 730 hr/mo{gc_note}'
+    else:
+        monthly_cost = 'N/A'
+        cost_note = f'Family {instance_family!r} not in pricing data'
+
+    return {
+        'Region': region,
+        'HostId': host.get('HostId', 'N/A'),
+        'State': host.get('State', 'N/A'),
+        'AvailabilityZone': host.get('AvailabilityZone', 'N/A'),
+        'AvailabilityZoneId': host.get('AvailabilityZoneId', 'N/A'),
+        'InstanceType': properties.get('InstanceType', 'N/A'),
+        'InstanceFamily': properties.get('InstanceFamily', 'N/A'),
+        'Sockets': properties.get('Sockets', 'N/A'),
+        'Cores': properties.get('Cores', 'N/A'),
+        'TotalVCpus': properties.get('TotalVCpus', 'N/A'),
+        'UsedVCpus': used_vcpus if total_vcpus > 0 else 'N/A',
+        'AvailableVCpus': available_vcpus if total_vcpus > 0 else 'N/A',
+        'UtilizationPercent': f"{utilization_pct:.1f}%" if total_vcpus > 0 else 'N/A',
+        'AutoPlacement': host.get('AutoPlacement', 'off'),
+        'HostRecovery': host.get('HostRecovery', 'off'),
+        'AllocationTime': host.get('AllocationTime', 'N/A'),
+        'ReleaseTime': host.get('ReleaseTime', 'N/A'),
+        'HostReservationId': host.get('HostReservationId', 'N/A'),
+        'InstancesCount': len(instances),
+        'InstanceIds': ', '.join(instance_ids) if instance_ids else 'N/A',
+        'InstanceTypes': ', '.join(instance_types) if instance_types else 'N/A',
+        'AvailableCapacity': ', '.join(capacity_details) if capacity_details else 'N/A',
+        'MemberOfServiceLinkedResourceGroup': host.get('MemberOfServiceLinkedResourceGroup', False),
+        'OutpostArn': host.get('OutpostArn', 'N/A'),
+        'AssetId': host.get('AssetId', 'N/A'),
+        'Tags': ', '.join(tags) if tags else 'N/A',
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Cost Note': cost_note,
+    }
+
+
+def _scan_dedicated_hosts_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect all EC2 Dedicated Hosts in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no hosts" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed hosts are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     ec2 = utils.get_boto3_client('ec2', region_name=region)
-    hosts = []
     host_pricing = _load_dedicated_host_pricing()
     is_govcloud = utils.detect_partition(region) == 'aws-us-gov'
 
+    hosts = []
     paginator = ec2.get_paginator('describe_hosts')
     for page in paginator.paginate():
         for host in page.get('Hosts', []):
-            # Extract capacity information
-            available_capacity = host.get('AvailableCapacity', {})
-            capacity_details = []
-
-            for vcpu in available_capacity.get('AvailableVCpus', []):
-                capacity_details.append(
-                    f"{vcpu.get('InstanceType', 'N/A')}: {vcpu.get('AvailableVCpus', 0)} vCPUs"
+            try:
+                hosts.append(_build_host_row(host, region, host_pricing, is_govcloud))
+            except Exception as e:
+                # One malformed host is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed dedicated host in {region}: "
+                    f"{host.get('HostId', '<unknown>')}",
+                    e,
                 )
-
-            # Extract instance information
-            instances = host.get('Instances', [])
-            instance_ids = [inst.get('InstanceId', 'N/A') for inst in instances]
-            instance_types = list({inst.get('InstanceType', 'N/A') for inst in instances})
-
-            # Calculate utilization
-            total_capacity = available_capacity.get('AvailableInstanceCapacity', [])
-            total_vcpus = sum([cap.get('TotalCapacity', 0) for cap in total_capacity])
-            available_vcpus = sum([cap.get('AvailableCapacity', 0) for cap in total_capacity])
-            used_vcpus = total_vcpus - available_vcpus
-            utilization_pct = (used_vcpus / total_vcpus * 100) if total_vcpus > 0 else 0
-
-            # Extract properties
-            properties = host.get('HostProperties', {})
-
-            # Format tags
-            tags = []
-            for tag in host.get('Tags', []):
-                tags.append(f"{tag.get('Key')}={tag.get('Value')}")
-
-            # Cost estimation — per-host flat rate keyed by InstanceFamily
-            state = host.get('State', 'N/A')
-            instance_family = properties.get('InstanceFamily', 'N/A')
-            family_pricing = host_pricing.get(instance_family)
-            if state == 'released':
-                monthly_cost = 0.0
-                cost_note = 'Host released; no longer billed'
-            elif family_pricing:
-                monthly_cost = family_pricing['monthly']
-                gc_note = ' (us-east-1 rates; GovCloud may differ)' if is_govcloud else ''
-                cost_note = f'Estimate: flat per-host rate × 730 hr/mo{gc_note}'
-            else:
-                monthly_cost = 'N/A'
-                cost_note = f'Family {instance_family!r} not in pricing data'
-
-            hosts.append({
-                'Region': region,
-                'HostId': host.get('HostId', 'N/A'),
-                'State': host.get('State', 'N/A'),
-                'AvailabilityZone': host.get('AvailabilityZone', 'N/A'),
-                'AvailabilityZoneId': host.get('AvailabilityZoneId', 'N/A'),
-                'InstanceType': properties.get('InstanceType', 'N/A'),
-                'InstanceFamily': properties.get('InstanceFamily', 'N/A'),
-                'Sockets': properties.get('Sockets', 'N/A'),
-                'Cores': properties.get('Cores', 'N/A'),
-                'TotalVCpus': properties.get('TotalVCpus', 'N/A'),
-                'UsedVCpus': used_vcpus if total_vcpus > 0 else 'N/A',
-                'AvailableVCpus': available_vcpus if total_vcpus > 0 else 'N/A',
-                'UtilizationPercent': f"{utilization_pct:.1f}%" if total_vcpus > 0 else 'N/A',
-                'AutoPlacement': host.get('AutoPlacement', 'off'),
-                'HostRecovery': host.get('HostRecovery', 'off'),
-                'AllocationTime': host.get('AllocationTime', 'N/A'),
-                'ReleaseTime': host.get('ReleaseTime', 'N/A'),
-                'HostReservationId': host.get('HostReservationId', 'N/A'),
-                'InstancesCount': len(instances),
-                'InstanceIds': ', '.join(instance_ids) if instance_ids else 'N/A',
-                'InstanceTypes': ', '.join(instance_types) if instance_types else 'N/A',
-                'AvailableCapacity': ', '.join(capacity_details) if capacity_details else 'N/A',
-                'MemberOfServiceLinkedResourceGroup': host.get('MemberOfServiceLinkedResourceGroup', False),
-                'OutpostArn': host.get('OutpostArn', 'N/A'),
-                'AssetId': host.get('AssetId', 'N/A'),
-                'Tags': ', '.join(tags) if tags else 'N/A',
-                'Monthly Cost (On-Demand)': monthly_cost,
-                'Cost Note': cost_note,
-            })
+                continue
 
     return hosts
 
 
-@utils.aws_error_handler("Collecting host reservations", default_return=[])
-def collect_host_reservations(region: str) -> List[Dict[str, Any]]:
-    """Collect Dedicated Host Reservations in a region."""
+def collect_dedicated_hosts(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect EC2 Dedicated Hosts across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(hosts, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_dedicated_hosts_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_hosts = [host for result in region_results for host in result]
+    return all_hosts, failed_regions
+
+
+def _build_reservation_row(reservation: dict, region: str) -> dict[str, Any]:
+    """Build a single host-reservation export row from a describe_host_reservations entry."""
+    host_id_set = reservation.get('HostIdSet', [])
+
+    tags = []
+    for tag in reservation.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    return {
+        'Region': region,
+        'HostReservationId': reservation.get('HostReservationId', 'N/A'),
+        'OfferingId': reservation.get('OfferingId', 'N/A'),
+        'InstanceFamily': reservation.get('InstanceFamily', 'N/A'),
+        'PaymentOption': reservation.get('PaymentOption', 'N/A'),
+        'State': reservation.get('State', 'N/A'),
+        'Start': reservation.get('Start', 'N/A'),
+        'End': reservation.get('End', 'N/A'),
+        'Duration': reservation.get('Duration', 'N/A'),
+        'Count': reservation.get('Count', 0),
+        'HourlyPrice': reservation.get('HourlyPrice', 'N/A'),
+        'UpfrontPrice': reservation.get('UpfrontPrice', 'N/A'),
+        'CurrencyCode': reservation.get('CurrencyCode', 'USD'),
+        'HostIdSet': ', '.join(host_id_set) if host_id_set else 'N/A',
+        'Tags': ', '.join(tags) if tags else 'N/A',
+    }
+
+
+def _scan_host_reservations_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Dedicated Host Reservations in a single region.
+
+    This is a second, independent scope (its own "Host Reservations" /
+    "Active Reservations" inventory sheets — not derived from the dedicated
+    hosts data) so it must not swallow errors: a failure here needs to
+    propagate to ``scan_regions_concurrent(..., collect_failures=True)`` the
+    same way the primary dedicated-hosts scope does. Individual malformed
+    reservations are skipped (logged) rather than aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reservations = []
 
-    try:
-        paginator = ec2.get_paginator('describe_host_reservations')
-        for page in paginator.paginate():
-            for reservation in page.get('HostReservationSet', []):
-                # Extract host IDs
-                host_id_set = reservation.get('HostIdSet', [])
-
-                # Format tags
-                tags = []
-                for tag in reservation.get('Tags', []):
-                    tags.append(f"{tag.get('Key')}={tag.get('Value')}")
-
-                reservations.append({
-                    'Region': region,
-                    'HostReservationId': reservation.get('HostReservationId', 'N/A'),
-                    'OfferingId': reservation.get('OfferingId', 'N/A'),
-                    'InstanceFamily': reservation.get('InstanceFamily', 'N/A'),
-                    'PaymentOption': reservation.get('PaymentOption', 'N/A'),
-                    'State': reservation.get('State', 'N/A'),
-                    'Start': reservation.get('Start', 'N/A'),
-                    'End': reservation.get('End', 'N/A'),
-                    'Duration': reservation.get('Duration', 'N/A'),
-                    'Count': reservation.get('Count', 0),
-                    'HourlyPrice': reservation.get('HourlyPrice', 'N/A'),
-                    'UpfrontPrice': reservation.get('UpfrontPrice', 'N/A'),
-                    'CurrencyCode': reservation.get('CurrencyCode', 'USD'),
-                    'HostIdSet': ', '.join(host_id_set) if host_id_set else 'N/A',
-                    'Tags': ', '.join(tags) if tags else 'N/A',
-                })
-    except Exception:
-        # Host reservations might not be available
-        pass
+    paginator = ec2.get_paginator('describe_host_reservations')
+    for page in paginator.paginate():
+        for reservation in page.get('HostReservationSet', []):
+            try:
+                reservations.append(_build_reservation_row(reservation, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed host reservation in {region}: "
+                    f"{reservation.get('HostReservationId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reservations
 
 
+def collect_host_reservations(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Dedicated Host Reservations across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result. Callers must merge these ``failed_regions`` with the dedicated
+    hosts scope's ``failed_regions`` — both are independent top-level
+    inventory sheets.
+
+    Returns:
+        tuple: ``(reservations, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_host_reservations_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_reservations = [reservation for result in region_results for reservation in result]
+    return all_reservations, failed_regions
+
+
 @utils.aws_error_handler("Collecting host instances", default_return=[])
-def collect_host_instances(region: str, hosts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_host_instances(region: str, hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Extract instance-to-host mappings from hosts data."""
     host_instances = []
 
     for host in hosts:
-        host_id = host['HostId']
+        host_id = host.get('HostId', 'N/A')
         instance_ids_str = host.get('InstanceIds', 'N/A')
 
         if instance_ids_str != 'N/A':
@@ -219,33 +313,32 @@ def collect_host_instances(region: str, hosts: List[Dict[str, Any]]) -> List[Dic
     return host_instances
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect EC2 Dedicated Host data and write the Excel export."""
     utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Dedicated Hosts...")
 
-    # Collect all resources
-    all_hosts = []
-    all_reservations = []
+    # STEP 1: Collect dedicated hosts (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    all_hosts, hosts_failed_regions = collect_dedicated_hosts(regions)
+    utils.log_info(f"Found {len(all_hosts)} dedicated host(s) across {len(regions)} region(s)")
+
+    # STEP 2: Collect host reservations (second, independent top-level
+    # inventory scope — same failure-surfacing contract as dedicated hosts).
+    all_reservations, reservations_failed_regions = collect_host_reservations(regions)
+    utils.log_info(f"Found {len(all_reservations)} host reservation(s) across {len(regions)} region(s)")
+
+    # Merge failed regions from both scopes so a failure in either one is
+    # surfaced (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    failed_regions = hosts_failed_regions + reservations_failed_regions
+
+    # STEP 3: Extract instance-to-host mappings (enrichment derived from the
+    # already-collected hosts data — no additional API calls, degrades
+    # gracefully and does not contribute to failed_regions).
     all_host_instances = []
-
-    for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-        # Collect dedicated hosts
-        hosts = collect_dedicated_hosts(region)
-        if hosts:
-            utils.log_info(f"  Found {len(hosts)} dedicated host(s)")
-            all_hosts.extend(hosts)
-
-            # Extract instance-to-host mappings
-            host_instances = collect_host_instances(region, hosts)
-            all_host_instances.extend(host_instances)
-
-        # Collect host reservations
-        reservations = collect_host_reservations(region)
-        if reservations:
-            utils.log_info(f"  Found {len(reservations)} host reservation(s)")
-            all_reservations.extend(reservations)
+    for region in regions:
+        region_hosts = [h for h in all_hosts if h.get('Region') == region]
+        if region_hosts:
+            all_host_instances.extend(collect_host_instances(region, region_hosts))
 
     if not all_hosts and not all_reservations:
         utils.log_warning("No EC2 Dedicated Hosts found in any selected region.")
@@ -344,6 +437,21 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.log_info(f"  Instance Placements: {len(all_host_instances)}")
 
     utils.log_success("EC2 Dedicated Hosts export completed successfully!")
+
+    # If ANY region failed either scope's collection (dedicated hosts or host
+    # reservations), make it loud: write a marker and exit non-zero, even
+    # though the workbook (with its always-written Summary sheet) already
+    # landed. A partial export that looks complete is exactly the failure
+    # mode this guards against. A genuinely empty account (every region
+    # succeeded and returned nothing) stays a plain warning with exit 0 —
+    # no marker.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ec2-dedicated-hosts', failed_regions)
+        print(
+            "\nERROR: EC2 Dedicated Hosts export completed with failures — data is incomplete. "
+            "See the *-ec2-dedicated-hosts-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

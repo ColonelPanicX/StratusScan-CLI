@@ -98,16 +98,100 @@ def format_tags(tags):
     else:
         return 'N/A'
 
-@utils.aws_error_handler("Collecting EBS snapshots", default_return=[])
+def _build_snapshot_row(snapshot, region):
+    """
+    Build the export row for a single EBS snapshot.
+
+    Extracted so the per-snapshot processing can be wrapped in try/except by the
+    caller: a malformed snapshot entry is logged and skipped rather than
+    discarding the whole region's results. Every required field is read with
+    ``.get()`` and a safe default for the same reason.
+
+    Args:
+        snapshot (dict): A single snapshot entry from describe_snapshots.
+        region (str): AWS region name.
+
+    Returns:
+        dict: The assembled snapshot row.
+    """
+    # Get snapshot name from tags
+    snapshot_name = get_snapshot_name(snapshot)
+
+    # Extract standard snapshot attributes. Required fields read defensively:
+    # a missing field yields 'N/A'/'Unknown', not a KeyError that would sink
+    # the entire region (see the 07.15.2026 audit / 07.16.2026 blast-radius sweep).
+    snapshot_id = snapshot.get('SnapshotId', 'Unknown')
+    volume_id = snapshot.get('VolumeId', 'N/A')
+    description = snapshot.get('Description', 'N/A')
+    volume_size = snapshot.get('VolumeSize', 0)  # Size in GB
+
+    # Handle start time (convert to string without timezone)
+    start_time = snapshot.get('StartTime', '')
+    start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S') if start_time else 'N/A'
+
+    # Get encryption status
+    encryption = 'Yes' if snapshot.get('Encrypted', False) else 'No'
+
+    # Get storage tier (Standard or Archive)
+    storage_tier = snapshot.get('StorageTier', 'Standard')
+
+    # Get state and progress
+    state = snapshot.get('State', 'N/A')
+    progress = snapshot.get('Progress', 'N/A')
+
+    # Get owner ID with account name mapping
+    owner_id = snapshot.get('OwnerId', 'N/A')
+    owner_formatted = utils.get_account_name_formatted(owner_id)
+
+    # Get KMS key ID if encrypted
+    kms_key_id = snapshot.get('KmsKeyId', 'N/A') if snapshot.get('Encrypted', False) else 'N/A'
+
+    # Format tags
+    snapshot_tags = format_tags(snapshot.get('Tags', []))
+
+    # Additional data processing for specific attributes
+    # Full snapshot size is not directly available via standard API
+    full_snapshot_size_gb = 'N/A'
+
+    return {
+        'Name': snapshot_name,
+        'Snapshot ID': snapshot_id,
+        'Volume ID': volume_id,
+        'Description': description,
+        'Volume Size (GB)': volume_size,
+        'Full Snapshot Size': full_snapshot_size_gb,
+        'Storage Tier': storage_tier,
+        'State': state,
+        'Progress': progress,
+        'Started': start_time_str,
+        'Encryption': encryption,
+        'KMS Key ID': kms_key_id,
+        'Owner ID': owner_formatted,
+        'Region': region,
+        'Tags': snapshot_tags
+    }
+
+
 def get_snapshots(region):
     """
     Get all EBS snapshots owned by the account in a specific AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that ``main()`` cannot distinguish from a genuinely empty
+    region, producing silent data loss (no file written). Region-level
+    failures are allowed to raise so the caller can record the region as
+    *failed* rather than *empty*. Per-snapshot errors are contained
+    internally (logged and skipped).
 
     Args:
         region (str): AWS region name
 
     Returns:
         list: List of dictionaries with snapshot information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -123,69 +207,34 @@ def get_snapshots(region):
     paginator = ec2_client.get_paginator('describe_snapshots')
     page_iterator = paginator.paginate(OwnerIds=['self'])
 
+    skipped = 0
+    total_processed = 0
     for page in page_iterator:
-        for snapshot in page['Snapshots']:
-            # Get snapshot name from tags
-            snapshot_name = get_snapshot_name(snapshot)
+        for snapshot in page.get('Snapshots', []):
+            total_processed += 1
+            snapshot_id = snapshot.get('SnapshotId', 'Unknown')
+            try:
+                snapshot_row = _build_snapshot_row(snapshot, region)
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping EBS snapshot '{snapshot_id}' in {region} due to a processing error", e
+                )
+                continue
 
-            # Extract standard snapshot attributes
-            snapshot_id = snapshot['SnapshotId']
-            volume_id = snapshot.get('VolumeId', 'N/A')
-            description = snapshot.get('Description', 'N/A')
-            volume_size = snapshot.get('VolumeSize', 0)  # Size in GB
-
-            # Handle start time (convert to string without timezone)
-            start_time = snapshot.get('StartTime', '')
-            start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S') if start_time else 'N/A'
-
-            # Get encryption status
-            encryption = 'Yes' if snapshot.get('Encrypted', False) else 'No'
-
-            # Get storage tier (Standard or Archive)
-            storage_tier = snapshot.get('StorageTier', 'Standard')
-
-            # Get state and progress
-            state = snapshot.get('State', 'N/A')
-            progress = snapshot.get('Progress', 'N/A')
-
-            # Get owner ID with account name mapping
-            owner_id = snapshot.get('OwnerId', 'N/A')
-            owner_formatted = utils.get_account_name_formatted(owner_id)
-
-            # Get KMS key ID if encrypted
-            kms_key_id = snapshot.get('KmsKeyId', 'N/A') if snapshot.get('Encrypted', False) else 'N/A'
-
-            # Format tags
-            snapshot_tags = format_tags(snapshot.get('Tags', []))
-
-            # Additional data processing for specific attributes
-            # Full snapshot size is not directly available via standard API
-            full_snapshot_size_gb = 'N/A'
-
-            # Add to results
-            snapshots_data.append({
-                'Name': snapshot_name,
-                'Snapshot ID': snapshot_id,
-                'Volume ID': volume_id,
-                'Description': description,
-                'Volume Size (GB)': volume_size,
-                'Full Snapshot Size': full_snapshot_size_gb,
-                'Storage Tier': storage_tier,
-                'State': state,
-                'Progress': progress,
-                'Started': start_time_str,
-                'Encryption': encryption,
-                'KMS Key ID': kms_key_id,
-                'Owner ID': owner_formatted,
-                'Region': region,
-                'Tags': snapshot_tags
-            })
+            snapshots_data.append(snapshot_row)
         # Inter-page delay to avoid throttling on large accounts
         time.sleep(0.1)
         # Heartbeat every 500 records so terminal stays alive
         collected = len(snapshots_data)
         if collected > 0 and collected % 500 == 0:
             print(f"  [{collected:,} snapshots collected — still running...]")
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_processed} EBS snapshot(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining snapshots were still collected."
+        )
 
     return snapshots_data
 
@@ -205,10 +254,9 @@ def main():
         # Now import pandas (after dependency check)
         import pandas as pd
 
-        if account_name == "UNKNOWN-ACCOUNT":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "UNKNOWN-ACCOUNT" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         regions = utils.prompt_region_selection()
 
@@ -222,12 +270,15 @@ def main():
             utils.log_info(f"Found {len(region_snapshots)} snapshots in {region}")
             return region_snapshots
 
-        # Use concurrent region scanning
-        region_results = utils.scan_regions_concurrent(
+        # Use concurrent region scanning. collect_failures=True returns the
+        # regions that raised so a failed collection is distinguishable from a
+        # genuinely empty account (see Issue #233 blast-radius sweep).
+        region_results, failed_regions = utils.scan_regions_concurrent(
             regions=regions,
             scan_function=scan_region_snapshots,
             max_workers=2,
-            show_progress=True
+            show_progress=True,
+            collect_failures=True
         )
 
         # Flatten results
@@ -239,41 +290,52 @@ def main():
         total_snapshots = len(all_snapshots)
         utils.log_success(f"Total EBS snapshots found across all AWS regions: {total_snapshots}")
 
-        if total_snapshots == 0:
+        if all_snapshots:
+            # Create DataFrame from snapshot data
+            utils.log_info("Preparing data for export to Excel format...")
+            df = pd.DataFrame(all_snapshots)
+
+            # Prepare and sanitize DataFrame (tags may contain secrets)
+            df = utils.sanitize_for_export(
+                utils.prepare_dataframe_for_export(df)
+            )
+
+            # Generate filename with region info
+            region_suffix = regions[0] if len(regions) == 1 else 'all'
+
+            # Use utils module to generate filename
+            filename = utils.create_export_filename(
+                account_name,
+                "ebs-snapshots",
+                region_suffix if region_suffix else None,
+                datetime.datetime.now().strftime("%m.%d.%Y")
+            )
+
+            # Save the data using the utility function
+            output_path = utils.save_dataframe_to_excel(df, filename)
+
+            if output_path:
+                utils.log_success("AWS EBS snapshots data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+                utils.log_info(f"Total snapshots exported: {total_snapshots}")
+                print("\nScript execution completed.")
+            else:
+                utils.log_error("Error exporting data. Please check the logs.")
+                sys.exit(1)
+        elif not failed_regions:
+            # Genuinely empty account: every region succeeded and returned nothing.
             utils.log_warning("No snapshots found. Nothing to export.")
-            sys.exit(0)
 
-        # Create DataFrame from snapshot data
-        utils.log_info("Preparing data for export to Excel format...")
-        df = pd.DataFrame(all_snapshots)
-
-        # Prepare and sanitize DataFrame (tags may contain secrets)
-        df = utils.sanitize_for_export(
-            utils.prepare_dataframe_for_export(df)
-        )
-
-        # Generate filename with region info
-        region_suffix = regions[0] if len(regions) == 1 else 'all'
-
-        # Use utils module to generate filename
-        filename = utils.create_export_filename(
-            account_name,
-            "ebs-snapshots",
-            region_suffix if region_suffix else None,
-            datetime.datetime.now().strftime("%m.%d.%Y")
-        )
-
-        # Save the data using the utility function
-        output_path = utils.save_dataframe_to_excel(df, filename)
-
-        if output_path:
-            utils.log_success("AWS EBS snapshots data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-            utils.log_info(f"Total snapshots exported: {total_snapshots}")
-            print("\nScript execution completed.")
-        else:
-            utils.log_error("Error exporting data. Please check the logs.")
+        # If ANY region failed, make it loud: write a marker and exit non-zero,
+        # even if some data was exported. A partial export that looks complete
+        # is exactly the failure mode this guards against.
+        if failed_regions:
+            utils.report_collection_failures(account_name, "ebs-snapshots", failed_regions)
+            print(
+                "\nERROR: EBS snapshots export completed with failures — data is incomplete. "
+                "See the *-ebs-snapshots-FAILED-*.txt marker in the output directory."
+            )
             sys.exit(1)
 
     except KeyboardInterrupt:

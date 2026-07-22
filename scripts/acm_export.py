@@ -25,7 +25,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -46,9 +46,148 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Certificate Manager certificates to Excel")
 
 
-def scan_acm_certificates_in_region(region: str) -> List[Dict[str, Any]]:
+def _build_certificate_row(cert_summary: dict, region: str, acm_client) -> dict[str, Any]:
+    """
+    Build a single ACM certificate export row, enriching the summary with a
+    ``describe_certificate`` call.
+
+    Raises on any failure (including the enrichment call) so the caller's
+    per-item ``try/except + continue`` can skip just this certificate. This
+    keeps certificate-detail enrichment failures graceful (one bad certificate
+    is skipped, not fatal to the region) while still routing every failure
+    through a single, auditable path.
+    """
+    cert_arn = cert_summary.get('CertificateArn', '')
+    domain_name = cert_summary.get('DomainName', '')
+
+    # Get detailed certificate information
+    cert_response = acm_client.describe_certificate(CertificateArn=cert_arn)
+    cert = cert_response.get('Certificate', {})
+
+    # Status
+    status = cert.get('Status', '')
+
+    # Type
+    cert_type = cert.get('Type', '')
+
+    # Key algorithm
+    key_algorithm = cert.get('KeyAlgorithm', 'N/A')
+
+    # Signature algorithm
+    signature_algorithm = cert.get('SignatureAlgorithm', 'N/A')
+
+    # Subject Alternative Names
+    subject_alternative_names = cert.get('SubjectAlternativeNames', [])
+    san_count = len(subject_alternative_names)
+    san_str = ', '.join(subject_alternative_names[:5])  # First 5 SANs
+    if san_count > 5:
+        san_str += f" ... ({san_count - 5} more)"
+
+    # Validation method
+    domain_validation_options = cert.get('DomainValidationOptions', [])
+    validation_method = 'N/A'
+    if domain_validation_options:
+        validation_method = domain_validation_options[0].get('ValidationMethod', 'N/A')
+
+    # Validation status
+    validation_status = 'N/A'
+    if domain_validation_options:
+        validation_status = domain_validation_options[0].get('ValidationStatus', 'N/A')
+
+    # In use by (resources using this certificate)
+    in_use_by = cert.get('InUseBy', [])
+    in_use_count = len(in_use_by)
+    in_use_str = ', '.join([arn.split('/')[-1] for arn in in_use_by[:3]])  # First 3 resources
+    if in_use_count > 3:
+        in_use_str += f" ... ({in_use_count - 3} more)"
+    if not in_use_str:
+        in_use_str = 'Not in use'
+
+    # Created date
+    created_at = cert.get('CreatedAt', '')
+    if created_at:
+        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
+
+    # Issued date
+    issued_at = cert.get('IssuedAt', '')
+    if issued_at:
+        issued_at = issued_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(issued_at, datetime.datetime) else str(issued_at)
+
+    # Not before
+    not_before = cert.get('NotBefore', '')
+    if not_before:
+        not_before = not_before.strftime('%Y-%m-%d %H:%M:%S') if isinstance(not_before, datetime.datetime) else str(not_before)
+
+    # Not after (expiration)
+    not_after = cert.get('NotAfter', '')
+    days_to_expiry = 'N/A'
+    if not_after:
+        not_after_dt = not_after if isinstance(not_after, datetime.datetime) else datetime.datetime.fromisoformat(str(not_after))
+        not_after = not_after_dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Calculate days to expiry
+        days_to_expiry = (not_after_dt.replace(tzinfo=None) - datetime.datetime.now()).days
+
+    # Renewal eligibility
+    renewal_eligibility = cert.get('RenewalEligibility', 'N/A')
+
+    # Renewal summary
+    renewal_summary = cert.get('RenewalSummary', {})
+    renewal_status = renewal_summary.get('RenewalStatus', 'N/A')
+
+    # Certificate transparency logging
+    options = cert.get('Options', {})
+    certificate_transparency_logging = options.get('CertificateTransparencyLoggingPreference', 'N/A')
+
+    # Issuer
+    issuer = cert.get('Issuer', 'N/A')
+
+    # Subject
+    subject = cert.get('Subject', 'N/A')
+
+    # Serial
+    serial = cert.get('Serial', 'N/A')
+
+    return {
+        'Region': region,
+        'Domain Name': domain_name,
+        'Status': status,
+        'Type': cert_type,
+        'Validation Method': validation_method,
+        'Validation Status': validation_status,
+        'SAN Count': san_count,
+        'Subject Alternative Names': san_str,
+        'In Use By Count': in_use_count,
+        'In Use By': in_use_str,
+        'Days to Expiry': days_to_expiry,
+        'Expiration Date': not_after if not_after else 'N/A',
+        'Renewal Eligibility': renewal_eligibility,
+        'Renewal Status': renewal_status,
+        'Key Algorithm': key_algorithm,
+        'Signature Algorithm': signature_algorithm,
+        'Certificate Transparency': certificate_transparency_logging,
+        'Issuer': issuer,
+        'Subject': subject,
+        'Serial': serial,
+        'Created Date': created_at,
+        'Issued Date': issued_at if issued_at else 'N/A',
+        'Not Before': not_before if not_before else 'N/A',
+        'Certificate ARN': cert_arn
+    }
+
+
+def scan_acm_certificates_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan ACM certificates in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no certificates" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual certificates that fail detail enrichment (describe_certificate)
+    are skipped (logged) rather than aborting the whole region.
 
     Args:
         region: AWS region to scan
@@ -56,174 +195,65 @@ def scan_acm_certificates_in_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with certificate information from this region
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    acm_client = utils.get_boto3_client('acm', region_name=region)
+
+    # Get certificates
+    paginator = acm_client.get_paginator('list_certificates')
     regional_certificates = []
 
-    try:
-        acm_client = utils.get_boto3_client('acm', region_name=region)
+    for page in paginator.paginate():
+        certificates = page.get('CertificateSummaryList', [])
 
-        # Get certificates
-        paginator = acm_client.get_paginator('list_certificates')
+        for cert_summary in certificates:
+            try:
+                regional_certificates.append(_build_certificate_row(cert_summary, region, acm_client))
+            except Exception as e:
+                utils.log_warning(
+                    f"Could not get details for certificate "
+                    f"{cert_summary.get('CertificateArn', '<unknown>')}: {e}"
+                )
+                continue
 
-        for page in paginator.paginate():
-            certificates = page.get('CertificateSummaryList', [])
-
-            for cert_summary in certificates:
-                cert_arn = cert_summary.get('CertificateArn', '')
-                domain_name = cert_summary.get('DomainName', '')
-
-                try:
-                    # Get detailed certificate information
-                    cert_response = acm_client.describe_certificate(CertificateArn=cert_arn)
-                    cert = cert_response.get('Certificate', {})
-
-                    # Status
-                    status = cert.get('Status', '')
-
-                    # Type
-                    cert_type = cert.get('Type', '')
-
-                    # Key algorithm
-                    key_algorithm = cert.get('KeyAlgorithm', 'N/A')
-
-                    # Signature algorithm
-                    signature_algorithm = cert.get('SignatureAlgorithm', 'N/A')
-
-                    # Subject Alternative Names
-                    subject_alternative_names = cert.get('SubjectAlternativeNames', [])
-                    san_count = len(subject_alternative_names)
-                    san_str = ', '.join(subject_alternative_names[:5])  # First 5 SANs
-                    if san_count > 5:
-                        san_str += f" ... ({san_count - 5} more)"
-
-                    # Validation method
-                    domain_validation_options = cert.get('DomainValidationOptions', [])
-                    validation_method = 'N/A'
-                    if domain_validation_options:
-                        validation_method = domain_validation_options[0].get('ValidationMethod', 'N/A')
-
-                    # Validation status
-                    validation_status = 'N/A'
-                    if domain_validation_options:
-                        validation_status = domain_validation_options[0].get('ValidationStatus', 'N/A')
-
-                    # In use by (resources using this certificate)
-                    in_use_by = cert.get('InUseBy', [])
-                    in_use_count = len(in_use_by)
-                    in_use_str = ', '.join([arn.split('/')[-1] for arn in in_use_by[:3]])  # First 3 resources
-                    if in_use_count > 3:
-                        in_use_str += f" ... ({in_use_count - 3} more)"
-                    if not in_use_str:
-                        in_use_str = 'Not in use'
-
-                    # Created date
-                    created_at = cert.get('CreatedAt', '')
-                    if created_at:
-                        created_at = created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_at, datetime.datetime) else str(created_at)
-
-                    # Issued date
-                    issued_at = cert.get('IssuedAt', '')
-                    if issued_at:
-                        issued_at = issued_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(issued_at, datetime.datetime) else str(issued_at)
-
-                    # Not before
-                    not_before = cert.get('NotBefore', '')
-                    if not_before:
-                        not_before = not_before.strftime('%Y-%m-%d %H:%M:%S') if isinstance(not_before, datetime.datetime) else str(not_before)
-
-                    # Not after (expiration)
-                    not_after = cert.get('NotAfter', '')
-                    days_to_expiry = 'N/A'
-                    if not_after:
-                        not_after_dt = not_after if isinstance(not_after, datetime.datetime) else datetime.datetime.fromisoformat(str(not_after))
-                        not_after = not_after_dt.strftime('%Y-%m-%d %H:%M:%S')
-                        # Calculate days to expiry
-                        days_to_expiry = (not_after_dt.replace(tzinfo=None) - datetime.datetime.now()).days
-
-                    # Renewal eligibility
-                    renewal_eligibility = cert.get('RenewalEligibility', 'N/A')
-
-                    # Renewal summary
-                    renewal_summary = cert.get('RenewalSummary', {})
-                    renewal_status = renewal_summary.get('RenewalStatus', 'N/A')
-
-                    # Certificate transparency logging
-                    options = cert.get('Options', {})
-                    certificate_transparency_logging = options.get('CertificateTransparencyLoggingPreference', 'N/A')
-
-                    # Issuer
-                    issuer = cert.get('Issuer', 'N/A')
-
-                    # Subject
-                    subject = cert.get('Subject', 'N/A')
-
-                    # Serial
-                    serial = cert.get('Serial', 'N/A')
-
-                    regional_certificates.append({
-                        'Region': region,
-                        'Domain Name': domain_name,
-                        'Status': status,
-                        'Type': cert_type,
-                        'Validation Method': validation_method,
-                        'Validation Status': validation_status,
-                        'SAN Count': san_count,
-                        'Subject Alternative Names': san_str,
-                        'In Use By Count': in_use_count,
-                        'In Use By': in_use_str,
-                        'Days to Expiry': days_to_expiry,
-                        'Expiration Date': not_after if not_after else 'N/A',
-                        'Renewal Eligibility': renewal_eligibility,
-                        'Renewal Status': renewal_status,
-                        'Key Algorithm': key_algorithm,
-                        'Signature Algorithm': signature_algorithm,
-                        'Certificate Transparency': certificate_transparency_logging,
-                        'Issuer': issuer,
-                        'Subject': subject,
-                        'Serial': serial,
-                        'Created Date': created_at,
-                        'Issued Date': issued_at if issued_at else 'N/A',
-                        'Not Before': not_before if not_before else 'N/A',
-                        'Certificate ARN': cert_arn
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for certificate {cert_arn}: {e}")
-
-        utils.log_info(f"Found {len(regional_certificates)} ACM certificates in {region}")
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for ACM certificates", e)
+    utils.log_info(f"Found {len(regional_certificates)} ACM certificates in {region}")
 
     return regional_certificates
 
 
-@utils.aws_error_handler("Collecting ACM certificates", default_return=[])
-def collect_acm_certificates(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_acm_certificates(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect ACM certificate information from AWS regions using concurrent scanning.
+    Collect ACM certificate information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with certificate information
+        tuple: ``(certificates, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING ACM CERTIFICATES ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    # Use concurrent scanning
-    all_certificates = []
-    for region_data in utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_acm_certificates_in_region,
-    ):
-        all_certificates.extend(region_data)
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_certificates = [cert for result in region_results for cert in result]
 
     utils.log_success(f"Total ACM certificates collected: {len(all_certificates)}")
-    return all_certificates
+    return all_certificates, failed_regions
 
 
-def scan_certificate_validation_details_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_certificate_validation_details_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan certificate validation details in a single region.
 
@@ -295,7 +325,7 @@ def scan_certificate_validation_details_in_region(region: str) -> List[Dict[str,
 
 
 @utils.aws_error_handler("Collecting certificate validation details", default_return=[])
-def collect_certificate_validation_details(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_certificate_validation_details(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect detailed validation information for ACM certificates using concurrent scanning.
 
@@ -337,8 +367,9 @@ def export_acm_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect certificates
-    certificates = collect_acm_certificates(regions)
+    # STEP 1: Collect certificates (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    certificates, failed_regions = collect_acm_certificates(regions)
     if certificates:
         data_frames['Certificates'] = pd.DataFrame(certificates)
 
@@ -348,42 +379,54 @@ def export_acm_data(account_id: str, account_name: str):
         data_frames['Validation Details'] = pd.DataFrame(validations)
 
     # Check if we have any data
-    if not data_frames:
+    if data_frames:
+        # STEP 3: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 4: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'acm',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("ACM data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No ACM data was collected. Nothing to export.")
         print("\nNo ACM certificates found in the selected region(s).")
-        return
 
-    # STEP 3: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 4: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'acm',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("ACM data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary certificate scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was exported.
+    # A partial export that looks complete is exactly the failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'acm', failed_regions)
+        print(
+            "\nERROR: ACM export completed with failures — data is incomplete. "
+            "See the *-acm-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -401,10 +444,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export ACM data
         export_acm_data(account_id, account_name)

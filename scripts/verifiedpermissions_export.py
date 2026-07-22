@@ -24,7 +24,7 @@ Note: Verified Permissions is a regional service
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -41,52 +41,96 @@ args = utils.parse_script_args("Export Amazon Verified Permissions policy stores
 utils.setup_logging('verifiedpermissions-export')
 
 
-@utils.aws_error_handler("Collecting policy stores", default_return=[])
-def collect_policy_stores(region: str) -> List[Dict[str, Any]]:
-    """Collect all Verified Permissions policy stores in a region."""
+def _build_policy_store_row(store: dict[str, Any], region: str, vp: Any) -> dict[str, Any]:
+    """
+    Build a single policy store export row, enriched with store detail.
+
+    Every field is read with ``.get()`` and a safe default so a divergent
+    resource shape cannot raise a ``KeyError`` here; the detail-fetch enrichment
+    stays graceful (falls back to 'N/A') rather than failing the whole store.
+    """
+    policy_store_id = store.get('policyStoreId', 'N/A')
+
+    validation_mode = 'N/A'
+    try:
+        detail = vp.get_policy_store(policyStoreId=policy_store_id)
+        validation_settings = detail.get('validationSettings', {})
+        validation_mode = validation_settings.get('mode', 'N/A')
+    except Exception:
+        pass
+
+    return {
+        'Region': region,
+        'PolicyStoreId': policy_store_id,
+        'PolicyStoreArn': store.get('arn', 'N/A'),
+        'Description': store.get('description', 'N/A'),
+        'CreatedDate': store.get('createdDate'),
+        'LastUpdatedDate': store.get('lastUpdatedDate'),
+        'ValidationMode': validation_mode,
+    }
+
+
+def _scan_policy_stores_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Verified Permissions policy stores from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no policy stores" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed policy stores are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     stores = []
 
-    try:
-        paginator = vp.get_paginator('list_policy_stores')
-        for page in paginator.paginate():
-            for store in page.get('policyStores', []):
-                policy_store_id = store.get('policyStoreId', 'N/A')
-
-                # Get detailed store information
-                try:
-                    detail = vp.get_policy_store(policyStoreId=policy_store_id)
-                    store_detail = detail
-
-                    validation_settings = store_detail.get('validationSettings', {})
-
-                    stores.append({
-                        'Region': region,
-                        'PolicyStoreId': policy_store_id,
-                        'PolicyStoreArn': store.get('arn', 'N/A'),
-                        'Description': store.get('description', 'N/A'),
-                        'CreatedDate': store.get('createdDate'),
-                        'LastUpdatedDate': store.get('lastUpdatedDate'),
-                        'ValidationMode': validation_settings.get('mode', 'N/A'),
-                    })
-                except Exception:
-                    stores.append({
-                        'Region': region,
-                        'PolicyStoreId': policy_store_id,
-                        'PolicyStoreArn': store.get('arn', 'N/A'),
-                        'Description': store.get('description', 'N/A'),
-                        'CreatedDate': store.get('createdDate'),
-                        'LastUpdatedDate': store.get('lastUpdatedDate'),
-                        'ValidationMode': 'N/A',
-                    })
-    except Exception:
-        pass
+    paginator = vp.get_paginator('list_policy_stores')
+    for page in paginator.paginate():
+        for store in page.get('policyStores', []):
+            try:
+                stores.append(_build_policy_store_row(store, region, vp))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed policy store in {region}: "
+                    f"{store.get('policyStoreId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return stores
 
 
+def collect_policy_stores(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """
+    Collect Verified Permissions policy stores across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(stores, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_policy_stores_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_stores = [store for result in region_results for store in result]
+    return all_stores, failed_regions
+
+
 @utils.aws_error_handler("Collecting policies", default_return=[])
-def collect_policies(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_policies(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect policies for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     policies = []
@@ -133,7 +177,7 @@ def collect_policies(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting policy templates", default_return=[])
-def collect_policy_templates(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_policy_templates(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect policy templates for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     templates = []
@@ -159,7 +203,7 @@ def collect_policy_templates(region: str, policy_store_id: str) -> List[Dict[str
 
 
 @utils.aws_error_handler("Collecting identity sources", default_return=[])
-def collect_identity_sources(region: str, policy_store_id: str) -> List[Dict[str, Any]]:
+def collect_identity_sources(region: str, policy_store_id: str) -> list[dict[str, Any]]:
     """Collect identity sources for a policy store."""
     vp = utils.get_boto3_client('verifiedpermissions', region_name=region)
     sources = []
@@ -214,48 +258,48 @@ def collect_identity_sources(region: str, policy_store_id: str) -> List[Dict[str
     return sources
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect Verified Permissions data and write the Excel export."""
     utils.log_info(f"Exporting Verified Permissions for account: {account_name} ({utils.mask_account_id(account_id)})")
 
-    # Collect all resources
-    all_stores = []
+    # STEP 1: Collect policy stores (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    all_stores, failed_regions = collect_policy_stores(regions)
+
     all_policies = []
     all_templates = []
     all_identity_sources = []
 
-    for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
+    if all_stores:
+        utils.log_info(f"Found {len(all_stores)} policy store(s) across {len(regions)} region(s)")
 
-        # Collect policy stores
-        stores = collect_policy_stores(region)
-        if stores:
-            utils.log_info(f"  Found {len(stores)} policy store(s)")
-            all_stores.extend(stores)
+        # Collect resources for each policy store (enrichment — degrades
+        # gracefully; a failure here does not fail the whole export).
+        for store in all_stores:
+            region = store.get('Region')
+            policy_store_id = store.get('PolicyStoreId', 'N/A')
+            if not region or policy_store_id == 'N/A':
+                continue
 
-            # Collect resources for each policy store
-            for store in stores:
-                policy_store_id = store['PolicyStoreId']
+            # Collect policies
+            policies = collect_policies(region, policy_store_id)
+            if policies:
+                utils.log_info(f"    Found {len(policies)} policy(ies) in store {policy_store_id}")
+                all_policies.extend(policies)
 
-                # Collect policies
-                policies = collect_policies(region, policy_store_id)
-                if policies:
-                    utils.log_info(f"    Found {len(policies)} policy(ies) in store {policy_store_id}")
-                    all_policies.extend(policies)
+            # Collect policy templates
+            templates = collect_policy_templates(region, policy_store_id)
+            if templates:
+                utils.log_info(f"    Found {len(templates)} policy template(s) in store {policy_store_id}")
+                all_templates.extend(templates)
 
-                # Collect policy templates
-                templates = collect_policy_templates(region, policy_store_id)
-                if templates:
-                    utils.log_info(f"    Found {len(templates)} policy template(s) in store {policy_store_id}")
-                    all_templates.extend(templates)
-
-                # Collect identity sources
-                identity_sources = collect_identity_sources(region, policy_store_id)
-                if identity_sources:
-                    utils.log_info(f"    Found {len(identity_sources)} identity source(s) in store {policy_store_id}")
-                    all_identity_sources.extend(identity_sources)
-
-    if not all_stores:
+            # Collect identity sources
+            identity_sources = collect_identity_sources(region, policy_store_id)
+            if identity_sources:
+                utils.log_info(f"    Found {len(identity_sources)} identity source(s) in store {policy_store_id}")
+                all_identity_sources.extend(identity_sources)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Verified Permissions policy stores found in any selected region.")
         utils.log_info("Creating empty export file...")
 
@@ -317,6 +361,18 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.log_info(f"  Identity Sources: {len(all_identity_sources)}")
 
     utils.log_success("Verified Permissions export completed successfully!")
+
+    # If ANY region failed the policy-stores scope collection, make it loud:
+    # write a marker and exit non-zero, even though the Summary sheet (and any
+    # partial data) was still exported. A workbook that looks complete is
+    # exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'verifiedpermissions', failed_regions)
+        print(
+            "\nERROR: Verified Permissions export completed with failures — data is incomplete. "
+            "See the *-verifiedpermissions-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

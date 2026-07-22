@@ -31,7 +31,7 @@ Phase 4B Update:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -52,10 +52,108 @@ except ImportError:
 args = utils.parse_script_args("Export Amazon Machine Images (AMIs) to Excel")
 
 
-@utils.aws_error_handler("Collecting AMIs from region", default_return=[])
-def collect_amis_in_region(region: str, account_id: str) -> List[Dict[str, Any]]:
+def _build_ami_row(ami: dict, region: str) -> dict[str, Any]:
+    """Build a single AMI export row from a describe_images response item."""
+    ami_id = ami.get('ImageId', '')
+    ami_name = ami.get('Name', 'N/A')
+    description = ami.get('Description', 'N/A')
+    state = ami.get('State', '')
+    creation_date = ami.get('CreationDate', 'N/A')
+
+    # Architecture
+    architecture = ami.get('Architecture', 'N/A')
+
+    # Virtualization type
+    virtualization_type = ami.get('VirtualizationType', 'N/A')
+
+    # Root device type and name
+    root_device_type = ami.get('RootDeviceType', 'N/A')
+    root_device_name = ami.get('RootDeviceName', 'N/A')
+
+    # Platform (Windows or blank for Linux)
+    platform = ami.get('Platform', 'Linux')
+    platform_details = ami.get('PlatformDetails', 'N/A')
+
+    # Public/Private
+    is_public = ami.get('Public', False)
+    visibility = 'Public' if is_public else 'Private'
+
+    # Image location
+    image_location = ami.get('ImageLocation', 'N/A')
+
+    # EBS snapshots (from block device mappings)
+    block_device_mappings = ami.get('BlockDeviceMappings', [])
+    snapshot_ids = []
+    total_volume_size = 0
+
+    for bdm in block_device_mappings:
+        ebs = bdm.get('Ebs', {})
+        if ebs:
+            snapshot_id = ebs.get('SnapshotId', '')
+            volume_size = ebs.get('VolumeSize', 0)
+            if snapshot_id:
+                snapshot_ids.append(snapshot_id)
+            total_volume_size += volume_size
+
+    snapshots_str = ', '.join(snapshot_ids) if snapshot_ids else 'N/A'
+
+    # ENA support
+    ena_support = ami.get('EnaSupport', False)
+
+    # Kernel and ramdisk IDs (older AMIs)
+    kernel_id = ami.get('KernelId', 'N/A')
+    ramdisk_id = ami.get('RamdiskId', 'N/A')
+
+    # Boot mode
+    boot_mode = ami.get('BootMode', 'N/A')
+
+    # Deprecation time
+    deprecation_time = ami.get('DeprecationTime', 'N/A')
+
+    # Tags
+    tags = ami.get('Tags', [])
+    tag_dict = {tag.get('Key'): tag.get('Value') for tag in tags if tag.get('Key') and 'Value' in tag}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    return {
+        'Region': region,
+        'AMI ID': ami_id,
+        'AMI Name': ami_name,
+        'State': state,
+        'Visibility': visibility,
+        'Architecture': architecture,
+        'Platform': platform,
+        'Platform Details': platform_details,
+        'Virtualization Type': virtualization_type,
+        'Root Device Type': root_device_type,
+        'Root Device Name': root_device_name,
+        'Total Volume Size (GB)': total_volume_size,
+        'Snapshot IDs': snapshots_str,
+        'ENA Support': ena_support,
+        'Boot Mode': boot_mode,
+        'Creation Date': creation_date,
+        'Deprecation Time': deprecation_time,
+        'Image Location': image_location,
+        'Kernel ID': kernel_id,
+        'Ramdisk ID': ramdisk_id,
+        'Description': description,
+        'Tags': tags_str
+    }
+
+
+def collect_amis_in_region(region: str, account_id: str) -> list[dict[str, Any]]:
     """
     Collect account-owned AMI information from a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no AMIs" (the silent-collection-
+    loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed AMIs are skipped (logged) rather than aborting the
+    whole region.
 
     Args:
         region: AWS region to scan
@@ -64,116 +162,60 @@ def collect_amis_in_region(region: str, account_id: str) -> List[Dict[str, Any]]
     Returns:
         list: List of dictionaries with AMI information
     """
-    region_amis = []
-
     if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
     print(f"  Processing region: {region}")
 
-    try:
-        ec2_client = utils.get_boto3_client('ec2', region_name=region)
+    ec2_client = utils.get_boto3_client('ec2', region_name=region)
 
-        # Get AMIs owned by this account
-        paginator = ec2_client.get_paginator('describe_images')
-        amis = []
-        for page in paginator.paginate(Owners=['self']):
-            amis.extend(page.get('Images', []))
+    # Get AMIs owned by this account
+    paginator = ec2_client.get_paginator('describe_images')
+    amis = []
+    for page in paginator.paginate(Owners=['self']):
+        amis.extend(page.get('Images', []))
 
-        print(f"  Found {len(amis)} account-owned AMIs")
+    print(f"  Found {len(amis)} account-owned AMIs")
 
-        for ami in amis:
-            ami_id = ami.get('ImageId', '')
-            ami_name = ami.get('Name', 'N/A')
-            description = ami.get('Description', 'N/A')
-            state = ami.get('State', '')
-            creation_date = ami.get('CreationDate', 'N/A')
-
-            # Architecture
-            architecture = ami.get('Architecture', 'N/A')
-
-            # Virtualization type
-            virtualization_type = ami.get('VirtualizationType', 'N/A')
-
-            # Root device type and name
-            root_device_type = ami.get('RootDeviceType', 'N/A')
-            root_device_name = ami.get('RootDeviceName', 'N/A')
-
-            # Platform (Windows or blank for Linux)
-            platform = ami.get('Platform', 'Linux')
-            platform_details = ami.get('PlatformDetails', 'N/A')
-
-            # Public/Private
-            is_public = ami.get('Public', False)
-            visibility = 'Public' if is_public else 'Private'
-
-            # Image location
-            image_location = ami.get('ImageLocation', 'N/A')
-
-            # EBS snapshots (from block device mappings)
-            block_device_mappings = ami.get('BlockDeviceMappings', [])
-            snapshot_ids = []
-            total_volume_size = 0
-
-            for bdm in block_device_mappings:
-                ebs = bdm.get('Ebs', {})
-                if ebs:
-                    snapshot_id = ebs.get('SnapshotId', '')
-                    volume_size = ebs.get('VolumeSize', 0)
-                    if snapshot_id:
-                        snapshot_ids.append(snapshot_id)
-                    total_volume_size += volume_size
-
-            snapshots_str = ', '.join(snapshot_ids) if snapshot_ids else 'N/A'
-
-            # ENA support
-            ena_support = ami.get('EnaSupport', False)
-
-            # Kernel and ramdisk IDs (older AMIs)
-            kernel_id = ami.get('KernelId', 'N/A')
-            ramdisk_id = ami.get('RamdiskId', 'N/A')
-
-            # Boot mode
-            boot_mode = ami.get('BootMode', 'N/A')
-
-            # Deprecation time
-            deprecation_time = ami.get('DeprecationTime', 'N/A')
-
-            # Tags
-            tags = ami.get('Tags', [])
-            tag_dict = {tag['Key']: tag['Value'] for tag in tags if 'Key' in tag and 'Value' in tag}
-            tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-            region_amis.append({
-                'Region': region,
-                'AMI ID': ami_id,
-                'AMI Name': ami_name,
-                'State': state,
-                'Visibility': visibility,
-                'Architecture': architecture,
-                'Platform': platform,
-                'Platform Details': platform_details,
-                'Virtualization Type': virtualization_type,
-                'Root Device Type': root_device_type,
-                'Root Device Name': root_device_name,
-                'Total Volume Size (GB)': total_volume_size,
-                'Snapshot IDs': snapshots_str,
-                'ENA Support': ena_support,
-                'Boot Mode': boot_mode,
-                'Creation Date': creation_date,
-                'Deprecation Time': deprecation_time,
-                'Image Location': image_location,
-                'Kernel ID': kernel_id,
-                'Ramdisk ID': ramdisk_id,
-                'Description': description,
-                'Tags': tags_str
-            })
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for AMIs", e)
+    region_amis = []
+    for ami in amis:
+        try:
+            region_amis.append(_build_ami_row(ami, region))
+        except Exception as e:
+            # One malformed AMI is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed AMI in {region}: {ami.get('ImageId', '<unknown>')}",
+                e,
+            )
+            continue
 
     return region_amis
+
+
+def collect_amis(regions: list[str], account_id: str) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect AMI information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(amis, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
+    def scan_region_amis(region):
+        return collect_amis_in_region(region, account_id)
+
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=scan_region_amis,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_amis = [ami for result in region_results for ami in result]
+    return all_amis, failed_regions
 
 
 def export_ami_data(account_id: str, account_name: str):
@@ -190,63 +232,63 @@ def export_ami_data(account_id: str, account_name: str):
     # Import pandas for DataFrame handling
     import pandas as pd
 
-    # Collect AMIs using concurrent region scanning (Phase 4B)
+    # Collect AMIs using concurrent region scanning (Phase 4B). This is the
+    # primary scope collector — region failures must propagate as
+    # failed_regions, never collapse into "empty".
     print("\n=== COLLECTING ACCOUNT-OWNED AMIs ===")
 
-    # Define region scan function
-    def scan_region_amis(region):
-        return collect_amis_in_region(region, account_id)
-
-    # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=scan_region_amis,
-        show_progress=True
-    )
-
-    # Flatten results
-    amis = []
-    for region_amis in region_results:
-        amis.extend(region_amis)
+    amis, failed_regions = collect_amis(regions, account_id)
 
     utils.log_success(f"Total AMIs collected: {len(amis)}")
 
-    # Check if we have any data
-    if not amis:
+    # Export whatever succeeded — a partial export is required even on
+    # partial failure (see the silent-collection-failure blast-radius audit).
+    if amis:
+        # Create DataFrame
+        df = pd.DataFrame(amis)
+
+        # Prepare DataFrame for export
+        df = utils.prepare_dataframe_for_export(df)
+
+        # Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'ami',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_dataframe_to_excel(df, final_excel_file, sheet_name='AMIs')
+
+            if output_path:
+                utils.log_success("AMI data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+                utils.log_info(f"Total AMIs: {len(df)} records")
+                print(f"Total AMIs: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No AMI data was collected. Nothing to export.")
         print("\nNo account-owned AMIs found in the selected region(s).")
-        return
 
-    # Create DataFrame
-    df = pd.DataFrame(amis)
-
-    # Prepare DataFrame for export
-    df = utils.prepare_dataframe_for_export(df)
-
-    # Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'ami',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_dataframe_to_excel(df, final_excel_file, sheet_name='AMIs')
-
-        if output_path:
-            utils.log_success("AMI data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-            utils.log_info(f"Total AMIs: {len(df)} records")
-            print(f"Total AMIs: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary AMI scope collection, make it loud:
+    # write a marker and exit non-zero, even if some data was exported. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ami', failed_regions)
+        print(
+            "\nERROR: AMI export completed with failures — data is incomplete. "
+            "See the *-ami-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -264,10 +306,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export AMI data
         export_ami_data(account_id, account_name)

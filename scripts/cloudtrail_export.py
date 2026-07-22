@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,16 +47,129 @@ except ImportError:
 args = utils.parse_script_args("Export CloudTrail trails and event history to Excel")
 
 
-@utils.aws_error_handler("Collecting CloudTrail trails from region", default_return=[])
-def collect_trails_from_region(region: str) -> List[Dict[str, Any]]:
+def _build_trail_row(ct_client, trail_summary: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build the export row for a single CloudTrail trail.
+
+    Extracted so the per-trail processing can be wrapped in try/except by
+    the caller: a malformed/inaccessible trail is logged and skipped rather
+    than discarding the whole region's results. Every field is read with
+    ``.get()`` and a safe default for the same reason.
+
+    Args:
+        ct_client: boto3 CloudTrail client for the region.
+        trail_summary: A single Trails entry from list_trails.
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled trail row.
+    """
+    trail_arn = trail_summary.get('TrailARN', '')
+    trail_name = trail_summary.get('Name', '')
+
+    utils.log_info(f"Processing trail: {trail_name} in {region}")
+
+    # Get trail status
+    status_response = ct_client.get_trail_status(Name=trail_arn)
+
+    is_logging = status_response.get('IsLogging', False)
+    latest_delivery_time = status_response.get('LatestDeliveryTime', '')
+    if latest_delivery_time:
+        latest_delivery_time = latest_delivery_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest_delivery_time, datetime.datetime) else str(latest_delivery_time)
+
+    latest_notification_time = status_response.get('LatestNotificationTime', '')
+    if latest_notification_time:
+        latest_notification_time = latest_notification_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest_notification_time, datetime.datetime) else str(latest_notification_time)
+
+    # Get trail details
+    trail_list = ct_client.describe_trails(trailNameList=[trail_name])
+    trail_details = (trail_list.get('trailList') or [{}])[0]
+
+    # S3 bucket
+    s3_bucket = trail_details.get('S3BucketName', '')
+
+    # S3 key prefix
+    s3_prefix = trail_details.get('S3KeyPrefix', 'N/A')
+
+    # SNS topic
+    sns_topic = trail_details.get('SnsTopicARN', 'N/A')
+
+    # CloudWatch Logs
+    log_group_arn = trail_details.get('CloudWatchLogsLogGroupArn', 'N/A')
+    log_role_arn = trail_details.get('CloudWatchLogsRoleArn', 'N/A')
+
+    # KMS key
+    kms_key_id = trail_details.get('KmsKeyId', 'N/A')
+
+    # Multi-region trail
+    is_multi_region = trail_details.get('IsMultiRegionTrail', False)
+
+    # Organization trail
+    is_organization_trail = trail_details.get('IsOrganizationTrail', False)
+
+    # Home region
+    home_region = trail_details.get('HomeRegion', region)
+
+    # Log file validation
+    log_file_validation = trail_details.get('LogFileValidationEnabled', False)
+
+    # Include global service events
+    include_global_events = trail_details.get('IncludeGlobalServiceEvents', False)
+
+    # Has custom event selectors
+    has_custom_selectors = trail_details.get('HasCustomEventSelectors', False)
+
+    # Has insight selectors
+    has_insight_selectors = trail_details.get('HasInsightSelectors', False)
+
+    return {
+        'Region': region,
+        'Trail Name': trail_name,
+        'Trail ARN': trail_arn,
+        'Home Region': home_region,
+        'Is Logging': is_logging,
+        'Multi-Region': is_multi_region,
+        'Organization Trail': is_organization_trail,
+        'S3 Bucket': s3_bucket,
+        'S3 Prefix': s3_prefix,
+        'Log File Validation': log_file_validation,
+        'KMS Encryption': 'Yes' if kms_key_id != 'N/A' else 'No',
+        'KMS Key ID': kms_key_id,
+        'CloudWatch Logs': 'Yes' if log_group_arn != 'N/A' else 'No',
+        'Log Group ARN': log_group_arn,
+        'Log Role ARN': log_role_arn,
+        'SNS Topic': sns_topic,
+        'Include Global Events': include_global_events,
+        'Has Custom Selectors': has_custom_selectors,
+        'Has Insight Selectors': has_insight_selectors,
+        'Latest Delivery': latest_delivery_time if latest_delivery_time else 'Never',
+        'Latest Notification': latest_notification_time if latest_notification_time else 'Never'
+    }
+
+
+def collect_trails_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail trail information from a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no CloudTrail trails" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed/inaccessible trails are skipped (logged) rather than
+    aborting the whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with trail information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     if not utils.is_aws_region(region):
         utils.log_error(f"Skipping invalid AWS region: {region}")
@@ -71,114 +184,45 @@ def collect_trails_from_region(region: str) -> List[Dict[str, Any]]:
     trails = trails_response.get('Trails', [])
 
     for trail_summary in trails:
-        trail_arn = trail_summary.get('TrailARN', '')
         trail_name = trail_summary.get('Name', '')
 
-        utils.log_info(f"Processing trail: {trail_name} in {region}")
-
         try:
-            # Get trail status
-            status_response = ct_client.get_trail_status(Name=trail_arn)
-
-            is_logging = status_response.get('IsLogging', False)
-            latest_delivery_time = status_response.get('LatestDeliveryTime', '')
-            if latest_delivery_time:
-                latest_delivery_time = latest_delivery_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest_delivery_time, datetime.datetime) else str(latest_delivery_time)
-
-            latest_notification_time = status_response.get('LatestNotificationTime', '')
-            if latest_notification_time:
-                latest_notification_time = latest_notification_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest_notification_time, datetime.datetime) else str(latest_notification_time)
-
-            # Get trail details
-            trail_list = ct_client.describe_trails(trailNameList=[trail_name])
-            trail_details = trail_list.get('trailList', [{}])[0]
-
-            # S3 bucket
-            s3_bucket = trail_details.get('S3BucketName', '')
-
-            # S3 key prefix
-            s3_prefix = trail_details.get('S3KeyPrefix', 'N/A')
-
-            # SNS topic
-            sns_topic = trail_details.get('SnsTopicARN', 'N/A')
-
-            # CloudWatch Logs
-            log_group_arn = trail_details.get('CloudWatchLogsLogGroupArn', 'N/A')
-            log_role_arn = trail_details.get('CloudWatchLogsRoleArn', 'N/A')
-
-            # KMS key
-            kms_key_id = trail_details.get('KmsKeyId', 'N/A')
-
-            # Multi-region trail
-            is_multi_region = trail_details.get('IsMultiRegionTrail', False)
-
-            # Organization trail
-            is_organization_trail = trail_details.get('IsOrganizationTrail', False)
-
-            # Home region
-            home_region = trail_details.get('HomeRegion', region)
-
-            # Log file validation
-            log_file_validation = trail_details.get('LogFileValidationEnabled', False)
-
-            # Include global service events
-            include_global_events = trail_details.get('IncludeGlobalServiceEvents', False)
-
-            # Has custom event selectors
-            has_custom_selectors = trail_details.get('HasCustomEventSelectors', False)
-
-            # Has insight selectors
-            has_insight_selectors = trail_details.get('HasInsightSelectors', False)
-
-            trails_data.append({
-                'Region': region,
-                'Trail Name': trail_name,
-                'Trail ARN': trail_arn,
-                'Home Region': home_region,
-                'Is Logging': is_logging,
-                'Multi-Region': is_multi_region,
-                'Organization Trail': is_organization_trail,
-                'S3 Bucket': s3_bucket,
-                'S3 Prefix': s3_prefix,
-                'Log File Validation': log_file_validation,
-                'KMS Encryption': 'Yes' if kms_key_id != 'N/A' else 'No',
-                'KMS Key ID': kms_key_id,
-                'CloudWatch Logs': 'Yes' if log_group_arn != 'N/A' else 'No',
-                'Log Group ARN': log_group_arn,
-                'Log Role ARN': log_role_arn,
-                'SNS Topic': sns_topic,
-                'Include Global Events': include_global_events,
-                'Has Custom Selectors': has_custom_selectors,
-                'Has Insight Selectors': has_insight_selectors,
-                'Latest Delivery': latest_delivery_time if latest_delivery_time else 'Never',
-                'Latest Notification': latest_notification_time if latest_notification_time else 'Never'
-            })
-
+            trails_data.append(_build_trail_row(ct_client, trail_summary, region))
         except Exception as e:
+            # One malformed/inaccessible trail is skipped, not fatal to the region.
             utils.log_warning(f"Could not get details for trail {trail_name}: {e}")
+            continue
 
     utils.log_info(f"Found {len(trails_data)} trails in {region}")
     return trails_data
 
 
-def collect_trails(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_trails(regions: list[str]) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
     """
     Collect CloudTrail trail information from AWS regions using concurrent scanning.
+
+    Uses ``collect_failures=True``: ``collect_trails_from_region`` raises on a
+    region-level failure so that failure is recorded and surfaced by the
+    caller, never silently collapsed into "no trails" (see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with trail information (deduplicated by ARN)
+        tuple: (trails, failed_regions) where trails is deduplicated by Trail
+            ARN and failed_regions is a list of (region, error_message)
+            tuples for regions whose scan raised.
     """
     print("\n=== COLLECTING CLOUDTRAIL TRAILS ===")
     utils.log_info(f"Scanning {len(regions)} regions for CloudTrail trails...")
 
     # Use concurrent region scanning
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_trails_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results and deduplicate by Trail ARN (for multi-region trails)
@@ -196,11 +240,11 @@ def collect_trails(regions: List[str]) -> List[Dict[str, Any]]:
                 all_trails.append(trail)
 
     utils.log_success(f"Total CloudTrail trails collected (deduplicated): {len(all_trails)}")
-    return all_trails
+    return all_trails, failed_regions
 
 
 @utils.aws_error_handler("Collecting event selectors from region", default_return=[])
-def collect_event_selectors_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_event_selectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail event selector information from a single region.
 
@@ -261,7 +305,7 @@ def collect_event_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     return selectors_data
 
 
-def collect_event_selectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_selectors(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail event selector information using concurrent scanning.
 
@@ -300,7 +344,7 @@ def collect_event_selectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting insight selectors from region", default_return=[])
-def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_insight_selectors_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail insight selector information from a single region.
 
@@ -349,7 +393,7 @@ def collect_insight_selectors_from_region(region: str) -> List[Dict[str, Any]]:
     return insights_data
 
 
-def collect_insight_selectors(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_insight_selectors(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail insight selector information using concurrent scanning.
 
@@ -388,7 +432,7 @@ def collect_insight_selectors(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting CloudTrail Lake event data stores from region", default_return=[])
-def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_event_data_stores_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect CloudTrail Lake event data store information from a single region.
 
@@ -405,8 +449,13 @@ def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
 
     ct_client = utils.get_boto3_client('cloudtrail', region_name=region)
 
-    paginator = ct_client.get_paginator('list_event_data_stores')
-    for page in paginator.paginate():
+    next_token = None
+    while True:
+        params = {}
+        params['MaxResults'] = 50
+        if next_token:
+            params['NextToken'] = next_token
+        page = ct_client.list_event_data_stores(**params)
         for store in page.get('EventDataStores', []):
             stores_data.append({
                 'Region': region,
@@ -420,12 +469,15 @@ def collect_event_data_stores_from_region(region: str) -> List[Dict[str, Any]]:
                 'Created': str(store.get('CreatedTimestamp', '')),
                 'Updated': str(store.get('UpdatedTimestamp', '')),
             })
+        next_token = page.get('NextToken')
+        if not next_token:
+            break
 
     utils.log_info(f"Found {len(stores_data)} event data store(s) in {region}")
     return stores_data
 
 
-def collect_event_data_stores(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_event_data_stores(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect CloudTrail Lake event data store information using concurrent scanning.
 
@@ -467,63 +519,81 @@ def export_cloudtrail_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect trails
-    trails = collect_trails(regions)
+    # STEP 1: Collect trails (primary scope — region failures must propagate
+    # as failed_regions, never collapse into "empty").
+    trails, failed_regions = collect_trails(regions)
     if trails:
         data_frames['Trails'] = pd.DataFrame(trails)
 
-    # STEP 2: Collect event selectors
+    # STEP 2: Collect event selectors (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     selectors = collect_event_selectors(regions)
     if selectors:
         data_frames['Event Selectors'] = pd.DataFrame(selectors)
 
-    # STEP 3: Collect insight selectors
+    # STEP 3: Collect insight selectors (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     insights = collect_insight_selectors(regions)
     if insights:
         data_frames['Insight Selectors'] = pd.DataFrame(insights)
 
-    # STEP 4: Collect CloudTrail Lake event data stores
+    # STEP 4: Collect CloudTrail Lake event data stores (enrichment —
+    # degrades gracefully; a region-level failure here does not fail the
+    # whole export).
     event_data_stores = collect_event_data_stores(regions)
     if event_data_stores:
         data_frames['Event Data Stores'] = pd.DataFrame(event_data_stores)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'cloudtrail',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("CloudTrail data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No CloudTrail data was collected. Nothing to export.")
         print("\nNo CloudTrail trails found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'cloudtrail',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("CloudTrail data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary Trails scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was exported.
+    # A partial export that looks complete is exactly the failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'cloudtrail', failed_regions)
+        print(
+            "\nERROR: CloudTrail export completed with failures — data is incomplete. "
+            "See the *-cloudtrail-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -541,10 +611,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export CloudTrail data
         export_cloudtrail_data(account_id, account_name)

@@ -4,8 +4,9 @@ Tests for smart_scan.selector module.
 Tests import structure, class instantiation, and method availability.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add scripts directory to path
@@ -13,7 +14,7 @@ scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
-from smart_scan.selector import SmartScanSelector, interactive_select, QUESTIONARY_AVAILABLE
+from smart_scan.selector import QUESTIONARY_AVAILABLE, SmartScanSelector, interactive_select
 
 MOCK_RECOMMENDATIONS = {
     "always_run": ["iam_comprehensive_export.py", "cloudtrail_export.py"],

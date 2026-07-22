@@ -224,7 +224,7 @@ def load_pricing_data(region='us-east-1'):
             utils.log_warning(f"Pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8') as f:
+        with open(pricing_file, encoding='utf-8') as f:
             json_data = json.load(f)
 
         partition = utils.detect_partition(region)
@@ -267,7 +267,7 @@ def load_storage_pricing_data():
             utils.log_warning(f"Storage pricing file not found at {pricing_file}")
             return storage_pricing
 
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         storage_pricing = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded storage pricing data for {len(storage_pricing)} volume types")
@@ -423,14 +423,170 @@ def is_valid_aws_region(region_name):
     """Check if a region name is a valid AWS region"""
     return utils.is_aws_region(region_name)
 
-@utils.aws_error_handler("Retrieving EC2 instances", default_return=[])
+def _build_instance_row(instance, region, ec2_client, pricing_data, storage_pricing, cost_note,
+                         instance_types_map, volumes_map):
+    """
+    Build the export row for a single EC2 instance.
+
+    Extracted so the per-instance processing can be wrapped in try/except by the
+    caller: a malformed instance (e.g. one missing an expected field) is logged
+    and skipped rather than discarding the whole region's results. Every
+    required field is read with ``.get()`` and a safe default for the same
+    reason.
+
+    Args:
+        instance (dict): A single Instances entry from describe_instances.
+        region (str): AWS region name.
+        ec2_client: Boto3 EC2 client (for AMI/volume lookups).
+        pricing_data (dict): EC2 instance pricing data.
+        storage_pricing (dict): EBS/storage pricing data.
+        cost_note (str): Partition-aware cost estimate note.
+        instance_types_map (dict): Prefetched {instance_type: memory_mib}.
+        volumes_map (dict): Prefetched {volume_id: volume_dict}.
+
+    Returns:
+        dict: The assembled instance row.
+    """
+    # Get the root volume information
+    root_device = next((device for device in instance.get('BlockDeviceMappings', [])
+                      if device.get('DeviceName') == instance.get('RootDeviceName')), None)
+
+    # Get detailed OS information
+    os_info = get_os_info_from_ssm(instance.get('InstanceId', ''), region)
+
+    # Get AMI name information
+    ami_name = get_os_info_from_ami(
+        ec2_client,
+        instance.get('ImageId', ''),
+        instance.get('PlatformDetails', 'N/A'),
+        instance.get('Platform', '')
+    )
+
+    # Get RAM info from the prefetched instance types map
+    instance_type = instance.get('InstanceType', 'N/A')
+    ram_mib = instance_types_map.get(instance_type, 'N/A')
+
+    # For root device size and type, we need to ensure we're fetching it correctly
+    root_device_size = 'N/A'
+    root_volume_id = 'N/A'
+    root_volume_type = 'N/A'
+
+    if root_device:
+        root_volume_id = root_device.get('Ebs', {}).get('VolumeId', 'N/A')
+        # If we have the volume ID, use prefetched cache or fall back to API
+        if root_volume_id != 'N/A':
+            if root_volume_id in volumes_map:
+                root_device_size = volumes_map[root_volume_id].get('Size', 'N/A')
+                root_volume_type = volumes_map[root_volume_id].get('VolumeType', 'N/A')
+            else:
+                try:
+                    volumes = ec2_client.describe_volumes(VolumeIds=[root_volume_id])
+                    if volumes and 'Volumes' in volumes and len(volumes['Volumes']) > 0:
+                        root_device_size = volumes['Volumes'][0].get('Size', 'N/A')
+                        root_volume_type = volumes['Volumes'][0].get('VolumeType', 'N/A')
+                except Exception as e:
+                    utils.log_warning(f"Error getting volume info for {root_volume_id}: {e}")
+        else:
+            # Try to get size from the device mapping directly
+            root_device_size = root_device.get('Ebs', {}).get('VolumeSize', 'N/A')
+
+    # Get attached volumes (non-root), using prefetched volume cache
+    attached_vols, attached_vol_info = get_attached_volumes(ec2_client, instance, volumes_map)
+    attached_volumes_str = ', '.join(attached_vols) if attached_vols else 'N/A'
+
+    # Get instance state and stopped date if applicable
+    instance_state = instance.get('State', {}).get('Name', 'N/A')
+    stop_date = get_instance_stop_date(instance, instance_state)
+
+    # Format tags
+    instance_tags = format_tags(instance.get('Tags', []))
+
+    # Calculate monthly cost
+    monthly_cost = calculate_monthly_cost(
+        instance.get('InstanceType', 'N/A'),
+        instance.get('Platform', 'Linux/UNIX'),
+        instance_state,
+        pricing_data
+    )
+
+    # Calculate storage cost
+    storage_cost = calculate_storage_cost(
+        root_device_size,
+        root_volume_type,
+        attached_vol_info,
+        storage_pricing
+    )
+
+    # Calculate total monthly cost
+    total_monthly_cost = 'N/A'
+    if monthly_cost != 'N/A' and storage_cost != 'N/A':
+        total_monthly_cost = round(float(monthly_cost) + float(storage_cost), 2)
+    elif monthly_cost != 'N/A':
+        total_monthly_cost = float(monthly_cost)
+    elif storage_cost != 'N/A':
+        total_monthly_cost = float(storage_cost)
+
+    # Extract instance information
+    return {
+        'Computer Name': next((tag.get('Value', 'N/A') for tag in instance.get('Tags', [])
+                            if tag.get('Key') == 'Name'), 'N/A'),
+        'Instance ID': instance.get('InstanceId', 'N/A'),
+        'State': instance_state,
+        'Stopped Date': stop_date,
+        'Instance Type': instance.get('InstanceType', 'N/A'),
+        'Platform': instance.get('Platform', 'Linux/UNIX'),
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Monthly Storage Cost': storage_cost,
+        'Total Monthly Cost': total_monthly_cost,
+        'Cost Note': cost_note,
+        'Operating System': os_info,
+        'AMI Name': ami_name,
+        'Private IPv4': instance.get('PrivateIpAddress', 'N/A'),
+        'Public IPv4': instance.get('PublicIpAddress', 'N/A'),
+        'IPv6': next((
+            next((addr.get('Ipv6Address', 'N/A')
+                 for addr in interface.get('Ipv6Addresses', [])), 'N/A')
+            for interface in instance.get('NetworkInterfaces', [])
+        ), 'N/A'),
+        'VPC ID': instance.get('VpcId', 'N/A'),
+        'Subnet ID': instance.get('SubnetId', 'N/A'),
+        'Availability Zone': instance.get('Placement', {}).get('AvailabilityZone', 'N/A'),
+        'AMI ID': instance.get('ImageId', 'N/A'),
+        'Launch Time': instance.get('LaunchTime', 'N/A'),
+        'Key Pair': instance.get('KeyName', 'N/A'),
+        'Region': region,
+        'Owner ID': utils.get_account_name_formatted(instance.get('OwnerId', 'N/A')),
+        'vCPU': instance.get('CpuOptions', {}).get('CoreCount', 'N/A'),
+        'RAM (MiB)': ram_mib,
+        'Root Device Volume ID': root_volume_id,
+        'Root Device Size (GiB)': root_device_size,
+        'Attached Volumes': attached_volumes_str,
+        'Tags': instance_tags
+    }
+
+
 def get_instance_data(region, instance_filter=None):
     """
-    Retrieve EC2 instance data for a specific AWS region
+    Retrieve EC2 instance data for a specific AWS region.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return
+    an empty list that ``_run_export`` cannot distinguish from a genuinely
+    empty region, producing silent data loss (see the 07.15.2026 audit).
+    Region-level failures (client creation, pagination, throttling) are
+    allowed to raise so the caller can record the region as FAILED rather
+    than EMPTY. Per-instance errors are contained internally (logged and
+    skipped).
 
     Args:
         region (str): AWS region name
         instance_filter (str, optional): Filter by instance state ('running', 'stopped', or None for all)
+
+    Returns:
+        list: List of dictionaries containing EC2 instance information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -444,217 +600,116 @@ def get_instance_data(region, instance_filter=None):
     pricing_data = load_pricing_data(region)
     storage_pricing = load_storage_pricing_data()
 
-    try:
-        # Prepare filters if needed
-        filters = []
-        if instance_filter:
-            filters.append({
-                'Name': 'instance-state-name',
-                'Values': [instance_filter]
-            })
+    # Prepare filters if needed
+    filters = []
+    if instance_filter:
+        filters.append({
+            'Name': 'instance-state-name',
+            'Values': [instance_filter]
+        })
 
-        # Get instances in the region with optional filter using paginator
-        paginator = ec2.get_paginator('describe_instances')
-        if filters:
-            pages = paginator.paginate(Filters=filters)
-        else:
-            pages = paginator.paginate()
+    # Get instances in the region with optional filter using paginator
+    paginator = ec2.get_paginator('describe_instances')
+    pages = paginator.paginate(Filters=filters) if filters else paginator.paginate()
 
-        all_reservations = []
-        for page in pages:
-            all_reservations.extend(page['Reservations'])
-            time.sleep(0.1)
+    all_reservations = []
+    for page in pages:
+        all_reservations.extend(page.get('Reservations', []))
+        time.sleep(0.1)
 
-        # Count total instances first for progress tracking
-        total_instances = 0
-        for reservation in all_reservations:
-            total_instances += len(reservation['Instances'])
+    # Count total instances first for progress tracking
+    total_instances = 0
+    for reservation in all_reservations:
+        total_instances += len(reservation.get('Instances', []))
 
-        if total_instances > 0:
-            utils.log_info(f"Found {total_instances} instances in {region} to process")
+    if total_instances > 0:
+        utils.log_info(f"Found {total_instances} instances in {region} to process")
 
-        # Prefetch all volume details in bulk to avoid N+1 API calls
-        volumes_map = {}
-        if total_instances > 0:
-            all_volume_ids = [
-                device.get('Ebs', {}).get('VolumeId')
-                for reservation in all_reservations
-                for inst in reservation['Instances']
-                for device in inst.get('BlockDeviceMappings', [])
-                if device.get('Ebs', {}).get('VolumeId')
-            ]
-            for i in range(0, len(all_volume_ids), 500):
-                chunk = all_volume_ids[i:i + 500]
-                try:
-                    resp = ec2.describe_volumes(VolumeIds=chunk)
-                    for v in resp.get('Volumes', []):
-                        volumes_map[v['VolumeId']] = v
-                except Exception as e:
-                    utils.log_warning(f"Error prefetching volumes in {region}: {e}")
+    # Prefetch all volume details in bulk to avoid N+1 API calls
+    volumes_map = {}
+    if total_instances > 0:
+        all_volume_ids = [
+            device.get('Ebs', {}).get('VolumeId')
+            for reservation in all_reservations
+            for inst in reservation.get('Instances', [])
+            for device in inst.get('BlockDeviceMappings', [])
+            if device.get('Ebs', {}).get('VolumeId')
+        ]
+        for i in range(0, len(all_volume_ids), 500):
+            chunk = all_volume_ids[i:i + 500]
+            try:
+                resp = ec2.describe_volumes(VolumeIds=chunk)
+                for v in resp.get('Volumes', []):
+                    volumes_map[v['VolumeId']] = v
+            except Exception as e:
+                utils.log_warning(f"Error prefetching volumes in {region}: {e}")
 
-        # Build RAM map from pricing JSON (memory_gib -> MiB); fall back to
-        # describe_instance_types for any types absent from the JSON.
-        instance_types_map = {}
-        if total_instances > 0:
-            unique_types = list({
-                inst.get('InstanceType')
-                for reservation in all_reservations
-                for inst in reservation['Instances']
-                if inst.get('InstanceType')
-            })
-            unknown_types = []
-            for it in unique_types:
-                memory_gib = pricing_data.get(it, {}).get('memory_gib')
-                if memory_gib is not None:
-                    instance_types_map[it] = int(memory_gib * 1024)
-                else:
-                    unknown_types.append(it)
-            for i in range(0, len(unknown_types), 100):
-                chunk = unknown_types[i:i + 100]
-                try:
-                    resp = ec2.describe_instance_types(InstanceTypes=chunk)
-                    for it in resp.get('InstanceTypes', []):
-                        instance_types_map[it['InstanceType']] = it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A')
-                except Exception as e:
-                    utils.log_warning(f"Error fetching instance types in {region}: {e}")
+    # Build RAM map from pricing JSON (memory_gib -> MiB); fall back to
+    # describe_instance_types for any types absent from the JSON.
+    instance_types_map = {}
+    if total_instances > 0:
+        unique_types = list({
+            inst.get('InstanceType')
+            for reservation in all_reservations
+            for inst in reservation.get('Instances', [])
+            if inst.get('InstanceType')
+        })
+        unknown_types = []
+        for it in unique_types:
+            memory_gib = pricing_data.get(it, {}).get('memory_gib')
+            if memory_gib is not None:
+                instance_types_map[it] = int(memory_gib * 1024)
+            else:
+                unknown_types.append(it)
+        for i in range(0, len(unknown_types), 100):
+            chunk = unknown_types[i:i + 100]
+            try:
+                resp = ec2.describe_instance_types(InstanceTypes=chunk)
+                for it in resp.get('InstanceTypes', []):
+                    instance_types_map[it['InstanceType']] = it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A')
+            except Exception as e:
+                utils.log_warning(f"Error fetching instance types in {region}: {e}")
 
-        _partition = utils.detect_partition(region)
-        cost_note = (
-            "Estimate (us-gov-west-1 pricing)"
-            if _partition == 'aws-us-gov'
-            else "Estimate (us-east-1 pricing)"
+    _partition = utils.detect_partition(region)
+    cost_note = (
+        "Estimate (us-gov-west-1 pricing)"
+        if _partition == 'aws-us-gov'
+        else "Estimate (us-east-1 pricing)"
+    )
+
+    # Process each instance. One malformed instance must not sink the region,
+    # so each is built inside try/except; failures are logged and skipped.
+    processed = 0
+    skipped = 0
+    for reservation in all_reservations:
+        for instance in reservation.get('Instances', []):
+            processed += 1
+            instance_id = instance.get('InstanceId', 'Unknown')
+            progress = (processed / total_instances) * 100 if total_instances > 0 else 0
+
+            utils.log_info(f"[{progress:.1f}%] Processing instance {processed}/{total_instances}: {instance_id}")
+            if processed % 25 == 0:
+                print(f"  [{region}] {processed}/{total_instances} EC2 instances processed...", flush=True)
+
+            try:
+                instance_data = _build_instance_row(
+                    instance, region, ec2, pricing_data, storage_pricing, cost_note,
+                    instance_types_map, volumes_map
+                )
+            except Exception as e:
+                skipped += 1
+                utils.log_error(
+                    f"Skipping EC2 instance '{instance_id}' in {region} due to a processing error", e
+                )
+                continue
+
+            instances.append(instance_data)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_instances} EC2 instance(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining instances were still collected."
         )
-
-        processed = 0
-        for reservation in all_reservations:
-            for instance in reservation['Instances']:
-                processed += 1
-                instance_id = instance.get('InstanceId', 'Unknown')
-                progress = (processed / total_instances) * 100 if total_instances > 0 else 0
-
-                utils.log_info(f"[{progress:.1f}%] Processing instance {processed}/{total_instances}: {instance_id}")
-                if processed % 25 == 0:
-                    print(f"  [{region}] {processed}/{total_instances} EC2 instances processed...", flush=True)
-                # Get the root volume information
-                root_device = next((device for device in instance.get('BlockDeviceMappings', [])
-                                  if device['DeviceName'] == instance.get('RootDeviceName')), None)
-
-                # Get detailed OS information
-                os_info = get_os_info_from_ssm(instance.get('InstanceId', ''), region)
-
-                # Get AMI name information
-                ami_name = get_os_info_from_ami(
-                    ec2,
-                    instance.get('ImageId', ''),
-                    instance.get('PlatformDetails', 'N/A'),
-                    instance.get('Platform', '')
-                )
-
-                # Get RAM info from the prefetched instance types map
-                instance_type = instance.get('InstanceType', 'N/A')
-                ram_mib = instance_types_map.get(instance_type, 'N/A')
-
-                # For root device size and type, we need to ensure we're fetching it correctly
-                root_device_size = 'N/A'
-                root_volume_id = 'N/A'
-                root_volume_type = 'N/A'
-
-                if root_device:
-                    root_volume_id = root_device.get('Ebs', {}).get('VolumeId', 'N/A')
-                    # If we have the volume ID, use prefetched cache or fall back to API
-                    if root_volume_id != 'N/A':
-                        if root_volume_id in volumes_map:
-                            root_device_size = volumes_map[root_volume_id].get('Size', 'N/A')
-                            root_volume_type = volumes_map[root_volume_id].get('VolumeType', 'N/A')
-                        else:
-                            try:
-                                volumes = ec2.describe_volumes(VolumeIds=[root_volume_id])
-                                if volumes and 'Volumes' in volumes and len(volumes['Volumes']) > 0:
-                                    root_device_size = volumes['Volumes'][0].get('Size', 'N/A')
-                                    root_volume_type = volumes['Volumes'][0].get('VolumeType', 'N/A')
-                            except Exception as e:
-                                utils.log_warning(f"Error getting volume info for {root_volume_id}: {e}")
-                    else:
-                        # Try to get size from the device mapping directly
-                        root_device_size = root_device.get('Ebs', {}).get('VolumeSize', 'N/A')
-
-                # Get attached volumes (non-root), using prefetched volume cache
-                attached_vols, attached_vol_info = get_attached_volumes(ec2, instance, volumes_map)
-                attached_volumes_str = ', '.join(attached_vols) if attached_vols else 'N/A'
-
-                # Get instance state and stopped date if applicable
-                instance_state = instance.get('State', {}).get('Name', 'N/A')
-                stop_date = get_instance_stop_date(instance, instance_state)
-
-                # Format tags
-                instance_tags = format_tags(instance.get('Tags', []))
-
-                # Calculate monthly cost
-                monthly_cost = calculate_monthly_cost(
-                    instance.get('InstanceType', 'N/A'),
-                    instance.get('Platform', 'Linux/UNIX'),
-                    instance_state,
-                    pricing_data
-                )
-
-                # Calculate storage cost
-                storage_cost = calculate_storage_cost(
-                    root_device_size,
-                    root_volume_type,
-                    attached_vol_info,
-                    storage_pricing
-                )
-
-                # Calculate total monthly cost
-                total_monthly_cost = 'N/A'
-                if monthly_cost != 'N/A' and storage_cost != 'N/A':
-                    total_monthly_cost = round(float(monthly_cost) + float(storage_cost), 2)
-                elif monthly_cost != 'N/A':
-                    total_monthly_cost = float(monthly_cost)
-                elif storage_cost != 'N/A':
-                    total_monthly_cost = float(storage_cost)
-
-                # Extract instance information
-                instance_data = {
-                    'Computer Name': next((tag['Value'] for tag in instance.get('Tags', [])
-                                        if tag['Key'] == 'Name'), 'N/A'),
-                    'Instance ID': instance.get('InstanceId', 'N/A'),
-                    'State': instance_state,
-                    'Stopped Date': stop_date,
-                    'Instance Type': instance.get('InstanceType', 'N/A'),
-                    'Platform': instance.get('Platform', 'Linux/UNIX'),
-                    'Monthly Cost (On-Demand)': monthly_cost,
-                    'Monthly Storage Cost': storage_cost,
-                    'Total Monthly Cost': total_monthly_cost,
-                    'Cost Note': cost_note,
-                    'Operating System': os_info,
-                    'AMI Name': ami_name,
-                    'Private IPv4': instance.get('PrivateIpAddress', 'N/A'),
-                    'Public IPv4': instance.get('PublicIpAddress', 'N/A'),
-                    'IPv6': next((
-                        next((addr.get('Ipv6Address', 'N/A')
-                             for addr in interface.get('Ipv6Addresses', [])), 'N/A')
-                        for interface in instance.get('NetworkInterfaces', [])
-                    ), 'N/A'),
-                    'VPC ID': instance.get('VpcId', 'N/A'),
-                    'Subnet ID': instance.get('SubnetId', 'N/A'),
-                    'Availability Zone': instance.get('Placement', {}).get('AvailabilityZone', 'N/A'),
-                    'AMI ID': instance.get('ImageId', 'N/A'),
-                    'Launch Time': instance.get('LaunchTime', 'N/A'),
-                    'Key Pair': instance.get('KeyName', 'N/A'),
-                    'Region': region,
-                    'Owner ID': utils.get_account_name_formatted(instance.get('OwnerId', 'N/A')),
-                    'vCPU': instance.get('CpuOptions', {}).get('CoreCount', 'N/A'),
-                    'RAM (MiB)': ram_mib,
-                    'Root Device Volume ID': root_volume_id,
-                    'Root Device Size (GiB)': root_device_size,
-                    'Attached Volumes': attached_volumes_str,
-                    'Tags': instance_tags
-                }
-                instances.append(instance_data)
-
-    except Exception as e:
-        utils.log_error(f"Error getting instances in region {region}", e)
 
     return instances
 
@@ -696,10 +751,14 @@ def _run_export(account_id, account_name, regions, instance_filter, filter_desc)
         utils.log_info(f"Found {len(instances)} instances in {region}")
         return instances
 
-    region_results = utils.scan_regions_concurrent(
+    # collect_failures=True lets get_instance_data raise on a region-level
+    # failure so the scanner records that region as FAILED — a failed region
+    # must never be collapsed into "empty" (silent data loss, 07.15.2026 audit).
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_region,
         show_progress=True,
+        collect_failures=True,
     )
 
     all_instances = []
@@ -708,35 +767,48 @@ def _run_export(account_id, account_name, regions, instance_filter, filter_desc)
 
     total_instances = len(all_instances)
 
-    if not all_instances:
+    if not all_instances and not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No instances found in any AWS region. Exiting...")
         sys.exit(0)
 
-    utils.log_success(f"Total EC2 Instances found across all AWS regions: {total_instances}")
+    if all_instances:
+        utils.log_success(f"Total EC2 Instances found across all AWS regions: {total_instances}")
 
-    utils.log_info("Preparing data for export to Excel format...")
-    df = pd.DataFrame(all_instances)
-    df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(df))
+        utils.log_info("Preparing data for export to Excel format...")
+        df = pd.DataFrame(all_instances)
+        df = utils.sanitize_for_export(utils.prepare_dataframe_for_export(df))
 
-    region_desc = regions[0] if len(regions) == 1 else 'all'
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    filename = utils.create_export_filename(
-        account_name,
-        "ec2",
-        f"{filter_desc}-{region_desc}",
-        current_date,
-    )
+        region_desc = regions[0] if len(regions) == 1 else 'all'
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        filename = utils.create_export_filename(
+            account_name,
+            "ec2",
+            f"{filter_desc}-{region_desc}",
+            current_date,
+        )
 
-    output_path = utils.save_dataframe_to_excel(df, filename)
+        output_path = utils.save_dataframe_to_excel(df, filename)
 
-    if output_path:
-        utils.log_success("AWS EC2 data exported successfully!")
-        utils.log_success(f"File location: {output_path}")
-        utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-        utils.log_info(f"Total instances exported: {total_instances}")
-        print("\nScript execution completed.")
-    else:
-        utils.log_error("Error exporting data. Please check the logs.")
+        if output_path:
+            utils.log_success("AWS EC2 data exported successfully!")
+            utils.log_success(f"File location: {output_path}")
+            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+            utils.log_info(f"Total instances exported: {total_instances}")
+            print("\nScript execution completed.")
+        else:
+            utils.log_error("Error exporting data. Please check the logs.")
+            sys.exit(1)
+
+    # If ANY region failed, make it loud: write a marker and exit non-zero,
+    # even if some data was exported. A partial export that looks complete is
+    # exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, "ec2", failed_regions)
+        print(
+            "\nERROR: EC2 export completed with failures — data is incomplete. "
+            "See the *-ec2-FAILED-*.txt marker in the output directory."
+        )
         sys.exit(1)
 
 
@@ -749,12 +821,11 @@ def main():
         utils.setup_logging("ec2-export")
         account_id, account_name = utils.print_script_banner("AWS EC2 INSTANCES DATA EXPORT")
 
-        if account_name == "UNKNOWN-ACCOUNT":
-            if not utils.prompt_for_confirmation(
-                "Unable to determine account name. Proceed anyway?", default=False
-            ):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "UNKNOWN-ACCOUNT" and not utils.prompt_for_confirmation(
+            "Unable to determine account name. Proceed anyway?", default=False
+        ):
+            print("Exiting script...")
+            sys.exit(0)
 
         step = 1
         regions = None
@@ -783,10 +854,7 @@ def main():
                 step = 3
 
             elif step == 3:
-                if len(regions) <= 3:
-                    region_str = ', '.join(regions)
-                else:
-                    region_str = f"{len(regions)} regions"
+                region_str = ', '.join(regions) if len(regions) <= 3 else f"{len(regions)} regions"
                 msg = f"Ready to export EC2 data ({filter_desc}, {region_str})."
                 result = utils.prompt_confirmation(msg)
                 if result == 'back':

@@ -23,7 +23,7 @@ Features:
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -40,7 +40,7 @@ args = utils.parse_script_args("Export AWS Cost Categories to Excel")
 utils.setup_logging('cost-categories-export')
 
 
-def parse_expression(expression: Dict, prefix: str = "") -> str:
+def parse_expression(expression: dict, prefix: str = "") -> str:
     """Parse Cost Category expression into human-readable format."""
     if not expression:
         return "N/A"
@@ -83,14 +83,66 @@ def parse_expression(expression: Dict, prefix: str = "") -> str:
         return f"{prefix}Complex Expression (see JSON)"
 
 
-@utils.aws_error_handler("Listing Cost Category Definitions", default_return=[])
-def list_cost_category_definitions() -> List[Dict[str, Any]]:
-    """List all Cost Category definitions."""
+def _build_cost_category_row(cc_ref: dict) -> dict[str, Any]:
+    """
+    Build the primary-scope inventory row for a single Cost Category
+    reference returned by ``list_cost_category_definitions``.
+
+    Extracted so per-item processing can be wrapped in try/except by the
+    caller: a malformed reference must not sink the whole primary-scope
+    collection. Every field is read with ``.get()`` and a safe default for
+    the same reason (see
+    .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+
+    Args:
+        cc_ref: A single CostCategoryReferences entry from
+            list_cost_category_definitions.
+
+    Returns:
+        dict: The assembled primary-scope row.
+    """
+    processing_status_list = cc_ref.get('ProcessingStatus') or [{'Status': 'N/A'}]
+    processing_status = (
+        processing_status_list[0].get('Status', 'N/A') if processing_status_list else 'N/A'
+    )
+
+    return {
+        'Name': cc_ref.get('Name', 'Unknown'),
+        'CostCategoryArn': cc_ref.get('CostCategoryArn', 'N/A'),
+        'ProcessingStatus': processing_status,
+        'NumberOfRules': cc_ref.get('NumberOfRules', 0),
+        'Values': ', '.join(cc_ref.get('Values', [])) if cc_ref.get('Values') else 'N/A',
+    }
+
+
+def list_cost_category_definitions() -> list[dict[str, Any]]:
+    """
+    PRIMARY scope collector: list all Cost Category definitions
+    (top-level inventory).
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from an
+    account with no Cost Categories configured, producing silent data loss
+    (see the 07.15.2026 / 07.16.2026 silent-collection-failure audits).
+    Cost Categories (Cost Explorer) is a global, account-scope service (not
+    multi-region — see scripts/shield_export.py for the account-scope
+    reference pattern this follows). Account-scope failures (client
+    creation, pagination) are allowed to raise so the caller can record this
+    scope as *failed* rather than *empty*. Per-item errors are contained
+    internally via ``_build_cost_category_row`` (logged and skipped).
+
+    Returns:
+        list: Primary-scope inventory rows (see ``_build_cost_category_row``).
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
+    """
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
     ce = utils.get_boto3_client('ce', region_name=home_region)
 
-    cost_categories = []
+    raw_refs = []
     next_token = None
 
     while True:
@@ -99,19 +151,35 @@ def list_cost_category_definitions() -> List[Dict[str, Any]]:
             params['NextToken'] = next_token
 
         response = ce.list_cost_category_definitions(**params)
-
-        for cc_ref in response.get('CostCategoryReferences', []):
-            cost_categories.append(cc_ref)
+        raw_refs.extend(response.get('CostCategoryReferences', []))
 
         next_token = response.get('NextToken')
         if not next_token:
             break
 
+    cost_categories = []
+    skipped = 0
+
+    for cc_ref in raw_refs:
+        try:
+            cost_categories.append(_build_cost_category_row(cc_ref))
+        except Exception as e:
+            skipped += 1
+            name = cc_ref.get('Name', 'Unknown') if isinstance(cc_ref, dict) else 'Unknown'
+            utils.log_error(f"Skipping Cost Category reference '{name}' due to a processing error", e)
+            continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {len(raw_refs)} Cost Category reference(s) were skipped due to "
+            "processing errors (see log above); the remaining references were still collected."
+        )
+
     return cost_categories
 
 
 @utils.aws_error_handler("Describing Cost Category Definition", default_return=None)
-def describe_cost_category(cost_category_arn: str) -> Dict[str, Any]:
+def describe_cost_category(cost_category_arn: str) -> dict[str, Any]:
     """Get detailed Cost Category definition."""
     # Cost Explorer is a global service - use partition-aware home region
     home_region = utils.get_partition_default_region()
@@ -125,18 +193,49 @@ def describe_cost_category(cost_category_arn: str) -> Dict[str, Any]:
 
 
 def _run_export(account_id: str, account_name: str) -> None:
-    """Collect Cost Categories data and write the Excel export."""
+    """
+    Collect Cost Categories data and write the Excel export.
+
+    Cost Categories (Cost Explorer) is a global, account-scope service (not
+    multi-region), so failure tracking follows the account-scope pattern
+    (see scripts/shield_export.py) rather than
+    ``utils.scan_regions_concurrent``. ``list_cost_category_definitions()``
+    is the PRIMARY scope: a real API error there must propagate to
+    ``failed_scopes``, never collapse into "no Cost Categories configured"
+    (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    ``describe_cost_category()`` is per-item enrichment and continues to
+    degrade gracefully — a single category's detail failing does not fail
+    the whole export.
+
+    An Excel workbook (with a forced ``Summary`` sheet) is always written,
+    even when the primary scope failed, so a partial export never looks
+    like a missing file. If the primary scope failed, a failure marker is
+    written and the process exits non-zero; a genuinely empty account
+    (primary scope succeeded, nothing configured) exits 0 with no marker.
+    """
     utils.log_info(f"Exporting Cost Categories for account: {account_name} ({utils.mask_account_id(account_id)})")
     utils.log_info("Cost Categories are global (accessed via us-east-1)...")
 
-    # List all cost categories
-    utils.log_info("Retrieving Cost Category definitions...")
-    cost_category_refs = list_cost_category_definitions()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
 
-    if not cost_category_refs:
+    # STEP 1: List all cost categories (PRIMARY scope — a real API error
+    # here must propagate to failed_scopes, never collapse into an empty
+    # list that reads as "no Cost Categories configured").
+    utils.log_info("Retrieving Cost Category definitions...")
+    try:
+        cost_category_refs = list_cost_category_definitions()
+    except Exception as e:
+        failed_scopes.append(('cost_categories', str(e)))
+        utils.log_error(f"Cost Category definitions collection failed: {e}")
+        cost_category_refs = []
+
+    if not cost_category_refs and not failed_scopes:
+        # Genuinely empty: the primary scope succeeded and there is simply
+        # nothing configured.
         utils.log_warning("No Cost Categories found.")
         utils.log_info("Creating empty export file...")
-    else:
+    elif cost_category_refs:
         utils.log_info(f"Found {len(cost_category_refs)} Cost Category definition(s)")
 
     # Collect detailed information for each category
@@ -166,9 +265,12 @@ def _run_export(account_id: str, account_name: str) -> None:
             'EffectiveEnd': cc_detail.get('EffectiveEnd', 'N/A'),
             'DefaultValue': cc_detail.get('DefaultValue', 'N/A'),
             'RuleVersion': cc_detail.get('RuleVersion', 'N/A'),
-            'ProcessingStatus': cc_ref.get('ProcessingStatus', [{'Status': 'N/A'}])[0].get('Status', 'N/A'),
+            # ProcessingStatus/Values are already resolved to display strings by
+            # _build_cost_category_row() — read directly rather than re-deriving
+            # from the raw AWS shape.
+            'ProcessingStatus': cc_ref.get('ProcessingStatus', 'N/A'),
             'NumberOfRules': cc_ref.get('NumberOfRules', 0),
-            'Values': ', '.join(cc_ref.get('Values', [])) if cc_ref.get('Values') else 'N/A',
+            'Values': cc_ref.get('Values', 'N/A'),
         })
 
         # Extract rules
@@ -257,6 +359,11 @@ def _run_export(account_id: str, account_name: str) -> None:
         'Split Charge Rules': df_splits,
     }
 
+    # The Summary sheet (and the rest of the workbook) is always written,
+    # even when the primary scope failed — PRESERVE this: a partial export
+    # that looks complete is exactly the failure mode this guards against,
+    # so it must always be paired with the marker + non-zero exit below
+    # when failed_scopes is non-empty.
     utils.save_multiple_dataframes_to_excel(sheets, filename)
 
     # Log summary
@@ -268,6 +375,19 @@ def _run_export(account_id: str, account_name: str) -> None:
             utils.log_info(f"  Split Charge Rules: {len(df_splits)}")
 
     utils.log_success("Cost Categories export completed successfully!")
+
+    # If the primary scope failed, make it loud: write a marker and exit
+    # non-zero, even though the workbook (with its forced Summary sheet)
+    # was still written. A partial export that looks complete is exactly
+    # the failure mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'cost-categories', failed_scopes)
+        print(
+            "\nERROR: Cost Categories export completed with failures — data is "
+            "incomplete. See the *-cost-categories-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():

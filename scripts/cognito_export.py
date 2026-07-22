@@ -14,7 +14,7 @@ Output: Multi-worksheet Excel file with Cognito resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -27,9 +27,126 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export Amazon Cognito user pools and identity pools to Excel")
 
-def scan_user_pools_in_region(region: str) -> List[Dict[str, Any]]:
+def _build_user_pool_row(pool: dict, region: str) -> dict[str, Any]:
+    """Build a single Cognito user pool export row from a describe_user_pool response."""
+    # Basic information
+    pool_name = pool.get('Name', 'N/A')
+    pool_id = pool.get('Id', 'N/A')
+    pool_arn = pool.get('Arn', 'N/A')
+    status = pool.get('Status', 'N/A')
+
+    # Creation and modification dates
+    creation_date = pool.get('CreationDate', 'N/A')
+    if creation_date != 'N/A':
+        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_modified = pool.get('LastModifiedDate', 'N/A')
+    if last_modified != 'N/A':
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
+
+    # MFA Configuration
+    mfa_config = pool.get('MfaConfiguration', 'OFF')
+
+    # Password policy
+    policies = pool.get('Policies', {})
+    password_policy = policies.get('PasswordPolicy', {})
+    min_length = password_policy.get('MinimumLength', 'N/A')
+    require_uppercase = password_policy.get('RequireUppercase', False)
+    require_lowercase = password_policy.get('RequireLowercase', False)
+    require_numbers = password_policy.get('RequireNumbers', False)
+    require_symbols = password_policy.get('RequireSymbols', False)
+    temp_password_validity = password_policy.get('TemporaryPasswordValidityDays', 'N/A')
+
+    # Auto-verified attributes
+    auto_verified = pool.get('AutoVerifiedAttributes', [])
+    auto_verified_str = ', '.join(auto_verified) if auto_verified else 'None'
+
+    # Username attributes
+    username_attrs = pool.get('UsernameAttributes', [])
+    username_attrs_str = ', '.join(username_attrs) if username_attrs else 'username'
+
+    # Email configuration
+    email_config = pool.get('EmailConfiguration', {})
+    email_source = email_config.get('SourceArn', 'Default')
+    email_sending = email_config.get('EmailSendingAccount', 'COGNITO_DEFAULT')
+
+    # SMS configuration
+    sms_config = pool.get('SmsConfiguration', {})
+    sms_role = sms_config.get('SnsCallerArn', 'N/A')
+
+    # Advanced security
+    user_pool_add_ons = pool.get('UserPoolAddOns', {})
+    advanced_security = user_pool_add_ons.get('AdvancedSecurityMode', 'OFF')
+
+    # Account recovery
+    account_recovery = pool.get('AccountRecoverySetting', {})
+    recovery_mechanisms = account_recovery.get('RecoveryMechanisms', [])
+    recovery_str = ', '.join([m.get('Name', 'N/A') for m in recovery_mechanisms])
+
+    # Device tracking
+    device_config = pool.get('DeviceConfiguration', {})
+    challenge_required = device_config.get('ChallengeRequiredOnNewDevice', False)
+    device_only_remembered = device_config.get('DeviceOnlyRememberedOnUserPrompt', False)
+
+    # User attribute update settings
+    user_attr_update = pool.get('UserAttributeUpdateSettings', {})
+    attrs_require_verification = user_attr_update.get('AttributesRequireVerificationBeforeUpdate', [])
+    attrs_verify_str = ', '.join(attrs_require_verification) if attrs_require_verification else 'None'
+
+    # Lambda triggers
+    lambda_config = pool.get('LambdaConfig', {})
+    triggers = []
+    for trigger_name, trigger_arn in lambda_config.items():
+        if trigger_arn:
+            triggers.append(trigger_name)
+    triggers_str = ', '.join(triggers) if triggers else 'None'
+
+    # Estimated number of users
+    estimated_users = pool.get('EstimatedNumberOfUsers', 0)
+
+    return {
+        'Region': region,
+        'Pool Name': pool_name,
+        'Pool ID': pool_id,
+        'ARN': pool_arn,
+        'Status': status,
+        'Created': creation_date,
+        'Last Modified': last_modified,
+        'Estimated Users': estimated_users,
+        'MFA': mfa_config,
+        'Advanced Security': advanced_security,
+        'Min Password Length': min_length,
+        'Require Uppercase': require_uppercase,
+        'Require Lowercase': require_lowercase,
+        'Require Numbers': require_numbers,
+        'Require Symbols': require_symbols,
+        'Temp Password Validity (Days)': temp_password_validity,
+        'Auto Verified Attributes': auto_verified_str,
+        'Username Attributes': username_attrs_str,
+        'Email Sending Account': email_sending,
+        'Email Source ARN': email_source,
+        'SMS Role ARN': sms_role,
+        'Account Recovery': recovery_str,
+        'Device Challenge Required': challenge_required,
+        'Device Only Remembered on Prompt': device_only_remembered,
+        'Attributes Require Verification': attrs_verify_str,
+        'Lambda Triggers': triggers_str
+    }
+
+
+def scan_user_pools_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pools in a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors from ``list_user_pools``: an API/permission failure here must
+    propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records the region as failed instead of silently reporting "no user
+    pools" (the silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    A single pool that fails to describe/build is skipped (logged) rather
+    than aborting the whole region.
 
     Args:
         region: AWS region to scan
@@ -37,163 +154,66 @@ def scan_user_pools_in_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of dictionaries with user pool information from this region
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_pools = []
     cognito_client = utils.get_boto3_client('cognito-idp', region_name=region)
 
-    try:
-        paginator = cognito_client.get_paginator('list_user_pools')
-        for page in paginator.paginate(MaxResults=60):
-            pools = page.get('UserPools', [])
+    paginator = cognito_client.get_paginator('list_user_pools')
+    for page in paginator.paginate(MaxResults=60):
+        pools = page.get('UserPools', [])
 
-            for pool_summary in pools:
-                pool_id = pool_summary.get('Id', 'N/A')
+        for pool_summary in pools:
+            pool_id = pool_summary.get('Id', 'N/A')
 
-                # Get detailed pool information
-                try:
-                    pool_response = cognito_client.describe_user_pool(UserPoolId=pool_id)
-                    pool = pool_response.get('UserPool', {})
-
-                    # Basic information
-                    pool_name = pool.get('Name', 'N/A')
-                    pool_id = pool.get('Id', 'N/A')
-                    pool_arn = pool.get('Arn', 'N/A')
-                    status = pool.get('Status', 'N/A')
-
-                    # Creation and modification dates
-                    creation_date = pool.get('CreationDate', 'N/A')
-                    if creation_date != 'N/A':
-                        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S')
-
-                    last_modified = pool.get('LastModifiedDate', 'N/A')
-                    if last_modified != 'N/A':
-                        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # MFA Configuration
-                    mfa_config = pool.get('MfaConfiguration', 'OFF')
-
-                    # Password policy
-                    policies = pool.get('Policies', {})
-                    password_policy = policies.get('PasswordPolicy', {})
-                    min_length = password_policy.get('MinimumLength', 'N/A')
-                    require_uppercase = password_policy.get('RequireUppercase', False)
-                    require_lowercase = password_policy.get('RequireLowercase', False)
-                    require_numbers = password_policy.get('RequireNumbers', False)
-                    require_symbols = password_policy.get('RequireSymbols', False)
-                    temp_password_validity = password_policy.get('TemporaryPasswordValidityDays', 'N/A')
-
-                    # Auto-verified attributes
-                    auto_verified = pool.get('AutoVerifiedAttributes', [])
-                    auto_verified_str = ', '.join(auto_verified) if auto_verified else 'None'
-
-                    # Username attributes
-                    username_attrs = pool.get('UsernameAttributes', [])
-                    username_attrs_str = ', '.join(username_attrs) if username_attrs else 'username'
-
-                    # Email configuration
-                    email_config = pool.get('EmailConfiguration', {})
-                    email_source = email_config.get('SourceArn', 'Default')
-                    email_sending = email_config.get('EmailSendingAccount', 'COGNITO_DEFAULT')
-
-                    # SMS configuration
-                    sms_config = pool.get('SmsConfiguration', {})
-                    sms_role = sms_config.get('SnsCallerArn', 'N/A')
-
-                    # Advanced security
-                    user_pool_add_ons = pool.get('UserPoolAddOns', {})
-                    advanced_security = user_pool_add_ons.get('AdvancedSecurityMode', 'OFF')
-
-                    # Account recovery
-                    account_recovery = pool.get('AccountRecoverySetting', {})
-                    recovery_mechanisms = account_recovery.get('RecoveryMechanisms', [])
-                    recovery_str = ', '.join([m.get('Name', 'N/A') for m in recovery_mechanisms])
-
-                    # Device tracking
-                    device_config = pool.get('DeviceConfiguration', {})
-                    challenge_required = device_config.get('ChallengeRequiredOnNewDevice', False)
-                    device_only_remembered = device_config.get('DeviceOnlyRememberedOnUserPrompt', False)
-
-                    # User attribute update settings
-                    user_attr_update = pool.get('UserAttributeUpdateSettings', {})
-                    attrs_require_verification = user_attr_update.get('AttributesRequireVerificationBeforeUpdate', [])
-                    attrs_verify_str = ', '.join(attrs_require_verification) if attrs_require_verification else 'None'
-
-                    # Lambda triggers
-                    lambda_config = pool.get('LambdaConfig', {})
-                    triggers = []
-                    for trigger_name, trigger_arn in lambda_config.items():
-                        if trigger_arn:
-                            triggers.append(trigger_name)
-                    triggers_str = ', '.join(triggers) if triggers else 'None'
-
-                    # Estimated number of users
-                    estimated_users = pool.get('EstimatedNumberOfUsers', 0)
-
-                    regional_pools.append({
-                        'Region': region,
-                        'Pool Name': pool_name,
-                        'Pool ID': pool_id,
-                        'ARN': pool_arn,
-                        'Status': status,
-                        'Created': creation_date,
-                        'Last Modified': last_modified,
-                        'Estimated Users': estimated_users,
-                        'MFA': mfa_config,
-                        'Advanced Security': advanced_security,
-                        'Min Password Length': min_length,
-                        'Require Uppercase': require_uppercase,
-                        'Require Lowercase': require_lowercase,
-                        'Require Numbers': require_numbers,
-                        'Require Symbols': require_symbols,
-                        'Temp Password Validity (Days)': temp_password_validity,
-                        'Auto Verified Attributes': auto_verified_str,
-                        'Username Attributes': username_attrs_str,
-                        'Email Sending Account': email_sending,
-                        'Email Source ARN': email_source,
-                        'SMS Role ARN': sms_role,
-                        'Account Recovery': recovery_str,
-                        'Device Challenge Required': challenge_required,
-                        'Device Only Remembered on Prompt': device_only_remembered,
-                        'Attributes Require Verification': attrs_verify_str,
-                        'Lambda Triggers': triggers_str
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get details for pool {pool_id} in {region}: {str(e)}")
-                    continue
-
-    except Exception as e:
-        utils.log_warning(f"Error listing user pools in {region}: {str(e)}")
+            # Get detailed pool information; one malformed/undescribable pool
+            # is skipped, not fatal to the region.
+            try:
+                pool_response = cognito_client.describe_user_pool(UserPoolId=pool_id)
+                pool = pool_response.get('UserPool', {})
+                regional_pools.append(_build_user_pool_row(pool, region))
+            except Exception as e:
+                utils.log_warning(f"Could not get details for pool {pool_id} in {region}: {str(e)}")
+                continue
 
     utils.log_info(f"Found {len(regional_pools)} user pools in {region}")
     return regional_pools
 
 
-@utils.aws_error_handler("Collecting Cognito user pools", default_return=[])
-def collect_user_pools(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pools(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Cognito user pool information from AWS regions using concurrent scanning.
+    Collect Cognito user pool information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with user pool information
+        tuple: ``(pools, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_user_pools_in_region,
+        show_progress=True,
+        collect_failures=True,
     )
     all_pools = []
     for pools in region_results:
         all_pools.extend(pools)
 
     utils.log_info(f"Collected {len(all_pools)} user pools")
-    return all_pools
+    return all_pools, failed_regions
 
 
-def scan_identity_pools_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_identity_pools_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito identity pools in a single region.
 
@@ -268,7 +288,7 @@ def scan_identity_pools_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Cognito identity pools", default_return=[])
-def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_identity_pools(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito identity pool (federated identities) information using concurrent scanning.
 
@@ -292,7 +312,7 @@ def collect_identity_pools(regions: List[str]) -> List[Dict[str, Any]]:
     return all_identity_pools
 
 
-def scan_user_pool_clients_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_user_pool_clients_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pool clients in a single region.
 
@@ -412,7 +432,7 @@ def scan_user_pool_clients_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting user pool clients", default_return=[])
-def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pool_clients(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito user pool client (app) information using concurrent scanning.
 
@@ -436,7 +456,7 @@ def collect_user_pool_clients(regions: List[str]) -> List[Dict[str, Any]]:
     return all_clients
 
 
-def scan_identity_providers_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_identity_providers_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito identity providers in a single region.
 
@@ -542,7 +562,7 @@ def scan_identity_providers_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting identity providers", default_return=[])
-def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_identity_providers(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito identity provider information (SAML, OIDC, Social) using concurrent scanning.
 
@@ -566,7 +586,7 @@ def collect_identity_providers(regions: List[str]) -> List[Dict[str, Any]]:
     return all_providers
 
 
-def scan_user_pool_groups_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_user_pool_groups_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Cognito user pool groups in a single region.
 
@@ -633,7 +653,7 @@ def scan_user_pool_groups_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting user pool groups", default_return=[])
-def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_user_pool_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Cognito user pool group information using concurrent scanning.
 
@@ -657,11 +677,11 @@ def collect_user_pool_groups(regions: List[str]) -> List[Dict[str, Any]]:
     return all_groups
 
 
-def generate_summary(user_pools: List[Dict[str, Any]],
-                     identity_pools: List[Dict[str, Any]],
-                     clients: List[Dict[str, Any]],
-                     providers: List[Dict[str, Any]],
-                     groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(user_pools: list[dict[str, Any]],
+                     identity_pools: list[dict[str, Any]],
+                     clients: list[dict[str, Any]],
+                     providers: list[dict[str, Any]],
+                     groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for Cognito resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -776,7 +796,10 @@ def main():
     # Collect data
     print("\nCollecting Cognito data...")
 
-    user_pools = collect_user_pools(regions)
+    # Primary scope — region failures must propagate as failed_regions,
+    # never collapse into "empty". Clients/providers/groups below are
+    # enrichment and stay graceful (aws_error_handler default_return=[]).
+    user_pools, failed_regions = collect_user_pools(regions)
     identity_pools = collect_identity_pools(regions)
     clients = collect_user_pool_clients(regions)
     providers = collect_identity_providers(regions)
@@ -829,6 +852,18 @@ def main():
         # Log summary
     else:
         utils.log_warning("No Cognito data found to export")
+
+    # If ANY region failed the user pools scope collection, make it loud:
+    # write a marker and exit non-zero, even though the forced Summary sheet
+    # means a workbook was still written. A complete-looking file that hides
+    # a silent collection failure is exactly the bug this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'cognito', failed_regions)
+        print(
+            "\nERROR: Cognito export completed with failures — data is incomplete. "
+            "See the *-cognito-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
     utils.log_success("Cognito export completed successfully")
 

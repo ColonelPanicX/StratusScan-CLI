@@ -27,7 +27,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -48,14 +48,154 @@ except ImportError:
 args = utils.parse_script_args("Export CloudFront distributions to Excel")
 
 
-@utils.aws_error_handler("Collecting CloudFront distributions", default_return=[])
-def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
+def _build_distribution_row(cloudfront, dist_summary: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build the export row for a single CloudFront distribution.
+
+    Extracted so per-distribution processing can be wrapped in try/except by
+    the caller: a malformed distribution entry (or a per-distribution
+    ``get_distribution`` failure) must not sink the whole account-scope
+    collection. Required fields are read with ``.get()`` and a safe default
+    for the same reason.
+
+    Args:
+        cloudfront: The boto3 CloudFront client.
+        dist_summary: A single Items entry from list_distributions.
+
+    Returns:
+        dict: The assembled distribution row.
+    """
+    dist_id = dist_summary.get('Id', '')
+    domain_name = dist_summary.get('DomainName', '')
+
+    print(f"  Processing distribution: {dist_id} ({domain_name})")
+
+    dist_detail = cloudfront.get_distribution(Id=dist_id)
+    dist_config = dist_detail['Distribution']['DistributionConfig']
+    dist_info = dist_detail['Distribution']
+
+    # Extract basic information
+    status = dist_info.get('Status', '')
+    enabled = dist_config.get('Enabled', False)
+    comment = dist_config.get('Comment', '')
+    price_class = dist_config.get('PriceClass', '')
+
+    # Get alternate domain names (CNAMEs)
+    aliases = dist_config.get('Aliases', {}).get('Items', [])
+    alias_list = ', '.join(aliases) if aliases else 'N/A'
+
+    # Get default root object
+    default_root_object = dist_config.get('DefaultRootObject', 'N/A')
+
+    # Get origin information (count and types)
+    origins = dist_config.get('Origins', {}).get('Items', [])
+    origin_count = len(origins)
+
+    # Categorize origins
+    s3_origins = []
+    custom_origins = []
+    for origin in origins:
+        if '.s3' in origin.get('DomainName', ''):
+            s3_origins.append(origin.get('Id', ''))
+        else:
+            custom_origins.append(origin.get('Id', ''))
+
+    origin_summary = f"S3: {len(s3_origins)}, Custom: {len(custom_origins)}"
+
+    # Get cache behavior count
+    default_cache_behavior = dist_config.get('DefaultCacheBehavior', {})
+    cache_behaviors = dist_config.get('CacheBehaviors', {}).get('Items', [])
+    behavior_count = 1 + len(cache_behaviors)  # 1 default + custom behaviors
+
+    # Get SSL/TLS information
+    viewer_cert = dist_config.get('ViewerCertificate', {})
+    ssl_support = viewer_cert.get('SSLSupportMethod', 'N/A')
+    acm_cert_arn = viewer_cert.get('ACMCertificateArn', 'N/A')
+    iam_cert_id = viewer_cert.get('IAMCertificateId', 'N/A')
+    cert_source = 'CloudFront Default' if viewer_cert.get('CloudFrontDefaultCertificate') else 'Custom'
+
+    # Get WAF Web ACL ID
+    web_acl_id = dist_config.get('WebACLId', 'N/A')
+
+    # Get viewer protocol policy from default cache behavior
+    viewer_protocol_policy = default_cache_behavior.get('ViewerProtocolPolicy', 'N/A')
+
+    # Get HTTP versions
+    http_version = dist_config.get('HttpVersion', 'N/A')
+
+    # Get IPv6 enabled
+    ipv6_enabled = dist_config.get('IsIPV6Enabled', False)
+
+    # Get geographic restrictions
+    geo_restriction = dist_config.get('Restrictions', {}).get('GeoRestriction', {})
+    geo_restriction_type = geo_restriction.get('RestrictionType', 'none')
+    geo_locations = geo_restriction.get('Items', [])
+    geo_summary = f"{geo_restriction_type.upper()}: {len(geo_locations)} countries" if geo_locations else geo_restriction_type
+
+    # Get logging configuration
+    logging = dist_config.get('Logging', {})
+    logging_enabled = logging.get('Enabled', False)
+    log_bucket = logging.get('Bucket', 'N/A') if logging_enabled else 'Disabled'
+
+    # Get Lambda@Edge and CloudFront Functions
+    lambda_associations = default_cache_behavior.get('LambdaFunctionAssociations', {}).get('Items', [])
+    function_associations = default_cache_behavior.get('FunctionAssociations', {}).get('Items', [])
+    edge_functions = f"Lambda: {len(lambda_associations)}, Functions: {len(function_associations)}"
+
+    # Get last modified time
+    last_modified = dist_info.get('LastModifiedTime', '')
+    if last_modified:
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_modified, datetime.datetime) else str(last_modified)
+
+    return {
+        'Distribution ID': dist_id,
+        'Domain Name': domain_name,
+        'Status': status,
+        'Enabled': enabled,
+        'Aliases (CNAMEs)': alias_list,
+        'Comment': comment if comment else 'N/A',
+        'Price Class': price_class,
+        'Default Root Object': default_root_object,
+        'Origin Count': origin_count,
+        'Origin Types': origin_summary,
+        'Cache Behavior Count': behavior_count,
+        'Viewer Protocol Policy': viewer_protocol_policy,
+        'HTTP Version': http_version,
+        'IPv6 Enabled': ipv6_enabled,
+        'SSL/TLS Support': ssl_support,
+        'Certificate Source': cert_source,
+        'ACM Certificate ARN': acm_cert_arn,
+        'IAM Certificate ID': iam_cert_id,
+        'WAF Web ACL': web_acl_id,
+        'Geographic Restrictions': geo_summary,
+        'Logging': log_bucket,
+        'Edge Functions': edge_functions,
+        'Last Modified': last_modified
+    }
+
+
+def collect_cloudfront_distributions() -> list[dict[str, Any]]:
     """
     Collect CloudFront distribution information.
-    CloudFront is a global service, so we don't need to iterate regions.
+    CloudFront is a global, account-scope service (not multi-region — see
+    scripts/shield_export.py for the account-scope reference pattern this
+    follows).
+
+    Not wrapped in ``aws_error_handler`` and does not swallow errors to an
+    empty list: a swallowed error here would be indistinguishable from a
+    genuinely empty account (no distributions configured), producing silent
+    data loss (see the 07.15.2026 / 07.16.2026 silent-collection-failure
+    audits). Account-scope failures (client creation, pagination) are
+    allowed to raise so the caller (main) can record this scope as *failed*
+    rather than *empty*. Per-distribution errors are contained internally
+    (logged and skipped) via ``_build_distribution_row``.
 
     Returns:
         list: List of dictionaries with distribution information
+
+    Raises:
+        Exception: Any AWS/pagination error for the account scope (caller
+            records it as a failed scope; it is never masked as empty).
     """
     print("\n=== COLLECTING CLOUDFRONT DISTRIBUTIONS ===")
     utils.log_info("CloudFront is a global service - collecting from global endpoint")
@@ -72,141 +212,38 @@ def collect_cloudfront_distributions() -> List[Dict[str, Any]]:
     paginator = cloudfront.get_paginator('list_distributions')
 
     total_count = 0
+    skipped = 0
     for page in paginator.paginate():
         dist_list = page.get('DistributionList', {})
         items = dist_list.get('Items', [])
         total_count += len(items)
 
         for dist_summary in items:
-            dist_id = dist_summary.get('Id', '')
-            domain_name = dist_summary.get('DomainName', '')
+            dist_id = dist_summary.get('Id', 'Unknown')
 
-            print(f"  Processing distribution: {dist_id} ({domain_name})")
-
-            # Get detailed distribution configuration
             try:
-                dist_detail = cloudfront.get_distribution(Id=dist_id)
-                dist_config = dist_detail['Distribution']['DistributionConfig']
-                dist_info = dist_detail['Distribution']
-
-                # Extract basic information
-                status = dist_info.get('Status', '')
-                enabled = dist_config.get('Enabled', False)
-                comment = dist_config.get('Comment', '')
-                price_class = dist_config.get('PriceClass', '')
-
-                # Get alternate domain names (CNAMEs)
-                aliases = dist_config.get('Aliases', {}).get('Items', [])
-                alias_list = ', '.join(aliases) if aliases else 'N/A'
-
-                # Get default root object
-                default_root_object = dist_config.get('DefaultRootObject', 'N/A')
-
-                # Get origin information (count and types)
-                origins = dist_config.get('Origins', {}).get('Items', [])
-                origin_count = len(origins)
-
-                # Categorize origins
-                s3_origins = []
-                custom_origins = []
-                for origin in origins:
-                    if '.s3' in origin.get('DomainName', ''):
-                        s3_origins.append(origin.get('Id', ''))
-                    else:
-                        custom_origins.append(origin.get('Id', ''))
-
-                origin_summary = f"S3: {len(s3_origins)}, Custom: {len(custom_origins)}"
-
-                # Get cache behavior count
-                default_cache_behavior = dist_config.get('DefaultCacheBehavior', {})
-                cache_behaviors = dist_config.get('CacheBehaviors', {}).get('Items', [])
-                behavior_count = 1 + len(cache_behaviors)  # 1 default + custom behaviors
-
-                # Get SSL/TLS information
-                viewer_cert = dist_config.get('ViewerCertificate', {})
-                ssl_support = viewer_cert.get('SSLSupportMethod', 'N/A')
-                acm_cert_arn = viewer_cert.get('ACMCertificateArn', 'N/A')
-                iam_cert_id = viewer_cert.get('IAMCertificateId', 'N/A')
-                cert_source = 'CloudFront Default' if viewer_cert.get('CloudFrontDefaultCertificate') else 'Custom'
-
-                # Get WAF Web ACL ID
-                web_acl_id = dist_config.get('WebACLId', 'N/A')
-
-                # Get viewer protocol policy from default cache behavior
-                viewer_protocol_policy = default_cache_behavior.get('ViewerProtocolPolicy', 'N/A')
-
-                # Get HTTP versions
-                http_version = dist_config.get('HttpVersion', 'N/A')
-
-                # Get IPv6 enabled
-                ipv6_enabled = dist_config.get('IsIPV6Enabled', False)
-
-                # Get geographic restrictions
-                geo_restriction = dist_config.get('Restrictions', {}).get('GeoRestriction', {})
-                geo_restriction_type = geo_restriction.get('RestrictionType', 'none')
-                geo_locations = geo_restriction.get('Items', [])
-                geo_summary = f"{geo_restriction_type.upper()}: {len(geo_locations)} countries" if geo_locations else geo_restriction_type
-
-                # Get logging configuration
-                logging = dist_config.get('Logging', {})
-                logging_enabled = logging.get('Enabled', False)
-                log_bucket = logging.get('Bucket', 'N/A') if logging_enabled else 'Disabled'
-
-                # Get Lambda@Edge and CloudFront Functions
-                lambda_associations = default_cache_behavior.get('LambdaFunctionAssociations', {}).get('Items', [])
-                function_associations = default_cache_behavior.get('FunctionAssociations', {}).get('Items', [])
-                edge_functions = f"Lambda: {len(lambda_associations)}, Functions: {len(function_associations)}"
-
-                # Get last modified time
-                last_modified = dist_info.get('LastModifiedTime', '')
-                if last_modified:
-                    last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_modified, datetime.datetime) else str(last_modified)
-
-                distributions.append({
-                    'Distribution ID': dist_id,
-                    'Domain Name': domain_name,
-                    'Status': status,
-                    'Enabled': enabled,
-                    'Aliases (CNAMEs)': alias_list,
-                    'Comment': comment if comment else 'N/A',
-                    'Price Class': price_class,
-                    'Default Root Object': default_root_object,
-                    'Origin Count': origin_count,
-                    'Origin Types': origin_summary,
-                    'Cache Behavior Count': behavior_count,
-                    'Viewer Protocol Policy': viewer_protocol_policy,
-                    'HTTP Version': http_version,
-                    'IPv6 Enabled': ipv6_enabled,
-                    'SSL/TLS Support': ssl_support,
-                    'Certificate Source': cert_source,
-                    'ACM Certificate ARN': acm_cert_arn,
-                    'IAM Certificate ID': iam_cert_id,
-                    'WAF Web ACL': web_acl_id,
-                    'Geographic Restrictions': geo_summary,
-                    'Logging': log_bucket,
-                    'Edge Functions': edge_functions,
-                    'Last Modified': last_modified
-                })
-
+                distributions.append(_build_distribution_row(cloudfront, dist_summary))
             except Exception as e:
-                utils.log_error(f"Error getting details for distribution {dist_id}", e)
-                # Add minimal info if we can't get full details
-                distributions.append({
-                    'Distribution ID': dist_id,
-                    'Domain Name': domain_name,
-                    'Status': dist_summary.get('Status', 'Unknown'),
-                    'Enabled': dist_summary.get('Enabled', 'Unknown'),
-                    'Error': f'Could not retrieve full details: {str(e)}'
-                })
+                skipped += 1
+                utils.log_error(
+                    f"Skipping CloudFront distribution '{dist_id}' due to a processing error", e
+                )
+                continue
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_count} CloudFront distribution(s) were skipped due to "
+            "processing errors (see log above); the remaining distributions were still collected."
+        )
 
     print(f"\nTotal distributions found: {total_count}")
-    utils.log_success(f"Total CloudFront distributions collected: {total_count}")
+    utils.log_success(f"Total CloudFront distributions collected: {len(distributions)}")
 
     return distributions
 
 
 @utils.aws_error_handler("Collecting origin details", default_return=[])
-def collect_origin_details() -> List[Dict[str, Any]]:
+def collect_origin_details() -> list[dict[str, Any]]:
     """
     Collect detailed origin information for all distributions.
 
@@ -289,7 +326,7 @@ def collect_origin_details() -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting cache behavior details", default_return=[])
-def collect_cache_behaviors() -> List[Dict[str, Any]]:
+def collect_cache_behaviors() -> list[dict[str, Any]]:
     """
     Collect cache behavior information for all distributions.
 
@@ -332,7 +369,7 @@ def collect_cache_behaviors() -> List[Dict[str, Any]]:
     return behaviors_data
 
 
-def process_cache_behavior(dist_id: str, path_pattern: str, behavior: Dict[str, Any]) -> Dict[str, Any]:
+def process_cache_behavior(dist_id: str, path_pattern: str, behavior: dict[str, Any]) -> dict[str, Any]:
     """
     Process a single cache behavior into a dictionary.
 
@@ -412,6 +449,16 @@ def export_cloudfront_data(account_id: str, account_name: str):
     """
     Export CloudFront distribution information to an Excel file.
 
+    CloudFront is a global, account-scope service (not multi-region), so
+    failures are tracked per account-scope collector rather than via
+    ``utils.scan_regions_concurrent`` (see scripts/shield_export.py for the
+    account-scope reference pattern). A real API error on the ``distributions``
+    scope (the PRIMARY collector) is exported as a partial result (if any
+    enrichment data was collected) and always surfaced via
+    ``utils.report_collection_failures`` + a non-zero exit — it must never be
+    silently collapsed into "no distributions" (07.15.2026 / 07.16.2026
+    audits).
+
     Args:
         account_id: The AWS account ID
         account_name: The AWS account name
@@ -428,32 +475,34 @@ def export_cloudfront_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect distribution overview
-    distributions = collect_cloudfront_distributions()
+    # Account-scope failure tracking (see scripts/shield_export.py).
+    failed_scopes = []
+
+    # STEP 1: Collect distribution overview (PRIMARY scope — a real API error
+    # here must propagate to failed_scopes, never collapse into an empty list
+    # that reads as "no distributions configured").
+    try:
+        distributions = collect_cloudfront_distributions()
+    except Exception as e:
+        failed_scopes.append(('distributions', str(e)))
+        utils.log_error(f"CloudFront distributions collection failed: {e}")
+        distributions = []
     if distributions:
         data_frames['Distributions'] = pd.DataFrame(distributions)
 
-    # STEP 2: Collect origin details
+    # STEP 2+: Enrichment collectors — degrade gracefully to a safe default
+    # via their own aws_error_handler decorators; a failure here does not
+    # fail the whole export.
     origins = collect_origin_details()
     if origins:
         data_frames['Origins'] = pd.DataFrame(origins)
 
-    # STEP 3: Collect cache behaviors
     behaviors = collect_cache_behaviors()
     if behaviors:
         data_frames['Cache Behaviors'] = pd.DataFrame(behaviors)
 
-    # Check if we have any data
-    if not data_frames:
-        utils.log_warning("No CloudFront data was collected. Nothing to export.")
-        print("\nNo CloudFront distributions found in this account.")
-        return
-
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
+    # STEP 3: Create filename (used for both the export and the failure
+    # marker, so it must be computed even when there is no data to export).
     current_date = datetime.datetime.now().strftime("%m.%d.%Y")
     final_excel_file = utils.create_export_filename(
         account_name,
@@ -462,23 +511,49 @@ def export_cloudfront_data(account_id: str, account_name: str):
         current_date
     )
 
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+    # Export whatever succeeded — a partial export is required even when the
+    # distributions scope failed (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
 
-        if output_path:
-            utils.log_success("CloudFront data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
 
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
+            if output_path:
+                utils.log_success("CloudFront data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
 
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_scopes:
+        # Genuinely empty: distributions scope succeeded, and there is simply
+        # nothing (no distributions, origins, or behaviors) in the account.
+        utils.log_warning("No CloudFront data was collected. Nothing to export.")
+        print("\nNo CloudFront distributions found in this account.")
+
+    # If the distributions scope failed, make it loud: write a marker and
+    # exit non-zero, even if a partial export (enrichment sheets) was
+    # written. A partial export that looks complete is exactly the failure
+    # mode this guards against.
+    if failed_scopes:
+        utils.report_collection_failures(account_name, 'cloudfront', failed_scopes)
+        print(
+            "\nERROR: CloudFront export completed with failures — data is "
+            "incomplete. See the *-cloudfront-FAILED-*.txt marker in the "
+            "output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -501,10 +576,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export CloudFront data
         export_cloudfront_data(account_id, account_name)

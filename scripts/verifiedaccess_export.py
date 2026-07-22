@@ -23,7 +23,7 @@ Note: AWS Verified Access is a regional service. This script scans all configure
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -37,56 +37,101 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS Verified Access instances and groups to Excel")
 
-def format_tags(tags: List[Dict[str, str]]) -> str:
+def format_tags(tags: list[dict[str, str]]) -> str:
     """Format tags for display."""
     if not tags:
         return "None"
-    tag_strings = [f"{tag['Key']}={tag['Value']}" for tag in tags]
+    tag_strings = [f"{tag.get('Key', '')}={tag.get('Value', '')}" for tag in tags]
     return ", ".join(tag_strings)
 
-@utils.aws_error_handler("Collecting Verified Access Instances", default_return=[])
-def collect_verified_access_instances(region: str) -> List[Dict[str, Any]]:
-    """Collect Verified Access Instances in a region."""
+def _build_instance_row(instance: dict, region: str) -> dict[str, Any]:
+    """Build a single Verified Access Instance export row from a describe response."""
+    instance_id = instance.get('VerifiedAccessInstanceId', 'N/A')
+    utils.log_info(f"Processing instance: {instance_id}")
+
+    return {
+        'Region': region,
+        'Instance ID': instance_id,
+        'Description': instance.get('Description', 'N/A'),
+        'Creation Time': instance.get('CreationTime', 'N/A'),
+        'Last Updated Time': instance.get('LastUpdatedTime', 'N/A'),
+        'Trust Provider Count': len(instance.get('VerifiedAccessTrustProviders', [])),
+        'Tags': format_tags(instance.get('Tags', []))
+    }
+
+def _scan_verified_access_instances_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Verified Access Instances from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no instances" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed instances are skipped (logged) rather than aborting
+    the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     utils.log_info(f"Collecting Verified Access Instances in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    # Verified Access APIs are part of EC2 — there is no 'verifiedaccess' boto3
+    # client (issue #208). All describe_verified_access_* operations are EC2.
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     instances = []
 
-    try:
-        # List all instances
-        paginator = va_client.get_paginator('describe_verified_access_instances')
+    # List all instances
+    paginator = va_client.get_paginator('describe_verified_access_instances')
 
-        for page in paginator.paginate():
-            for instance in page.get('VerifiedAccessInstances', []):
-                instance_id = instance.get('VerifiedAccessInstanceId', 'N/A')
-                utils.log_info(f"Processing instance: {instance_id}")
+    for page in paginator.paginate():
+        for instance in page.get('VerifiedAccessInstances', []):
+            try:
+                instances.append(_build_instance_row(instance, region))
+            except Exception as e:
+                # One malformed instance is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Verified Access instance in {region}: "
+                    f"{instance.get('VerifiedAccessInstanceId', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                instance_info = {
-                    'Region': region,
-                    'Instance ID': instance_id,
-                    'Description': instance.get('Description', 'N/A'),
-                    'Creation Time': instance.get('CreationTime', 'N/A'),
-                    'Last Updated Time': instance.get('LastUpdatedTime', 'N/A'),
-                    'Trust Provider Count': len(instance.get('VerifiedAccessTrustProviders', [])),
-                    'Tags': format_tags(instance.get('Tags', []))
-                }
-
-                instances.append(instance_info)
-
-        if instances:
-            utils.log_success(f"Found {len(instances)} Verified Access instances in {region}")
-
-    except Exception as e:
-        utils.log_warning(f"No instances found in {region} or service not available: {e}")
+    if instances:
+        utils.log_success(f"Found {len(instances)} Verified Access instances in {region}")
 
     return instances
 
+def collect_verified_access_instances_all_regions(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Verified Access Instances across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(instances, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_verified_access_instances_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_instances = [inst for result in region_results for inst in result]
+    return all_instances, failed_regions
+
 @utils.aws_error_handler("Collecting Trust Providers", default_return=[])
-def collect_trust_providers(region: str) -> List[Dict[str, Any]]:
+def collect_trust_providers(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Trust Providers in a region."""
     utils.log_info(f"Collecting Trust Providers in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     trust_providers = []
 
     try:
@@ -140,11 +185,11 @@ def collect_trust_providers(region: str) -> List[Dict[str, Any]]:
     return trust_providers
 
 @utils.aws_error_handler("Collecting Verified Access Groups", default_return=[])
-def collect_verified_access_groups(region: str) -> List[Dict[str, Any]]:
+def collect_verified_access_groups(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Groups in a region."""
     utils.log_info(f"Collecting Verified Access Groups in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     groups = []
 
     try:
@@ -197,11 +242,11 @@ def collect_verified_access_groups(region: str) -> List[Dict[str, Any]]:
     return groups
 
 @utils.aws_error_handler("Collecting Verified Access Endpoints", default_return=[])
-def collect_verified_access_endpoints(region: str) -> List[Dict[str, Any]]:
+def collect_verified_access_endpoints(region: str) -> list[dict[str, Any]]:
     """Collect Verified Access Endpoints in a region."""
     utils.log_info(f"Collecting Verified Access Endpoints in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     endpoints = []
 
     try:
@@ -282,11 +327,11 @@ def collect_verified_access_endpoints(region: str) -> List[Dict[str, Any]]:
     return endpoints
 
 @utils.aws_error_handler("Collecting Access Logs Configuration", default_return=[])
-def collect_access_logs_config(region: str, instances: List[Dict]) -> List[Dict[str, Any]]:
+def collect_access_logs_config(region: str, instances: list[dict]) -> list[dict[str, Any]]:
     """Collect Access Logs configuration for Verified Access instances."""
     utils.log_info(f"Collecting Access Logs configurations in {region}...")
 
-    va_client = utils.get_boto3_client('verifiedaccess', region_name=region)
+    va_client = utils.get_boto3_client('ec2', region_name=region)
     logs_configs = []
 
     for instance in instances:
@@ -344,8 +389,8 @@ def collect_access_logs_config(region: str, instances: List[Dict]) -> List[Dict[
 
     return logs_configs
 
-def create_summary(instances: List[Dict], trust_providers: List[Dict], groups: List[Dict],
-                  endpoints: List[Dict], logs_configs: List[Dict]) -> Dict[str, Any]:
+def create_summary(instances: list[dict], trust_providers: list[dict], groups: list[dict],
+                  endpoints: list[dict], logs_configs: list[dict]) -> dict[str, Any]:
     """Create summary statistics for Verified Access."""
     summary = {
         'Category': [
@@ -404,7 +449,7 @@ def create_summary(instances: List[Dict], trust_providers: List[Dict], groups: L
 
     return summary
 
-def export_to_excel(all_data: Dict[str, List[Dict]], account_id: str, account_name: str) -> str:
+def export_to_excel(all_data: dict[str, list[dict]], account_id: str, account_name: str) -> str:
     """Export Verified Access data to Excel with multiple sheets."""
     try:
         import pandas as pd
@@ -535,10 +580,11 @@ def main():
         # Collect data across all regions using concurrent scanning
         print("\n=== COLLECTING VERIFIED ACCESS RESOURCES ===")
 
-        # Collect instances, trust providers, groups, and endpoints concurrently
+        # Collect instances (primary scope — region failures must propagate as
+        # failed_regions, never collapse into "empty"). See
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md.
         print("Collecting Verified Access Instances...")
-        instances_results = utils.scan_regions_concurrent(regions, collect_verified_access_instances)
-        all_instances = [inst for result in instances_results for inst in result]
+        all_instances, failed_regions = collect_verified_access_instances_all_regions(regions)
         utils.log_success(f"Total instances collected: {len(all_instances)}")
 
         print("Collecting Trust Providers...")
@@ -560,7 +606,7 @@ def main():
         print("Collecting Access Logs Configurations...")
         all_logs_configs = []
         for region in regions:
-            region_instances = [inst for inst in all_instances if inst['Region'] == region]
+            region_instances = [inst for inst in all_instances if inst.get('Region') == region]
             if region_instances:
                 logs_configs = collect_access_logs_config(region, region_instances)
                 all_logs_configs.extend(logs_configs)
@@ -579,7 +625,11 @@ def main():
             'logs_configs': all_logs_configs
         }
 
-        # Export even if empty (with helpful messaging)
+        # Export even if empty (with helpful messaging) — the Summary sheet is
+        # ALWAYS written by export_to_excel, regardless of failed_regions below.
+        # That forced-export behavior must be preserved: a workbook always
+        # lands, but a failed primary scope still gets flagged loudly (see
+        # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
         filename = export_to_excel(all_data, account_id, account_name)
 
         if filename:
@@ -599,6 +649,20 @@ def main():
             print("\nScript execution completed successfully.")
         else:
             utils.log_error("Export failed. Please check the logs.")
+
+        # If ANY region failed the primary Instances scope collection, make it
+        # loud: write a marker and exit non-zero — even though the Summary
+        # sheet (and any collected enrichment data) was always exported. A
+        # partial export that looks complete is exactly the failure mode this
+        # guards against. Genuinely-empty (every region succeeded, nothing
+        # found) stays exit 0, no marker.
+        if failed_regions:
+            utils.report_collection_failures(account_name, 'verifiedaccess', failed_regions)
+            print(
+                "\nERROR: Verified Access export completed with failures — data is incomplete. "
+                "See the *-verifiedaccess-FAILED-*.txt marker in the output directory."
+            )
+            sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")

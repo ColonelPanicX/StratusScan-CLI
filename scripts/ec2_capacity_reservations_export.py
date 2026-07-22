@@ -23,7 +23,7 @@ Note: Requires ec2:Describe*CapacityReservation* permissions
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -40,95 +40,188 @@ args = utils.parse_script_args("Export EC2 Capacity Reservations to Excel")
 utils.setup_logging('ec2-capacity-reservations-export')
 
 
-@utils.aws_error_handler("Collecting capacity reservations", default_return=[])
-def collect_capacity_reservations(region: str) -> List[Dict[str, Any]]:
-    """Collect all EC2 Capacity Reservations in a region."""
+def _build_reservation_row(cr: dict, region: str) -> dict[str, Any]:
+    """Build a single Capacity Reservation export row from a describe response."""
+    # Calculate utilization
+    total_capacity = cr.get('TotalInstanceCount', 0)
+    available_capacity = cr.get('AvailableInstanceCount', 0)
+    used_capacity = total_capacity - available_capacity
+    utilization_pct = (used_capacity / total_capacity * 100) if total_capacity > 0 else 0
+
+    # Format tags
+    tags = []
+    for tag in cr.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    return {
+        'Region': region,
+        'CapacityReservationId': cr.get('CapacityReservationId', 'N/A'),
+        'CapacityReservationArn': cr.get('CapacityReservationArn', 'N/A'),
+        'InstanceType': cr.get('InstanceType', 'N/A'),
+        'AvailabilityZone': cr.get('AvailabilityZone', 'N/A'),
+        'AvailabilityZoneId': cr.get('AvailabilityZoneId', 'N/A'),
+        'State': cr.get('State', 'N/A'),
+        'TotalInstanceCount': total_capacity,
+        'AvailableInstanceCount': available_capacity,
+        'UsedInstanceCount': used_capacity,
+        'UtilizationPercent': f"{utilization_pct:.1f}%",
+        'Tenancy': cr.get('Tenancy', 'default'),
+        'EbsOptimized': cr.get('EbsOptimized', False),
+        'EphemeralStorage': cr.get('EphemeralStorage', False),
+        'InstancePlatform': cr.get('InstancePlatform', 'N/A'),
+        'EndDate': cr.get('EndDate', 'N/A'),
+        'EndDateType': cr.get('EndDateType', 'unlimited'),
+        'InstanceMatchCriteria': cr.get('InstanceMatchCriteria', 'open'),
+        'CreateDate': cr.get('CreateDate'),
+        'StartDate': cr.get('StartDate', 'N/A'),
+        'OwnerId': cr.get('OwnerId', 'N/A'),
+        'PlacementGroupArn': cr.get('PlacementGroupArn', 'N/A'),
+        'OutpostArn': cr.get('OutpostArn', 'N/A'),
+        'CapacityReservationFleetId': cr.get('CapacityReservationFleetId', 'N/A'),
+        'Tags': ', '.join(tags) if tags else 'N/A',
+    }
+
+
+def _scan_capacity_reservations_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect all EC2 Capacity Reservations in a single region.
+
+    This is a primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the
+    region as failed instead of silently reporting "no reservations" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed reservations are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     reservations = []
 
     paginator = ec2.get_paginator('describe_capacity_reservations')
     for page in paginator.paginate():
         for cr in page.get('CapacityReservations', []):
-            # Calculate utilization
-            total_capacity = cr.get('TotalInstanceCount', 0)
-            available_capacity = cr.get('AvailableInstanceCount', 0)
-            used_capacity = total_capacity - available_capacity
-            utilization_pct = (used_capacity / total_capacity * 100) if total_capacity > 0 else 0
-
-            # Format tags
-            tags = []
-            for tag in cr.get('Tags', []):
-                tags.append(f"{tag.get('Key')}={tag.get('Value')}")
-
-            reservations.append({
-                'Region': region,
-                'CapacityReservationId': cr.get('CapacityReservationId', 'N/A'),
-                'CapacityReservationArn': cr.get('CapacityReservationArn', 'N/A'),
-                'InstanceType': cr.get('InstanceType', 'N/A'),
-                'AvailabilityZone': cr.get('AvailabilityZone', 'N/A'),
-                'AvailabilityZoneId': cr.get('AvailabilityZoneId', 'N/A'),
-                'State': cr.get('State', 'N/A'),
-                'TotalInstanceCount': total_capacity,
-                'AvailableInstanceCount': available_capacity,
-                'UsedInstanceCount': used_capacity,
-                'UtilizationPercent': f"{utilization_pct:.1f}%",
-                'Tenancy': cr.get('Tenancy', 'default'),
-                'EbsOptimized': cr.get('EbsOptimized', False),
-                'EphemeralStorage': cr.get('EphemeralStorage', False),
-                'InstancePlatform': cr.get('InstancePlatform', 'N/A'),
-                'EndDate': cr.get('EndDate', 'N/A'),
-                'EndDateType': cr.get('EndDateType', 'unlimited'),
-                'InstanceMatchCriteria': cr.get('InstanceMatchCriteria', 'open'),
-                'CreateDate': cr.get('CreateDate'),
-                'StartDate': cr.get('StartDate', 'N/A'),
-                'OwnerId': cr.get('OwnerId', 'N/A'),
-                'PlacementGroupArn': cr.get('PlacementGroupArn', 'N/A'),
-                'OutpostArn': cr.get('OutpostArn', 'N/A'),
-                'CapacityReservationFleetId': cr.get('CapacityReservationFleetId', 'N/A'),
-                'Tags': ', '.join(tags) if tags else 'N/A',
-            })
+            try:
+                reservations.append(_build_reservation_row(cr, region))
+            except Exception as e:
+                # One malformed reservation is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Capacity Reservation in {region}: "
+                    f"{cr.get('CapacityReservationId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return reservations
 
 
-@utils.aws_error_handler("Collecting capacity reservation fleets", default_return=[])
-def collect_capacity_reservation_fleets(region: str) -> List[Dict[str, Any]]:
-    """Collect Capacity Reservation Fleets in a region."""
+def collect_capacity_reservations(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect EC2 Capacity Reservations across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(reservations, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_capacity_reservations_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_reservations = [r for result in region_results for r in result]
+    return all_reservations, failed_regions
+
+
+def _build_fleet_row(fleet: dict, region: str) -> dict[str, Any]:
+    """Build a single Capacity Reservation Fleet export row from a describe response."""
+    # Format tags
+    tags = []
+    for tag in fleet.get('Tags', []):
+        tags.append(f"{tag.get('Key')}={tag.get('Value')}")
+
+    return {
+        'Region': region,
+        'CapacityReservationFleetId': fleet.get('CapacityReservationFleetId', 'N/A'),
+        'CapacityReservationFleetArn': fleet.get('CapacityReservationFleetArn', 'N/A'),
+        'State': fleet.get('State', 'N/A'),
+        'TotalTargetCapacity': fleet.get('TotalTargetCapacity', 0),
+        'TotalFulfilledCapacity': fleet.get('TotalFulfilledCapacity', 0),
+        'Tenancy': fleet.get('Tenancy', 'default'),
+        'EndDate': fleet.get('EndDate', 'N/A'),
+        'InstanceMatchCriteria': fleet.get('InstanceMatchCriteria', 'open'),
+        'AllocationStrategy': fleet.get('AllocationStrategy', 'N/A'),
+        'CreateTime': fleet.get('CreateTime'),
+        'Tags': ', '.join(tags) if tags else 'N/A',
+    }
+
+
+def _scan_capacity_reservation_fleets_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect Capacity Reservation Fleets in a single region.
+
+    This is a primary scope collector — same no-swallow contract as
+    ``_scan_capacity_reservations_region``. A region-level API failure must
+    propagate rather than being masked as "fleets not available here".
+    Individual malformed fleets are skipped (logged), not fatal to the
+    region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     fleets = []
 
-    try:
-        paginator = ec2.get_paginator('describe_capacity_reservation_fleets')
-        for page in paginator.paginate():
-            for fleet in page.get('CapacityReservationFleets', []):
-                # Format tags
-                tags = []
-                for tag in fleet.get('Tags', []):
-                    tags.append(f"{tag.get('Key')}={tag.get('Value')}")
-
-                fleets.append({
-                    'Region': region,
-                    'CapacityReservationFleetId': fleet.get('CapacityReservationFleetId', 'N/A'),
-                    'CapacityReservationFleetArn': fleet.get('CapacityReservationFleetArn', 'N/A'),
-                    'State': fleet.get('State', 'N/A'),
-                    'TotalTargetCapacity': fleet.get('TotalTargetCapacity', 0),
-                    'TotalFulfilledCapacity': fleet.get('TotalFulfilledCapacity', 0),
-                    'Tenancy': fleet.get('Tenancy', 'default'),
-                    'EndDate': fleet.get('EndDate', 'N/A'),
-                    'InstanceMatchCriteria': fleet.get('InstanceMatchCriteria', 'open'),
-                    'AllocationStrategy': fleet.get('AllocationStrategy', 'N/A'),
-                    'CreateTime': fleet.get('CreateTime'),
-                    'Tags': ', '.join(tags) if tags else 'N/A',
-                })
-    except Exception:
-        # Fleets might not be available in all regions
-        pass
+    paginator = ec2.get_paginator('describe_capacity_reservation_fleets')
+    for page in paginator.paginate():
+        for fleet in page.get('CapacityReservationFleets', []):
+            try:
+                fleets.append(_build_fleet_row(fleet, region))
+            except Exception as e:
+                # One malformed fleet is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Capacity Reservation Fleet in {region}: "
+                    f"{fleet.get('CapacityReservationFleetId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return fleets
 
 
+def collect_capacity_reservation_fleets(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Capacity Reservation Fleets across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` — same contract as
+    ``collect_capacity_reservations``.
+
+    Returns:
+        tuple: ``(fleets, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_capacity_reservation_fleets_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_fleets = [f for result in region_results for f in result]
+    return all_fleets, failed_regions
+
+
 @utils.aws_error_handler("Collecting capacity blocks", default_return=[])
-def collect_capacity_blocks(region: str) -> List[Dict[str, Any]]:
+def collect_capacity_blocks(region: str) -> list[dict[str, Any]]:
     """Collect Capacity Block Reservations (for ML workloads)."""
     ec2 = utils.get_boto3_client('ec2', region_name=region)
     blocks = []
@@ -161,42 +254,39 @@ def collect_capacity_blocks(region: str) -> List[Dict[str, Any]]:
     return blocks
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect EC2 Capacity Reservation data and write the Excel export."""
     utils.log_info(f"Scanning {len(regions)} region(s) for EC2 Capacity Reservations...")
 
-    # Collect all resources
-    all_reservations = []
-    all_fleets = []
+    # STEP 1: Collect Capacity Reservations (primary scope — region failures
+    # must propagate as failed_regions, never collapse into "empty").
+    all_reservations, failed_reservation_regions = collect_capacity_reservations(regions)
+    utils.log_info(f"Total capacity reservations found: {len(all_reservations)}")
+
+    # STEP 2: Collect Capacity Reservation Fleets (primary scope — same
+    # no-swallow contract).
+    all_fleets, failed_fleet_regions = collect_capacity_reservation_fleets(regions)
+    utils.log_info(f"Total capacity fleets found: {len(all_fleets)}")
+
+    # Combine both scopes' failures into ONE list so a single FAILED marker
+    # and exit code cover the whole export (see
+    # .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+    failed_regions = failed_reservation_regions + failed_fleet_regions
+
+    # STEP 3: Collect capacity blocks (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     all_blocks = []
-
     for idx, region in enumerate(regions, 1):
-        utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
-
-        # Collect capacity reservations
-        reservations = collect_capacity_reservations(region)
-        if reservations:
-            utils.log_info(f"  Found {len(reservations)} capacity reservation(s)")
-            all_reservations.extend(reservations)
-
-        # Collect fleets
-        fleets = collect_capacity_reservation_fleets(region)
-        if fleets:
-            utils.log_info(f"  Found {len(fleets)} capacity reservation fleet(s)")
-            all_fleets.extend(fleets)
-
-        # Collect capacity blocks
+        utils.log_info(f"[{idx}/{len(regions)}] Processing region for capacity blocks: {region}")
         blocks = collect_capacity_blocks(region)
         if blocks:
             utils.log_info(f"  Found {len(blocks)} capacity block(s)")
             all_blocks.extend(blocks)
 
-    if not all_reservations and not all_fleets:
+    if not all_reservations and not all_fleets and not failed_regions:
         utils.log_warning("No EC2 Capacity Reservations found in any selected region.")
         utils.log_info("Creating empty export file...")
 
-    utils.log_info(f"Total capacity reservations found: {len(all_reservations)}")
-    utils.log_info(f"Total capacity fleets found: {len(all_fleets)}")
     utils.log_info(f"Total capacity blocks found: {len(all_blocks)}")
 
     # Create DataFrames
@@ -276,6 +366,18 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     utils.log_info(f"  Capacity Blocks: {len(all_blocks)}")
 
     utils.log_success("EC2 Capacity Reservations export completed successfully!")
+
+    # If ANY region failed either capacity-reservation scope, make it loud:
+    # write a marker and exit non-zero, even though the workbook (with its
+    # always-written Summary sheet) already landed. A partial export that
+    # looks complete is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'ec2-capacity-reservations', failed_regions)
+        print(
+            "\nERROR: EC2 Capacity Reservations export completed with failures — data is incomplete. "
+            "See the *-ec2-capacity-reservations-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

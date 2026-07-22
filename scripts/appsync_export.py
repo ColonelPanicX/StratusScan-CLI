@@ -18,7 +18,7 @@ Output: Excel file with 5 worksheets
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -31,99 +31,140 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS AppSync GraphQL APIs to Excel")
 
-def _scan_graphql_apis_region(region: str) -> List[Dict[str, Any]]:
-    """Scan AppSync GraphQL APIs in a single region."""
+def _build_graphql_api_row(api: dict, region: str) -> dict[str, Any]:
+    """Build a single AppSync GraphQL API export row from a list_graphql_apis entry."""
+    api_id = api.get('apiId', 'N/A')
+    name = api.get('name', 'N/A')
+    authentication_type = api.get('authenticationType', 'N/A')
+
+    # Endpoint URLs
+    uris = api.get('uris', {})
+    graphql_url = uris.get('GRAPHQL', 'N/A') if uris else 'N/A'
+    realtime_url = uris.get('REALTIME', 'N/A') if uris else 'N/A'
+
+    # ARN
+    arn = api.get('arn', 'N/A')
+
+    # X-Ray tracing
+    xray_enabled = api.get('xrayEnabled', False)
+
+    # WAF Web ACL ARN
+    waf_web_acl_arn = api.get('wafWebAclArn', 'N/A')
+
+    # Additional authentication providers
+    additional_auth_providers = api.get('additionalAuthenticationProviders', [])
+    additional_auth_types = [provider.get('authenticationType', '')
+                            for provider in additional_auth_providers]
+    additional_auth_str = ', '.join(additional_auth_types) if additional_auth_types else 'None'
+
+    # Log config
+    log_config = api.get('logConfig', {})
+    field_log_level = log_config.get('fieldLogLevel', 'NONE') if log_config else 'NONE'
+    cloudwatch_logs_role_arn = log_config.get('cloudWatchLogsRoleArn', 'N/A') if log_config else 'N/A'
+
+    # Extract role name
+    log_role_name = 'N/A'
+    if cloudwatch_logs_role_arn != 'N/A' and '/' in cloudwatch_logs_role_arn:
+        log_role_name = cloudwatch_logs_role_arn.split('/')[-1]
+
+    # User pool config (for Cognito auth)
+    user_pool_config = api.get('userPoolConfig', {})
+    user_pool_id = user_pool_config.get('userPoolId', 'N/A') if user_pool_config else 'N/A'
+
+    # OpenID Connect config
+    openid_connect_config = api.get('openIDConnectConfig', {})
+    oidc_issuer = openid_connect_config.get('issuer', 'N/A') if openid_connect_config else 'N/A'
+
+    # Tags
+    tags = api.get('tags', {})
+    tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
+
+    return {
+        'Region': region,
+        'API Name': name,
+        'API ID': api_id,
+        'Authentication Type': authentication_type,
+        'Additional Auth': additional_auth_str,
+        'GraphQL Endpoint': graphql_url,
+        'Realtime Endpoint': realtime_url,
+        'X-Ray Tracing': 'Enabled' if xray_enabled else 'Disabled',
+        'Logging': field_log_level,
+        'Log Role': log_role_name,
+        'WAF Web ACL': 'Associated' if waf_web_acl_arn != 'N/A' else 'None',
+        'Cognito User Pool': user_pool_id,
+        'OIDC Issuer': oidc_issuer,
+        'Tags': tags_str,
+        'ARN': arn,
+    }
+
+
+def _scan_graphql_apis_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect AppSync GraphQL APIs from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no GraphQL APIs" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed APIs are skipped (logged) rather than aborting the
+    whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     regional_apis = []
 
-    try:
-        appsync_client = utils.get_boto3_client('appsync', region_name=region)
-        paginator = appsync_client.get_paginator('list_graphql_apis')
-        for page in paginator.paginate():
-            apis = page.get('graphqlApis', [])
+    appsync_client = utils.get_boto3_client('appsync', region_name=region)
+    paginator = appsync_client.get_paginator('list_graphql_apis')
 
-            for api in apis:
-                api_id = api.get('apiId', 'N/A')
-                name = api.get('name', 'N/A')
-                authentication_type = api.get('authenticationType', 'N/A')
+    for page in paginator.paginate():
+        apis = page.get('graphqlApis', [])
 
-                # Endpoint URLs
-                uris = api.get('uris', {})
-                graphql_url = uris.get('GRAPHQL', 'N/A') if uris else 'N/A'
-                realtime_url = uris.get('REALTIME', 'N/A') if uris else 'N/A'
-
-                # ARN
-                arn = api.get('arn', 'N/A')
-
-                # X-Ray tracing
-                xray_enabled = api.get('xrayEnabled', False)
-
-                # WAF Web ACL ARN
-                waf_web_acl_arn = api.get('wafWebAclArn', 'N/A')
-
-                # Additional authentication providers
-                additional_auth_providers = api.get('additionalAuthenticationProviders', [])
-                additional_auth_types = [provider.get('authenticationType', '')
-                                        for provider in additional_auth_providers]
-                additional_auth_str = ', '.join(additional_auth_types) if additional_auth_types else 'None'
-
-                # Log config
-                log_config = api.get('logConfig', {})
-                field_log_level = log_config.get('fieldLogLevel', 'NONE') if log_config else 'NONE'
-                cloudwatch_logs_role_arn = log_config.get('cloudWatchLogsRoleArn', 'N/A') if log_config else 'N/A'
-
-                # Extract role name
-                log_role_name = 'N/A'
-                if cloudwatch_logs_role_arn != 'N/A' and '/' in cloudwatch_logs_role_arn:
-                    log_role_name = cloudwatch_logs_role_arn.split('/')[-1]
-
-                # User pool config (for Cognito auth)
-                user_pool_config = api.get('userPoolConfig', {})
-                user_pool_id = user_pool_config.get('userPoolId', 'N/A') if user_pool_config else 'N/A'
-
-                # OpenID Connect config
-                openid_connect_config = api.get('openIDConnectConfig', {})
-                oidc_issuer = openid_connect_config.get('issuer', 'N/A') if openid_connect_config else 'N/A'
-
-                # Tags
-                tags = api.get('tags', {})
-                tags_str = ', '.join([f"{k}={v}" for k, v in tags.items()]) if tags else 'None'
-
-                regional_apis.append({
-                    'Region': region,
-                    'API Name': name,
-                    'API ID': api_id,
-                    'Authentication Type': authentication_type,
-                    'Additional Auth': additional_auth_str,
-                    'GraphQL Endpoint': graphql_url,
-                    'Realtime Endpoint': realtime_url,
-                    'X-Ray Tracing': 'Enabled' if xray_enabled else 'Disabled',
-                    'Logging': field_log_level,
-                    'Log Role': log_role_name,
-                    'WAF Web ACL': 'Associated' if waf_web_acl_arn != 'N/A' else 'None',
-                    'Cognito User Pool': user_pool_id,
-                    'OIDC Issuer': oidc_issuer,
-                    'Tags': tags_str,
-                    'ARN': arn,
-                })
-
-    except Exception as e:
-        utils.log_error(f"Error collecting AppSync GraphQL APIs in {region}", e)
+        for api in apis:
+            try:
+                regional_apis.append(_build_graphql_api_row(api, region))
+            except Exception as e:
+                # One malformed API is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed AppSync GraphQL API in {region}: "
+                    f"{api.get('apiId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return regional_apis
 
 
-@utils.aws_error_handler("Collecting AppSync GraphQL APIs", default_return=[])
-def collect_graphql_apis(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect AppSync GraphQL API information from AWS regions."""
+def collect_graphql_apis(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect AppSync GraphQL API information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(apis, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
     print("\n=== COLLECTING APPSYNC GRAPHQL APIS ===")
-    results = utils.scan_regions_concurrent(regions, _scan_graphql_apis_region)
-    all_apis = [api for result in results for api in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_graphql_apis_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_apis = [api for result in region_results for api in result]
     utils.log_success(f"Total AppSync GraphQL APIs collected: {len(all_apis)}")
-    return all_apis
+    return all_apis, failed_regions
 
 
 @utils.aws_error_handler("Collecting AppSync data sources", default_return=[])
-def collect_data_sources(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_data_sources(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync data source information from AWS regions."""
     all_data_sources = []
 
@@ -205,7 +246,7 @@ def collect_data_sources(regions: List[str], apis: List[Dict[str, Any]]) -> List
 
 
 @utils.aws_error_handler("Collecting AppSync resolvers", default_return=[])
-def collect_resolvers(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_resolvers(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync resolver information from AWS regions (limited sample)."""
     all_resolvers = []
 
@@ -286,7 +327,7 @@ def collect_resolvers(regions: List[str], apis: List[Dict[str, Any]]) -> List[Di
 
 
 @utils.aws_error_handler("Collecting AppSync API keys", default_return=[])
-def collect_api_keys(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collect_api_keys(regions: list[str], apis: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect AppSync API key information from AWS regions."""
     all_api_keys = []
 
@@ -354,10 +395,10 @@ def collect_api_keys(regions: List[str], apis: List[Dict[str, Any]]) -> List[Dic
     return all_api_keys
 
 
-def generate_summary(apis: List[Dict[str, Any]],
-                     data_sources: List[Dict[str, Any]],
-                     resolvers: List[Dict[str, Any]],
-                     api_keys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(apis: list[dict[str, Any]],
+                     data_sources: list[dict[str, Any]],
+                     resolvers: list[dict[str, Any]],
+                     api_keys: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for AppSync resources."""
     summary = []
 
@@ -454,11 +495,12 @@ def generate_summary(apis: List[Dict[str, Any]],
     return summary
 
 
-def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
+def _run_export(account_id: str, account_name: str, regions: list[str]) -> None:
     """Collect AppSync data and write the Excel export."""
-    # Collect data
+    # Collect data. GraphQL APIs is the primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty".
     print("\n=== Collecting AppSync Data ===")
-    apis = collect_graphql_apis(regions)
+    apis, failed_regions = collect_graphql_apis(regions)
     data_sources = collect_data_sources(regions, apis)
     resolvers = collect_resolvers(regions, apis)
     api_keys = collect_api_keys(regions, apis)
@@ -500,6 +542,18 @@ def _run_export(account_id: str, account_name: str, regions: List[str]) -> None:
     }
 
     utils.save_multiple_dataframes_to_excel(dataframes, filename)
+
+    # If ANY region failed the primary GraphQL APIs scope collection, make it
+    # loud: write a marker and exit non-zero, even though a workbook (with its
+    # forced Summary sheet) was always written. A workbook that looks complete
+    # is exactly the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'appsync', failed_regions)
+        print(
+            "\nERROR: AppSync export completed with failures — data is incomplete. "
+            "See the *-appsync-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():

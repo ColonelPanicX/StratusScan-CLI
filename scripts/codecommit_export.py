@@ -13,7 +13,7 @@ Output: Multi-worksheet Excel file with CodeCommit resources
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import utils
@@ -26,84 +26,128 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export CodeCommit repositories to Excel")
 
-@utils.aws_error_handler("Collecting CodeCommit repositories", default_return=[])
-def collect_repositories(regions: List[str]) -> List[Dict[str, Any]]:
-    """Collect CodeCommit repository information from AWS regions."""
-    all_repositories = []
+def _build_repository_row(item: dict, region: str) -> dict[str, Any]:
+    """
+    Build a single CodeCommit repository export row from a
+    ``get_repository`` response's ``repositoryMetadata``.
 
-    for region in regions:
-        utils.log_info(f"Collecting CodeCommit repositories in {region}...")
-        codecommit_client = utils.get_boto3_client('codecommit', region_name=region)
+    Extracted so the per-repository processing can be wrapped in
+    try/except by the caller: a malformed repository entry is logged and
+    skipped rather than discarding the whole region's results. Every field
+    is read with ``.get()`` and a safe default for the same reason.
+    """
+    repo_name = item.get('repositoryName', 'N/A')
+    repo_id = item.get('repositoryId', 'N/A')
+    arn = item.get('Arn', 'N/A')
+    description = item.get('repositoryDescription', 'None')
 
+    created = item.get('creationDate', 'N/A')
+    if created != 'N/A':
+        created = created.strftime('%Y-%m-%d %H:%M:%S')
+
+    last_modified = item.get('lastModifiedDate', 'N/A')
+    if last_modified != 'N/A':
+        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Clone URLs
+    clone_url_http = item.get('cloneUrlHttp', 'N/A')
+    clone_url_ssh = item.get('cloneUrlSsh', 'N/A')
+
+    # Default branch
+    default_branch = item.get('defaultBranch', 'N/A')
+
+    # KMS encryption
+    kms_key_id = item.get('kmsKeyId', 'None')
+
+    return {
+        'Region': region,
+        'Repository Name': repo_name,
+        'Repository ID': repo_id,
+        'ARN': arn,
+        'Description': description,
+        'Created': created,
+        'Last Modified': last_modified,
+        'Default Branch': default_branch,
+        'Clone URL (HTTP)': clone_url_http,
+        'Clone URL (SSH)': clone_url_ssh,
+        'KMS Key ID': kms_key_id
+    }
+
+
+def _scan_repositories_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect CodeCommit repositories from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no repositories" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed repositories are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    utils.log_info(f"Collecting CodeCommit repositories in {region}...")
+    codecommit_client = utils.get_boto3_client('codecommit', region_name=region)
+
+    # List all repositories
+    paginator = codecommit_client.get_paginator('list_repositories')
+    repository_names = []
+    for page in paginator.paginate():
+        repos = page.get('repositories', [])
+        repository_names.extend([r.get('repositoryName') for r in repos])
+
+    if not repository_names:
+        return []
+
+    utils.log_info(f"Found {len(repository_names)} repositories in {region}")
+
+    region_repositories = []
+    for repo_name in repository_names:
         try:
-            # List all repositories
-            paginator = codecommit_client.get_paginator('list_repositories')
-            repository_names = []
-            for page in paginator.paginate():
-                repos = page.get('repositories', [])
-                repository_names.extend([r.get('repositoryName') for r in repos])
-
-            if not repository_names:
-                continue
-
-            utils.log_info(f"Found {len(repository_names)} repositories in {region}")
-
-            # Batch get repository metadata
-            for repo_name in repository_names:
-                try:
-                    repo_response = codecommit_client.get_repository(repositoryName=repo_name)
-                    repo_metadata = repo_response.get('repositoryMetadata', {})
-
-                    repo_id = repo_metadata.get('repositoryId', 'N/A')
-                    arn = repo_metadata.get('Arn', 'N/A')
-                    description = repo_metadata.get('repositoryDescription', 'None')
-
-                    created = repo_metadata.get('creationDate', 'N/A')
-                    if created != 'N/A':
-                        created = created.strftime('%Y-%m-%d %H:%M:%S')
-
-                    last_modified = repo_metadata.get('lastModifiedDate', 'N/A')
-                    if last_modified != 'N/A':
-                        last_modified = last_modified.strftime('%Y-%m-%d %H:%M:%S')
-
-                    # Clone URLs
-                    clone_url_http = repo_metadata.get('cloneUrlHttp', 'N/A')
-                    clone_url_ssh = repo_metadata.get('cloneUrlSsh', 'N/A')
-
-                    # Default branch
-                    default_branch = repo_metadata.get('defaultBranch', 'N/A')
-
-                    # KMS encryption
-                    kms_key_id = repo_metadata.get('kmsKeyId', 'None')
-
-                    all_repositories.append({
-                        'Region': region,
-                        'Repository Name': repo_name,
-                        'Repository ID': repo_id,
-                        'ARN': arn,
-                        'Description': description,
-                        'Created': created,
-                        'Last Modified': last_modified,
-                        'Default Branch': default_branch,
-                        'Clone URL (HTTP)': clone_url_http,
-                        'Clone URL (SSH)': clone_url_ssh,
-                        'KMS Key ID': kms_key_id
-                    })
-
-                except Exception as e:
-                    utils.log_warning(f"Could not get metadata for repository {repo_name}: {str(e)}")
-                    continue
-
+            repo_response = codecommit_client.get_repository(repositoryName=repo_name)
+            repo_metadata = repo_response.get('repositoryMetadata', {})
+            region_repositories.append(_build_repository_row(repo_metadata, region))
         except Exception as e:
-            utils.log_warning(f"Error collecting CodeCommit repositories in {region}: {str(e)}")
+            # One malformed/unreachable repository is skipped, not fatal to
+            # the region.
+            utils.log_warning(f"Could not get metadata for repository {repo_name}: {str(e)}")
             continue
 
+    return region_repositories
+
+
+def collect_repositories(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect CodeCommit repository information across regions, surfacing
+    failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(repositories, failed_regions)`` where ``failed_regions`` is
+        a list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_repositories_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_repositories = [repo for result in region_results for repo in result]
     utils.log_info(f"Collected {len(all_repositories)} CodeCommit repositories")
-    return all_repositories
+    return all_repositories, failed_regions
 
 
 @utils.aws_error_handler("Collecting repository branches", default_return=[])
-def collect_branches(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_branches(regions: list[str]) -> list[dict[str, Any]]:
     """Collect branch information from CodeCommit repositories."""
     all_branches = []
 
@@ -188,7 +232,7 @@ def collect_branches(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting pull requests", default_return=[])
-def collect_pull_requests(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_pull_requests(regions: list[str]) -> list[dict[str, Any]]:
     """Collect pull request information (limited to open PRs)."""
     all_pull_requests = []
 
@@ -282,9 +326,9 @@ def collect_pull_requests(regions: List[str]) -> List[Dict[str, Any]]:
     return all_pull_requests
 
 
-def generate_summary(repositories: List[Dict[str, Any]],
-                     branches: List[Dict[str, Any]],
-                     pull_requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def generate_summary(repositories: list[dict[str, Any]],
+                     branches: list[dict[str, Any]],
+                     pull_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Generate summary statistics for CodeCommit resources."""
     utils.log_info("Generating summary statistics...")
 
@@ -367,7 +411,11 @@ def main():
     # Collect data
     print("\nCollecting AWS CodeCommit data...")
 
-    repositories = collect_repositories(regions)
+    # STEP 1: Collect repositories (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    repositories, failed_regions = collect_repositories(regions)
+    # STEP 2/3: Collect branches and pull requests (enrichment — degrade
+    # gracefully; a region-level failure here does not fail the whole export).
     branches = collect_branches(regions)
     pull_requests = collect_pull_requests(regions)
     summary = generate_summary(repositories, branches, pull_requests)
@@ -397,19 +445,30 @@ def main():
         df_summary = utils.prepare_dataframe_for_export(df_summary)
         dataframes['Summary'] = df_summary
 
-    # Export to Excel
+    # Export to Excel — a partial export is required even when some regions
+    # failed (see the silent-collection-failure blast-radius audit).
     if dataframes:
         region_suffix = 'all-regions' if len(regions) > 1 else regions[0]
         filename = utils.create_export_filename(account_name, 'codecommit', region_suffix)
 
         utils.log_info(f"Exporting to {filename}...")
         utils.save_multiple_dataframes_to_excel(dataframes, filename)
-
-        # Log summary
-    else:
+        utils.log_success("AWS CodeCommit export completed successfully")
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No AWS CodeCommit data found to export")
 
-    utils.log_success("AWS CodeCommit export completed successfully")
+    # If ANY region failed the primary repositories scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was exported.
+    # A partial export that looks complete is exactly the failure mode this
+    # guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'codecommit', failed_regions)
+        print(
+            "\nERROR: CodeCommit export completed with failures — data is incomplete. "
+            "See the *-codecommit-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

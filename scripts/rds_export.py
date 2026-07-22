@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 ===========================
@@ -173,7 +172,7 @@ def load_rds_pricing_data(region='us-east-1'):
             utils.log_warning(f"RDS pricing file not found at {pricing_file}")
             return pricing_data
 
-        with open(pricing_file, 'r', encoding='utf-8') as f:
+        with open(pricing_file, encoding='utf-8') as f:
             json_data = json.load(f)
 
         partition = utils.detect_partition(region)
@@ -212,7 +211,7 @@ def load_storage_pricing_data():
             utils.log_warning(f"Storage pricing file not found at {pricing_file}")
             return storage_pricing
 
-        with open(pricing_file, 'r', encoding='utf-8') as fh:
+        with open(pricing_file, encoding='utf-8') as fh:
             data = json.load(fh)
         storage_pricing = {k: float(v) for k, v in data.get('rates', {}).items()}
         utils.log_info(f"Loaded storage pricing data for {len(storage_pricing)} volume types")
@@ -313,16 +312,172 @@ def calculate_rds_storage_cost(storage_size, storage_type, storage_pricing):
         utils.log_warning(f"Error calculating storage cost: {e}")
         return 'N/A'
 
-@utils.aws_error_handler("Retrieving RDS instances", default_return=[])
+def _build_instance_data(instance, region, rds_client, pricing_data, storage_pricing, cost_note):
+    """
+    Build the export row for a single RDS instance.
+
+    Extracted so the per-instance processing can be wrapped in try/except by the
+    caller: a malformed instance (e.g. an engine variant such as RDS Custom that
+    omits an expected field) is logged and skipped rather than discarding the
+    whole region's results. Every required field is read with ``.get()`` and a
+    safe default for the same reason.
+
+    Args:
+        instance (dict): A single DBInstances entry from describe_db_instances.
+        region (str): AWS region name.
+        rds_client: Boto3 RDS client (for cluster-role and SG/VPC lookups).
+        pricing_data (dict): RDS instance pricing data.
+        storage_pricing (dict): EBS/storage pricing data.
+        cost_note (str): Partition-aware cost estimate note.
+
+    Returns:
+        dict: The assembled instance row.
+    """
+    instance_id = instance.get('DBInstanceIdentifier', 'Unknown')
+
+    # Extract security group IDs from VPC security groups
+    sg_ids = [sg['VpcSecurityGroupId'] for sg in instance.get('VpcSecurityGroups', [])]
+    sg_info = get_security_group_info(rds_client, sg_ids)
+
+    # Get VPC information from DB subnet group
+    vpc_id = instance.get('DBSubnetGroup', {}).get('VpcId', 'N/A')
+    vpc_info = get_vpc_info(rds_client, vpc_id) if vpc_id != 'N/A' else 'N/A'
+
+    # Get subnet IDs from DB subnet group
+    subnet_ids = get_subnet_ids(instance.get('DBSubnetGroup', {}))
+
+    # Get port information from endpoint
+    port = instance.get('Endpoint', {}).get('Port', 'N/A') if 'Endpoint' in instance else 'N/A'
+
+    # Get endpoint address - RDS connection endpoint
+    endpoint_address = instance.get('Endpoint', {}).get('Address', 'N/A') if 'Endpoint' in instance else 'N/A'
+
+    # Get master username - the primary database user
+    master_username = instance.get('MasterUsername', 'N/A')
+
+    # Determine if instance is part of a cluster and its role
+    db_cluster_id = instance.get('DBClusterIdentifier', 'N/A')
+    role = 'Standalone'
+    if db_cluster_id != 'N/A':
+        try:
+            # Get cluster info to determine if this instance is primary or replica
+            cluster_info = rds_client.describe_db_clusters(
+                DBClusterIdentifier=db_cluster_id
+            )
+            if cluster_info and 'DBClusters' in cluster_info and cluster_info['DBClusters']:
+                cluster = cluster_info['DBClusters'][0]
+                # Check if this instance is the primary (writer) in the cluster
+                if 'DBClusterMembers' in cluster:
+                    for member in cluster['DBClusterMembers']:
+                        if member.get('DBInstanceIdentifier') == instance_id:
+                            role = 'Primary' if member.get('IsClusterWriter', False) else 'Replica'
+        except Exception as e:
+            # If we can't determine cluster role, leave as default
+            utils.log_warning(f"Could not determine cluster role for {instance_id}: {e}")
+
+    # Check for RDS Extended Support status
+    extended_support = 'No'
+    try:
+        if 'StatusInfos' in instance:
+            for status_info in instance['StatusInfos']:
+                if status_info.get('Status') == 'extended-support':
+                    extended_support = 'Yes'
+    except Exception:
+        pass
+
+    # Format certificate expiry date
+    cert_expiry = 'N/A'
+    try:
+        if 'CertificateDetails' in instance and 'ValidTill' in instance['CertificateDetails']:
+            valid_till = instance['CertificateDetails']['ValidTill']
+            if isinstance(valid_till, datetime.datetime):
+                cert_expiry = valid_till.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        pass
+
+    # Format creation time
+    created_time = 'N/A'
+    try:
+        if 'InstanceCreateTime' in instance:
+            create_time = instance['InstanceCreateTime']
+            if isinstance(create_time, datetime.datetime):
+                created_time = create_time.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        pass
+
+    # Required fields read defensively: engine variants (Aurora, RDS Custom) can
+    # omit fields another engine always sets. A missing field yields 'N/A', not a
+    # KeyError that would sink the entire region (see the 07.15.2026 audit).
+    instance_class = instance.get('DBInstanceClass', 'N/A')
+    engine = instance.get('Engine', 'N/A')
+    engine_version = instance.get('EngineVersion', 'N/A')
+    allocated_storage = instance.get('AllocatedStorage', 'N/A')
+    storage_type = instance.get('StorageType', 'N/A')
+
+    # Calculate monthly cost
+    monthly_cost = calculate_rds_monthly_cost(instance_class, engine, pricing_data)
+
+    # Calculate storage cost
+    storage_cost = calculate_rds_storage_cost(allocated_storage, storage_type, storage_pricing)
+
+    # Calculate total monthly cost
+    total_monthly_cost = 'N/A'
+    if monthly_cost != 'N/A' and storage_cost != 'N/A':
+        total_monthly_cost = round(float(monthly_cost) + float(storage_cost), 2)
+    elif monthly_cost != 'N/A':
+        total_monthly_cost = float(monthly_cost)
+    elif storage_cost != 'N/A':
+        total_monthly_cost = float(storage_cost)
+
+    return {
+        'DB Identifier': instance_id,
+        'DB Cluster Identifier': db_cluster_id,
+        'Role': role,
+        'Engine': engine,
+        'Engine Version': engine_version,
+        'RDS Extended Support': extended_support,
+        'Region': region,
+        'Size': instance_class,
+        'Monthly Cost (On-Demand)': monthly_cost,
+        'Monthly Storage Cost': storage_cost,
+        'Total Monthly Cost': total_monthly_cost,
+        'Cost Note': cost_note,
+        'Storage Type': storage_type,
+        'Storage (GB)': allocated_storage,
+        'Provisioned IOPS': instance.get('Iops', 'N/A'),
+        'Port': port,
+        'Endpoint': endpoint_address,  # RDS connection endpoint
+        'Master Username': master_username,  # Primary database user
+        'VPC': vpc_info,
+        'Subnet IDs': subnet_ids,
+        'Security Groups': sg_info,
+        'DB Subnet Group Name': instance.get('DBSubnetGroup', {}).get('DBSubnetGroupName', 'N/A'),
+        'DB Certificate Expiry': cert_expiry,
+        'Created Time': created_time,
+        'Encryption': 'Yes' if instance.get('StorageEncrypted', False) else 'No',
+        'Owner ID': utils.get_account_name_formatted(instance.get('OwnerId', 'N/A'))
+    }
+
+
 def get_rds_instances(region):
     """
     Get all RDS instances in a specific AWS region with detailed information.
+
+    Not wrapped in ``aws_error_handler``: a swallowed error here would return an
+    empty list that ``main()`` cannot distinguish from a genuinely empty region,
+    producing silent data loss (no file written). Region-level failures are
+    allowed to raise so the caller can record the region as *failed* rather than
+    *empty*. Per-instance errors are contained internally (logged and skipped).
 
     Args:
         region (str): AWS region name
 
     Returns:
         list: List of dictionaries containing RDS instance information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it as
+            a failed region and surfaces it; it is never masked as empty).
     """
     # Validate region is AWS
     if not utils.is_aws_region(region):
@@ -356,140 +511,35 @@ def get_rds_instances(region):
     if total_instances > 0:
         utils.log_info(f"Found {total_instances} RDS instances in {region} to process")
 
-    # Process each instance
-    processed = 0
-    for instance in all_instances:
-        processed += 1
+    # Process each instance. One malformed instance must not sink the region, so
+    # each is built inside try/except; failures are logged and skipped.
+    skipped = 0
+    for processed, instance in enumerate(all_instances, start=1):
         instance_id = instance.get('DBInstanceIdentifier', 'Unknown')
         progress = (processed / total_instances) * 100 if total_instances > 0 else 0
 
         utils.log_info(f"[{progress:.1f}%] Processing RDS instance {processed}/{total_instances}: {instance_id}")
         if processed % 10 == 0:
             print(f"  [{region}] {processed}/{total_instances} RDS instances processed...", flush=True)
-        # Extract security group IDs from VPC security groups
-        sg_ids = [sg['VpcSecurityGroupId'] for sg in instance.get('VpcSecurityGroups', [])]
-        sg_info = get_security_group_info(rds_client, sg_ids)
 
-        # Get VPC information from DB subnet group
-        vpc_id = instance.get('DBSubnetGroup', {}).get('VpcId', 'N/A')
-        vpc_info = get_vpc_info(rds_client, vpc_id) if vpc_id != 'N/A' else 'N/A'
-
-        # Get subnet IDs from DB subnet group
-        subnet_ids = get_subnet_ids(instance.get('DBSubnetGroup', {}))
-
-        # Get port information from endpoint
-        port = instance.get('Endpoint', {}).get('Port', 'N/A') if 'Endpoint' in instance else 'N/A'
-
-        # Get endpoint address - RDS connection endpoint
-        endpoint_address = instance.get('Endpoint', {}).get('Address', 'N/A') if 'Endpoint' in instance else 'N/A'
-
-        # Get master username - the primary database user
-        master_username = instance.get('MasterUsername', 'N/A')
-
-        # Determine if instance is part of a cluster and its role
-        db_cluster_id = instance.get('DBClusterIdentifier', 'N/A')
-        role = 'Standalone'
-        if db_cluster_id != 'N/A':
-            try:
-                # Get cluster info to determine if this instance is primary or replica
-                cluster_info = rds_client.describe_db_clusters(
-                    DBClusterIdentifier=db_cluster_id
-                )
-                if cluster_info and 'DBClusters' in cluster_info and cluster_info['DBClusters']:
-                    cluster = cluster_info['DBClusters'][0]
-                    # Check if this instance is the primary (writer) in the cluster
-                    if 'DBClusterMembers' in cluster:
-                        for member in cluster['DBClusterMembers']:
-                            if member.get('DBInstanceIdentifier') == instance['DBInstanceIdentifier']:
-                                role = 'Primary' if member.get('IsClusterWriter', False) else 'Replica'
-            except Exception as e:
-                # If we can't determine cluster role, leave as default
-                utils.log_warning(f"Could not determine cluster role for {instance['DBInstanceIdentifier']}: {e}")
-
-        # Check for RDS Extended Support status
-        extended_support = 'No'
         try:
-            if 'StatusInfos' in instance:
-                for status_info in instance['StatusInfos']:
-                    if status_info.get('Status') == 'extended-support':
-                        extended_support = 'Yes'
-        except Exception:
-            pass
-
-        # Format certificate expiry date
-        cert_expiry = 'N/A'
-        try:
-            if 'CertificateDetails' in instance and 'ValidTill' in instance['CertificateDetails']:
-                valid_till = instance['CertificateDetails']['ValidTill']
-                if isinstance(valid_till, datetime.datetime):
-                    cert_expiry = valid_till.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
-            pass
-
-        # Format creation time
-        created_time = 'N/A'
-        try:
-            if 'InstanceCreateTime' in instance:
-                create_time = instance['InstanceCreateTime']
-                if isinstance(create_time, datetime.datetime):
-                    created_time = create_time.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
-            pass
-
-        # Create comprehensive instance data dictionary
-        # Calculate monthly cost
-        monthly_cost = calculate_rds_monthly_cost(
-            instance['DBInstanceClass'],
-            instance['Engine'],
-            pricing_data
-        )
-
-        # Calculate storage cost
-        storage_cost = calculate_rds_storage_cost(
-            instance['AllocatedStorage'],
-            instance['StorageType'],
-            storage_pricing
-        )
-
-        # Calculate total monthly cost
-        total_monthly_cost = 'N/A'
-        if monthly_cost != 'N/A' and storage_cost != 'N/A':
-            total_monthly_cost = round(float(monthly_cost) + float(storage_cost), 2)
-        elif monthly_cost != 'N/A':
-            total_monthly_cost = float(monthly_cost)
-        elif storage_cost != 'N/A':
-            total_monthly_cost = float(storage_cost)
-
-        instance_data = {
-            'DB Identifier': instance['DBInstanceIdentifier'],
-            'DB Cluster Identifier': db_cluster_id,
-            'Role': role,
-            'Engine': instance['Engine'],
-            'Engine Version': instance['EngineVersion'],
-            'RDS Extended Support': extended_support,
-            'Region': region,
-            'Size': instance['DBInstanceClass'],
-            'Monthly Cost (On-Demand)': monthly_cost,
-            'Monthly Storage Cost': storage_cost,
-            'Total Monthly Cost': total_monthly_cost,
-            'Cost Note': cost_note,
-            'Storage Type': instance['StorageType'],
-            'Storage (GB)': instance['AllocatedStorage'],
-            'Provisioned IOPS': instance.get('Iops', 'N/A'),
-            'Port': port,
-            'Endpoint': endpoint_address,  # RDS connection endpoint
-            'Master Username': master_username,  # Primary database user
-            'VPC': vpc_info,
-            'Subnet IDs': subnet_ids,
-            'Security Groups': sg_info,
-            'DB Subnet Group Name': instance.get('DBSubnetGroup', {}).get('DBSubnetGroupName', 'N/A'),
-            'DB Certificate Expiry': cert_expiry,
-            'Created Time': created_time,
-            'Encryption': 'Yes' if instance.get('StorageEncrypted', False) else 'No',
-            'Owner ID': utils.get_account_name_formatted(instance.get('OwnerId', 'N/A'))
-        }
+            instance_data = _build_instance_data(
+                instance, region, rds_client, pricing_data, storage_pricing, cost_note
+            )
+        except Exception as e:
+            skipped += 1
+            utils.log_error(
+                f"Skipping RDS instance '{instance_id}' in {region} due to a processing error", e
+            )
+            continue
 
         rds_instances.append(instance_data)
+
+    if skipped:
+        utils.log_warning(
+            f"{skipped} of {total_instances} RDS instance(s) in {region} were skipped due to "
+            "processing errors (see log above); the remaining instances were still collected."
+        )
 
     return rds_instances
 
@@ -583,25 +633,31 @@ def main():
 
     utils.log_info(f"Collecting RDS instance data across {len(regions)} AWS region(s)...")
 
-    # Define region scan function for concurrent execution (Phase 4B)
+    # Define region scan function for concurrent execution (Phase 4B). It lets
+    # get_rds_instances raise on a region-level failure so the scanner records
+    # that region as FAILED — a failed region must never be collapsed into
+    # "empty," which is the silent-data-loss bug (07.15.2026 audit / Issue #231).
     def scan_region_rds(region):
         utils.log_info(f"Searching for RDS instances in AWS region: {region}")
         region_instances = get_rds_instances(region)
         utils.log_info(f"Found {len(region_instances)} RDS instances in {region}")
         return region_instances
 
-    # Use concurrent region scanning (with automatic fallback to sequential on errors)
-    region_results = utils.scan_regions_concurrent(
+    # Use concurrent region scanning (with automatic fallback to sequential on
+    # errors). collect_failures=True returns the regions that raised so a failed
+    # collection is distinguishable from a genuinely empty account.
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_region_rds,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
     for instances in region_results:
         all_rds_instances.extend(instances)
 
-    # Export results to Excel file
+    # Export whatever succeeded, then decide on exit status based on failures.
     utils.log_success(f"Found {len(all_rds_instances)} RDS instances in total across all AWS regions.")
 
     if all_rds_instances:
@@ -613,8 +669,20 @@ def main():
         else:
             utils.log_error("Failed to export data. Please check the logs.")
             sys.exit(1)
-    else:
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No RDS instances found in any AWS region. No file exported.")
+
+    # If ANY region failed, make it loud: write a marker and exit non-zero, even
+    # if some data was exported. A partial export that looks complete is exactly
+    # the failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, "rds-instances", failed_regions)
+        print(
+            "\nERROR: RDS export completed with failures — data is incomplete. "
+            "See the *-rds-instances-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:

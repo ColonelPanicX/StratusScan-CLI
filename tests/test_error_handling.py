@@ -8,7 +8,7 @@ and handle_aws_operation context manager.
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any
 
 import pytest
 
@@ -27,7 +27,7 @@ except ImportError:
 
 @pytest.mark.aws
 @utils.aws_error_handler("Test: Simple operation with default return", default_return=[])
-def test_decorator_default_return() -> List[str]:
+def test_decorator_default_return() -> list[str]:
     """Test decorator that returns empty list on error."""
     # This will succeed if credentials are configured
     sts = utils.get_boto3_client('sts')
@@ -41,13 +41,13 @@ def test_decorator_reraise() -> str:
     """Test decorator that reraises exceptions."""
     # This will fail with NoCredentialsError if not configured
     ec2 = utils.get_boto3_client('ec2', region_name='us-east-1')
-    response = ec2.describe_instances(InstanceIds=['i-invalid12345'])
+    ec2.describe_instances(InstanceIds=['i-invalid12345'])
     return "Success"
 
 
 @pytest.mark.aws
 @utils.aws_error_handler("Test: Invalid instance lookup", default_return=None)
-def test_decorator_client_error() -> Dict[str, Any]:
+def test_decorator_client_error() -> dict[str, Any]:
     """Test decorator handling ClientError."""
     ec2 = utils.get_boto3_client('ec2', region_name='us-east-1')
     # This should trigger a ClientError
@@ -60,7 +60,7 @@ def test_decorator_client_error() -> Dict[str, Any]:
 # =============================================================================
 
 @pytest.mark.aws
-def test_context_manager_suppress() -> List[str]:
+def test_context_manager_suppress() -> list[str]:
     """Test context manager with error suppression."""
     result = []
 
@@ -92,7 +92,7 @@ def test_context_manager_reraise() -> bool:
 
 
 @pytest.mark.aws
-def test_multi_step_operation() -> Dict[str, Any]:
+def test_multi_step_operation() -> dict[str, Any]:
     """Test context manager with multiple steps."""
     results = {
         'account': None,
@@ -148,7 +148,7 @@ def main():
     try:
         result = test_context_manager_suppress()
         if result:
-            utils.log_success(f"Test 2 PASSED: Got account info via context manager")
+            utils.log_success("Test 2 PASSED: Got account info via context manager")
         else:
             utils.log_warning("Test 2: Returned empty list (credentials may not be configured)")
     except Exception as e:

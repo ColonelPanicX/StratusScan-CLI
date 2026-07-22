@@ -24,7 +24,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -45,79 +45,112 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Backup plans, vaults, and jobs to Excel")
 
 
-def _scan_backup_vaults_region(region: str) -> List[Dict[str, Any]]:
-    """Scan a single region for backup vaults."""
-    vaults_data = []
+def _build_vault_row(vault: dict, region: str) -> dict[str, Any]:
+    """Build a single Backup vault export row from a list_backup_vaults response."""
+    vault_name = vault.get('BackupVaultName', '')
+    vault_arn = vault.get('BackupVaultArn', '')
+    creation_date = vault.get('CreationDate', '')
+    if creation_date:
+        creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_date, datetime.datetime) else str(creation_date)
 
+    encryption_key_arn = vault.get('EncryptionKeyArn', 'N/A')
+    creator_request_id = vault.get('CreatorRequestId', 'N/A')
+    number_of_recovery_points = vault.get('NumberOfRecoveryPoints', 0)
+    locked = vault.get('Locked', False)
+    min_retention_days = vault.get('MinRetentionDays', 'N/A')
+    max_retention_days = vault.get('MaxRetentionDays', 'N/A')
+
+    lock_date = vault.get('LockDate', '')
+    if lock_date:
+        lock_date = lock_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(lock_date, datetime.datetime) else str(lock_date)
+
+    return {
+        'Region': region,
+        'Vault Name': vault_name,
+        'Recovery Point Count': number_of_recovery_points,
+        'Locked': locked,
+        'Min Retention (days)': min_retention_days,
+        'Max Retention (days)': max_retention_days,
+        'Lock Date': lock_date if lock_date else 'N/A',
+        'Encryption Key ARN': encryption_key_arn,
+        'Creation Date': creation_date,
+        'Creator Request ID': creator_request_id,
+        'Vault ARN': vault_arn
+    }
+
+
+def _scan_backup_vaults_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect backup vaults from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no backup vaults" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed vaults are skipped (logged) rather than aborting the
+    whole region.
+    """
     if not utils.is_aws_region(region):
-        return vaults_data
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
 
-    try:
-        backup_client = utils.get_boto3_client('backup', region_name=region)
-        paginator = backup_client.get_paginator('list_backup_vaults')
+    print(f"\nProcessing region: {region}")
 
-        for page in paginator.paginate():
-            vaults = page.get('BackupVaultList', [])
+    backup_client = utils.get_boto3_client('backup', region_name=region)
+    paginator = backup_client.get_paginator('list_backup_vaults')
+    vaults_data = []
+    vault_count = 0
 
-            for vault in vaults:
-                vault_name = vault.get('BackupVaultName', '')
-                vault_arn = vault.get('BackupVaultArn', '')
-                creation_date = vault.get('CreationDate', '')
-                if creation_date:
-                    creation_date = creation_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_date, datetime.datetime) else str(creation_date)
+    for page in paginator.paginate():
+        vaults = page.get('BackupVaultList', [])
+        vault_count += len(vaults)
 
-                encryption_key_arn = vault.get('EncryptionKeyArn', 'N/A')
-                creator_request_id = vault.get('CreatorRequestId', 'N/A')
-                number_of_recovery_points = vault.get('NumberOfRecoveryPoints', 0)
-                locked = vault.get('Locked', False)
-                min_retention_days = vault.get('MinRetentionDays', 'N/A')
-                max_retention_days = vault.get('MaxRetentionDays', 'N/A')
+        for vault in vaults:
+            try:
+                vaults_data.append(_build_vault_row(vault, region))
+            except Exception as e:
+                # One malformed vault is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed backup vault in {region}: "
+                    f"{vault.get('BackupVaultName', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                lock_date = vault.get('LockDate', '')
-                if lock_date:
-                    lock_date = lock_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(lock_date, datetime.datetime) else str(lock_date)
-
-                vaults_data.append({
-                    'Region': region,
-                    'Vault Name': vault_name,
-                    'Recovery Point Count': number_of_recovery_points,
-                    'Locked': locked,
-                    'Min Retention (days)': min_retention_days,
-                    'Max Retention (days)': max_retention_days,
-                    'Lock Date': lock_date if lock_date else 'N/A',
-                    'Encryption Key ARN': encryption_key_arn,
-                    'Creation Date': creation_date,
-                    'Creator Request ID': creator_request_id,
-                    'Vault ARN': vault_arn
-                })
-    except Exception as e:
-        utils.log_error(f"Error scanning backup vaults in {region}", e)
-
+    print(f"  Found {vault_count} backup vaults")
     return vaults_data
 
 
-@utils.aws_error_handler("Collecting backup vaults", default_return=[])
-def collect_backup_vaults(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_vaults(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect AWS Backup vault information from AWS regions.
+    Collect AWS Backup vault information across regions, surfacing failures.
 
-    Args:
-        regions: List of AWS regions to scan
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Returns:
-        list: List of dictionaries with backup vault information
+        tuple: ``(vaults, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING BACKUP VAULTS ===")
 
-    # Use concurrent scanning for better performance
-    results = utils.scan_regions_concurrent(regions, _scan_backup_vaults_region)
-    all_vaults = [vault for result in results for vault in result]
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_backup_vaults_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_vaults = [vault for result in region_results for vault in result]
 
     utils.log_success(f"Total backup vaults collected: {len(all_vaults)}")
-    return all_vaults
+    return all_vaults, failed_regions
 
 
-def _scan_backup_plans_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_plans_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup plans."""
     plans_data = []
 
@@ -185,7 +218,7 @@ def _scan_backup_plans_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup plans", default_return=[])
-def collect_backup_plans(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_plans(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup plan information from AWS regions.
 
@@ -205,7 +238,7 @@ def collect_backup_plans(regions: List[str]) -> List[Dict[str, Any]]:
     return all_plans
 
 
-def _scan_backup_selections_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_selections_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup selections."""
     selections_data = []
 
@@ -258,7 +291,7 @@ def _scan_backup_selections_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup selections", default_return=[])
-def collect_backup_selections(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_selections(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup selection information from AWS regions.
 
@@ -278,7 +311,7 @@ def collect_backup_selections(regions: List[str]) -> List[Dict[str, Any]]:
     return all_selections
 
 
-def _scan_backup_jobs_region(region: str) -> List[Dict[str, Any]]:
+def _scan_backup_jobs_region(region: str) -> list[dict[str, Any]]:
     """Scan a single region for backup jobs."""
     jobs_data = []
 
@@ -321,7 +354,7 @@ def _scan_backup_jobs_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting backup jobs", default_return=[])
-def collect_backup_jobs(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_backup_jobs(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect AWS Backup job information from AWS regions.
 
@@ -357,63 +390,78 @@ def export_backup_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect backup vaults
-    vaults = collect_backup_vaults(regions)
+    # STEP 1: Collect backup vaults (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    vaults, failed_regions = collect_backup_vaults(regions)
     if vaults:
         data_frames['Backup Vaults'] = pd.DataFrame(vaults)
 
-    # STEP 2: Collect backup plans
+    # STEP 2: Collect backup plans (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     plans = collect_backup_plans(regions)
     if plans:
         data_frames['Backup Plans'] = pd.DataFrame(plans)
 
-    # STEP 3: Collect backup selections
+    # STEP 3: Collect backup selections (enrichment — degrades gracefully).
     selections = collect_backup_selections(regions)
     if selections:
         data_frames['Backup Selections'] = pd.DataFrame(selections)
 
-    # STEP 4: Collect backup jobs (Phase F: API coverage fix)
+    # STEP 4: Collect backup jobs (enrichment — degrades gracefully;
+    # Phase F: API coverage fix).
     jobs = collect_backup_jobs(regions)
     if jobs:
         data_frames['Backup Jobs'] = pd.DataFrame(jobs)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 4: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 5: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'aws-backup',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("AWS Backup data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No AWS Backup data was collected. Nothing to export.")
         print("\nNo AWS Backup resources found in the selected region(s).")
-        return
 
-    # STEP 4: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 5: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'aws-backup',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("AWS Backup data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary backup vault scope collection, make it
+    # loud: write a marker and exit non-zero, even if some data was exported. A
+    # partial export that looks complete is exactly the failure mode this guards.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'aws-backup', failed_regions)
+        print(
+            "\nERROR: AWS Backup export completed with failures — data is incomplete. "
+            "See the *-aws-backup-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -431,10 +479,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export AWS Backup data
         export_backup_data(account_id, account_name)

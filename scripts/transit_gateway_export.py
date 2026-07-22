@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,9 +47,82 @@ except ImportError:
 args = utils.parse_script_args("Export Transit Gateways and attachments to Excel")
 
 
-def scan_transit_gateways_in_region(region: str) -> List[Dict[str, Any]]:
+def _build_tgw_row(tgw: dict, region: str) -> dict[str, Any]:
+    """Build a single Transit Gateway export row from a describe response."""
+    tgw_id = tgw.get('TransitGatewayId', '')
+    print(f"  Processing Transit Gateway: {tgw_id}")
+
+    # Extract basic information
+    state = tgw.get('State', '')
+    description = tgw.get('Description', 'N/A')
+    owner_id = tgw.get('OwnerId', '')
+    owner_name = utils.get_account_name_formatted(owner_id)
+
+    # Creation time
+    creation_time = tgw.get('CreationTime', '')
+    if creation_time:
+        creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_time, datetime.datetime) else str(creation_time)
+
+    # Options
+    options = tgw.get('Options', {})
+    amazon_side_asn = options.get('AmazonSideAsn', 'N/A')
+    default_route_table_association = options.get('DefaultRouteTableAssociation', 'N/A')
+    default_route_table_propagation = options.get('DefaultRouteTablePropagation', 'N/A')
+    vpn_ecmp_support = options.get('VpnEcmpSupport', 'N/A')
+    dns_support = options.get('DnsSupport', 'N/A')
+    auto_accept_shared_attachments = options.get('AutoAcceptSharedAttachments', 'N/A')
+    multicast_support = options.get('MulticastSupport', 'N/A')
+
+    # Default route table IDs
+    association_default_rt = options.get('AssociationDefaultRouteTableId', 'N/A')
+    propagation_default_rt = options.get('PropagationDefaultRouteTableId', 'N/A')
+
+    # CIDR blocks
+    transit_gateway_cidr_blocks = options.get('TransitGatewayCidrBlocks', [])
+    cidr_blocks_str = ', '.join(transit_gateway_cidr_blocks) if transit_gateway_cidr_blocks else 'N/A'
+
+    # Get tags
+    tags = tgw.get('Tags', [])
+    name_tag = 'N/A'
+    for tag in tags:
+        if tag.get('Key') == 'Name':
+            name_tag = tag.get('Value')
+            break
+
+    return {
+        'Region': region,
+        'Transit Gateway ID': tgw_id,
+        'Name': name_tag,
+        'State': state,
+        'Description': description,
+        'Owner Account': owner_name,
+        'Amazon Side ASN': amazon_side_asn,
+        'CIDR Blocks': cidr_blocks_str,
+        'Default Route Table Association': default_route_table_association,
+        'Default Route Table Propagation': default_route_table_propagation,
+        'Association Default RT ID': association_default_rt,
+        'Propagation Default RT ID': propagation_default_rt,
+        'VPN ECMP Support': vpn_ecmp_support,
+        'DNS Support': dns_support,
+        'Auto Accept Shared Attachments': auto_accept_shared_attachments,
+        'Multicast Support': multicast_support,
+        'Creation Time': creation_time
+    }
+
+
+def scan_transit_gateways_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateways in a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Transit Gateways" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed Transit Gateways are skipped (logged) rather than
+    aborting the whole region.
 
     Args:
         region: AWS region to scan
@@ -57,115 +130,71 @@ def scan_transit_gateways_in_region(region: str) -> List[Dict[str, Any]]:
     Returns:
         list: List of Transit Gateway dictionaries for this region
     """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     region_tgws = []
 
-    try:
-        ec2 = utils.get_boto3_client('ec2', region_name=region)
+    ec2 = utils.get_boto3_client('ec2', region_name=region)
 
-        # Get Transit Gateways in the region
-        paginator = ec2.get_paginator('describe_transit_gateways')
-        tgw_count = 0
+    # Get Transit Gateways in the region
+    paginator = ec2.get_paginator('describe_transit_gateways')
+    tgw_count = 0
 
-        for page in paginator.paginate():
-            tgws = page.get('TransitGateways', [])
-            tgw_count += len(tgws)
+    for page in paginator.paginate():
+        tgws = page.get('TransitGateways', [])
+        tgw_count += len(tgws)
 
-            for tgw in tgws:
-                tgw_id = tgw.get('TransitGatewayId', '')
-                print(f"  Processing Transit Gateway: {tgw_id}")
+        for tgw in tgws:
+            try:
+                region_tgws.append(_build_tgw_row(tgw, region))
+            except Exception as e:
+                # One malformed Transit Gateway is skipped, not fatal to the region.
+                utils.log_error(
+                    f"Skipping malformed Transit Gateway in {region}: "
+                    f"{tgw.get('TransitGatewayId', '<unknown>')}",
+                    e,
+                )
+                continue
 
-                # Extract basic information
-                state = tgw.get('State', '')
-                description = tgw.get('Description', 'N/A')
-                owner_id = tgw.get('OwnerId', '')
-                owner_name = utils.get_account_name_formatted(owner_id)
-
-                # Creation time
-                creation_time = tgw.get('CreationTime', '')
-                if creation_time:
-                    creation_time = creation_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(creation_time, datetime.datetime) else str(creation_time)
-
-                # Options
-                options = tgw.get('Options', {})
-                amazon_side_asn = options.get('AmazonSideAsn', 'N/A')
-                default_route_table_association = options.get('DefaultRouteTableAssociation', 'N/A')
-                default_route_table_propagation = options.get('DefaultRouteTablePropagation', 'N/A')
-                vpn_ecmp_support = options.get('VpnEcmpSupport', 'N/A')
-                dns_support = options.get('DnsSupport', 'N/A')
-                auto_accept_shared_attachments = options.get('AutoAcceptSharedAttachments', 'N/A')
-                multicast_support = options.get('MulticastSupport', 'N/A')
-
-                # Default route table IDs
-                association_default_rt = options.get('AssociationDefaultRouteTableId', 'N/A')
-                propagation_default_rt = options.get('PropagationDefaultRouteTableId', 'N/A')
-
-                # CIDR blocks
-                transit_gateway_cidr_blocks = options.get('TransitGatewayCidrBlocks', [])
-                cidr_blocks_str = ', '.join(transit_gateway_cidr_blocks) if transit_gateway_cidr_blocks else 'N/A'
-
-                # Get tags
-                tags = tgw.get('Tags', [])
-                name_tag = 'N/A'
-                for tag in tags:
-                    if tag['Key'] == 'Name':
-                        name_tag = tag['Value']
-                        break
-
-                region_tgws.append({
-                    'Region': region,
-                    'Transit Gateway ID': tgw_id,
-                    'Name': name_tag,
-                    'State': state,
-                    'Description': description,
-                    'Owner Account': owner_name,
-                    'Amazon Side ASN': amazon_side_asn,
-                    'CIDR Blocks': cidr_blocks_str,
-                    'Default Route Table Association': default_route_table_association,
-                    'Default Route Table Propagation': default_route_table_propagation,
-                    'Association Default RT ID': association_default_rt,
-                    'Propagation Default RT ID': propagation_default_rt,
-                    'VPN ECMP Support': vpn_ecmp_support,
-                    'DNS Support': dns_support,
-                    'Auto Accept Shared Attachments': auto_accept_shared_attachments,
-                    'Multicast Support': multicast_support,
-                    'Creation Time': creation_time
-                })
-
-        print(f"  Found {tgw_count} Transit Gateways")
-
-    except Exception as e:
-        utils.log_error(f"Error processing region {region} for Transit Gateways", e)
+    print(f"  Found {tgw_count} Transit Gateways")
 
     utils.log_info(f"Found {len(region_tgws)} Transit Gateways in {region}")
     return region_tgws
 
 
-@utils.aws_error_handler("Collecting Transit Gateways", default_return=[])
-def collect_transit_gateways(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateways(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Transit Gateway information from AWS regions.
+    Collect Transit Gateway information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with Transit Gateway information
+        tuple: ``(tgws, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING TRANSIT GATEWAYS ===")
     utils.log_info("Using concurrent region scanning for improved performance")
 
-    all_tgws = []
-    for region_data in utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=scan_transit_gateways_in_region,
-    ):
-        all_tgws.extend(region_data)
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_tgws = [tgw for result in region_results for tgw in result]
 
     utils.log_success(f"Total Transit Gateways collected: {len(all_tgws)}")
-    return all_tgws
+    return all_tgws, failed_regions
 
 
-def scan_transit_gateway_attachments_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_attachments_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway attachments in a single AWS region.
 
@@ -246,7 +275,7 @@ def scan_transit_gateway_attachments_in_region(region: str) -> List[Dict[str, An
 
 
 @utils.aws_error_handler("Collecting Transit Gateway attachments", default_return=[])
-def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_attachments(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway attachment information from AWS regions.
 
@@ -270,7 +299,7 @@ def collect_transit_gateway_attachments(regions: List[str]) -> List[Dict[str, An
     return all_attachments
 
 
-def scan_transit_gateway_route_tables_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_route_tables_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway route tables in a single AWS region.
 
@@ -338,7 +367,7 @@ def scan_transit_gateway_route_tables_in_region(region: str) -> List[Dict[str, A
 
 
 @utils.aws_error_handler("Collecting Transit Gateway route tables", default_return=[])
-def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_route_tables(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway route table information from AWS regions.
 
@@ -362,7 +391,7 @@ def collect_transit_gateway_route_tables(regions: List[str]) -> List[Dict[str, A
     return all_route_tables
 
 
-def scan_transit_gateway_routes_in_region(region: str) -> List[Dict[str, Any]]:
+def scan_transit_gateway_routes_in_region(region: str) -> list[dict[str, Any]]:
     """
     Scan Transit Gateway routes in a single AWS region.
 
@@ -452,7 +481,7 @@ def scan_transit_gateway_routes_in_region(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting Transit Gateway routes", default_return=[])
-def collect_transit_gateway_routes(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_transit_gateway_routes(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Transit Gateway route information from AWS regions.
 
@@ -497,63 +526,77 @@ def export_transit_gateway_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Transit Gateways
-    tgws = collect_transit_gateways(regions)
+    # STEP 1: Collect Transit Gateways (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    tgws, failed_regions = collect_transit_gateways(regions)
     if tgws:
         data_frames['Transit Gateways'] = pd.DataFrame(tgws)
 
-    # STEP 2: Collect attachments
+    # STEP 2: Collect attachments (enrichment — degrades gracefully)
     attachments = collect_transit_gateway_attachments(regions)
     if attachments:
         data_frames['Attachments'] = pd.DataFrame(attachments)
 
-    # STEP 3: Collect route tables
+    # STEP 3: Collect route tables (enrichment — degrades gracefully)
     route_tables = collect_transit_gateway_route_tables(regions)
     if route_tables:
         data_frames['Route Tables'] = pd.DataFrame(route_tables)
 
-    # STEP 4: Collect routes
+    # STEP 4: Collect routes (enrichment — degrades gracefully)
     routes = collect_transit_gateway_routes(regions)
     if routes:
         data_frames['Routes'] = pd.DataFrame(routes)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even when
+    # some regions failed (see the silent-collection-failure blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'transit-gateway',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Transit Gateway data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Transit Gateway data was collected. Nothing to export.")
         print("\nNo Transit Gateways found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'transit-gateway',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Transit Gateway data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary Transit Gateway scope collection, make
+    # it loud: write a marker and exit non-zero, even if some data was
+    # exported. A partial export that looks complete is exactly the failure
+    # mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'transit-gateway', failed_regions)
+        print(
+            "\nERROR: Transit Gateway export completed with failures — data is incomplete. "
+            "See the *-transit-gateway-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -571,10 +614,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export Transit Gateway data
         export_transit_gateway_data(account_id, account_name)

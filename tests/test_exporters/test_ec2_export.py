@@ -10,10 +10,12 @@ import sys
 from pathlib import Path
 
 import boto3
+import botocore
 import pytest
 from moto import mock_aws
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+import ec2_export  # noqa: E402
 from ec2_export import get_instance_data  # noqa: E402
 
 REGION = "us-east-1"
@@ -86,3 +88,60 @@ class TestGetInstanceData:
         """Region with no EC2 instances returns an empty list."""
         result = get_instance_data(REGION)
         assert result == []
+
+
+class TestSilentCollectionFailureRegression:
+    """
+    Regression tests for the 07.15.2026 audit: exporter data silently lost
+    because a collection error was swallowed to an empty list, indistinguishable
+    from a genuinely empty region. See
+    .collab/audit/07.15.2026-rds-silent-collection-failure.md and the
+    07.16.2026 blast-radius sweep.
+    """
+
+    @mock_aws
+    def test_malformed_item_is_skipped_not_fatal(self, monkeypatch):
+        """
+        One instance that fails to process must not discard the whole region's
+        results — the healthy instance is still collected.
+        """
+        ec2 = boto3.client("ec2", region_name=REGION)
+        good = ec2.run_instances(
+            ImageId=AMI_ID, MinCount=1, MaxCount=1, InstanceType="t3.micro"
+        )["Instances"][0]["InstanceId"]
+        bad = ec2.run_instances(
+            ImageId=AMI_ID, MinCount=1, MaxCount=1, InstanceType="t3.micro"
+        )["Instances"][0]["InstanceId"]
+
+        original = ec2_export._build_instance_row
+
+        def raise_for_bad(instance, *args, **kwargs):
+            if instance.get("InstanceId") == bad:
+                raise KeyError("SomeMissingField")
+            return original(instance, *args, **kwargs)
+
+        monkeypatch.setattr(ec2_export, "_build_instance_row", raise_for_bad)
+
+        result = get_instance_data(REGION)
+
+        ids = {row["Instance ID"] for row in result}
+        assert good in ids, "healthy instance was lost when a sibling failed"
+        assert bad not in ids, "malformed instance should have been skipped"
+
+    @mock_aws
+    def test_region_api_failure_raises_not_empty(self, monkeypatch):
+        """
+        A region-level API failure must propagate (so the caller can record a
+        FAILED region) rather than being swallowed into an empty list.
+        """
+
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "Throttling", "Message": "Rate exceeded"}},
+                "DescribeInstances",
+            )
+
+        monkeypatch.setattr(ec2_export.utils, "get_boto3_client", boom)
+
+        with pytest.raises(botocore.exceptions.ClientError):
+            get_instance_data(REGION)

@@ -20,8 +20,9 @@ import sys
 from pathlib import Path
 
 import pytest
-import utils  # imported here so monkeypatch can patch utils attributes by reference
 from moto import mock_aws
+
+import utils  # imported here so monkeypatch can patch utils attributes by reference
 
 # Shared null logger — absorbs all log calls without writing files or to stderr.
 _NULL_LOGGER = logging.getLogger("stratusscan-smoke")
@@ -44,8 +45,75 @@ _EXCLUDED = {
     "database_resources.py",
     "network_resources.py",
     "storage_resources.py",
+    "security_compliance_resources.py",
+    "iam_resources.py",
+    "cost_resources.py",
+    "application_resources.py",
+    "analytics_resources.py",
+    "devops_resources.py",
+    "governance_resources.py",
     "output_archive.py",
     "services_in_use_export.py",
+    # image_builder and ssm_fleet: moto does not implement their PRIMARY
+    # collection APIs — imagebuilder:ListImagePipelines raises ClientError 404
+    # "Not yet implemented" and ssm:DescribeInstanceInformation raises
+    # NotImplementedError. With the Tier-2 silent-collection-failure fix, a
+    # primary-scope collection error is (correctly) surfaced as a failed scope
+    # -> FAILED marker -> sys.exit(1), so these cannot exit 0 against an empty
+    # mocked environment. The scripts are correct in production (the APIs exist
+    # there); adding an availability-probe skip would reintroduce silent loss on
+    # a real throttle/deny. Behavior is covered by the dedicated regression
+    # suites under tests/test_exporters/. The others below join for the same
+    # reason — moto does not implement their primary collection API:
+    #   bedrock:ListFoundationModels        -> NotImplementedError
+    #   accessanalyzer:ListAnalyzers        -> 404 "Not yet implemented"
+    #   detective:ListGraphs                -> 404 "Not yet implemented"
+    #   config:DescribeConformancePacks     -> NotImplementedError (one of its scopes)
+    #   globalaccelerator:ListAccelerators  -> 404 "Not yet implemented"
+    #   codecommit:ListRepositories         -> NotImplementedError
+    #   savingsplans:DescribeSavingsPlans   -> 404 "Not yet implemented"
+    #   transfer:ListServers                -> NotImplementedError
+    #   apprunner:ListServices              -> 404 "Not yet implemented"
+    #   rolesanywhere:ListTrustAnchors      -> 404 "Not yet implemented"
+    #   ec2:DescribeVerifiedAccessInstances -> NotImplementedError
+    #   verifiedpermissions:ListPolicyStores-> 404 "Not yet implemented"
+    #   servicecatalog:SearchProductsAsAdmin-> NotImplementedError
+    #   controltower:ListLandingZones       -> 404 "Not yet implemented"
+    #   rekognition:DescribeProjects        -> NotImplementedError
+    #   xray:GetSamplingRules               -> 404 "Not yet implemented"
+    # Batch-J cost/compute — moto implements none of these primary APIs:
+    #   ce:GetAnomalyMonitors / ce:ListCostCategoryDefinitions -> NotImplementedError
+    #   marketplace-agreement:SearchAgreements                 -> 404
+    #   ec2:DescribeReservedInstances / DescribeCapacityReservations
+    #     / DescribeHostReservations                           -> NotImplementedError
+    #   license-manager:ListLicenseConfigurations              -> 404
+    #   support:DescribeTrustedAdvisorCheckResult              -> NotImplementedError
+    "image_builder_export.py",
+    "ssm_fleet_export.py",
+    "bedrock_export.py",
+    "access_analyzer_export.py",
+    "detective_export.py",
+    "config_export.py",
+    "globalaccelerator_export.py",
+    "codecommit_export.py",
+    "savings_plans_export.py",
+    "transfer_family_export.py",
+    "apprunner_export.py",
+    "iam_rolesanywhere_export.py",
+    "verifiedaccess_export.py",
+    "verifiedpermissions_export.py",
+    "service_catalog_export.py",
+    "controltower_export.py",
+    "rekognition_export.py",
+    "xray_export.py",
+    "cost_anomaly_detection_export.py",
+    "cost_categories_export.py",
+    "marketplace_export.py",
+    "reserved_instances_export.py",
+    "ec2_capacity_reservations_export.py",
+    "ec2_dedicated_hosts_export.py",
+    "license_manager_export.py",
+    "trusted_advisor_cost_optimization_export.py",
 }
 
 EXPORTER_SCRIPTS = sorted(

@@ -26,7 +26,7 @@ Features:
 import datetime
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Add path to import utils module
 try:
@@ -47,18 +47,111 @@ except ImportError:
 args = utils.parse_script_args("Export AWS Network Firewall policies and rule groups to Excel")
 
 
-@utils.aws_error_handler("Collecting Network Firewalls from region", default_return=[])
-def collect_network_firewalls_from_region(region: str) -> List[Dict[str, Any]]:
+def _build_firewall_row(item: dict[str, Any], region: str) -> dict[str, Any]:
+    """
+    Build a single Network Firewall export row from a describe_firewall response.
+
+    Args:
+        item: The describe_firewall response (contains 'Firewall' and
+            'FirewallStatus').
+        region: AWS region name.
+
+    Returns:
+        dict: The assembled firewall row.
+    """
+    firewall = item.get('Firewall', {})
+    firewall_status = item.get('FirewallStatus', {})
+
+    # Basic information
+    firewall_name = firewall.get('FirewallName', '')
+    firewall_arn = firewall.get('FirewallArn', '')
+    firewall_id = firewall.get('FirewallId', '')
+    vpc_id = firewall.get('VpcId', '')
+    description = firewall.get('Description', 'N/A')
+    firewall_policy_arn = firewall.get('FirewallPolicyArn', '')
+    delete_protection = firewall.get('DeleteProtection', False)
+    subnet_change_protection = firewall.get('SubnetChangeProtection', False)
+    firewall_policy_change_protection = firewall.get('FirewallPolicyChangeProtection', False)
+
+    # Status information
+    status = firewall_status.get('Status', '')
+    configuration_sync_state = firewall_status.get('ConfigurationSyncStateSummary', 'N/A')
+
+    # Subnet mappings
+    subnet_mappings = firewall.get('SubnetMappings', [])
+    subnet_ids = [sm.get('SubnetId', '') for sm in subnet_mappings]
+    subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
+    subnet_count = len(subnet_ids)
+
+    # Firewall endpoints (one per AZ)
+    sync_states = firewall_status.get('SyncStates', {})
+    endpoint_ids = []
+    for az, sync_state in sync_states.items():
+        attachment = sync_state.get('Attachment', {})
+        endpoint_id = attachment.get('EndpointId', '')
+        if endpoint_id:
+            endpoint_ids.append(f"{az}:{endpoint_id}")
+
+    endpoints_str = ', '.join(endpoint_ids) if endpoint_ids else 'N/A'
+
+    # Get encryption configuration
+    encryption_config = firewall.get('EncryptionConfiguration', {})
+    encryption_type = encryption_config.get('Type', 'N/A')
+    kms_key_id = encryption_config.get('KeyId', 'N/A')
+
+    # Get tags
+    tags = firewall.get('Tags', [])
+    tag_dict = {tag.get('Key'): tag.get('Value') for tag in tags}
+    tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
+
+    return {
+        'Region': region,
+        'Firewall Name': firewall_name,
+        'Firewall ID': firewall_id,
+        'Status': status,
+        'VPC ID': vpc_id,
+        'Subnet Count': subnet_count,
+        'Subnet IDs': subnet_ids_str,
+        'Endpoints': endpoints_str,
+        'Firewall Policy ARN': firewall_policy_arn,
+        'Configuration Sync State': configuration_sync_state,
+        'Delete Protection': delete_protection,
+        'Subnet Change Protection': subnet_change_protection,
+        'Policy Change Protection': firewall_policy_change_protection,
+        'Encryption Type': encryption_type,
+        'KMS Key ID': kms_key_id,
+        'Description': description,
+        'Tags': tags_str,
+        'Firewall ARN': firewall_arn
+    }
+
+
+def collect_network_firewalls_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall information from a single AWS region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no Network Firewalls" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed firewalls are skipped (logged) rather than aborting
+    the whole region.
 
     Args:
         region: AWS region to scan
 
     Returns:
         list: List of dictionaries with firewall information
+
+    Raises:
+        Exception: Any AWS/pagination error for the region (caller records it
+            as a failed region and surfaces it; it is never masked as empty).
     """
     if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
         return []
 
     firewalls = []
@@ -79,94 +172,39 @@ def collect_network_firewalls_from_region(region: str) -> List[Dict[str, Any]]:
             try:
                 # Get detailed firewall information
                 fw_response = nfw.describe_firewall(FirewallArn=firewall_arn)
-                firewall = fw_response.get('Firewall', {})
-                firewall_status = fw_response.get('FirewallStatus', {})
-
-                # Basic information
-                firewall_id = firewall.get('FirewallId', '')
-                vpc_id = firewall.get('VpcId', '')
-                description = firewall.get('Description', 'N/A')
-                firewall_policy_arn = firewall.get('FirewallPolicyArn', '')
-                delete_protection = firewall.get('DeleteProtection', False)
-                subnet_change_protection = firewall.get('SubnetChangeProtection', False)
-                firewall_policy_change_protection = firewall.get('FirewallPolicyChangeProtection', False)
-
-                # Status information
-                status = firewall_status.get('Status', '')
-                configuration_sync_state = firewall_status.get('ConfigurationSyncStateSummary', 'N/A')
-
-                # Subnet mappings
-                subnet_mappings = firewall.get('SubnetMappings', [])
-                subnet_ids = [sm.get('SubnetId', '') for sm in subnet_mappings]
-                subnet_ids_str = ', '.join(subnet_ids) if subnet_ids else 'N/A'
-                subnet_count = len(subnet_ids)
-
-                # Firewall endpoints (one per AZ)
-                sync_states = firewall_status.get('SyncStates', {})
-                endpoint_ids = []
-                for az, sync_state in sync_states.items():
-                    attachment = sync_state.get('Attachment', {})
-                    endpoint_id = attachment.get('EndpointId', '')
-                    if endpoint_id:
-                        endpoint_ids.append(f"{az}:{endpoint_id}")
-
-                endpoints_str = ', '.join(endpoint_ids) if endpoint_ids else 'N/A'
-
-                # Get encryption configuration
-                encryption_config = firewall.get('EncryptionConfiguration', {})
-                encryption_type = encryption_config.get('Type', 'N/A')
-                kms_key_id = encryption_config.get('KeyId', 'N/A')
-
-                # Get tags
-                tags = firewall.get('Tags', [])
-                tag_dict = {tag['Key']: tag['Value'] for tag in tags}
-                tags_str = ', '.join([f"{k}={v}" for k, v in tag_dict.items()]) if tag_dict else 'N/A'
-
-                firewalls.append({
-                    'Region': region,
-                    'Firewall Name': firewall_name,
-                    'Firewall ID': firewall_id,
-                    'Status': status,
-                    'VPC ID': vpc_id,
-                    'Subnet Count': subnet_count,
-                    'Subnet IDs': subnet_ids_str,
-                    'Endpoints': endpoints_str,
-                    'Firewall Policy ARN': firewall_policy_arn,
-                    'Configuration Sync State': configuration_sync_state,
-                    'Delete Protection': delete_protection,
-                    'Subnet Change Protection': subnet_change_protection,
-                    'Policy Change Protection': firewall_policy_change_protection,
-                    'Encryption Type': encryption_type,
-                    'KMS Key ID': kms_key_id,
-                    'Description': description,
-                    'Tags': tags_str,
-                    'Firewall ARN': firewall_arn
-                })
-
+                firewalls.append(_build_firewall_row(fw_response, region))
             except Exception as e:
-                utils.log_error(f"Error getting details for firewall {firewall_name}", e)
+                # One malformed firewall is skipped, not fatal to the region.
+                utils.log_error(f"Skipping malformed Network Firewall in {region}: {firewall_name}", e)
+                continue
 
     utils.log_info(f"Found {len(firewalls)} Network Firewalls in {region}")
     return firewalls
 
 
-def collect_network_firewalls(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_network_firewalls(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
     """
-    Collect Network Firewall information using concurrent scanning.
+    Collect Network Firewall information across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
 
     Args:
         regions: List of AWS regions to scan
 
     Returns:
-        list: List of dictionaries with firewall information
+        tuple: ``(firewalls, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
     """
     print("\n=== COLLECTING NETWORK FIREWALLS ===")
     utils.log_info(f"Scanning {len(regions)} regions for Network Firewalls...")
 
-    region_results = utils.scan_regions_concurrent(
+    region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
         scan_function=collect_network_firewalls_from_region,
-        show_progress=True
+        show_progress=True,
+        collect_failures=True,
     )
 
     # Flatten results
@@ -175,11 +213,11 @@ def collect_network_firewalls(regions: List[str]) -> List[Dict[str, Any]]:
         all_firewalls.extend(firewalls_in_region)
 
     utils.log_success(f"Total Network Firewalls collected: {len(all_firewalls)}")
-    return all_firewalls
+    return all_firewalls, failed_regions
 
 
 @utils.aws_error_handler("Collecting firewall policies from region", default_return=[])
-def collect_firewall_policies_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_firewall_policies_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall policy information from a single AWS region.
 
@@ -259,7 +297,7 @@ def collect_firewall_policies_from_region(region: str) -> List[Dict[str, Any]]:
     return policies
 
 
-def collect_firewall_policies(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_firewall_policies(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall policy information using concurrent scanning.
 
@@ -288,7 +326,7 @@ def collect_firewall_policies(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting rule groups from region", default_return=[])
-def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_rule_groups_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall rule group information from a single AWS region.
 
@@ -366,7 +404,7 @@ def collect_rule_groups_from_region(region: str) -> List[Dict[str, Any]]:
     return rule_groups
 
 
-def collect_rule_groups(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_rule_groups(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall rule group information using concurrent scanning.
 
@@ -395,7 +433,7 @@ def collect_rule_groups(regions: List[str]) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting logging configurations from region", default_return=[])
-def collect_logging_configurations_from_region(region: str) -> List[Dict[str, Any]]:
+def collect_logging_configurations_from_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Network Firewall logging configuration information from a single AWS region.
 
@@ -463,7 +501,7 @@ def collect_logging_configurations_from_region(region: str) -> List[Dict[str, An
     return logging_configs
 
 
-def collect_logging_configurations(regions: List[str]) -> List[Dict[str, Any]]:
+def collect_logging_configurations(regions: list[str]) -> list[dict[str, Any]]:
     """
     Collect Network Firewall logging configuration information using concurrent scanning.
 
@@ -508,63 +546,81 @@ def export_network_firewall_data(account_id: str, account_name: str):
     # Dictionary to hold all DataFrames for export
     data_frames = {}
 
-    # STEP 1: Collect Network Firewalls
-    firewalls = collect_network_firewalls(regions)
+    # STEP 1: Collect Network Firewalls (primary scope — region failures must
+    # propagate as failed_regions, never collapse into "empty").
+    firewalls, failed_regions = collect_network_firewalls(regions)
     if firewalls:
         data_frames['Firewalls'] = pd.DataFrame(firewalls)
 
-    # STEP 2: Collect firewall policies
+    # STEP 2: Collect firewall policies (enrichment — degrades gracefully;
+    # a region-level failure here does not fail the whole export).
     policies = collect_firewall_policies(regions)
     if policies:
         data_frames['Firewall Policies'] = pd.DataFrame(policies)
 
-    # STEP 3: Collect rule groups
+    # STEP 3: Collect rule groups (enrichment — degrades gracefully; a
+    # region-level failure here does not fail the whole export).
     rule_groups = collect_rule_groups(regions)
     if rule_groups:
         data_frames['Rule Groups'] = pd.DataFrame(rule_groups)
 
-    # STEP 4: Collect logging configurations
+    # STEP 4: Collect logging configurations (enrichment — degrades
+    # gracefully; a region-level failure here does not fail the whole export).
     logging_configs = collect_logging_configurations(regions)
     if logging_configs:
         data_frames['Logging Configurations'] = pd.DataFrame(logging_configs)
 
-    # Check if we have any data
-    if not data_frames:
+    # Export whatever succeeded first — a partial export is required even
+    # when some regions failed (see the silent-collection-failure
+    # blast-radius audit).
+    if data_frames:
+        # STEP 5: Prepare all DataFrames for export
+        for sheet_name in data_frames:
+            data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
+
+        # STEP 6: Create filename and export
+        current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+        final_excel_file = utils.create_export_filename(
+            account_name,
+            'network-firewall',
+            region_suffix,
+            current_date
+        )
+
+        # Save using utils module for consistent formatting
+        try:
+            output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
+
+            if output_path:
+                utils.log_success("Network Firewall data exported successfully!")
+                utils.log_success(f"File location: {output_path}")
+                utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
+
+                # Summary of exported data
+                for sheet_name, df in data_frames.items():
+                    utils.log_info(f"  - {sheet_name}: {len(df)} records")
+                    print(f"  - {sheet_name}: {len(df)} records")
+            else:
+                utils.log_error("Error creating Excel file. Please check the logs.")
+
+        except Exception as e:
+            utils.log_error("Error creating Excel file", e)
+    elif not failed_regions:
+        # Genuinely empty account: every region succeeded and returned nothing.
         utils.log_warning("No Network Firewall data was collected. Nothing to export.")
         print("\nNo Network Firewalls found in the selected region(s).")
-        return
 
-    # STEP 5: Prepare all DataFrames for export
-    for sheet_name in data_frames:
-        data_frames[sheet_name] = utils.prepare_dataframe_for_export(data_frames[sheet_name])
-
-    # STEP 6: Create filename and export
-    current_date = datetime.datetime.now().strftime("%m.%d.%Y")
-    final_excel_file = utils.create_export_filename(
-        account_name,
-        'network-firewall',
-        region_suffix,
-        current_date
-    )
-
-    # Save using utils module for consistent formatting
-    try:
-        output_path = utils.save_multiple_dataframes_to_excel(data_frames, final_excel_file)
-
-        if output_path:
-            utils.log_success("Network Firewall data exported successfully!")
-            utils.log_success(f"File location: {output_path}")
-            utils.log_info(f"Export contains data from {len(regions)} AWS region(s)")
-
-            # Summary of exported data
-            for sheet_name, df in data_frames.items():
-                utils.log_info(f"  - {sheet_name}: {len(df)} records")
-                print(f"  - {sheet_name}: {len(df)} records")
-        else:
-            utils.log_error("Error creating Excel file. Please check the logs.")
-
-    except Exception as e:
-        utils.log_error("Error creating Excel file", e)
+    # If ANY region failed the primary Network Firewall scope collection,
+    # make it loud: write a marker and exit non-zero, even if some data was
+    # exported. A partial export that looks complete is exactly the failure
+    # mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'network-firewall', failed_regions)
+        print(
+            "\nERROR: Network Firewall export completed with failures — data is incomplete. "
+            "See the *-network-firewall-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
 
 
 def main():
@@ -582,10 +638,9 @@ def main():
             sys.exit(1)
 
         # Check if account name is unknown
-        if account_name == "unknown":
-            if not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
-                print("Exiting script...")
-                sys.exit(0)
+        if account_name == "unknown" and not utils.prompt_for_confirmation("Unable to determine account name. Proceed anyway?", default=False):
+            print("Exiting script...")
+            sys.exit(0)
 
         # Export Network Firewall data
         export_network_firewall_data(account_id, account_name)

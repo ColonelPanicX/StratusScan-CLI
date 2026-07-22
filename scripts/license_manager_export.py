@@ -24,7 +24,7 @@ Note: Requires license-manager:List* and license-manager:Get* permissions
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # Standard utils import pattern
 try:
@@ -38,56 +38,113 @@ except ImportError:
     import utils
 args = utils.parse_script_args("Export AWS License Manager configurations to Excel")
 
-@utils.aws_error_handler("Collecting license configurations", default_return=[])
-def collect_license_configurations(region: str) -> List[Dict[str, Any]]:
-    """Collect all license configurations in a region."""
+def _build_config_row(item: dict, region: str) -> dict[str, Any]:
+    """
+    Build a single license configuration export row.
+
+    Extracted so the per-configuration processing can be wrapped in
+    try/except by the caller: a malformed configuration entry is logged and
+    skipped rather than discarding the whole region's results. Every field is
+    read with ``.get()`` and a safe default for the same reason.
+    """
+    # Extract consumption details
+    consumed = item.get('ConsumedLicenses', 0)
+    limit = item.get('LicenseCount', 'N/A')
+
+    # Calculate usage percentage
+    usage_pct = 'N/A'
+    if isinstance(limit, int) and limit > 0:
+        usage_pct = f"{(consumed / limit * 100):.1f}%"
+
+    # Extract rules
+    rules = []
+    for rule in item.get('LicenseRules', []):
+        rules.append(rule)
+
+    # Extract automated discovery info
+    auto_discovery = item.get('AutomatedDiscoveryInformation', {})
+
+    return {
+        'Region': region,
+        'LicenseConfigurationId': item.get('LicenseConfigurationId', 'N/A'),
+        'LicenseConfigurationArn': item.get('LicenseConfigurationArn', 'N/A'),
+        'Name': item.get('Name', 'N/A'),
+        'Description': item.get('Description', 'N/A'),
+        'LicenseCountingType': item.get('LicenseCountingType', 'N/A'),
+        'LicenseCount': limit,
+        'LicenseCountHardLimit': item.get('LicenseCountHardLimit', False),
+        'ConsumedLicenses': consumed,
+        'UsagePercentage': usage_pct,
+        'Status': item.get('Status', 'N/A'),
+        'OwnerAccountId': item.get('OwnerAccountId', 'N/A'),
+        'LicenseRules': ', '.join(rules) if rules else 'N/A',
+        'AutoDiscoveryEnabled': auto_discovery.get('LastRunTime') is not None,
+        'LastDiscoveryRun': auto_discovery.get('LastRunTime', 'N/A'),
+        'ManagedResourceSummaries': str(item.get('ManagedResourceSummaryList', [])),
+    }
+
+
+def _scan_license_configurations_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect license configurations from a single region.
+
+    This is the primary scope collector. It deliberately does NOT swallow
+    errors: an API/permission failure here must propagate so
+    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
+    as failed instead of silently reporting "no license configurations" (the
+    silent-collection-loss bug — see
+    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+
+    Individual malformed configurations are skipped (logged) rather than
+    aborting the whole region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
     lm = utils.get_boto3_client('license-manager', region_name=region)
     configs = []
 
     paginator = lm.get_paginator('list_license_configurations')
     for page in paginator.paginate():
-        for config in page.get('LicenseConfigurations', []):
-            # Extract consumption details
-            consumed = config.get('ConsumedLicenses', 0)
-            limit = config.get('LicenseCount', 'N/A')
-
-            # Calculate usage percentage
-            usage_pct = 'N/A'
-            if isinstance(limit, int) and limit > 0:
-                usage_pct = f"{(consumed / limit * 100):.1f}%"
-
-            # Extract rules
-            rules = []
-            for rule in config.get('LicenseRules', []):
-                rules.append(rule)
-
-            # Extract automated discovery info
-            auto_discovery = config.get('AutomatedDiscoveryInformation', {})
-
-            configs.append({
-                'Region': region,
-                'LicenseConfigurationId': config.get('LicenseConfigurationId', 'N/A'),
-                'LicenseConfigurationArn': config.get('LicenseConfigurationArn', 'N/A'),
-                'Name': config.get('Name', 'N/A'),
-                'Description': config.get('Description', 'N/A'),
-                'LicenseCountingType': config.get('LicenseCountingType', 'N/A'),
-                'LicenseCount': limit,
-                'LicenseCountHardLimit': config.get('LicenseCountHardLimit', False),
-                'ConsumedLicenses': consumed,
-                'UsagePercentage': usage_pct,
-                'Status': config.get('Status', 'N/A'),
-                'OwnerAccountId': config.get('OwnerAccountId', 'N/A'),
-                'LicenseRules': ', '.join(rules) if rules else 'N/A',
-                'AutoDiscoveryEnabled': auto_discovery.get('LastRunTime') is not None,
-                'LastDiscoveryRun': auto_discovery.get('LastRunTime', 'N/A'),
-                'ManagedResourceSummaries': str(config.get('ManagedResourceSummaryList', [])),
-            })
+        for item in page.get('LicenseConfigurations', []):
+            try:
+                configs.append(_build_config_row(item, region))
+            except Exception as e:
+                utils.log_error(
+                    f"Skipping malformed license configuration in {region}: "
+                    f"{item.get('LicenseConfigurationId', '<unknown>')}",
+                    e,
+                )
+                continue
 
     return configs
 
 
+def collect_license_configurations(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect license configurations across regions, surfacing failures.
+
+    Uses ``collect_failures=True`` so a region whose collection errors is
+    reported as a failed scope rather than silently collapsed into an empty
+    result.
+
+    Returns:
+        tuple: ``(configs, failed_regions)`` where ``failed_regions`` is a
+        list of ``(region, error_message)`` tuples.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_license_configurations_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    all_configs = [config for result in region_results for config in result]
+    return all_configs, failed_regions
+
+
 @utils.aws_error_handler("Collecting license usage", default_return=[])
-def collect_license_usage(region: str, config_arn: str) -> List[Dict[str, Any]]:
+def collect_license_usage(region: str, config_arn: str) -> list[dict[str, Any]]:
     """Collect usage information for a specific license configuration."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     usage_list = []
@@ -114,14 +171,19 @@ def collect_license_usage(region: str, config_arn: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting grants", default_return=[])
-def collect_grants(region: str) -> List[Dict[str, Any]]:
+def collect_grants(region: str) -> list[dict[str, Any]]:
     """Collect license grants (both issued and received)."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     grants = []
 
     try:
-        paginator = lm.get_paginator('list_received_grants')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_received_grants(**params)
             for grant in page.get('Grants', []):
                 grants.append({
                     'Region': region,
@@ -135,12 +197,20 @@ def collect_grants(region: str) -> List[Dict[str, Any]]:
                     'Version': grant.get('Version', 'N/A'),
                     'StatusReason': grant.get('StatusReason', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
     try:
-        paginator = lm.get_paginator('list_distributed_grants')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_distributed_grants(**params)
             for grant in page.get('Grants', []):
                 grants.append({
                     'Region': region,
@@ -154,6 +224,9 @@ def collect_grants(region: str) -> List[Dict[str, Any]]:
                     'Version': grant.get('Version', 'N/A'),
                     'StatusReason': grant.get('StatusReason', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -161,14 +234,19 @@ def collect_grants(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting licenses", default_return=[])
-def collect_licenses(region: str) -> List[Dict[str, Any]]:
+def collect_licenses(region: str) -> list[dict[str, Any]]:
     """Collect managed licenses."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     licenses = []
 
     try:
-        paginator = lm.get_paginator('list_licenses')
-        for page in paginator.paginate():
+        next_token = None
+        while True:
+            params = {}
+            params['MaxResults'] = 50
+            if next_token:
+                params['NextToken'] = next_token
+            page = lm.list_licenses(**params)
             for license_obj in page.get('Licenses', []):
                 # Extract entitlements
                 entitlements = []
@@ -190,6 +268,9 @@ def collect_licenses(region: str) -> List[Dict[str, Any]]:
                     'ConsumptionConfiguration': str(license_obj.get('ConsumptionConfiguration', {})),
                     'Version': license_obj.get('Version', 'N/A'),
                 })
+            next_token = page.get('NextToken')
+            if not next_token:
+                break
     except Exception:
         pass
 
@@ -197,7 +278,7 @@ def collect_licenses(region: str) -> List[Dict[str, Any]]:
 
 
 @utils.aws_error_handler("Collecting resource inventory", default_return=[])
-def collect_resource_inventory(region: str) -> List[Dict[str, Any]]:
+def collect_resource_inventory(region: str) -> list[dict[str, Any]]:
     """Collect resource inventory tracked by License Manager."""
     lm = utils.get_boto3_client('license-manager', region_name=region)
     inventory = []
@@ -229,7 +310,13 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     """Collect License Manager data and write the Excel export."""
     utils.log_info(f"Scanning {len(regions)} region(s) for License Manager resources...")
 
-    all_configs = []
+    # PRIMARY SCOPE: license configurations. Region failures must propagate
+    # as failed_regions, never collapse into "empty" (see the silent-
+    # collection-failure blast-radius audit).
+    all_configs, failed_regions = collect_license_configurations(regions)
+    if all_configs:
+        utils.log_info(f"Found {len(all_configs)} license configuration(s) total")
+
     all_usage = []
     all_grants = []
     all_licenses = []
@@ -238,17 +325,14 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
     for idx, region in enumerate(regions, 1):
         utils.log_info(f"[{idx}/{len(regions)}] Processing region: {region}")
 
-        # Collect license configurations
-        configs = collect_license_configurations(region)
-        if configs:
-            utils.log_info(f"  Found {len(configs)} license configuration(s)")
-            all_configs.extend(configs)
-
-            # Collect usage for first 10 configurations
-            for config in configs[:10]:
-                config_arn = config['LicenseConfigurationArn']
-                usage = collect_license_usage(region, config_arn)
-                all_usage.extend(usage)
+        # Collect usage for the first 10 configurations found in this region
+        # (enrichment — degrades gracefully; failures here do not fail the
+        # whole export).
+        region_configs = [c for c in all_configs if c.get('Region') == region]
+        for config in region_configs[:10]:
+            config_arn = config['LicenseConfigurationArn']
+            usage = collect_license_usage(region, config_arn)
+            all_usage.extend(usage)
 
         # Collect grants
         grants = collect_grants(region)
@@ -269,7 +353,10 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
             all_inventory.extend(inventory)
 
     if not all_configs and not all_licenses and not all_grants:
-        utils.log_warning("No License Manager resources found in any selected region.")
+        if not failed_regions:
+            # Genuinely empty account: every region succeeded and returned
+            # nothing.
+            utils.log_warning("No License Manager resources found in any selected region.")
         utils.log_info("Creating empty export file...")
 
     utils.log_info(f"Total license configurations found: {len(all_configs)}")
@@ -351,6 +438,19 @@ def _run_export(account_id: str, account_name: str, regions: list) -> None:
 
     utils.log_success("License Manager export completed successfully!")
 
+    # If ANY region failed the license configurations scope collection, make
+    # it loud: write a marker and exit non-zero, even though the Summary
+    # sheet (and any partial data) was already exported above. A
+    # complete-looking workbook with silently zero-row data is exactly the
+    # failure mode this guards against.
+    if failed_regions:
+        utils.report_collection_failures(account_name, 'license-manager', failed_regions)
+        print(
+            "\nERROR: License Manager export completed with failures — data is incomplete. "
+            "See the *-license-manager-FAILED-*.txt marker in the output directory."
+        )
+        sys.exit(1)
+
 
 def main():
     """Main function — 3-step state machine with b/x navigation."""
@@ -376,10 +476,7 @@ def main():
                 step = 2
 
             elif step == 2:
-                if len(regions) <= 3:
-                    region_str = ', '.join(regions)
-                else:
-                    region_str = f"{len(regions)} regions"
+                region_str = ', '.join(regions) if len(regions) <= 3 else f"{len(regions)} regions"
                 msg = f"Ready to export License Manager data ({region_str})."
                 result = utils.prompt_confirmation(msg)
                 if result == 'back':
