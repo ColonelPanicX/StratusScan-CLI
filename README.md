@@ -429,7 +429,7 @@ StratusScanCLI-AWS is in active beta development. The API and output format may 
 | Version | Target | Notes |
 |---|---|---|
 | `0.6.x` | Patch releases | Coverage gaps, pricing data refresh, live-account hardening |
-| `1.0.0` | Planned | Full Textual-based TUI; subprocess output streamed live |
+| `1.0.0` | Planned | Stable API; unattended audit mode — scheduled, cross-account, S3-delivered runs |
 
 ---
 
@@ -443,8 +443,10 @@ StratusScanCLI-AWS uses [Semantic Versioning](https://semver.org/).
 | `0.1.x` | Superseded | Initial relaunch |
 | `0.2.x` | Superseded | Backend stabilization, pricing data v2 |
 | `0.3.x` | Superseded | Smart Scan orchestrator, full API correctness audit |
-| `0.4.x` | Current (Beta) | Cost columns for 14 exporters, pricing JSON overhaul |
-| `1.0.0` | Planned | Textual TUI, stable API |
+| `0.4.x` | Superseded | Cost columns for 14 exporters, pricing JSON overhaul |
+| `0.5.x` | Superseded | Multi-account org-scan, CLI flags, signal-based navigation, export formats |
+| `0.6.x` | Current (Beta) | Fail-loud collection sweep, security hardening, smart-scan discovery |
+| `1.0.0` | Planned | Stable API; unattended audit mode |
 
 ---
 
