@@ -315,7 +315,6 @@ class TestDiscoveryCatalogResolves:
         "Amazon Timestream",
         "Amazon EMR",
         "Amazon Kinesis",
-        "Amazon CloudWatch Logs",
         "AWS Amplify",
     }
 
