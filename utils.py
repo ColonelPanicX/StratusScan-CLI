@@ -955,6 +955,12 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         if prepare:
             df = prepare_dataframe_for_export(df)
 
+        # Empty-export suppression + manifest accounting (applies to both formats)
+        rows = int(len(df))
+        skipped = _maybe_skip_empty(filename, rows)
+        if skipped is not None:
+            return skipped
+
         if fmt == "csv":
             # Normalise filename: strip .xlsx if caller passed it, force .csv
             if filename.endswith(".xlsx"):
@@ -966,7 +972,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             df.to_csv(output_path, index=False)
             logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-            return deliver_output(str(output_path))
+            return _finalize_export(str(output_path), rows)
 
         # --- xlsx path ---
         # Ensure the output directory exists
@@ -988,7 +994,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return deliver_output(str(output_path))
+        return _finalize_export(str(output_path), rows)
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
@@ -1031,6 +1037,14 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                 for sheet_name, df in dataframes_dict.items()
             }
 
+        # Per-sheet counts drive empty-suppression (skip only when ALL sheets are
+        # empty) and the manifest's asset accounting.
+        sheets = {name: int(len(df)) for name, df in dataframes_dict.items()}
+        total_rows = sum(sheets.values())
+        skipped = _maybe_skip_empty(filename, total_rows, sheets)
+        if skipped is not None:
+            return skipped
+
         output_dir = get_output_dir()
         os.makedirs(output_dir, exist_ok=True)
 
@@ -1051,7 +1065,11 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                 logger.info(_scrub_log(f"Data successfully exported to: {csv_path}"))
                 delivered.append(deliver_output(str(csv_path)))
 
-            return delivered[0] if delivered else None
+            first = delivered[0] if delivered else None
+            # One manifest line for the whole multi-sheet export (first CSV as the
+            # representative file), with per-sheet counts preserved.
+            _record_run_manifest(filename, total_rows, "written", first, sheets)
+            return first
 
         # --- xlsx path ---
         output_path = get_output_filepath(filename)
@@ -1083,7 +1101,7 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return deliver_output(str(output_path))
+        return _finalize_export(str(output_path), total_rows, sheets)
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
@@ -1348,6 +1366,137 @@ def test_s3_connectivity(
 
     result["ok"] = True
     return result
+
+
+# ---------------------------------------------------------------------------
+# Empty-export suppression + per-run manifest (audit run report)
+# ---------------------------------------------------------------------------
+#
+# Two coupled behaviours that make an unattended --run-all audit trustworthy:
+#
+#   * skip-empty — when an exporter produces no rows, no spreadsheet is written.
+#     This removes the noise of dozens of 0-row workbooks and, crucially, kills
+#     the "empty file looks like a broken exporter" false positive.
+#
+#   * run manifest — every save records what ran and how many assets it found
+#     (including the empties). The manifest is the authoritative answer to
+#     "EC2 was expected but no EC2 file exists — did it run?": yes, it ran and
+#     found 0. Suppression removes the file; the manifest removes the ambiguity.
+#
+# The manifest is written only when STRATUSSCAN_RUN_MANIFEST points at a file
+# (set by the --run-all orchestrator per exporter subprocess). Interactive
+# single exports get suppression but no manifest — their console message
+# ("No data found — export skipped") is the human-facing equivalent.
+
+# Returned by save_* when an empty export is intentionally suppressed. Truthy
+# so the universal exporter idiom `if output_path: log_success` does NOT fall
+# through to a misleading "save failed" error across the 100+ exporters.
+EMPTY_EXPORT_SENTINEL = "(no data found — export skipped)"
+
+
+def skip_empty_exports_enabled() -> bool:
+    """True when empty results should not produce a spreadsheet (default: on)."""
+    return bool(config_value("skip_empty_exports", default=True, section="output_settings"))
+
+
+def _record_run_manifest(
+    filename: str,
+    rows: int,
+    status: str,
+    file_location: Optional[str],
+    sheets: Optional[dict[str, int]] = None,
+) -> None:
+    """
+    Append one record to the per-run manifest if STRATUSSCAN_RUN_MANIFEST is set.
+
+    Best-effort: any failure here is logged at debug and swallowed — recording
+    a manifest line must never break an export. Account/exporter/region context
+    is read from env vars the orchestrator injects into each subprocess.
+
+    Args:
+        filename: The export filename (basename used as the resource hint).
+        rows: Total asset/row count across all sheets.
+        status: "written" or "empty".
+        file_location: Final delivered location (local path or s3:// URI), or None.
+        sheets: Optional per-sheet row counts.
+    """
+    manifest_path = os.environ.get("STRATUSSCAN_RUN_MANIFEST", "").strip()
+    if not manifest_path:
+        return
+
+    try:
+        record = {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "exporter": os.environ.get("STRATUSSCAN_CURRENT_EXPORTER", "").strip() or None,
+            "resource": os.path.basename(filename),
+            "account_id": os.environ.get("STRATUSSCAN_ACCOUNT_ID", "").strip() or None,
+            "account_name": os.environ.get("STRATUSSCAN_ACCOUNT_NAME", "").strip() or None,
+            "regions": os.environ.get("STRATUSSCAN_REGIONS", "").strip() or None,
+            "rows": rows,
+            "status": status,
+            "file": file_location,
+            "sheets": sheets or None,
+        }
+        # Append-only JSONL; concurrent appends are avoided because exporters
+        # run sequentially, but a single write() of one line is atomic enough.
+        with open(manifest_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("stratusscan").debug("Run-manifest record failed: %s", e)
+
+
+def _maybe_skip_empty(
+    filename: str, rows: int, sheets: Optional[dict[str, int]] = None
+) -> Optional[str]:
+    """
+    Decide whether an export with ``rows`` total rows should be suppressed.
+
+    Returns the EMPTY_EXPORT_SENTINEL (and records an "empty" manifest line) when
+    there is no data and suppression is enabled; otherwise None (caller proceeds
+    to write). Centralises the empty-handling so every save path behaves alike.
+    """
+    if rows == 0 and skip_empty_exports_enabled():
+        logger.info("No data for %s — empty export skipped", os.path.basename(filename))
+        _record_run_manifest(filename, 0, "empty", None, sheets)
+        return EMPTY_EXPORT_SENTINEL
+    return None
+
+
+def _finalize_export(
+    local_path: str, rows: int, sheets: Optional[dict[str, int]] = None
+) -> str:
+    """
+    Common tail for every successful save: deliver the file (local or S3) and
+    record a "written" manifest line. Returns the final location (local path or
+    ``s3://`` URI).
+    """
+    final = deliver_output(local_path)
+    _record_run_manifest(local_path, rows, "written", final, sheets)
+    return final
+
+
+def read_run_manifest(manifest_path: str) -> list[dict[str, Any]]:
+    """
+    Read a per-run manifest (JSONL) into a list of records.
+
+    Malformed lines are skipped. Returns an empty list if the file is missing.
+    """
+    records: list[dict[str, Any]] = []
+    if not manifest_path or not os.path.exists(manifest_path):
+        return records
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError as e:
+        logging.getLogger("stratusscan").warning("Could not read run manifest %s: %s", manifest_path, e)
+    return records
 
 
 def detect_default_format() -> str:
