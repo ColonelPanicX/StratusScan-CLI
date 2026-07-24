@@ -1605,6 +1605,116 @@ def build_run_report_dataframe(
     return df
 
 
+# ---------------------------------------------------------------------------
+# Organization-wide scanning (--org-scan): account enumeration + roll-up
+# ---------------------------------------------------------------------------
+#
+# The headless org audit runs from one account (the Audit account), enumerates
+# every active account in the AWS Organization, assumes a uniformly-named
+# read-only scan role in each, and runs the full exporter set per account. This
+# matches the StackSet model where one role name exists org-wide.
+
+# Org-account scan outcomes for the roll-up summary.
+ACCOUNT_STATUS_SCANNED = "SCANNED"        # role assumed, exporters ran
+ACCOUNT_STATUS_ROLE_FAILED = "ROLE FAILED"  # could not assume the scan role — skipped
+
+
+def list_organization_accounts(active_only: bool = True) -> list[dict[str, str]]:
+    """
+    Enumerate accounts in the AWS Organization via ``organizations:ListAccounts``.
+
+    Runs from the management or a delegated-admin account. Library code: returns
+    structured data and never prints.
+
+    Args:
+        active_only: When True (default), only ``ACTIVE`` accounts are returned
+            (SUSPENDED / PENDING_CLOSURE accounts are skipped).
+
+    Returns:
+        list of ``{"id", "name", "email", "status"}`` dicts.
+
+    Raises:
+        Propagates botocore errors (e.g. AccessDenied when the caller lacks
+        Organizations read access) so the caller can report them verbatim.
+    """
+    client = get_boto3_client("organizations")
+    accounts: list[dict[str, str]] = []
+    paginator = client.get_paginator("list_accounts")
+    for page in paginator.paginate():
+        for a in page.get("Accounts", []):
+            status = a.get("Status", "")
+            if active_only and status != "ACTIVE":
+                continue
+            accounts.append({
+                "id": a.get("Id", ""),
+                "name": a.get("Name", ""),
+                "email": a.get("Email", ""),
+                "status": status,
+            })
+    return accounts
+
+
+def verify_assume_role(role_arn: str, region_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    """
+    Pre-flight an STS AssumeRole so a non-assumable account can be skipped before
+    launching 100+ doomed exporter subprocesses.
+
+    Args:
+        role_arn: The scan role ARN to assume.
+        region_name: Optional region (drives FIPS endpoint selection in GovCloud).
+
+    Returns:
+        ``(True, None)`` if the role is assumable, else ``(False, error_string)``
+        with the verbatim error for the run report.
+    """
+    try:
+        sts = get_boto3_client("sts", region_name, role_arn=role_arn)
+        sts.get_caller_identity()
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+
+
+def build_org_summary_dataframe(account_summaries: list[dict[str, Any]]):
+    """
+    Roll up per-account audit outcomes into one org-level summary DataFrame —
+    one row per account, the top-level index over the per-account run reports.
+
+    Args:
+        account_summaries: list of dicts with keys ``account_id``,
+            ``account_name``, ``status`` (ACCOUNT_STATUS_*), ``exporters``,
+            ``ok``, ``empty``, ``no_output``, ``failed``, ``total_assets``,
+            ``report`` (delivered location or ""), and optional ``detail``.
+
+    Returns:
+        pandas.DataFrame sorted by account name.
+    """
+    import pandas as pd
+
+    rows = []
+    for s in account_summaries:
+        rows.append({
+            "Account ID": s.get("account_id", ""),
+            "Account": s.get("account_name", ""),
+            "Status": s.get("status", ""),
+            "Exporters": s.get("exporters", 0),
+            "With Data": s.get("ok", 0),
+            "Empty": s.get("empty", 0),
+            "No Output": s.get("no_output", 0),
+            "Failed": s.get("failed", 0),
+            "Total Assets": s.get("total_assets", 0),
+            "Report": s.get("report", ""),
+            "Detail": s.get("detail", ""),
+        })
+
+    columns = ["Account ID", "Account", "Status", "Exporters", "With Data",
+               "Empty", "No Output", "Failed", "Total Assets", "Report", "Detail"]
+    df = pd.DataFrame(rows, columns=columns)
+    if not df.empty:
+        df = df.sort_values("Account").reset_index(drop=True)
+    return df
+
+
 def detect_default_format() -> str:
     """
     Detect the default export format based on available dependencies.
