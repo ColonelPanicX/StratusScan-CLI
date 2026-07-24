@@ -1257,6 +1257,146 @@ def navigate_menus():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+def _run_full_audit(regions_arg, output) -> None:
+    """
+    Headless full-audit run: execute every exporter non-interactively, write a
+    per-run manifest, then build and deliver a spreadsheet run report.
+
+    This is the command the scheduled CodeBuild runner invokes:
+        stratusscan --run-all --output s3 --regions us-east-1,us-west-2
+
+    Args:
+        regions_arg: Comma-separated region string, or None for exporter defaults.
+        output: 'local', 's3', or None to honour the configured destination.
+
+    Exits the process: 1 on credential failure or zero successful exporters,
+    2 on an --output s3 request with no bucket, 0 otherwise.
+    """
+    print("\nStratusScanCLI-AWS — full audit run")
+    print("=" * 60)
+
+    # 1. Credentials
+    ok, account_id, account_name = utils.validate_aws_credentials()
+    if not ok:
+        utils.log_error("Full audit: AWS credentials not found or invalid")
+        print("  [x] AWS credentials: not found or invalid")
+        sys.exit(1)
+    print(f"  Account: {account_name} ({account_id})")
+
+    # 2. Regions
+    regions = [r.strip() for r in regions_arg.split(",") if r.strip()] if regions_arg else None
+    print(f"  Regions: {', '.join(regions) if regions else 'exporter defaults'}")
+
+    # 3. Output destination — the flag is authoritative over config for this run
+    #    and for every exporter subprocess (inherited via os.environ).
+    if output:
+        os.environ["STRATUSSCAN_OUTPUT_DESTINATION"] = output
+    destination = utils.resolve_s3_destination()
+    if destination["enabled"]:
+        print(f"  Output: s3://{destination['bucket']}/{destination['prefix']}")
+    elif output == "s3":
+        utils.log_error("Full audit: --output s3 requested but no S3 bucket is configured")
+        print("  [x] --output s3 requires a bucket (config output_settings.s3.bucket")
+        print("      or the STRATUSSCAN_S3_BUCKET env var).")
+        sys.exit(2)
+    else:
+        print(f"  Output: local ({utils.get_output_dir()})")
+
+    # 4. Exporters — every *_export.py on disk
+    scripts_dir = utils.get_scripts_dir()
+    exporters = sorted(scripts_dir.glob("*_export.py"))
+    if not exporters:
+        utils.log_error("Full audit: no exporter scripts found")
+        print("  [x] No exporter scripts found.")
+        sys.exit(1)
+    total = len(exporters)
+    print(f"  Exporters: {total}")
+    print("=" * 60)
+
+    # 5. Fresh per-run manifest (children append; parent reads it afterward)
+    run_ts = utils.get_export_date()
+    manifest_path = utils.get_output_dir() / f"{account_name}-audit-run-manifest-{run_ts}.jsonl"
+    try:
+        if manifest_path.exists():
+            manifest_path.unlink()
+    except OSError:
+        pass
+
+    # 6. Run each exporter sequentially. Sequential is deliberate: parallel
+    #    subprocesses multiply API throttling and interleave logs — both bad for
+    #    evidence integrity. A failure never aborts the run; it lands in the report.
+    results = []
+    run_start = time.monotonic()
+    for idx, script_path in enumerate(exporters, 1):
+        name = script_path.name
+        print(f"\n[{idx}/{total}] {name}")
+
+        child_env = os.environ.copy()
+        child_env["STRATUSSCAN_AUTO_RUN"] = "1"
+        child_env["STRATUSSCAN_RUN_MANIFEST"] = str(manifest_path)
+        child_env["STRATUSSCAN_CURRENT_EXPORTER"] = name
+        child_env["STRATUSSCAN_ACCOUNT_ID"] = account_id or ""
+        child_env["STRATUSSCAN_ACCOUNT_NAME"] = account_name or ""
+        if regions:
+            child_env["STRATUSSCAN_REGIONS"] = ",".join(regions)
+
+        start = time.monotonic()
+        return_code = 0
+        error_message = None
+        try:
+            proc = subprocess.run([sys.executable, str(script_path)], env=child_env, timeout=1800)
+            return_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            return_code, error_message = -1, "timed out (30 min)"
+            utils.log_error("Full audit: %s timed out", name)
+        except Exception as exc:  # noqa: BLE001
+            return_code, error_message = -1, str(exc)
+            utils.log_error("Full audit: %s error: %s", name, exc)
+
+        duration = time.monotonic() - start
+        results.append({
+            "script": name,
+            "success": return_code == 0,
+            "return_code": return_code,
+            "duration_seconds": duration,
+            "error_message": error_message,
+        })
+        print(f"      {'done' if return_code == 0 else 'FAILED'} ({duration:.0f}s)")
+
+    run_duration = time.monotonic() - run_start
+
+    # 7. Build + deliver the run report (delivers per destination; never empty,
+    #    so it is never suppressed). STRATUSSCAN_RUN_MANIFEST is intentionally
+    #    NOT set in this parent process, so the report does not record itself.
+    manifest_records = utils.read_run_manifest(str(manifest_path))
+    report_df = utils.build_run_report_dataframe(results, manifest_records)
+    report_filename = utils.create_export_filename(account_name, "audit-run-report")
+    report_location = utils.save_dataframe_to_excel(report_df, report_filename, sheet_name="Run Report")
+
+    # 8. Summary
+    counts = {}
+    if not report_df.empty:
+        counts = report_df["Status"].value_counts().to_dict()
+    n_ok = counts.get(utils.RUN_STATUS_OK, 0)
+    n_empty = counts.get(utils.RUN_STATUS_EMPTY, 0)
+    n_none = counts.get(utils.RUN_STATUS_NO_OUTPUT, 0)
+    n_failed = counts.get(utils.RUN_STATUS_FAILED, 0)
+    total_assets = int(report_df["Assets"].sum()) if not report_df.empty else 0
+
+    print("\n" + "=" * 60)
+    print("FULL AUDIT COMPLETE")
+    print("=" * 60)
+    print(f"  Exporters run : {total}  ({int(run_duration)}s total)")
+    print(f"  With data     : {n_ok}  ({total_assets} assets)")
+    print(f"  Empty (0)     : {n_empty}")
+    print(f"  No output     : {n_none}")
+    print(f"  Failed        : {n_failed}")
+    print(f"  Run report    : {report_location}")
+    print("=" * 60)
+
+    sys.exit(0 if results and n_ok > 0 else 1)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stratusscan",
@@ -1275,6 +1415,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="enable debug-level console output",
+    )
+    parser.add_argument(
+        "--run-all",
+        action="store_true",
+        help="run every exporter non-interactively (headless full audit) and write a run report",
+    )
+    parser.add_argument(
+        "--output",
+        choices=["local", "s3"],
+        default=None,
+        help="output destination for --run-all (overrides config; default: configured destination)",
+    )
+    parser.add_argument(
+        "--regions",
+        default=None,
+        help="comma-separated regions for --run-all (e.g. us-east-1,us-west-2)",
     )
     return parser
 
@@ -1329,6 +1485,10 @@ def main():
     if args.dry_run:
         _run_dry_run()
         return  # sys.exit(0) called inside, but be explicit
+
+    if args.run_all:
+        _run_full_audit(args.regions, args.output)
+        return  # sys.exit() called inside
 
     try:
         utils.log_section("STARTING MAIN MENU NAVIGATION")
