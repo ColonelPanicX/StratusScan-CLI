@@ -848,7 +848,7 @@ def main():
                 except utils.BackSignal:
                     step = 1
                     continue
-                except utils.QuitSignal:
+                except (utils.ExitToMainSignal, utils.QuitSignal):
                     sys.exit(11)
                 instance_filter, filter_desc = result
                 step = 3
