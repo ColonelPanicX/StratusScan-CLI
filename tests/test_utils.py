@@ -372,6 +372,63 @@ class TestNavFooter:
         assert utils.MSG_INVALID_SELECTION == "Invalid selection. Please try again."
 
 
+class TestPromptMultiselect:
+    """Tests for prompt_multiselect() — the shared numbered multi-select."""
+
+    OPTS = ["Alpha", "Bravo", "Charlie"]
+
+    def test_single_pick(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='2'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [2]
+
+    def test_multi_pick(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='1 3'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [1, 3]
+
+    def test_dedupe_preserves_order(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='3 1 3'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [3, 1]
+
+    def test_all_row_selects_everything(self, monkeypatch):
+        # With an All row, row 1 = All → returns every option index.
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='1'):
+            assert utils.prompt_multiselect("PICK", self.OPTS, all_label="All") == [1, 2, 3]
+
+    def test_all_row_offsets_option_indices(self, monkeypatch):
+        # Row 2 (with All at row 1) maps back to option index 1.
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='2 4'):
+            assert utils.prompt_multiselect("PICK", self.OPTS, all_label="All") == [1, 3]
+
+    def test_back_raises_signal(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='b'), pytest.raises(utils.BackSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_exit_raises_exit_to_main(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='x'), pytest.raises(utils.ExitToMainSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_quit_raises_quit(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='q'), pytest.raises(utils.QuitSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_invalid_then_valid(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', side_effect=['z', '9', '2']):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [2]
+
+    def test_auto_run_returns_all(self, monkeypatch):
+        monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
+        assert utils.prompt_multiselect("PICK", self.OPTS) == [1, 2, 3]
+
+
 class TestPromptRegionSelectionNew:
     """Tests for the rewritten prompt_region_selection() function."""
 

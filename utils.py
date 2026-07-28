@@ -330,6 +330,96 @@ def prompt_menu(
         print(MSG_INVALID_SELECTION)
 
 
+def prompt_multiselect(
+    title: str,
+    options: list[str],
+    all_label: Optional[str] = None,
+    allow_back: bool = True,
+    allow_exit: bool = True,
+    allow_quit: bool = True,
+) -> list[int]:
+    """
+    Present a numbered multi-select menu and return the chosen option indices.
+
+    Numbers are entered space-separated (e.g. ``1 3 5``). When *all_label* is
+    provided it is shown as the first numbered row; selecting it returns every
+    option — this replaces the old magic ``0 = All`` convention so every row is
+    a real, consistently-numbered choice. Navigation follows the single-voice
+    standard: ``b``/``x``/``q`` surface as BackSignal / ExitToMainSignal /
+    QuitSignal.
+
+    Args:
+        title: Menu title displayed above the border.
+        options: Selectable option labels (shown after the optional All row).
+        all_label: If given, adds a leading "select all" row with this label.
+        allow_back / allow_exit / allow_quit: Which navigation keys to offer.
+
+    Returns:
+        list[int]: 1-based indices into *options* (never empty).
+
+    Raises:
+        BackSignal / ExitToMainSignal / QuitSignal per the standard.
+    """
+    if is_auto_run():
+        return list(range(1, len(options) + 1))
+
+    has_all = all_label is not None
+    while True:
+        print(f"\n{title}")
+        print("=" * 64)
+        rows = ([all_label] if has_all else []) + list(options)
+        for i, row in enumerate(rows, 1):
+            print(f"  {i:2d}. {row}")
+        print("-" * 64)
+        if allow_back or allow_exit or allow_quit:
+            print(_nav_footer(allow_back, allow_exit, allow_quit))
+        print("=" * 64)
+
+        try:
+            raw = input(
+                "Enter number(s) separated by spaces (e.g. 1  or  1 3 5): "
+            ).strip().lower()
+        except KeyboardInterrupt:
+            print()
+            if allow_quit:
+                raise QuitSignal from None
+            continue
+
+        if allow_back and raw == 'b':
+            raise BackSignal
+        if allow_exit and raw == 'x':
+            raise ExitToMainSignal
+        if allow_quit and raw == 'q':
+            raise QuitSignal
+
+        tokens = raw.split()
+        if not tokens or not all(t.isdigit() for t in tokens):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        picks = [int(t) for t in tokens]
+        if any(p < 1 or p > len(rows) for p in picks):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        # The "All" row (row 1, when present) short-circuits to every option.
+        if has_all and 1 in picks:
+            return list(range(1, len(options) + 1))
+
+        # De-dupe, preserve order, and offset past the All row.
+        offset = 1 if has_all else 0
+        seen: set = set()
+        result: list[int] = []
+        for p in picks:
+            option_index = p - offset
+            if option_index >= 1 and option_index not in seen:
+                seen.add(option_index)
+                result.append(option_index)
+        if result:
+            return result
+        print(MSG_INVALID_SELECTION)
+
+
 def prompt_region_selection(
     service_name: Optional[str] = None,
 ) -> Union[list[str], str]:
