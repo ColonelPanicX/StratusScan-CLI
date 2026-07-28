@@ -480,7 +480,7 @@ def _print_crosscheck_summary(result: Optional[dict[str, Any]]) -> None:
         if len(not_collected) > 10:
             print(f"      ... and {len(not_collected) - 10} more (see report)")
     else:
-        print("  ✓ Every billed service was discovered.")
+        print(f"  {utils.GLYPH_OK} Every billed service was discovered.")
     if unmapped:
         print(f"  • {len(unmapped)} billed service(s) could not be mapped (see report).")
     print("  ─────────────────────────────────────────────────────────────")

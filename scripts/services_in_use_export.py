@@ -1438,7 +1438,7 @@ Examples:
         print("="*60)
         print("SMART SCAN RECOMMENDATIONS")
         print("="*60)
-        print(f"✓ {recommendation_count} export scripts recommended")
+        print(f"{utils.GLYPH_OK} {recommendation_count} export scripts recommended")
         print("  └─ See 'Recommended Scripts' worksheet in Excel export")
         print()
         always_run = len([r for r in df_recommendations.to_dict('records') if r.get('Priority') == 'Always Run'])

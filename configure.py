@@ -1063,7 +1063,7 @@ def manage_cross_account_roles(config: dict):
     """
     Interactive menu for managing cross-account IAM role mappings.
 
-    Mirrors manage_account_mappings() — [A]dd, [R]emove, [B]ack.
+    Mirrors manage_account_mappings() — numbered Add / Remove menu, b = back.
     Validates role ARN format before delegating to utils.
     """
     global _config_modified

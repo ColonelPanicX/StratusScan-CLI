@@ -411,8 +411,8 @@ class ScriptExecutor:
 
         # Overall statistics
         print(f"Total Scripts:     {self.total_scripts}")
-        print(f"Successful:        {len(successful)} ✓")
-        print(f"Failed:            {len(failed)} ✗")
+        print(f"Successful:        {len(successful)} {utils.GLYPH_OK}")
+        print(f"Failed:            {len(failed)} {utils.GLYPH_FAIL}")
         print(f"Success Rate:      {(len(successful)/self.total_scripts*100):.1f}%")
         print(f"Total Time:        {total_minutes}m {total_seconds}s")
         print()
@@ -423,7 +423,7 @@ class ScriptExecutor:
             print("-" * 80)
             for result in successful:
                 output_info = f" → {result.output_file}" if result.output_file else ""
-                print(f"  ✓ {result.script:<45} {result.duration_formatted:>8}{output_info}")
+                print(f"  {utils.GLYPH_OK} {result.script:<45} {result.duration_formatted:>8}{output_info}")
             print()
 
         # Show failed scripts with error details
@@ -431,7 +431,7 @@ class ScriptExecutor:
             print("FAILED SCRIPTS:")
             print("-" * 80)
             for result in failed:
-                print(f"  ✗ {result.script:<45} {result.duration_formatted:>8}")
+                print(f"  {utils.GLYPH_FAIL} {result.script:<45} {result.duration_formatted:>8}")
                 if result.error_message:
                     # error_message is already truncated to 100 chars for console;
                     # full text is available in result.full_error_message
@@ -498,7 +498,7 @@ class ScriptExecutor:
                 self.results.append(result)
                 if show_progress:
                     self._show_progress(script_name)
-                    print(f"✗ Script not found: {script_name}")
+                    print(f"{utils.GLYPH_FAIL} Script not found: {script_name}")
                     print()
                 if session is not None:
                     utils.record_scan_result(
