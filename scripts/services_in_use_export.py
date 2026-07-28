@@ -1345,18 +1345,28 @@ Examples:
 
     utils.log_info(f"AWS Account: {account_name} ({utils.mask_account_id(account_id)})")
 
-    # Detect partition for region examples
+    # Region selection — handle back/exit navigation (was previously ignored).
     regions = utils.prompt_region_selection()
+    if regions in ('back', 'exit'):
+        sys.exit(0)
 
     # Prompt for scan mode (skipped in auto-run — defaults to quick)
     if utils.is_auto_run():
         scan_mode = 'quick'
     else:
-        print("\n  Scan Mode:")
-        print("  [1] Quick Scan  — service presence and resource counts")
-        print("  [2] Deep Scan   — counts + asset breakdown (slower)")
-        mode_choice = input("  Enter choice [1]: ").strip() or "1"
-        scan_mode = 'deep' if mode_choice == '2' else 'quick'
+        try:
+            mode_choice = utils.prompt_menu(
+                "SCAN MODE",
+                [
+                    "Quick Scan  — service presence and resource counts",
+                    "Deep Scan   — counts + asset breakdown (slower)",
+                ],
+            )
+        except utils.BackSignal:
+            sys.exit(10)
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            sys.exit(11)
+        scan_mode = 'deep' if mode_choice == 2 else 'quick'
 
     # Discover services
     print(f"\nScanning {len(regions)} region(s) for services in use ({scan_mode} mode)...")
