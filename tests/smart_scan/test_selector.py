@@ -6,6 +6,7 @@ Tests import structure, class instantiation, and method availability.
 
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -91,3 +92,33 @@ class TestSmartScanSelectorStructure:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestPlainTextFallback:
+    """The no-questionary path must offer a real plain-text selection,
+    not silently degrade to 'run everything' (the pre-fix bug)."""
+
+    SORTED = sorted(MOCK_RECOMMENDATIONS["all_scripts"])
+
+    def test_fallback_returns_selected_subset(self):
+        import utils
+        from smart_scan import selector
+        # sorted(all_scripts): rows 1..N. Pick rows 1 and 3.
+        with patch.object(selector, "QUESTIONARY_AVAILABLE", False), \
+             patch.object(utils, "prompt_multiselect", return_value=[1, 3]):
+            result = selector.interactive_select(MOCK_RECOMMENDATIONS)
+        assert result == {self.SORTED[0], self.SORTED[2]}
+
+    def test_fallback_back_returns_none(self):
+        import utils
+        from smart_scan import selector
+        with patch.object(selector, "QUESTIONARY_AVAILABLE", False), \
+             patch.object(utils, "prompt_multiselect", side_effect=utils.BackSignal):
+            result = selector.interactive_select(MOCK_RECOMMENDATIONS)
+        assert result is None
+
+    def test_fallback_empty_recommendations_returns_none(self):
+        from smart_scan import selector
+        with patch.object(selector, "QUESTIONARY_AVAILABLE", False):
+            result = selector.interactive_select({"all_scripts": set()})
+        assert result is None
