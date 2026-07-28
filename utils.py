@@ -88,6 +88,41 @@ class QuitSignal(Exception):
     """Raised when the user enters 'q' to quit."""
 
 
+# ---------------------------------------------------------------------------
+# Interaction constants — the single-voice standard for every interactive prompt
+# ---------------------------------------------------------------------------
+
+#: Status glyphs. Green check / red x is the tool-wide standard — use these
+#: instead of ✓/✗/ERROR: so status output reads the same everywhere.
+GLYPH_OK = "✅"
+GLYPH_FAIL = "❌"
+
+#: The single invalid-input message for every menu / selection prompt.
+MSG_INVALID_SELECTION = "Invalid selection. Please try again."
+
+
+def _nav_footer(
+    allow_back: bool = True,
+    allow_exit: bool = True,
+    allow_quit: bool = True,
+) -> str:
+    """
+    Build the canonical navigation footer shown beneath interactive menus.
+
+    Returns a single line like ``  b = back  |  x = main menu  |  q = quit``,
+    including only the keys that are enabled. The wording and punctuation here
+    are the single-voice standard — every menu footer routes through this.
+    """
+    parts = []
+    if allow_back:
+        parts.append("b = back")
+    if allow_exit:
+        parts.append("x = main menu")
+    if allow_quit:
+        parts.append("q = quit")
+    return "  " + "  |  ".join(parts)
+
+
 def get_version() -> str:
     """Return the installed package version, or 'dev' if not installed."""
     try:
@@ -231,22 +266,28 @@ def prompt_menu(
     options: list[str],
     allow_back: bool = True,
     allow_exit: bool = True,
+    allow_quit: bool = True,
 ) -> int:
     """
     Display a bordered numbered menu and return the user's choice.
+
+    Navigation follows the single-voice standard: ``b`` = back, ``x`` = main
+    menu, ``q`` = quit — surfaced as BackSignal / ExitToMainSignal / QuitSignal.
 
     Args:
         title: Menu title displayed above the border
         options: List of option strings (displayed as 1..N)
         allow_back: If True, show and accept 'b' to go back (default: True)
-        allow_exit: If True, show and accept 'x' to exit (default: True)
+        allow_exit: If True, show and accept 'x' for the main menu (default: True)
+        allow_quit: If True, show and accept 'q' to quit (default: True)
 
     Returns:
         int 1..N if the user picks a numbered option.
 
     Raises:
         BackSignal: if the user enters 'b' (and allow_back is True).
-        QuitSignal: if the user enters 'x' (and allow_exit is True) or
+        ExitToMainSignal: if the user enters 'x' (and allow_exit is True).
+        QuitSignal: if the user enters 'q' (and allow_quit is True) or
             presses Ctrl-C.
     """
     if is_auto_run():
@@ -257,13 +298,8 @@ def prompt_menu(
     for i, opt in enumerate(options, 1):
         print(f"  {i}. {opt}")
     print("-" * 64)
-    footer_parts = []
-    if allow_back:
-        footer_parts.append("b. Back")
-    if allow_exit:
-        footer_parts.append("x. Exit")
-    if footer_parts:
-        print("  " + "    ".join(footer_parts))
+    if allow_back or allow_exit or allow_quit:
+        print(_nav_footer(allow_back, allow_exit, allow_quit))
     print("=" * 64)
 
     valid = {str(i) for i in range(1, len(options) + 1)}
@@ -271,13 +307,15 @@ def prompt_menu(
         valid.add("b")
     if allow_exit:
         valid.add("x")
+    if allow_quit:
+        valid.add("q")
 
     while True:
         try:
             choice = input("Enter your choice: ").strip().lower()
         except KeyboardInterrupt:
             print()
-            if allow_exit:
+            if allow_quit:
                 raise QuitSignal from None
             continue
 
@@ -285,9 +323,101 @@ def prompt_menu(
             if choice == 'b':
                 raise BackSignal
             if choice == 'x':
+                raise ExitToMainSignal
+            if choice == 'q':
                 raise QuitSignal
             return int(choice)
-        print("Invalid choice. Please try again.")
+        print(MSG_INVALID_SELECTION)
+
+
+def prompt_multiselect(
+    title: str,
+    options: list[str],
+    all_label: Optional[str] = None,
+    allow_back: bool = True,
+    allow_exit: bool = True,
+    allow_quit: bool = True,
+) -> list[int]:
+    """
+    Present a numbered multi-select menu and return the chosen option indices.
+
+    Numbers are entered space-separated (e.g. ``1 3 5``). When *all_label* is
+    provided it is shown as the first numbered row; selecting it returns every
+    option — this replaces the old magic ``0 = All`` convention so every row is
+    a real, consistently-numbered choice. Navigation follows the single-voice
+    standard: ``b``/``x``/``q`` surface as BackSignal / ExitToMainSignal /
+    QuitSignal.
+
+    Args:
+        title: Menu title displayed above the border.
+        options: Selectable option labels (shown after the optional All row).
+        all_label: If given, adds a leading "select all" row with this label.
+        allow_back / allow_exit / allow_quit: Which navigation keys to offer.
+
+    Returns:
+        list[int]: 1-based indices into *options* (never empty).
+
+    Raises:
+        BackSignal / ExitToMainSignal / QuitSignal per the standard.
+    """
+    if is_auto_run():
+        return list(range(1, len(options) + 1))
+
+    has_all = all_label is not None
+    while True:
+        print(f"\n{title}")
+        print("=" * 64)
+        rows = ([all_label] if has_all else []) + list(options)
+        for i, row in enumerate(rows, 1):
+            print(f"  {i:2d}. {row}")
+        print("-" * 64)
+        if allow_back or allow_exit or allow_quit:
+            print(_nav_footer(allow_back, allow_exit, allow_quit))
+        print("=" * 64)
+
+        try:
+            raw = input(
+                "Enter number(s) separated by spaces (e.g. 1  or  1 3 5): "
+            ).strip().lower()
+        except KeyboardInterrupt:
+            print()
+            if allow_quit:
+                raise QuitSignal from None
+            continue
+
+        if allow_back and raw == 'b':
+            raise BackSignal
+        if allow_exit and raw == 'x':
+            raise ExitToMainSignal
+        if allow_quit and raw == 'q':
+            raise QuitSignal
+
+        tokens = raw.split()
+        if not tokens or not all(t.isdigit() for t in tokens):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        picks = [int(t) for t in tokens]
+        if any(p < 1 or p > len(rows) for p in picks):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        # The "All" row (row 1, when present) short-circuits to every option.
+        if has_all and 1 in picks:
+            return list(range(1, len(options) + 1))
+
+        # De-dupe, preserve order, and offset past the All row.
+        offset = 1 if has_all else 0
+        seen: set = set()
+        result: list[int] = []
+        for p in picks:
+            option_index = p - offset
+            if option_index >= 1 and option_index not in seen:
+                seen.add(option_index)
+                result.append(option_index)
+        if result:
+            return result
+        print(MSG_INVALID_SELECTION)
 
 
 def prompt_region_selection(
@@ -342,7 +472,7 @@ def prompt_region_selection(
             choice = prompt_menu("REGION SELECTION", options)
         except BackSignal:
             return 'back'
-        except QuitSignal:
+        except (ExitToMainSignal, QuitSignal):
             return 'exit'
 
         if choice == 1:
@@ -373,7 +503,7 @@ def prompt_region_selection(
                     for i, r in enumerate(available, 1):
                         print(f"  {i:2d}. {r}")
                 print("=" * 64)
-                print("  b. Back    x. Exit")
+                print(_nav_footer())
                 print("=" * 64)
 
                 try:
@@ -386,7 +516,7 @@ def prompt_region_selection(
 
                 if raw == 'b':
                     break  # back to main region menu
-                if raw == 'x':
+                if raw in ('x', 'q'):
                     return 'exit'
 
                 tokens = raw.split()

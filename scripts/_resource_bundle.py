@@ -80,70 +80,24 @@ def _detect_new_xlsx(
 def prompt_script_selection(
     category_name: str,
     scripts: list[tuple[str, str]],
-):
+) -> list[tuple[str, str]]:
     """
     Present a numbered multi-select menu for script selection.
 
-    Returns a list of selected (display_name, filename) tuples,
-    or the strings 'back' or 'exit'.
+    Returns the list of selected (display_name, filename) tuples. Navigation
+    is handled the single-voice way via utils.prompt_multiselect, which raises
+    BackSignal / ExitToMainSignal / QuitSignal for b / x / q.
     """
     # Auto-run mode: select everything without prompting
     if utils.is_auto_run():
         return list(scripts)
 
-    while True:
-        print(f"\nSELECT {category_name.upper()} TO EXPORT")
-        print("=" * 64)
-        print(f"   0. All  (export all {category_name.lower()})")
-        for i, (name, _) in enumerate(scripts, 1):
-            print(f"  {i:2d}. {name}")
-        print("=" * 64)
-        print("   b. Back    x. Exit")
-        print("=" * 64)
-
-        try:
-            raw = input(
-                "Enter number(s) separated by spaces (e.g. 1  or  1 3 5): "
-            ).strip().lower()
-        except KeyboardInterrupt:
-            print()
-            return 'exit'
-
-        if raw == 'b':
-            return 'back'
-        if raw == 'x':
-            return 'exit'
-        if raw == '0':
-            return list(scripts)
-
-        tokens = raw.split()
-        selected: list[tuple[str, str]] = []
-        seen: set = set()
-        valid = True
-
-        for tok in tokens:
-            try:
-                idx = int(tok)
-                if 1 <= idx <= len(scripts):
-                    if idx not in seen:
-                        selected.append(scripts[idx - 1])
-                        seen.add(idx)
-                else:
-                    print(
-                        f"  Invalid number {tok}. "
-                        f"Enter values between 0 and {len(scripts)}."
-                    )
-                    valid = False
-                    break
-            except ValueError:
-                print(f"  Invalid input '{tok}'. Please enter numbers only.")
-                valid = False
-                break
-
-        if valid and selected:
-            return selected
-        if valid and not selected:
-            print("  No scripts selected. Please enter at least one number.")
+    indices = utils.prompt_multiselect(
+        f"SELECT {category_name.upper()} TO EXPORT",
+        [name for name, _ in scripts],
+        all_label=f"All  (every {category_name.lower()} exporter)",
+    )
+    return [scripts[i - 1] for i in indices]
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +263,7 @@ def print_summary(
     print(f"{'=' * 70}")
 
     for r in results:
-        status = "✓" if r.success else "✗"
+        status = utils.GLYPH_OK if r.success else utils.GLYPH_FAIL
         print(f"  {status} {r.name:<35} {_fmt_duration(r.duration_seconds):>8}")
         if not r.success and r.error:
             print(f"      Error: {r.error}")
@@ -378,13 +332,13 @@ def run_bundle(
 
         # ── Step 2: Script selection ──────────────────────────────────────
         elif step == 2:
-            result = prompt_script_selection(category_name, scripts)
-            if result == 'back':
+            try:
+                selected_scripts = prompt_script_selection(category_name, scripts)
+            except utils.BackSignal:
                 step = 1
                 continue
-            if result == 'exit':
+            except (utils.ExitToMainSignal, utils.QuitSignal):
                 sys.exit(11)
-            selected_scripts = result
             step = 3
 
         # ── Step 3: Confirmation ──────────────────────────────────────────

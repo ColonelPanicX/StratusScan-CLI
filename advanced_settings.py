@@ -92,12 +92,10 @@ def configure_concurrent_scanning():
 
     # Enable/disable concurrent scanning
     enabled_str = 'Yes' if current['concurrent_scanning']['enabled'] else 'No'
-    enabled_input = input(f"\nEnable concurrent scanning? (Y/n) [Current: {enabled_str}]: ").strip().lower()
-
-    if enabled_input == '':
-        enabled = current['concurrent_scanning']['enabled']
-    else:
-        enabled = enabled_input != 'n'
+    enabled = utils.prompt_for_confirmation(
+        f"\nEnable concurrent scanning? [Current: {enabled_str}]",
+        default=current['concurrent_scanning']['enabled'],
+    )
 
     if enabled:
         # Configure max workers
@@ -116,12 +114,10 @@ def configure_concurrent_scanning():
 
         # Fallback on error
         fallback_str = 'Yes' if current['concurrent_scanning']['fallback_on_error'] else 'No'
-        fallback_input = input(f"\nFallback to sequential scanning on errors? (Y/n) [Current: {fallback_str}]: ").strip().lower()
-
-        if fallback_input == '':
-            fallback = current['concurrent_scanning']['fallback_on_error']
-        else:
-            fallback = fallback_input != 'n'
+        fallback = utils.prompt_for_confirmation(
+            f"\nFallback to sequential scanning on errors? [Current: {fallback_str}]",
+            default=current['concurrent_scanning']['fallback_on_error'],
+        )
     else:
         max_workers = current['concurrent_scanning']['max_workers']
         fallback = current['concurrent_scanning']['fallback_on_error']
@@ -204,9 +200,10 @@ def configure_caching():
 
     # Enable/disable caching
     enabled_str = 'Yes' if current['caching']['enabled'] else 'No'
-    enabled_input = input(f"\nEnable caching? (Y/n) [Current: {enabled_str}]: ").strip().lower()
-
-    enabled = current['caching']['enabled'] if enabled_input == '' else enabled_input != 'n'
+    enabled = utils.prompt_for_confirmation(
+        f"\nEnable caching? [Current: {enabled_str}]",
+        default=current['caching']['enabled'],
+    )
 
     if enabled:
         # Cache expiration
@@ -367,14 +364,14 @@ def reset_to_defaults():
     print("  - Caching: Enabled (session-only)")
     print("  - Performance: Default tuning values")
 
-    confirm = input("\nAre you sure you want to reset? (yes/no): ").strip().lower()
+    confirm = utils.prompt_for_confirmation("\nAre you sure you want to reset?", default=False)
 
-    if confirm == 'yes':
+    if confirm:
         defaults = get_default_settings()
         save_settings(defaults)
-        print("\n✓ All settings have been reset to defaults.")
+        print(f"\n{utils.GLYPH_OK} All settings have been reset to defaults.")
     else:
-        print("\n✗ Reset cancelled.")
+        print(f"\n{utils.GLYPH_FAIL} Reset cancelled.")
 
 
 def main():
@@ -386,44 +383,46 @@ def main():
     print("Settings are stored in config.json and apply to all export scripts.")
 
     while True:
-        print("\n" + "="*70)
-        print("MAIN MENU")
-        print("="*70)
-        print("\n[1] View Current Settings")
-        print("[2] Configure Concurrent Scanning")
-        print("[3] Configure Progress Display")
-        print("[4] Configure Caching")
-        print("[5] Configure Performance Tuning")
-        print("[6] Reset to Defaults")
-        print("[0] Exit")
-
-        choice = input("\nSelect option: ").strip()
-
-        if choice == '0':
+        try:
+            choice = utils.prompt_menu(
+                "MAIN MENU",
+                [
+                    "View Current Settings",
+                    "Configure Concurrent Scanning",
+                    "Configure Progress Display",
+                    "Configure Caching",
+                    "Configure Performance Tuning",
+                    "Reset to Defaults",
+                    "Exit",
+                ],
+            )
+        except (utils.BackSignal, utils.ExitToMainSignal, utils.QuitSignal):
             print("\nExiting advanced settings. Changes have been saved.")
             break
-        elif choice == '1':
+
+        if choice == 1:
             display_current_settings()
-        elif choice == '2':
+        elif choice == 2:
             current = get_current_settings()
             current['concurrent_scanning'] = configure_concurrent_scanning()
             save_settings(current)
-        elif choice == '3':
+        elif choice == 3:
             current = get_current_settings()
             current['progress_display'] = configure_progress_display()
             save_settings(current)
-        elif choice == '4':
+        elif choice == 4:
             current = get_current_settings()
             current['caching'] = configure_caching()
             save_settings(current)
-        elif choice == '5':
+        elif choice == 5:
             current = get_current_settings()
             current['performance'] = configure_performance()
             save_settings(current)
-        elif choice == '6':
+        elif choice == 6:
             reset_to_defaults()
-        else:
-            print("\n  ERROR: Invalid option. Please try again.")
+        elif choice == 7:
+            print("\nExiting advanced settings. Changes have been saved.")
+            break
 
 
 if __name__ == '__main__':

@@ -2115,7 +2115,7 @@ def main():
                     )
                 except utils.BackSignal:
                     sys.exit(10)
-                except utils.QuitSignal:
+                except (utils.ExitToMainSignal, utils.QuitSignal):
                     sys.exit(11)
                 choice = result
                 step = 2

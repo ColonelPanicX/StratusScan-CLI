@@ -394,7 +394,7 @@ class SmartScanSelector:
                 f.write("=" * 80 + "\n")
 
             print()
-            print(f"✓ Checklist saved to: {filename}")
+            print(f"{utils.GLYPH_OK} Checklist saved to: {filename}")
             print()
             return True
 
@@ -426,7 +426,7 @@ class SmartScanSelector:
                 if selected:
                     # Show confirmation
                     print()
-                    print(f"✓ Selected {len(selected)} script(s)")
+                    print(f"{utils.GLYPH_OK} Selected {len(selected)} script(s)")
                     print()
                     confirm = questionary.confirm(
                         "Proceed with these scripts?", default=True, style=CUSTOM_STYLE
@@ -457,9 +457,46 @@ class SmartScanSelector:
                 return None
 
 
+def _plain_text_select(recommendations: dict[str, Any]) -> Optional[set[str]]:
+    """
+    Plain-text fallback selector for when questionary is unavailable.
+
+    Mirrors the questionary flow's core action — choosing which recommended
+    scripts to run — using the shared utils.prompt_multiselect (stdlib only, so
+    it works in a bare CloudShell session). Returns the selected script set, or
+    None if the user backs out.
+    """
+    all_scripts = sorted(recommendations.get("all_scripts", set()))
+    if not all_scripts:
+        utils.log_warning("No recommended scripts to select.")
+        return None
+
+    stats = recommendations.get("coverage_stats", {})
+    print()
+    print("=" * 64)
+    print("  SMART SCAN — SELECT SCRIPTS TO RUN")
+    print("=" * 64)
+    print(f"  Services discovered: {stats.get('total_services_found', 0)}")
+    print(f"  Scripts recommended: {stats.get('total_scripts_recommended', 0)}")
+
+    try:
+        indices = utils.prompt_multiselect(
+            "RECOMMENDED SCRIPTS",
+            all_scripts,
+            all_label="All recommended scripts",
+        )
+    except (utils.BackSignal, utils.ExitToMainSignal, utils.QuitSignal):
+        return None
+
+    return {all_scripts[i - 1] for i in indices}
+
+
 def interactive_select(recommendations: dict[str, Any]) -> Optional[set[str]]:
     """
     Run interactive script selection.
+
+    Uses questionary's rich UI when available, otherwise falls back to a
+    plain-text multi-select (no silent "run everything" degradation).
 
     Args:
         recommendations: Recommendations dict from analyzer
@@ -468,11 +505,8 @@ def interactive_select(recommendations: dict[str, Any]) -> Optional[set[str]]:
         Set of selected scripts, or None if cancelled
     """
     if not QUESTIONARY_AVAILABLE:
-        utils.log_error(
-            "Interactive selection requires questionary library. "
-            "Install it with: pip install questionary>=2.0.0"
-        )
-        return None
+        utils.log_info("questionary not installed — using plain-text selection.")
+        return _plain_text_select(recommendations)
 
     selector = SmartScanSelector(recommendations)
     return selector.run_interactive()

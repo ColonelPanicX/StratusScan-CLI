@@ -154,26 +154,33 @@ def _run_export(account_id: str, account_name: str) -> None:
     region = 'us-east-1'
 
     # Ask user for time range
-    utils.log_info("\nSelect time range for health events:")
-    utils.log_info("  1. Last 7 days")
-    utils.log_info("  2. Last 30 days")
-    utils.log_info("  3. Last 90 days")
-    utils.log_info("  4. All events (warning: may be large)")
-
     if utils.is_auto_run():
-        choice = "1"
+        choice = 1
     else:
-        choice = input("\nEnter choice (1-4) [default: 1]: ").strip() or "1"
+        try:
+            choice = utils.prompt_menu(
+                "HEALTH EVENT TIME RANGE",
+                [
+                    "Last 7 days",
+                    "Last 30 days",
+                    "Last 90 days",
+                    "All events  (warning: may be large)",
+                ],
+            )
+        except utils.BackSignal:
+            sys.exit(10)
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            sys.exit(11)
 
     # Calculate time filter
     now = datetime.utcnow()
-    if choice == "1":
+    if choice == 1:
         start_time = now - timedelta(days=7)
         time_desc = "last 7 days"
-    elif choice == "2":
+    elif choice == 2:
         start_time = now - timedelta(days=30)
         time_desc = "last 30 days"
-    elif choice == "3":
+    elif choice == 3:
         start_time = now - timedelta(days=90)
         time_desc = "last 90 days"
     else:

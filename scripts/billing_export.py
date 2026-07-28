@@ -387,23 +387,39 @@ def main():
         if not utils.ensure_dependencies('pandas', 'openpyxl', 'dateutil'):
             sys.exit(1)
 
-        # Get user input for date range
+        # Get user input for date range — fully menu-driven (single-voice):
+        # "Last 12 months" plus the 12 most recent complete months, no free-text.
         if utils.is_auto_run():
             date_input = "last 12"
             _, _, start_date, end_date = validate_date_input(date_input)
         else:
-            while True:
-                date_input = input("\nWould you like the last 12 months (type \"last 12\") or a specific month (ex. \"01-2025\")? ")
-                is_valid, is_year_only, start_date, end_date = validate_date_input(date_input)
-                if is_valid:
-                    date_valid, message, _ = validate_date_range(start_date, end_date)
-                    if date_valid:
-                        break
-                    else:
-                        print(f"Error: {message}")
-                        print("Please try again with a more recent date range.")
-                else:
-                    print("Invalid input format. Please enter either \"last 12\" or a month in format \"MM-YYYY\" (e.g., \"01-2025\").")
+            today = datetime.datetime.now()
+            month_options = []  # (value "MM-YYYY", label "Month YYYY"), most recent first
+            y, m = today.year, today.month
+            for _ in range(12):
+                m -= 1
+                if m == 0:
+                    m, y = 12, y - 1
+                month_options.append(
+                    (f"{m:02d}-{y}", datetime.datetime(y, m, 1).strftime("%B %Y"))
+                )
+
+            menu_labels = ["Last 12 months"] + [label for _, label in month_options]
+            try:
+                choice = utils.prompt_menu("BILLING PERIOD", menu_labels)
+            except utils.BackSignal:
+                sys.exit(10)
+            except (utils.ExitToMainSignal, utils.QuitSignal):
+                sys.exit(11)
+
+            date_input = "last 12" if choice == 1 else month_options[choice - 2][0]
+            _, _, start_date, end_date = validate_date_input(date_input)
+
+            # Menu values are always well-formed; still guard the retention range.
+            date_valid, message, _ = validate_date_range(start_date, end_date)
+            if not date_valid:
+                print(f"{utils.GLYPH_FAIL} {message}")
+                sys.exit(1)
 
         # Get billing data
         billing_data = get_billing_data(start_date, end_date)

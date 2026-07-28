@@ -691,29 +691,32 @@ def configure_output_settings(config: dict):
             print(f"  S3 bucket:   {bucket}")
             print(f"  S3 prefix:   {prefix}")
         print()
-        print("  [1] Change export format (xlsx/csv)")
-        print("  [2] Change destination (local/s3)")
-        print("  [3] Set S3 bucket")
-        print("  [4] Set S3 prefix")
-        print("  [5] Test S3 connection")
-        print("  [B] Back to main menu")
-
-        choice = input("\nSelect option: ").strip().upper()
-
-        if choice == "1":
-            _set_output_format(config)
-        elif choice == "2":
-            _set_output_destination(config)
-        elif choice == "3":
-            _set_s3_bucket(config)
-        elif choice == "4":
-            _set_s3_prefix(config)
-        elif choice == "5":
-            _run_s3_connectivity_test(config)
-        elif choice in ("B", ""):
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                [
+                    "Change export format (xlsx/csv)",
+                    "Change destination (local/s3)",
+                    "Set S3 bucket",
+                    "Set S3 prefix",
+                    "Test S3 connection",
+                ],
+            )
+        except utils.BackSignal:
             return
-        else:
-            print("  ❌ Invalid choice.")
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            return
+
+        if choice == 1:
+            _set_output_format(config)
+        elif choice == 2:
+            _set_output_destination(config)
+        elif choice == 3:
+            _set_s3_bucket(config)
+        elif choice == 4:
+            _set_s3_prefix(config)
+        elif choice == 5:
+            _run_s3_connectivity_test(config)
 
 
 def config_wizard(config: dict):
@@ -800,8 +803,8 @@ def main_menu_loop(config: dict, config_path: Path):
                 print("SAVE CONFIGURATION")
                 print("═" * 70)
                 display_summary(config)
-                confirm = input("\nSave this configuration? (y/n): ").lower().strip()
-                if confirm == 'y':
+                confirm = utils.prompt_for_confirmation("\nSave this configuration?", default=False)
+                if confirm:
                     if save_configuration(config, config_path):
                         print("\n✅ Configuration saved successfully!")
                         print("You can now use StratusScan with your configured settings.")
@@ -821,8 +824,8 @@ def main_menu_loop(config: dict, config_path: Path):
             # Exit without saving
             if _config_modified:
                 print("\n⚠️  WARNING: You have unsaved changes!")
-                confirm = input("Exit without saving? (y/n): ").lower().strip()
-                if confirm == 'y':
+                confirm = utils.prompt_for_confirmation("Exit without saving?", default=False)
+                if confirm:
                     print("\n❌ Configuration not saved. Exiting...")
                     return
                 else:
@@ -886,15 +889,17 @@ def manage_account_mappings(config: dict):
         else:
             print("  None configured")
 
-        print("\nOptions:")
-        print("  [A] Add new account")
-        print("  [E] Edit existing account")
-        print("  [D] Delete account")
-        print("  [B] Back to main menu")
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                ["Add new account", "Edit existing account", "Delete account"],
+            )
+        except utils.BackSignal:
+            return
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            return
 
-        choice = input("\nSelect option (A/E/D/B): ").strip().upper()
-
-        if choice == 'A':
+        if choice == 1:
             # Fetch current account identity for defaults
             identity = get_aws_identity()
             default_id = identity['account_id'] if identity and identity.get('account_id') != 'Unknown' else ''
@@ -917,8 +922,10 @@ def manage_account_mappings(config: dict):
                     break
                 if validate_account_id(account_id):
                     if account_id in mappings:
-                        overwrite = input(f"Account {account_id} already exists. Overwrite? (y/n): ").lower().strip()
-                        if overwrite != 'y':
+                        overwrite = utils.prompt_for_confirmation(
+                            f"Account {account_id} already exists. Overwrite?", default=False
+                        )
+                        if not overwrite:
                             continue
                     break
                 else:
@@ -936,7 +943,7 @@ def manage_account_mappings(config: dict):
                 else:
                     print("\n❌ Account name cannot be empty")
 
-        elif choice == 'E':
+        elif choice == 2:
             # Edit existing account
             if not mappings:
                 print("\n❌ No accounts to edit")
@@ -959,7 +966,7 @@ def manage_account_mappings(config: dict):
             else:
                 print(f"\n❌ Account {account_id} not found")
 
-        elif choice == 'D':
+        elif choice == 3:
             # Delete account
             if not mappings:
                 print("\n❌ No accounts to delete")
@@ -968,21 +975,16 @@ def manage_account_mappings(config: dict):
 
             account_id = input("\nEnter Account ID to delete: ").strip()
             if account_id in mappings:
-                confirm = input(f"Delete {account_id} ({mappings[account_id]})? (y/n): ").lower().strip()
-                if confirm == 'y':
+                confirm = utils.prompt_for_confirmation(
+                    f"Delete {account_id} ({mappings[account_id]})?", default=False
+                )
+                if confirm:
                     del mappings[account_id]
                     config['account_mappings'] = mappings
                     _config_modified = True
                     print(f"\n✅ Deleted: {account_id}")
             else:
                 print(f"\n❌ Account {account_id} not found")
-
-        elif choice == 'B':
-            # Back to main menu
-            return
-
-        else:
-            print("\n❌ Invalid choice. Please select A/E/D/B.")
 
 def configure_default_regions(config: dict):
     """Configure default regions."""
@@ -997,31 +999,34 @@ def configure_default_regions(config: dict):
     print(f"\nCurrent default regions: {', '.join(current_regions) if current_regions else 'None'}")
 
     if is_govcloud:
-        print("\n  1. GovCloud — both regions (us-gov-west-1, us-gov-east-1)")
-        print("  C. Custom — enter regions manually")
-        presets = {"1": ["us-gov-west-1", "us-gov-east-1"]}
+        preset_label = "GovCloud — both regions (us-gov-west-1, us-gov-east-1)"
+        preset_regions = ["us-gov-west-1", "us-gov-east-1"]
     else:
-        print("\n  1. US Standard — us-east-1, us-east-2, us-west-1, us-west-2")
-        print("  C. Custom — enter regions manually")
-        presets = {"1": ["us-east-1", "us-east-2", "us-west-1", "us-west-2"]}
+        preset_label = "US Standard — us-east-1, us-east-2, us-west-1, us-west-2"
+        preset_regions = ["us-east-1", "us-east-2", "us-west-1", "us-west-2"]
 
     # Validates standard AWS region format: us-east-1, eu-west-2, us-gov-west-1, etc.
     region_pattern = re.compile(r'^[a-z]{2,3}(-[a-z]+)+-\d+$')
 
     while True:
-        choice = input("\nSelect option (1, C for custom, 0 to cancel): ").strip().upper()
-
-        if choice == '0':
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                [preset_label, "Custom — enter regions manually"],
+            )
+        except utils.BackSignal:
+            return
+        except (utils.ExitToMainSignal, utils.QuitSignal):
             return
 
-        if choice in presets:
-            regions = presets[choice]
+        if choice == 1:
+            regions = preset_regions
             config['default_regions'] = regions
             _config_modified = True
             print(f"\n✅ Default regions set: {', '.join(regions)}")
             break
 
-        elif choice == 'C':
+        elif choice == 2:
             raw = input("  Regions, comma-separated (e.g. eu-west-1,ap-northeast-1): ").strip().lower()
             if not raw:
                 continue
@@ -1044,9 +1049,6 @@ def configure_default_regions(config: dict):
             print(f"\n✅ Default regions set: {', '.join(regions)}")
             break
 
-        else:
-            print("  ❌ Invalid choice. Enter 1, C, or 0.")
-
     input("\nPress Enter to return to menu...")
 
 
@@ -1061,7 +1063,7 @@ def manage_cross_account_roles(config: dict):
     """
     Interactive menu for managing cross-account IAM role mappings.
 
-    Mirrors manage_account_mappings() — [A]dd, [R]emove, [B]ack.
+    Mirrors manage_account_mappings() — numbered Add / Remove menu, b = back.
     Validates role ARN format before delegating to utils.
     """
     global _config_modified
@@ -1080,14 +1082,17 @@ def manage_cross_account_roles(config: dict):
         else:
             print("  None configured")
 
-        print("\nOptions:")
-        print("  [A] Add role")
-        print("  [R] Remove role")
-        print("  [B] Back to main menu")
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                ["Add role", "Remove role"],
+            )
+        except utils.BackSignal:
+            return
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            return
 
-        choice = input("\nSelect option (A/R/B): ").strip().upper()
-
-        if choice == 'A':
+        if choice == 1:
             while True:
                 account_id = input("\nEnter target AWS Account ID (12 digits): ").strip()
                 if not account_id:
@@ -1123,7 +1128,7 @@ def manage_cross_account_roles(config: dict):
                 print(f"\n❌ Failed to add role for account {account_id}")
             input("Press Enter to continue...")
 
-        elif choice == 'R':
+        elif choice == 2:
             if not real_roles:
                 print("\n❌ No roles configured to remove")
                 input("Press Enter to continue...")
@@ -1140,10 +1145,10 @@ def manage_cross_account_roles(config: dict):
                 input("Press Enter to continue...")
                 continue
 
-            confirm = input(
-                f"Remove role for {account_id} ({roles[account_id]})? (y/n): "
-            ).lower().strip()
-            if confirm == 'y':
+            confirm = utils.prompt_for_confirmation(
+                f"Remove role for {account_id} ({roles[account_id]})?", default=False
+            )
+            if confirm:
                 if utils.remove_cross_account_role(account_id):
                     del roles[account_id]
                     config['cross_account_roles'] = roles
@@ -1154,12 +1159,6 @@ def manage_cross_account_roles(config: dict):
             else:
                 print("\n↩ Cancelled")
             input("Press Enter to continue...")
-
-        elif choice == 'B':
-            return
-
-        else:
-            print("\n❌ Invalid choice. Please select A, R, or B.")
 
 
 # ============================================================================
@@ -1190,18 +1189,24 @@ def dependency_management_menu():
             input("\nPress Enter to return to menu...")
             return
 
-        print("\nOptions:")
-        print("  [1] Install missing dependencies automatically")
-        print("  [2] Show installation commands for manual installation")
-        print("  [3] Re-check dependencies")
-        print("  [B] Back to main menu")
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                [
+                    "Install missing dependencies automatically",
+                    "Show installation commands for manual installation",
+                    "Re-check dependencies",
+                ],
+            )
+        except utils.BackSignal:
+            return
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            return
 
-        choice = input("\nSelect option (1-3, B): ").strip().upper()
-
-        if choice == '1':
+        if choice == 1:
             install_dependencies(_dependency_status['missing_packages'])
             _dependency_status = check_dependencies_silent()
-        elif choice == '2':
+        elif choice == 2:
             print("\n" + "═" * 70)
             print("MANUAL INSTALLATION COMMANDS")
             print("═" * 70)
@@ -1211,14 +1216,9 @@ def dependency_management_menu():
             print("\nAlternatively, install all at once:")
             print(f"pip install {' '.join([p['name'] for p in _dependency_status['missing_packages']])}")
             input("\nPress Enter to continue...")
-        elif choice == '3':
+        elif choice == 3:
             print("\n🔄 Re-checking dependencies...")
             continue
-        elif choice == 'B':
-            return
-        else:
-            print("\n❌ Invalid choice. Please select 1-3 or B.")
-            input("Press Enter to continue...")
 
 def install_dependencies(missing_packages: list[dict]) -> bool:
     """
@@ -1241,9 +1241,11 @@ def install_dependencies(missing_packages: list[dict]) -> bool:
     for package in missing_packages:
         print(f"  - {package['name']} - {package['description']}")
 
-    confirm = input(f"\nInstall these {len(missing_packages)} packages now? (y/n): ").lower().strip()
+    confirm = utils.prompt_for_confirmation(
+        f"\nInstall these {len(missing_packages)} packages now?", default=True
+    )
 
-    if confirm != 'y':
+    if not confirm:
         print("\n❌ Installation cancelled.")
         input("Press Enter to continue...")
         return False
@@ -1304,12 +1306,17 @@ def permissions_management_menu():
         if not identity:
             print("\n❌ No AWS credentials found!")
             print("Please configure your AWS credentials before running StratusScan.")
-            print("\nOptions:")
-            print("  [1] Show credential configuration help")
-            print("  [B] Back to main menu")
+            try:
+                choice = utils.prompt_menu(
+                    "Select an option",
+                    ["Show credential configuration help"],
+                )
+            except utils.BackSignal:
+                return
+            except (utils.ExitToMainSignal, utils.QuitSignal):
+                return
 
-            choice = input("\nSelect option (1, B): ").strip().upper()
-            if choice == '1':
+            if choice == 1:
                 print("\n" + "═" * 70)
                 print("AWS CREDENTIALS SETUP")
                 print("═" * 70)
@@ -1322,8 +1329,6 @@ def permissions_management_menu():
                 print("\n3. IAM Role (for EC2 instances)")
                 print("   Attach an IAM role to your EC2 instance")
                 input("\nPress Enter to continue...")
-            elif choice == 'B':
-                return
             continue
 
         print(f"\nAWS Identity: {identity['arn']}")
@@ -1343,26 +1348,27 @@ def permissions_management_menu():
             print(f"\n❌ {_permission_status['required_failed']} required permissions are missing!")
             print("StratusScan scripts may fail without these permissions.")
 
-        print("\nOptions:")
-        print("  [1] Show policy recommendations")
-        print("  [2] View policy file locations")
-        print("  [3] Re-test permissions")
-        print("  [B] Back to main menu")
+        try:
+            choice = utils.prompt_menu(
+                "Select an option",
+                [
+                    "Show policy recommendations",
+                    "View policy file locations",
+                    "Re-test permissions",
+                ],
+            )
+        except utils.BackSignal:
+            return
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            return
 
-        choice = input("\nSelect option (1-3, B): ").strip().upper()
-
-        if choice == '1':
+        if choice == 1:
             show_policy_recommendations_brief()
-        elif choice == '2':
+        elif choice == 2:
             show_policy_file_locations()
-        elif choice == '3':
+        elif choice == 3:
             print("\n🔄 Re-testing permissions...")
             continue
-        elif choice == 'B':
-            return
-        else:
-            print("\n❌ Invalid choice. Please select 1-3 or B.")
-            input("Press Enter to continue...")
 
 def show_policy_recommendations_brief():
     """Show brief policy recommendations."""

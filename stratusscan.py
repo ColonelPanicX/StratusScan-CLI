@@ -207,9 +207,7 @@ def install_dependency(dependency):
         bool: True if installed successfully, False otherwise
     """
     print(f"\nPackage '{dependency}' is required but not installed.")
-    response = input(f"Would you like to install {dependency}? (y/n): ").lower()
-
-    if response == 'y':
+    if utils.prompt_for_confirmation(f"Would you like to install {dependency}?", default=False):
         try:
             import subprocess
             print(f"Installing {dependency}...")
@@ -1006,32 +1004,27 @@ def _show_session_detail(session: dict) -> None:
 def show_scan_history() -> None:
     """Display recent scan sessions and allow drilling into details."""
     sessions = utils.load_scan_sessions(10)
-    SEP = "─" * 70
-    print(f"\nSCAN HISTORY (last {len(sessions)} sessions)")
-    print(SEP)
-
     if not sessions:
+        print("\nSCAN HISTORY")
+        print("─" * 70)
         print("  No scan sessions found.")
         input("\nPress Enter to return...")
         return
 
-    for idx, s in enumerate(sessions, 1):
+    options = []
+    for s in sessions:
         n_done = len(s.get("results", []))
         n_total = len(s.get("planned", []))
         status = s.get("status", "?")
         icon = "✅" if status == "completed" else ("⚠ " if status == "running" else "?")
         ts = s.get("started_at", "")[:16].replace("T", " ")
-        print(f"  [{idx}] {icon} {s.get('label', s.get('scan_type'))} — {n_done}/{n_total} | {ts}")
+        options.append(f"{icon} {s.get('label', s.get('scan_type'))} — {n_done}/{n_total} | {ts}")
 
-    print(SEP)
-    print("  [#] View session details    [B] Back")
-    choice = input("\nSelect: ").strip().upper()
-    if choice == "B" or not choice:
+    try:
+        choice = utils.prompt_menu(f"SCAN HISTORY (last {len(sessions)} sessions)", options)
+    except (BackSignal, ExitToMainSignal, QuitSignal):
         return
-    if choice.isdigit():
-        idx = int(choice) - 1
-        if 0 <= idx < len(sessions):
-            _show_session_detail(sessions[idx])
+    _show_session_detail(sessions[choice - 1])
 
 
 def _resume_org_scan_from_session(session: dict) -> None:
@@ -1072,8 +1065,9 @@ def _resume_org_scan_from_session(session: dict) -> None:
         input("  Press Enter to return to menu...")
         return
 
-    confirm = input(f"\n  Run {script_name} across {n_remaining} remaining account(s)? (y/n): ").strip().lower()
-    if confirm != "y":
+    if not utils.prompt_for_confirmation(
+        f"\n  Run {script_name} across {n_remaining} remaining account(s)?", default=False
+    ):
         return
 
     utils.resume_scan_session(session)
@@ -1137,18 +1131,21 @@ def _startup_interrupted_check() -> None:
     print(f"  {label}")
     print(f"  Started: {ts}  |  Completed: {n_done}/{n_total}")
     print(f"  {SEP}")
-    print("  [Y] Resume now")
-    print("  [N] Skip — go to main menu")
-    print("  [H] View scan history")
     print(f"  {SEP}")
 
-    choice = input("\n  Choice [Y/N/H]: ").strip().upper() or "N"
+    try:
+        choice = utils.prompt_menu(
+            "RESUME INTERRUPTED SCAN?",
+            ["Resume now", "Skip — go to main menu", "View scan history"],
+        )
+    except (BackSignal, ExitToMainSignal, QuitSignal):
+        return
 
-    if choice == "H":
+    if choice == 3:
         show_scan_history()
         return
 
-    if choice != "Y":
+    if choice != 1:
         return
 
     if scan_type == "org-scan":
@@ -1161,7 +1158,7 @@ def _startup_interrupted_check() -> None:
         subprocess.run([sys.executable, str(smart_scan_path)], env=child_env)
         input("\n  Press Enter to return to menu...")
     else:
-        print(f"\n  ❌ Unknown scan type '{scan_type}' — use [H] Scan History to view details.")
+        print(f"\n  ❌ Unknown scan type '{scan_type}' — use Scan History to view details.")
         input("  Press Enter to return to menu...")
 
 
