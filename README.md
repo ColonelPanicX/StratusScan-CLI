@@ -1,6 +1,6 @@
 # StratusScanCLI-AWS
 
-[![Version: 0.6.0](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
+[![Version: 0.7.0](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/ColonelPanicX/StratusScanCLI-AWS/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow.svg)](#project-status)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -388,11 +388,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the exporter script template and cont
 
 ## Project Status
 
-**Current version: 0.6.0-beta**
+**Current version: 0.7.0-beta**
 
 StratusScanCLI-AWS is in active beta development. The API and output format may change before the 1.0.0 stable release. All active development occurs on the `dev` branch; `main` is release snapshots only.
 
-### What's new in v0.6.0
+### What's new in v0.7.0
+
+- **Unattended audit mode (manual half)**: The pieces needed to run a full audit without a human at the keyboard. `--run-all` executes every exporter in one headless pass and writes a spreadsheet run report; `--org-scan` extends that across every account in an AWS Organization via `--scan-role`; exports can be delivered straight to S3 instead of the local `output/` directory; and each run emits a manifest recording what ran, what it found, and what failed. Empty exports are suppressed by default — an exporter that finds nothing writes no spreadsheet, but the run report still records it as "ran, 0 assets" (#175, #199, #202, #203, #204).
+- **One interaction voice across the CLI**: Every interactive surface — menus, multi-selects, confirmations, the config wizards — now speaks a single contract. Numbered `1..N` menus, `b` = back / `x` = main menu / `q` = quit everywhere, two-tier confirmations, and consistent ✅/❌ status glyphs. This replaces five competing prompt dialects that had accumulated across the codebase; the Cost Management all-in-one menu in particular no longer changes input style between steps. Three latent bugs surfaced and were fixed in the process: the Cost bundle silently skipped Compute Optimizer, Smart Scan ran everything when `questionary` was absent instead of offering a real fallback, and the services-in-use exporter ignored the region back/exit signal (#252).
+- **Path-handling hardening**: File paths built from caller-supplied values are now validated against a single containment helper, so a crafted account name in `config.json` cannot steer an export outside its intended directory (CWE-73). Closes a real bug found alongside it — the Smart Scan checklist was written to the current working directory rather than `output/` (#253).
+- **Smart Scan discovery**: `Amazon CloudWatch Logs` now resolves to the CloudWatch exporter instead of being misclassified as having no exporter (#251).
+
+### Previously in v0.6.0
 
 - **Fail-loud collection (reliability)**: All 96 region- and account-scoped exporters now surface collection failures instead of silently emitting empty results. On an API failure an exporter writes a `*-FAILED-*.txt` marker and exits non-zero; a genuinely empty account still exits 0. This makes partial or failed audits detectable rather than indistinguishable from an empty account. **Behavior change:** automation keying on exit codes will now see a non-zero exit on collection errors.
 - **Security hardening**: Python floor raised to 3.10 (pulls the patched `urllib3 2.7.0`); subprocess launcher containment guard (only known, validated scripts can run); log-forging (CWE-117) and file-path (CWE-73) cleanup; `os.system` screen-clear replaced with an ANSI escape.
@@ -428,8 +435,8 @@ StratusScanCLI-AWS is in active beta development. The API and output format may 
 
 | Version | Target | Notes |
 |---|---|---|
-| `0.6.x` | Patch releases | Coverage gaps, pricing data refresh, live-account hardening |
-| `1.0.0` | Planned | Stable API; unattended audit mode — scheduled, cross-account, S3-delivered runs |
+| `0.7.x` | Patch releases | Coverage gaps, pricing data refresh, live-account hardening |
+| `1.0.0` | Planned | Stable API; scheduled unattended audit mode — one-command deployment of the recurring runner (the manual cross-account and S3-delivery half shipped in `0.7.0`) |
 
 ---
 
@@ -445,8 +452,9 @@ StratusScanCLI-AWS uses [Semantic Versioning](https://semver.org/).
 | `0.3.x` | Superseded | Smart Scan orchestrator, full API correctness audit |
 | `0.4.x` | Superseded | Cost columns for 14 exporters, pricing JSON overhaul |
 | `0.5.x` | Superseded | Multi-account org-scan, CLI flags, signal-based navigation, export formats |
-| `0.6.x` | Current (Beta) | Fail-loud collection sweep, security hardening, smart-scan discovery |
-| `1.0.0` | Planned | Stable API; unattended audit mode |
+| `0.6.x` | Superseded | Fail-loud collection sweep, security hardening, smart-scan discovery |
+| `0.7.x` | Current (Beta) | Unattended audit mode (manual half), single-voice CLI, path-handling hardening |
+| `1.0.0` | Planned | Stable API; scheduled unattended audit mode |
 
 ---
 
