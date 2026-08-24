@@ -354,7 +354,10 @@ class SmartScanSelector:
             filename = f"smart-scan-checklist-{timestamp}.txt"
 
         try:
-            with open(filename, "w", encoding='utf-8') as f:
+            # Write into output/ alongside every other artifact, with the same
+            # containment check the exporters use (CWE-73).
+            checklist_path = utils.get_output_filepath(filename)
+            with open(checklist_path, "w", encoding='utf-8') as f:
                 f.write("=" * 80 + "\n")
                 f.write(" " * 28 + "SMART SCAN CHECKLIST\n")
                 f.write("=" * 80 + "\n\n")
@@ -394,7 +397,7 @@ class SmartScanSelector:
                 f.write("=" * 80 + "\n")
 
             print()
-            print(f"{utils.GLYPH_OK} Checklist saved to: {filename}")
+            print(f"{utils.GLYPH_OK} Checklist saved to: {checklist_path}")
             print()
             return True
 

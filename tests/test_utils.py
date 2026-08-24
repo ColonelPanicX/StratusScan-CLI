@@ -645,3 +645,134 @@ class TestParseScriptArgs:
     def teardown_method(self, method):
         """Reset _SCRIPT_ARGS after each test to avoid cross-test contamination."""
         utils._SCRIPT_ARGS = None
+
+
+class TestSanitizeFilenameComponent:
+    """sanitize_filename_component() strips path-altering characters (CWE-73)
+    without disturbing ordinary names."""
+
+    @pytest.mark.parametrize("value", [
+        'PROD-ACCOUNT',
+        'ec2',
+        'my account 01',
+        'acct_name-v2',
+        'Account.Name',
+        '',
+    ])
+    def test_ordinary_names_pass_through_unchanged(self, value):
+        assert utils.sanitize_filename_component(value) == value
+
+    def test_forward_slash_stripped(self):
+        assert utils.sanitize_filename_component('a/b') == 'ab'
+
+    def test_backslash_stripped(self):
+        assert utils.sanitize_filename_component(r'a\b') == 'ab'
+
+    def test_parent_directory_marker_stripped(self):
+        assert utils.sanitize_filename_component('../etc') == 'etc'
+
+    def test_nested_parent_markers_cannot_reconstitute(self):
+        # A single non-repeating pass on '....' would leave '..'
+        assert '..' not in utils.sanitize_filename_component('....')
+
+    def test_null_byte_stripped(self):
+        assert utils.sanitize_filename_component('a\x00b') == 'ab'
+
+    def test_control_characters_stripped(self):
+        assert utils.sanitize_filename_component('a\r\nb') == 'ab'
+
+    def test_leading_and_trailing_dots_and_spaces_stripped(self):
+        assert utils.sanitize_filename_component('  .hidden.  ') == 'hidden'
+
+    def test_traversal_payload_is_defanged(self):
+        assert utils.sanitize_filename_component('../../etc/passwd') == 'etcpasswd'
+
+    def test_non_string_input_coerced(self):
+        assert utils.sanitize_filename_component(42) == '42'
+
+
+class TestContainedPath:
+    """contained_path() confines a caller-supplied name to a base directory."""
+
+    def test_plain_filename_resolves_inside_base(self, tmp_path):
+        result = utils.contained_path(tmp_path, 'report.xlsx')
+        assert result == tmp_path / 'report.xlsx'
+
+    def test_traversal_is_reduced_to_basename(self, tmp_path):
+        # basename() collapses the traversal rather than escaping
+        result = utils.contained_path(tmp_path, '../../etc/passwd')
+        assert result == tmp_path / 'passwd'
+        assert result.parent == tmp_path
+
+    def test_absolute_path_is_reduced_to_basename(self, tmp_path):
+        result = utils.contained_path(tmp_path, '/etc/shadow')
+        assert result == tmp_path / 'shadow'
+
+    @pytest.mark.parametrize("bad", ['', '.', '..', '/', '../'])
+    def test_names_with_no_usable_component_are_rejected(self, tmp_path, bad):
+        with pytest.raises(ValueError):
+            utils.contained_path(tmp_path, bad)
+
+    def test_result_never_escapes_base(self, tmp_path):
+        for candidate in ['a/b/c.txt', '../x.txt', './y.txt', 'z.txt']:
+            result = utils.contained_path(tmp_path, candidate)
+            assert result.resolve().parent == tmp_path.resolve()
+
+    def test_get_output_filepath_delegates_to_containment(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(utils, 'get_output_dir', lambda: tmp_path)
+        assert utils.get_output_filepath('../escape.xlsx') == tmp_path / 'escape.xlsx'
+
+
+class TestExportFilenameContainment:
+    """A crafted account_name in config.json must not steer the export path."""
+
+    def test_normal_account_name_is_untouched(self):
+        filename = utils.create_export_filename(
+            account_name='PROD-ACCOUNT', resource_type='ec2', suffix='running'
+        )
+        assert filename.startswith('PROD-ACCOUNT-ec2-running-export-')
+
+    def test_traversal_in_account_name_is_stripped(self):
+        filename = utils.create_export_filename(
+            account_name='../../etc', resource_type='ec2', suffix=''
+        )
+        assert '..' not in filename
+        assert '/' not in filename
+
+    def test_traversal_in_resource_type_is_stripped(self):
+        filename = utils.create_export_filename(
+            account_name='ACCT', resource_type='../ec2', suffix=''
+        )
+        assert '..' not in filename
+        assert '/' not in filename
+
+    def test_sanitized_filename_stays_contained(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(utils, 'get_output_dir', lambda: tmp_path)
+        filename = utils.create_export_filename(
+            account_name='../../../tmp/evil', resource_type='ec2', suffix=''
+        )
+        assert utils.get_output_filepath(filename).parent == tmp_path
+
+
+class TestLogErrorScrubbing:
+    """Every log_error() branch must scrub CRLF (CWE-117), including the
+    debug/stack-trace branch."""
+
+    def test_debug_branch_scrubs_crlf(self):
+        mock_logger = Mock()
+        with patch.object(utils, 'get_logger', return_value=mock_logger):
+            utils.log_error('boom', ValueError('line1\r\nFAKE: forged entry'))
+
+        debug_message = mock_logger.debug.call_args[0][0]
+        assert '\n' not in debug_message
+        assert '\r' not in debug_message
+        assert 'FAKE: forged entry' in debug_message
+
+    def test_error_branch_still_scrubs_crlf(self):
+        mock_logger = Mock()
+        with patch.object(utils, 'get_logger', return_value=mock_logger):
+            utils.log_error('boom', ValueError('a\r\nb'))
+
+        error_message = mock_logger.error.call_args[0][0]
+        assert '\n' not in error_message
+        assert '\r' not in error_message
