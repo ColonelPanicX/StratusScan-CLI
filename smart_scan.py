@@ -68,18 +68,18 @@ except ImportError as exc:
 
 
 def _prompt_scan_mode() -> str:
-    """Prompt user for Quick or Deep scan mode. Exits on b/x."""
-    print()
-    print("  ─── SCAN MODE ───────────────────────────────────────────────")
-    print("  [1] Quick Scan  — discover services, save a report, done")
-    print("  [2] Deep Scan   — discover services, then run export scripts")
-    print("  ─────────────────────────────────────────────────────────────")
-    print("  [B] Back    [X] Exit")
-    print("  ─────────────────────────────────────────────────────────────")
-    choice = input("  Enter choice [1]: ").strip().lower() or "1"
-    if choice in ('b', 'x'):
+    """Prompt user for Quick or Deep scan mode. Exits on b/x/q."""
+    try:
+        choice = utils.prompt_menu(
+            "SCAN MODE",
+            [
+                "Quick Scan  — discover services, save a report, done",
+                "Deep Scan   — discover services, then run export scripts",
+            ],
+        )
+    except (utils.BackSignal, utils.ExitToMainSignal, utils.QuitSignal):
         sys.exit(0)
-    return 'deep' if choice == '2' else 'quick'
+    return 'deep' if choice == 2 else 'quick'
 
 
 def _format_detail(detail: dict[str, int]) -> str:
@@ -480,7 +480,7 @@ def _print_crosscheck_summary(result: Optional[dict[str, Any]]) -> None:
         if len(not_collected) > 10:
             print(f"      ... and {len(not_collected) - 10} more (see report)")
     else:
-        print("  ✓ Every billed service was discovered.")
+        print(f"  {utils.GLYPH_OK} Every billed service was discovered.")
     if unmapped:
         print(f"  • {len(unmapped)} billed service(s) could not be mapped (see report).")
     print("  ─────────────────────────────────────────────────────────────")
@@ -616,27 +616,31 @@ def main() -> None:
         return
 
     print()
-    print("  ─── RUN SCRIPTS ─────────────────────────────────────────────")
     print(f"  {n_scripts} export scripts are recommended for this account.")
-    print("  [Y] Run all recommended scripts now")
-    print("  [N] Exit — report saved, run scripts later")
-    print("  [C] Customize — choose specific scripts to run")
-    print("  ─────────────────────────────────────────────────────────────")
-    choice = input("  Enter choice [Y/N/C] (default N): ").strip().upper() or "N"
+    try:
+        gate = utils.prompt_menu(
+            "RUN SCRIPTS",
+            [
+                "Run all recommended scripts now",
+                "Exit — report saved, run scripts later",
+                "Customize — choose specific scripts to run",
+            ],
+        )
+    except (utils.BackSignal, utils.ExitToMainSignal, utils.QuitSignal):
+        utils.log_info("Exiting. Reports saved.")
+        return
 
-    if choice == 'N':
+    if gate == 2:
         utils.log_info("Exiting. Reports saved.")
         return
 
     selected_scripts = recommendations.get('all_scripts', set())
 
-    if choice == 'C':
+    if gate == 3:
+        # interactive_select handles the questionary / plain-text fallback itself.
         try:
-            from smart_scan.selector import QUESTIONARY_AVAILABLE, interactive_select
-            if QUESTIONARY_AVAILABLE:
-                selected_scripts = interactive_select(recommendations) or set()
-            else:
-                utils.log_warning("questionary not installed — running all recommended scripts")
+            from smart_scan.selector import interactive_select
+            selected_scripts = interactive_select(recommendations) or set()
         except ImportError:
             utils.log_warning("Selector unavailable — running all recommended scripts")
 
@@ -658,10 +662,10 @@ def main() -> None:
         prev = interrupted_smart[0]
         n_done = len(prev.get("results", []))
         n_total = len(prev.get("planned", []))
-        ans = input(
-            f"  Resume interrupted smart scan? ({n_done}/{n_total} scripts done) [y/n]: "
-        ).strip().lower()
-        if ans == "y":
+        if utils.prompt_for_confirmation(
+            f"Resume interrupted smart scan? ({n_done}/{n_total} scripts done)",
+            default=False,
+        ):
             utils.resume_scan_session(prev)
             session = prev
             done_keys = {r["key"] for r in prev.get("results", []) if r.get("status") == "success"}

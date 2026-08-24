@@ -1726,7 +1726,7 @@ def main():
                     )
                 except utils.BackSignal:
                     sys.exit(10)
-                except utils.QuitSignal:
+                except (utils.ExitToMainSignal, utils.QuitSignal):
                     sys.exit(11)
                 choice = result
                 step = 2
@@ -1745,7 +1745,7 @@ def main():
                     except utils.BackSignal:
                         step = 1
                         continue
-                    except utils.QuitSignal:
+                    except (utils.ExitToMainSignal, utils.QuitSignal):
                         sys.exit(11)
                     include_aws_managed = (result == 2)
                     step = 3

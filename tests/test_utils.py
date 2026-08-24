@@ -336,8 +336,13 @@ class TestPromptMenu:
         with patch('builtins.input', return_value='b'), pytest.raises(utils.BackSignal):
             utils.prompt_menu("TEST MENU", ["Option A"])
 
-    def test_exit_raises_signal(self):
-        with patch('builtins.input', return_value='x'), pytest.raises(utils.QuitSignal):
+    def test_exit_raises_exit_to_main_signal(self):
+        # 'x' = main menu — the single-voice standard (was QuitSignal before).
+        with patch('builtins.input', return_value='x'), pytest.raises(utils.ExitToMainSignal):
+            utils.prompt_menu("TEST MENU", ["Option A"])
+
+    def test_quit_raises_quit_signal(self):
+        with patch('builtins.input', return_value='q'), pytest.raises(utils.QuitSignal):
             utils.prompt_menu("TEST MENU", ["Option A"])
 
     def test_invalid_then_valid(self):
@@ -349,6 +354,79 @@ class TestPromptMenu:
         monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
         result = utils.prompt_menu("TEST MENU", ["Option A", "Option B"])
         assert result == 1
+
+
+class TestNavFooter:
+    """Locks the single-voice navigation footer + interaction constants."""
+
+    def test_full_footer_wording(self):
+        assert utils._nav_footer() == "  b = back  |  x = main menu  |  q = quit"
+
+    def test_footer_includes_only_enabled_keys(self):
+        assert utils._nav_footer(allow_back=False) == "  x = main menu  |  q = quit"
+        assert utils._nav_footer(allow_exit=False, allow_quit=False) == "  b = back"
+
+    def test_constants(self):
+        assert utils.GLYPH_OK == "✅"
+        assert utils.GLYPH_FAIL == "❌"
+        assert utils.MSG_INVALID_SELECTION == "Invalid selection. Please try again."
+
+
+class TestPromptMultiselect:
+    """Tests for prompt_multiselect() — the shared numbered multi-select."""
+
+    OPTS = ["Alpha", "Bravo", "Charlie"]
+
+    def test_single_pick(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='2'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [2]
+
+    def test_multi_pick(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='1 3'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [1, 3]
+
+    def test_dedupe_preserves_order(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='3 1 3'):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [3, 1]
+
+    def test_all_row_selects_everything(self, monkeypatch):
+        # With an All row, row 1 = All → returns every option index.
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='1'):
+            assert utils.prompt_multiselect("PICK", self.OPTS, all_label="All") == [1, 2, 3]
+
+    def test_all_row_offsets_option_indices(self, monkeypatch):
+        # Row 2 (with All at row 1) maps back to option index 1.
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='2 4'):
+            assert utils.prompt_multiselect("PICK", self.OPTS, all_label="All") == [1, 3]
+
+    def test_back_raises_signal(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='b'), pytest.raises(utils.BackSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_exit_raises_exit_to_main(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='x'), pytest.raises(utils.ExitToMainSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_quit_raises_quit(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', return_value='q'), pytest.raises(utils.QuitSignal):
+            utils.prompt_multiselect("PICK", self.OPTS)
+
+    def test_invalid_then_valid(self, monkeypatch):
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('builtins.input', side_effect=['z', '9', '2']):
+            assert utils.prompt_multiselect("PICK", self.OPTS) == [2]
+
+    def test_auto_run_returns_all(self, monkeypatch):
+        monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
+        assert utils.prompt_multiselect("PICK", self.OPTS) == [1, 2, 3]
 
 
 class TestPromptRegionSelectionNew:
@@ -384,6 +462,15 @@ class TestPromptRegionSelectionNew:
     def test_exit_returns_string(self, monkeypatch):
         monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
         with patch('utils.prompt_menu', side_effect=utils.QuitSignal), \
+             patch('utils.get_default_regions', return_value=['us-east-1']), \
+             patch('utils.detect_partition', return_value='aws'):
+            result = utils.prompt_region_selection()
+        assert result == 'exit'
+
+    def test_exit_to_main_returns_string(self, monkeypatch):
+        # 'x' from the region menu surfaces as ExitToMainSignal → 'exit'.
+        monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+        with patch('utils.prompt_menu', side_effect=utils.ExitToMainSignal), \
              patch('utils.get_default_regions', return_value=['us-east-1']), \
              patch('utils.detect_partition', return_value='aws'):
             result = utils.prompt_region_selection()
@@ -558,3 +645,134 @@ class TestParseScriptArgs:
     def teardown_method(self, method):
         """Reset _SCRIPT_ARGS after each test to avoid cross-test contamination."""
         utils._SCRIPT_ARGS = None
+
+
+class TestSanitizeFilenameComponent:
+    """sanitize_filename_component() strips path-altering characters (CWE-73)
+    without disturbing ordinary names."""
+
+    @pytest.mark.parametrize("value", [
+        'PROD-ACCOUNT',
+        'ec2',
+        'my account 01',
+        'acct_name-v2',
+        'Account.Name',
+        '',
+    ])
+    def test_ordinary_names_pass_through_unchanged(self, value):
+        assert utils.sanitize_filename_component(value) == value
+
+    def test_forward_slash_stripped(self):
+        assert utils.sanitize_filename_component('a/b') == 'ab'
+
+    def test_backslash_stripped(self):
+        assert utils.sanitize_filename_component(r'a\b') == 'ab'
+
+    def test_parent_directory_marker_stripped(self):
+        assert utils.sanitize_filename_component('../etc') == 'etc'
+
+    def test_nested_parent_markers_cannot_reconstitute(self):
+        # A single non-repeating pass on '....' would leave '..'
+        assert '..' not in utils.sanitize_filename_component('....')
+
+    def test_null_byte_stripped(self):
+        assert utils.sanitize_filename_component('a\x00b') == 'ab'
+
+    def test_control_characters_stripped(self):
+        assert utils.sanitize_filename_component('a\r\nb') == 'ab'
+
+    def test_leading_and_trailing_dots_and_spaces_stripped(self):
+        assert utils.sanitize_filename_component('  .hidden.  ') == 'hidden'
+
+    def test_traversal_payload_is_defanged(self):
+        assert utils.sanitize_filename_component('../../etc/passwd') == 'etcpasswd'
+
+    def test_non_string_input_coerced(self):
+        assert utils.sanitize_filename_component(42) == '42'
+
+
+class TestContainedPath:
+    """contained_path() confines a caller-supplied name to a base directory."""
+
+    def test_plain_filename_resolves_inside_base(self, tmp_path):
+        result = utils.contained_path(tmp_path, 'report.xlsx')
+        assert result == tmp_path / 'report.xlsx'
+
+    def test_traversal_is_reduced_to_basename(self, tmp_path):
+        # basename() collapses the traversal rather than escaping
+        result = utils.contained_path(tmp_path, '../../etc/passwd')
+        assert result == tmp_path / 'passwd'
+        assert result.parent == tmp_path
+
+    def test_absolute_path_is_reduced_to_basename(self, tmp_path):
+        result = utils.contained_path(tmp_path, '/etc/shadow')
+        assert result == tmp_path / 'shadow'
+
+    @pytest.mark.parametrize("bad", ['', '.', '..', '/', '../'])
+    def test_names_with_no_usable_component_are_rejected(self, tmp_path, bad):
+        with pytest.raises(ValueError):
+            utils.contained_path(tmp_path, bad)
+
+    def test_result_never_escapes_base(self, tmp_path):
+        for candidate in ['a/b/c.txt', '../x.txt', './y.txt', 'z.txt']:
+            result = utils.contained_path(tmp_path, candidate)
+            assert result.resolve().parent == tmp_path.resolve()
+
+    def test_get_output_filepath_delegates_to_containment(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(utils, 'get_output_dir', lambda: tmp_path)
+        assert utils.get_output_filepath('../escape.xlsx') == tmp_path / 'escape.xlsx'
+
+
+class TestExportFilenameContainment:
+    """A crafted account_name in config.json must not steer the export path."""
+
+    def test_normal_account_name_is_untouched(self):
+        filename = utils.create_export_filename(
+            account_name='PROD-ACCOUNT', resource_type='ec2', suffix='running'
+        )
+        assert filename.startswith('PROD-ACCOUNT-ec2-running-export-')
+
+    def test_traversal_in_account_name_is_stripped(self):
+        filename = utils.create_export_filename(
+            account_name='../../etc', resource_type='ec2', suffix=''
+        )
+        assert '..' not in filename
+        assert '/' not in filename
+
+    def test_traversal_in_resource_type_is_stripped(self):
+        filename = utils.create_export_filename(
+            account_name='ACCT', resource_type='../ec2', suffix=''
+        )
+        assert '..' not in filename
+        assert '/' not in filename
+
+    def test_sanitized_filename_stays_contained(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(utils, 'get_output_dir', lambda: tmp_path)
+        filename = utils.create_export_filename(
+            account_name='../../../tmp/evil', resource_type='ec2', suffix=''
+        )
+        assert utils.get_output_filepath(filename).parent == tmp_path
+
+
+class TestLogErrorScrubbing:
+    """Every log_error() branch must scrub CRLF (CWE-117), including the
+    debug/stack-trace branch."""
+
+    def test_debug_branch_scrubs_crlf(self):
+        mock_logger = Mock()
+        with patch.object(utils, 'get_logger', return_value=mock_logger):
+            utils.log_error('boom', ValueError('line1\r\nFAKE: forged entry'))
+
+        debug_message = mock_logger.debug.call_args[0][0]
+        assert '\n' not in debug_message
+        assert '\r' not in debug_message
+        assert 'FAKE: forged entry' in debug_message
+
+    def test_error_branch_still_scrubs_crlf(self):
+        mock_logger = Mock()
+        with patch.object(utils, 'get_logger', return_value=mock_logger):
+            utils.log_error('boom', ValueError('a\r\nb'))
+
+        error_message = mock_logger.error.call_args[0][0]
+        assert '\n' not in error_message
+        assert '\r' not in error_message

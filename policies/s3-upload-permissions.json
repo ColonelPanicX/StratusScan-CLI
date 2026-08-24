@@ -1,0 +1,24 @@
+{
+  "__comment": "StratusScan S3 upload (Issue #175). Grants ONLY the write-only access needed to deliver exports to one bucket/prefix — separate and independently auditable from the read-only scan policies. Replace YOUR-BUCKET-NAME with your bucket and adjust the 'stratusscan/' prefix to match output_settings.s3.prefix. For GovCloud use partition 'aws-us-gov' in the ARNs. Note: the HeadBucket API used by the connectivity test is authorized by s3:ListBucket.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StratusScanS3BucketLevel",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME"
+    },
+    {
+      "Sid": "StratusScanS3ObjectWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/stratusscan/*"
+    }
+  ]
+}

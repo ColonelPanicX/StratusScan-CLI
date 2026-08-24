@@ -88,6 +88,41 @@ class QuitSignal(Exception):
     """Raised when the user enters 'q' to quit."""
 
 
+# ---------------------------------------------------------------------------
+# Interaction constants — the single-voice standard for every interactive prompt
+# ---------------------------------------------------------------------------
+
+#: Status glyphs. Green check / red x is the tool-wide standard — use these
+#: instead of ✓/✗/ERROR: so status output reads the same everywhere.
+GLYPH_OK = "✅"
+GLYPH_FAIL = "❌"
+
+#: The single invalid-input message for every menu / selection prompt.
+MSG_INVALID_SELECTION = "Invalid selection. Please try again."
+
+
+def _nav_footer(
+    allow_back: bool = True,
+    allow_exit: bool = True,
+    allow_quit: bool = True,
+) -> str:
+    """
+    Build the canonical navigation footer shown beneath interactive menus.
+
+    Returns a single line like ``  b = back  |  x = main menu  |  q = quit``,
+    including only the keys that are enabled. The wording and punctuation here
+    are the single-voice standard — every menu footer routes through this.
+    """
+    parts = []
+    if allow_back:
+        parts.append("b = back")
+    if allow_exit:
+        parts.append("x = main menu")
+    if allow_quit:
+        parts.append("q = quit")
+    return "  " + "  |  ".join(parts)
+
+
 def get_version() -> str:
     """Return the installed package version, or 'dev' if not installed."""
     try:
@@ -231,22 +266,28 @@ def prompt_menu(
     options: list[str],
     allow_back: bool = True,
     allow_exit: bool = True,
+    allow_quit: bool = True,
 ) -> int:
     """
     Display a bordered numbered menu and return the user's choice.
+
+    Navigation follows the single-voice standard: ``b`` = back, ``x`` = main
+    menu, ``q`` = quit — surfaced as BackSignal / ExitToMainSignal / QuitSignal.
 
     Args:
         title: Menu title displayed above the border
         options: List of option strings (displayed as 1..N)
         allow_back: If True, show and accept 'b' to go back (default: True)
-        allow_exit: If True, show and accept 'x' to exit (default: True)
+        allow_exit: If True, show and accept 'x' for the main menu (default: True)
+        allow_quit: If True, show and accept 'q' to quit (default: True)
 
     Returns:
         int 1..N if the user picks a numbered option.
 
     Raises:
         BackSignal: if the user enters 'b' (and allow_back is True).
-        QuitSignal: if the user enters 'x' (and allow_exit is True) or
+        ExitToMainSignal: if the user enters 'x' (and allow_exit is True).
+        QuitSignal: if the user enters 'q' (and allow_quit is True) or
             presses Ctrl-C.
     """
     if is_auto_run():
@@ -257,13 +298,8 @@ def prompt_menu(
     for i, opt in enumerate(options, 1):
         print(f"  {i}. {opt}")
     print("-" * 64)
-    footer_parts = []
-    if allow_back:
-        footer_parts.append("b. Back")
-    if allow_exit:
-        footer_parts.append("x. Exit")
-    if footer_parts:
-        print("  " + "    ".join(footer_parts))
+    if allow_back or allow_exit or allow_quit:
+        print(_nav_footer(allow_back, allow_exit, allow_quit))
     print("=" * 64)
 
     valid = {str(i) for i in range(1, len(options) + 1)}
@@ -271,13 +307,15 @@ def prompt_menu(
         valid.add("b")
     if allow_exit:
         valid.add("x")
+    if allow_quit:
+        valid.add("q")
 
     while True:
         try:
             choice = input("Enter your choice: ").strip().lower()
         except KeyboardInterrupt:
             print()
-            if allow_exit:
+            if allow_quit:
                 raise QuitSignal from None
             continue
 
@@ -285,9 +323,101 @@ def prompt_menu(
             if choice == 'b':
                 raise BackSignal
             if choice == 'x':
+                raise ExitToMainSignal
+            if choice == 'q':
                 raise QuitSignal
             return int(choice)
-        print("Invalid choice. Please try again.")
+        print(MSG_INVALID_SELECTION)
+
+
+def prompt_multiselect(
+    title: str,
+    options: list[str],
+    all_label: Optional[str] = None,
+    allow_back: bool = True,
+    allow_exit: bool = True,
+    allow_quit: bool = True,
+) -> list[int]:
+    """
+    Present a numbered multi-select menu and return the chosen option indices.
+
+    Numbers are entered space-separated (e.g. ``1 3 5``). When *all_label* is
+    provided it is shown as the first numbered row; selecting it returns every
+    option — this replaces the old magic ``0 = All`` convention so every row is
+    a real, consistently-numbered choice. Navigation follows the single-voice
+    standard: ``b``/``x``/``q`` surface as BackSignal / ExitToMainSignal /
+    QuitSignal.
+
+    Args:
+        title: Menu title displayed above the border.
+        options: Selectable option labels (shown after the optional All row).
+        all_label: If given, adds a leading "select all" row with this label.
+        allow_back / allow_exit / allow_quit: Which navigation keys to offer.
+
+    Returns:
+        list[int]: 1-based indices into *options* (never empty).
+
+    Raises:
+        BackSignal / ExitToMainSignal / QuitSignal per the standard.
+    """
+    if is_auto_run():
+        return list(range(1, len(options) + 1))
+
+    has_all = all_label is not None
+    while True:
+        print(f"\n{title}")
+        print("=" * 64)
+        rows = ([all_label] if has_all else []) + list(options)
+        for i, row in enumerate(rows, 1):
+            print(f"  {i:2d}. {row}")
+        print("-" * 64)
+        if allow_back or allow_exit or allow_quit:
+            print(_nav_footer(allow_back, allow_exit, allow_quit))
+        print("=" * 64)
+
+        try:
+            raw = input(
+                "Enter number(s) separated by spaces (e.g. 1  or  1 3 5): "
+            ).strip().lower()
+        except KeyboardInterrupt:
+            print()
+            if allow_quit:
+                raise QuitSignal from None
+            continue
+
+        if allow_back and raw == 'b':
+            raise BackSignal
+        if allow_exit and raw == 'x':
+            raise ExitToMainSignal
+        if allow_quit and raw == 'q':
+            raise QuitSignal
+
+        tokens = raw.split()
+        if not tokens or not all(t.isdigit() for t in tokens):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        picks = [int(t) for t in tokens]
+        if any(p < 1 or p > len(rows) for p in picks):
+            print(MSG_INVALID_SELECTION)
+            continue
+
+        # The "All" row (row 1, when present) short-circuits to every option.
+        if has_all and 1 in picks:
+            return list(range(1, len(options) + 1))
+
+        # De-dupe, preserve order, and offset past the All row.
+        offset = 1 if has_all else 0
+        seen: set = set()
+        result: list[int] = []
+        for p in picks:
+            option_index = p - offset
+            if option_index >= 1 and option_index not in seen:
+                seen.add(option_index)
+                result.append(option_index)
+        if result:
+            return result
+        print(MSG_INVALID_SELECTION)
 
 
 def prompt_region_selection(
@@ -342,7 +472,7 @@ def prompt_region_selection(
             choice = prompt_menu("REGION SELECTION", options)
         except BackSignal:
             return 'back'
-        except QuitSignal:
+        except (ExitToMainSignal, QuitSignal):
             return 'exit'
 
         if choice == 1:
@@ -373,7 +503,7 @@ def prompt_region_selection(
                     for i, r in enumerate(available, 1):
                         print(f"  {i:2d}. {r}")
                 print("=" * 64)
-                print("  b. Back    x. Exit")
+                print(_nav_footer())
                 print("=" * 64)
 
                 try:
@@ -386,7 +516,7 @@ def prompt_region_selection(
 
                 if raw == 'b':
                     break  # back to main region menu
-                if raw == 'x':
+                if raw in ('x', 'q'):
                     return 'exit'
 
                 tokens = raw.split()
@@ -456,7 +586,7 @@ def log_error(error_message: str, error_obj: Optional[Exception] = None) -> None
     if error_obj:
         current_logger.error(_scrub_log(f"{error_message}: {str(error_obj)}"))
         # Log stack trace for debugging
-        current_logger.debug(f"Exception details: {error_obj}", exc_info=True)
+        current_logger.debug(_scrub_log(f"Exception details: {error_obj}"), exc_info=True)
     else:
         current_logger.error(_scrub_log(error_message))
 
@@ -847,6 +977,60 @@ def get_output_dir() -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
+# Characters that can redirect a path or corrupt a filename: path separators,
+# Windows-reserved punctuation, and control characters (including NUL).
+_UNSAFE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def sanitize_filename_component(value: object) -> str:
+    """
+    Reduce an untrusted value to a safe single filename component (CWE-73).
+
+    Strips — rather than substitutes — path separators, control characters, and
+    parent-directory markers, so ordinary names (letters, digits, spaces, dots,
+    hyphens, underscores) are returned byte-identical and existing export
+    filenames are unaffected.
+
+    Args:
+        value: The untrusted value (e.g. an account name from config.json)
+
+    Returns:
+        str: The value with path-altering characters removed
+    """
+    text = _UNSAFE_NAME_CHARS.sub("", str(value))
+    # Remove parent-directory markers, repeating until stable so that crafted
+    # sequences like '....' cannot reconstitute a '..' after a single pass.
+    while ".." in text:
+        text = text.replace("..", "")
+    # A leading dot would hide the file; a trailing dot/space is stripped by
+    # some filesystems and would let two distinct names collide.
+    return text.strip(" .")
+
+def contained_path(base_dir: "str | Path", filename: str) -> Path:
+    """
+    Resolve ``filename`` to a direct child of ``base_dir``, refusing escapes.
+
+    Containment (CWE-73): reduce to a bare filename and confirm it resolves to a
+    direct child of the base directory, so a crafted name containing path
+    separators or '..' cannot escape it. Ordinary bare filenames pass through
+    unchanged.
+
+    Args:
+        base_dir: The directory the file must live directly inside
+        filename: The candidate filename
+
+    Returns:
+        Path: ``base_dir`` joined with the validated bare filename
+
+    Raises:
+        ValueError: If the name would resolve outside ``base_dir``.
+    """
+    base = Path(base_dir).resolve()
+    safe_name = os.path.basename(str(filename))
+    resolved = (base / safe_name).resolve()
+    if safe_name in ("", ".", "..") or resolved.parent != base:
+        raise ValueError(f"Refusing path outside {base}: {filename!r}")
+    return base / safe_name
+
 def get_output_filepath(filename: str) -> Path:
     """
     Get the full path for a file in the output directory.
@@ -860,16 +1044,7 @@ def get_output_filepath(filename: str) -> Path:
     Raises:
         ValueError: If the name would resolve outside the output directory.
     """
-    output_dir = get_output_dir().resolve()
-    # Containment (CWE-73): reduce to a bare filename and confirm it resolves to
-    # a direct child of the output directory, so a crafted name containing path
-    # separators or '..' cannot escape it. Standard export filenames are already
-    # bare and pass through unchanged.
-    safe_name = os.path.basename(filename)
-    resolved = (output_dir / safe_name).resolve()
-    if safe_name in ("", ".", "..") or resolved.parent != output_dir:
-        raise ValueError(f"Refusing output path outside output directory: {filename!r}")
-    return output_dir / safe_name
+    return contained_path(get_output_dir(), filename)
 
 def create_export_filename(
     account_name: str,
@@ -900,6 +1075,13 @@ def create_export_filename(
     # Get current date if not provided
     if not current_date:
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+
+    # Sanitize caller-supplied components (CWE-73): account_name comes from the
+    # account_mappings in config.json, so a crafted entry must not be able to
+    # steer the export out of the output directory. Ordinary names are unchanged.
+    account_name = sanitize_filename_component(account_name)
+    resource_type = sanitize_filename_component(resource_type)
+    suffix = sanitize_filename_component(suffix)
 
     # Build the base filename
     if suffix:
@@ -955,6 +1137,12 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
         if prepare:
             df = prepare_dataframe_for_export(df)
 
+        # Empty-export suppression + manifest accounting (applies to both formats)
+        rows = int(len(df))
+        skipped = _maybe_skip_empty(filename, rows)
+        if skipped is not None:
+            return skipped
+
         if fmt == "csv":
             # Normalise filename: strip .xlsx if caller passed it, force .csv
             if filename.endswith(".xlsx"):
@@ -966,7 +1154,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             df.to_csv(output_path, index=False)
             logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-            return str(output_path)
+            return _finalize_export(str(output_path), rows)
 
         # --- xlsx path ---
         # Ensure the output directory exists
@@ -988,7 +1176,7 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Data", auto_ad
             df.to_excel(output_path, sheet_name=sheet_name, index=False)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return str(output_path)
+        return _finalize_export(str(output_path), rows)
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
@@ -1031,6 +1219,14 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                 for sheet_name, df in dataframes_dict.items()
             }
 
+        # Per-sheet counts drive empty-suppression (skip only when ALL sheets are
+        # empty) and the manifest's asset accounting.
+        sheets = {name: int(len(df)) for name, df in dataframes_dict.items()}
+        total_rows = sum(sheets.values())
+        skipped = _maybe_skip_empty(filename, total_rows, sheets)
+        if skipped is not None:
+            return skipped
+
         output_dir = get_output_dir()
         os.makedirs(output_dir, exist_ok=True)
 
@@ -1042,17 +1238,20 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                     base_stem = base_stem[: -len(ext)]
                     break
 
-            first_path: Optional[str] = None
+            delivered: list[str] = []
             for sheet_name, df in dataframes_dict.items():
                 slug = _re.sub(r'[^a-z0-9]+', '-', sheet_name.lower()).strip('-')
                 csv_filename = f"{base_stem}-{slug}.csv"
                 csv_path = output_dir / csv_filename
                 df.to_csv(csv_path, index=False)
                 logger.info(_scrub_log(f"Data successfully exported to: {csv_path}"))
-                if first_path is None:
-                    first_path = str(csv_path)
+                delivered.append(deliver_output(str(csv_path)))
 
-            return first_path
+            first = delivered[0] if delivered else None
+            # One manifest line for the whole multi-sheet export (first CSV as the
+            # representative file), with per-sheet counts preserved.
+            _record_run_manifest(filename, total_rows, "written", first, sheets)
+            return first
 
         # --- xlsx path ---
         output_path = get_output_filepath(filename)
@@ -1084,11 +1283,619 @@ def save_multiple_dataframes_to_excel(dataframes_dict: dict[str, Any], filename:
                     _adjust_column_widths(writer.sheets[sheet_name], df)
 
         logger.info(_scrub_log(f"Data successfully exported to: {output_path}"))
-        return str(output_path)
+        return _finalize_export(str(output_path), total_rows, sheets)
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Output delivery — S3 upload (Issue #175)
+# ---------------------------------------------------------------------------
+#
+# Two delivery destinations are supported via the ``output_settings`` config
+# block (or the ``STRATUSSCAN_S3_BUCKET`` env var for headless/CI runs):
+#
+#   * ``local`` (default) — files stay in ``output/`` exactly as before.
+#   * ``s3``            — files are written to ``output/`` first, uploaded to
+#                          the configured bucket, then the local copy is deleted
+#                          on a successful upload. On failure the local file is
+#                          retained as a fallback and the local path is returned.
+#
+# Scanning stays read-only everywhere; the only write any of this performs is a
+# write-only ``PutObject`` to the one designated bucket.
+
+
+def resolve_s3_destination() -> dict[str, Any]:
+    """
+    Resolve the effective output destination from config + environment.
+
+    Resolution priority for the destination:
+      1. ``STRATUSSCAN_OUTPUT_DESTINATION`` env (``local``/``s3``) — authoritative;
+         this is how the ``--output`` flag forces a destination for the headless
+         orchestrator and every exporter subprocess it launches. ``local`` here
+         wins even if a bucket is configured.
+      2. ``STRATUSSCAN_S3_BUCKET`` env set — implies S3 (CI hook; no config.json
+         needed). ``STRATUSSCAN_S3_PREFIX`` optionally overrides the prefix.
+      3. config ``output_settings.destination``.
+
+    Returns:
+        dict: ``{"enabled": bool, "bucket": str, "prefix": str}``.
+              ``enabled`` is True only when S3 delivery is active AND a bucket
+              is known.
+    """
+    settings = config_value("s3", default={}, section="output_settings") or {}
+    config_destination = str(config_value("destination", default="local", section="output_settings")).lower()
+
+    env_dest = os.environ.get("STRATUSSCAN_OUTPUT_DESTINATION", "").strip().lower()
+    env_bucket = os.environ.get("STRATUSSCAN_S3_BUCKET", "").strip()
+    env_prefix = os.environ.get("STRATUSSCAN_S3_PREFIX", "").strip()
+
+    bucket = env_bucket or (settings.get("bucket", "") or "").strip()
+    prefix = env_prefix or settings.get("prefix", "stratusscan/")
+
+    if env_dest in ("local", "s3"):
+        # Explicit flag override wins over everything (including a set bucket).
+        selected = env_dest == "s3"
+    else:
+        # Otherwise a set bucket env, or config, selects S3.
+        selected = bool(env_bucket) or config_destination == "s3"
+
+    return {
+        "enabled": bool(selected and bucket),
+        "bucket": bucket,
+        "prefix": prefix,
+    }
+
+
+def _s3_bootstrap_region() -> str:
+    """
+    Pick a region for the initial bucket-location lookup and as the upload
+    fallback. Order: STRATUSSCAN_REGIONS → config default_regions → us-east-1.
+
+    Using an operating region (rather than hardcoding us-east-1) keeps the
+    partition correct so GovCloud buckets resolve against a GovCloud endpoint.
+    """
+    env_regions = os.environ.get("STRATUSSCAN_REGIONS", "").strip()
+    if env_regions:
+        first = env_regions.split(",")[0].strip()
+        if first:
+            return first
+
+    defaults = config_value("default_regions", default=[]) or []
+    if defaults:
+        return defaults[0]
+
+    return "us-east-1"
+
+
+def _resolve_bucket_region(bucket: str, bootstrap_region: str) -> Optional[str]:
+    """
+    Return the region a bucket lives in via ``GetBucketLocation``.
+
+    ``LocationConstraint`` is ``None``/empty for us-east-1 (AWS quirk); map that
+    back to ``us-east-1``. Returns None if the lookup fails (caller falls back
+    to the bootstrap region).
+    """
+    try:
+        client = get_boto3_client("s3", bootstrap_region)
+        loc = client.get_bucket_location(Bucket=bucket).get("LocationConstraint")
+        return loc or "us-east-1"
+    except Exception as e:
+        logging.getLogger("stratusscan").debug(
+            "GetBucketLocation failed for bucket '%s' from %s: %s", bucket, bootstrap_region, e
+        )
+        return None
+
+
+def _build_s3_key(prefix: str, local_path: str) -> str:
+    """Join a prefix and a file's basename into an S3 key (single '/' separators)."""
+    name = os.path.basename(local_path)
+    prefix = (prefix or "").lstrip("/")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    return f"{prefix}{name}"
+
+
+def upload_to_s3(
+    local_path: str,
+    bucket: str,
+    prefix: str = "stratusscan/",
+    region: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Upload a local file to S3 and delete the local copy on success.
+
+    Uses :func:`get_boto3_client` so the upload inherits retry/FIPS behaviour
+    (GovCloud buckets get a FIPS endpoint automatically). The local file is
+    removed only after a successful upload; on any failure it is left in place
+    as a fallback.
+
+    Args:
+        local_path: Path to the file to upload.
+        bucket: Destination S3 bucket name.
+        prefix: Key prefix within the bucket.
+        region: Bucket region. If None, resolved via GetBucketLocation with a
+                bootstrap-region fallback.
+
+    Returns:
+        str: The ``s3://bucket/key`` URI on success, or None on failure.
+    """
+    log = logging.getLogger("stratusscan")
+
+    if not os.path.exists(local_path):
+        log.error("upload_to_s3: local file does not exist: %s", local_path)
+        return None
+    if not bucket:
+        log.error("upload_to_s3: no bucket configured; cannot upload %s", local_path)
+        return None
+
+    bootstrap = _s3_bootstrap_region()
+    if region is None:
+        region = _resolve_bucket_region(bucket, bootstrap) or bootstrap
+
+    key = _build_s3_key(prefix, local_path)
+    try:
+        client = get_boto3_client("s3", region)
+        client.upload_file(local_path, bucket, key)
+    except Exception as e:
+        log.error("S3 upload failed for %s -> s3://%s/%s: %s", local_path, bucket, key, e)
+        log.error("Local file retained at: %s", local_path)
+        return None
+
+    uri = f"s3://{bucket}/{key}"
+    log.info("Uploaded to %s", uri)
+
+    try:
+        os.remove(local_path)
+    except OSError as e:
+        # Upload succeeded — a stranded local copy is non-fatal, just noisy.
+        log.warning("Uploaded to S3 but could not delete local copy %s: %s", local_path, e)
+
+    return uri
+
+
+def deliver_output(local_path: str) -> str:
+    """
+    Post-save delivery hook: route a freshly-saved file to its destination.
+
+    Called by the ``save_*`` helpers after a file is written locally. If S3
+    delivery is active and an upload succeeds, returns the ``s3://`` URI (the
+    local copy is gone). Otherwise — local destination, no bucket, or a failed
+    upload — returns the original local path unchanged.
+
+    Args:
+        local_path: Path to the file just written to ``output/``.
+
+    Returns:
+        str: The S3 URI when uploaded, else the local path.
+    """
+    dest = resolve_s3_destination()
+    if not dest["enabled"]:
+        return local_path
+
+    uri = upload_to_s3(local_path, dest["bucket"], dest["prefix"])
+    return uri if uri else local_path
+
+
+def test_s3_connectivity(
+    bucket: str,
+    prefix: str = "stratusscan/",
+    region: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Run a full write roundtrip against a bucket and report which step failed.
+
+    Steps: ``HeadBucket`` → ``PutObject`` (probe file) → ``DeleteObject``
+    (cleanup). S3 permissions are notoriously fiddly, so each step's outcome is
+    captured individually with the verbatim boto3 error — no generic "failed"
+    messages. This is library code: it returns a structured result and never
+    prints; the CLI layer renders it.
+
+    Args:
+        bucket: Bucket to test.
+        prefix: Key prefix the probe object is written under.
+        region: Bucket region (resolved via GetBucketLocation if None).
+
+    Returns:
+        dict: ``{"ok": bool, "bucket": str, "region": str|None, "key": str,
+                 "steps": [{"step", "ok", "error"}], "failed_step": str|None}``
+    """
+    result: dict[str, Any] = {
+        "ok": False,
+        "bucket": bucket,
+        "region": region,
+        "key": None,
+        "steps": [],
+        "failed_step": None,
+    }
+
+    if not bucket:
+        result["steps"].append(
+            {"step": "config", "ok": False, "error": "No bucket configured."}
+        )
+        result["failed_step"] = "config"
+        return result
+
+    bootstrap = _s3_bootstrap_region()
+    if region is None:
+        region = _resolve_bucket_region(bucket, bootstrap) or bootstrap
+    result["region"] = region
+
+    key = _build_s3_key(prefix, "stratusscan-connectivity-test.txt")
+    result["key"] = key
+
+    def _run(step_name, fn) -> bool:
+        try:
+            fn()
+            result["steps"].append({"step": step_name, "ok": True, "error": None})
+            return True
+        except Exception as e:
+            result["steps"].append({"step": step_name, "ok": False, "error": str(e)})
+            result["failed_step"] = step_name
+            return False
+
+    try:
+        client = get_boto3_client("s3", region)
+    except Exception as e:
+        result["steps"].append({"step": "client", "ok": False, "error": str(e)})
+        result["failed_step"] = "client"
+        return result
+
+    if not _run("HeadBucket", lambda: client.head_bucket(Bucket=bucket)):
+        return result
+    if not _run(
+        "PutObject",
+        lambda: client.put_object(
+            Bucket=bucket, Key=key, Body=b"stratusscan connectivity test"
+        ),
+    ):
+        return result
+    if not _run("DeleteObject", lambda: client.delete_object(Bucket=bucket, Key=key)):
+        return result
+
+    result["ok"] = True
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Empty-export suppression + per-run manifest (audit run report)
+# ---------------------------------------------------------------------------
+#
+# Two coupled behaviours that make an unattended --run-all audit trustworthy:
+#
+#   * skip-empty — when an exporter produces no rows, no spreadsheet is written.
+#     This removes the noise of dozens of 0-row workbooks and, crucially, kills
+#     the "empty file looks like a broken exporter" false positive.
+#
+#   * run manifest — every save records what ran and how many assets it found
+#     (including the empties). The manifest is the authoritative answer to
+#     "EC2 was expected but no EC2 file exists — did it run?": yes, it ran and
+#     found 0. Suppression removes the file; the manifest removes the ambiguity.
+#
+# The manifest is written only when STRATUSSCAN_RUN_MANIFEST points at a file
+# (set by the --run-all orchestrator per exporter subprocess). Interactive
+# single exports get suppression but no manifest — their console message
+# ("No data found — export skipped") is the human-facing equivalent.
+
+# Returned by save_* when an empty export is intentionally suppressed. Truthy
+# so the universal exporter idiom `if output_path: log_success` does NOT fall
+# through to a misleading "save failed" error across the 100+ exporters.
+EMPTY_EXPORT_SENTINEL = "(no data found — export skipped)"
+
+
+def skip_empty_exports_enabled() -> bool:
+    """True when empty results should not produce a spreadsheet (default: on)."""
+    return bool(config_value("skip_empty_exports", default=True, section="output_settings"))
+
+
+def _record_run_manifest(
+    filename: str,
+    rows: int,
+    status: str,
+    file_location: Optional[str],
+    sheets: Optional[dict[str, int]] = None,
+) -> None:
+    """
+    Append one record to the per-run manifest if STRATUSSCAN_RUN_MANIFEST is set.
+
+    Best-effort: any failure here is logged at debug and swallowed — recording
+    a manifest line must never break an export. Account/exporter/region context
+    is read from env vars the orchestrator injects into each subprocess.
+
+    Args:
+        filename: The export filename (basename used as the resource hint).
+        rows: Total asset/row count across all sheets.
+        status: "written" or "empty".
+        file_location: Final delivered location (local path or s3:// URI), or None.
+        sheets: Optional per-sheet row counts.
+    """
+    manifest_path = os.environ.get("STRATUSSCAN_RUN_MANIFEST", "").strip()
+    if not manifest_path:
+        return
+
+    try:
+        record = {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "exporter": os.environ.get("STRATUSSCAN_CURRENT_EXPORTER", "").strip() or None,
+            "resource": os.path.basename(filename),
+            "account_id": os.environ.get("STRATUSSCAN_ACCOUNT_ID", "").strip() or None,
+            "account_name": os.environ.get("STRATUSSCAN_ACCOUNT_NAME", "").strip() or None,
+            "regions": os.environ.get("STRATUSSCAN_REGIONS", "").strip() or None,
+            "rows": rows,
+            "status": status,
+            "file": file_location,
+            "sheets": sheets or None,
+        }
+        # Append-only JSONL; concurrent appends are avoided because exporters
+        # run sequentially, but a single write() of one line is atomic enough.
+        with open(manifest_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("stratusscan").debug("Run-manifest record failed: %s", e)
+
+
+def _maybe_skip_empty(
+    filename: str, rows: int, sheets: Optional[dict[str, int]] = None
+) -> Optional[str]:
+    """
+    Decide whether an export with ``rows`` total rows should be suppressed.
+
+    Returns the EMPTY_EXPORT_SENTINEL (and records an "empty" manifest line) when
+    there is no data and suppression is enabled; otherwise None (caller proceeds
+    to write). Centralises the empty-handling so every save path behaves alike.
+    """
+    if rows == 0 and skip_empty_exports_enabled():
+        logger.info("No data for %s — empty export skipped", os.path.basename(filename))
+        _record_run_manifest(filename, 0, "empty", None, sheets)
+        return EMPTY_EXPORT_SENTINEL
+    return None
+
+
+def _finalize_export(
+    local_path: str, rows: int, sheets: Optional[dict[str, int]] = None
+) -> str:
+    """
+    Common tail for every successful save: deliver the file (local or S3) and
+    record a "written" manifest line. Returns the final location (local path or
+    ``s3://`` URI).
+    """
+    final = deliver_output(local_path)
+    _record_run_manifest(local_path, rows, "written", final, sheets)
+    return final
+
+
+def read_run_manifest(manifest_path: str) -> list[dict[str, Any]]:
+    """
+    Read a per-run manifest (JSONL) into a list of records.
+
+    Malformed lines are skipped. Returns an empty list if the file is missing.
+    """
+    records: list[dict[str, Any]] = []
+    if not manifest_path or not os.path.exists(manifest_path):
+        return records
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError as e:
+        logging.getLogger("stratusscan").warning("Could not read run manifest %s: %s", manifest_path, e)
+    return records
+
+
+# Run-report status vocabulary (one per exporter attempted in a --run-all run).
+RUN_STATUS_OK = "OK"                # exited clean, wrote at least one populated export
+RUN_STATUS_EMPTY = "EMPTY"          # exited clean, ran, found 0 assets (no file written)
+RUN_STATUS_NO_OUTPUT = "NO OUTPUT"  # exited clean but saved nothing (e.g. service N/A in partition)
+RUN_STATUS_FAILED = "FAILED"        # non-zero exit / crash / timeout
+
+
+def _format_sheets(sheets: Optional[dict[str, int]]) -> str:
+    """Render per-sheet counts as 'Sheet:rows, ...' for the report."""
+    if not sheets:
+        return ""
+    return ", ".join(f"{name}:{count}" for name, count in sheets.items())
+
+
+def build_run_report_dataframe(
+    executor_results: list[dict[str, Any]],
+    manifest_records: list[dict[str, Any]],
+):
+    """
+    Merge per-script execution results with per-save manifest records into a
+    single run-report DataFrame — the authoritative "what ran / what was found"
+    artifact for an unattended audit.
+
+    Each row is one exporter attempted, with a status that distinguishes the
+    four outcomes auditors care about: OK (data found), EMPTY (ran, 0 assets),
+    NO OUTPUT (ran clean but nothing to export — e.g. service not in partition),
+    and FAILED. The asset count is recorded even when no spreadsheet exists,
+    which is precisely what kills the "no EC2 file, did it run?" false positive.
+
+    Args:
+        executor_results: list of dicts with at least ``script``, ``success``,
+            ``return_code``, ``duration_seconds`` (ExecutionResult flattened).
+        manifest_records: records from :func:`read_run_manifest`.
+
+    Returns:
+        pandas.DataFrame sorted by exporter name.
+    """
+    import pandas as pd
+
+    # Index manifest records by exporter filename.
+    by_exporter: dict[str, list[dict[str, Any]]] = {}
+    for rec in manifest_records:
+        key = rec.get("exporter") or rec.get("resource") or ""
+        by_exporter.setdefault(key, []).append(rec)
+
+    rows: list[dict[str, Any]] = []
+    for res in executor_results:
+        exporter = res.get("script", "")
+        recs = by_exporter.get(exporter, [])
+        written = [r for r in recs if r.get("status") == "written"]
+        assets = sum(int(r.get("rows") or 0) for r in recs)
+
+        if not res.get("success", False):
+            status = RUN_STATUS_FAILED
+        elif written:
+            status = RUN_STATUS_OK
+        elif recs:  # only empty records
+            status = RUN_STATUS_EMPTY
+        else:
+            status = RUN_STATUS_NO_OUTPUT
+
+        file_loc = ""
+        if written:
+            file_loc = written[0].get("file") or ""
+
+        sheets_str = ""
+        for r in recs:
+            if r.get("sheets"):
+                sheets_str = _format_sheets(r.get("sheets"))
+                break
+
+        regions = ""
+        if recs and recs[0].get("regions"):
+            regions = recs[0]["regions"]
+
+        detail = ""
+        if status == RUN_STATUS_FAILED:
+            detail = (res.get("error_message") or f"exit code {res.get('return_code')}").strip()
+
+        rows.append({
+            "Exporter": exporter,
+            "Status": status,
+            "Assets": assets,
+            "Output File": file_loc,
+            "Sheets": sheets_str,
+            "Regions": regions,
+            "Duration (s)": round(float(res.get("duration_seconds") or 0), 1),
+            "Detail": detail,
+        })
+
+    columns = ["Exporter", "Status", "Assets", "Output File", "Sheets", "Regions", "Duration (s)", "Detail"]
+    df = pd.DataFrame(rows, columns=columns)
+    if not df.empty:
+        df = df.sort_values("Exporter").reset_index(drop=True)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Organization-wide scanning (--org-scan): account enumeration + roll-up
+# ---------------------------------------------------------------------------
+#
+# The headless org audit runs from one account (the Audit account), enumerates
+# every active account in the AWS Organization, assumes a uniformly-named
+# read-only scan role in each, and runs the full exporter set per account. This
+# matches the StackSet model where one role name exists org-wide.
+
+# Org-account scan outcomes for the roll-up summary.
+ACCOUNT_STATUS_SCANNED = "SCANNED"        # role assumed, exporters ran
+ACCOUNT_STATUS_ROLE_FAILED = "ROLE FAILED"  # could not assume the scan role — skipped
+
+
+def list_organization_accounts(active_only: bool = True) -> list[dict[str, str]]:
+    """
+    Enumerate accounts in the AWS Organization via ``organizations:ListAccounts``.
+
+    Runs from the management or a delegated-admin account. Library code: returns
+    structured data and never prints.
+
+    Args:
+        active_only: When True (default), only ``ACTIVE`` accounts are returned
+            (SUSPENDED / PENDING_CLOSURE accounts are skipped).
+
+    Returns:
+        list of ``{"id", "name", "email", "status"}`` dicts.
+
+    Raises:
+        Propagates botocore errors (e.g. AccessDenied when the caller lacks
+        Organizations read access) so the caller can report them verbatim.
+    """
+    client = get_boto3_client("organizations")
+    accounts: list[dict[str, str]] = []
+    paginator = client.get_paginator("list_accounts")
+    for page in paginator.paginate():
+        for a in page.get("Accounts", []):
+            status = a.get("Status", "")
+            if active_only and status != "ACTIVE":
+                continue
+            accounts.append({
+                "id": a.get("Id", ""),
+                "name": a.get("Name", ""),
+                "email": a.get("Email", ""),
+                "status": status,
+            })
+    return accounts
+
+
+def verify_assume_role(role_arn: str, region_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    """
+    Pre-flight an STS AssumeRole so a non-assumable account can be skipped before
+    launching 100+ doomed exporter subprocesses.
+
+    Args:
+        role_arn: The scan role ARN to assume.
+        region_name: Optional region (drives FIPS endpoint selection in GovCloud).
+
+    Returns:
+        ``(True, None)`` if the role is assumable, else ``(False, error_string)``
+        with the verbatim error for the run report.
+    """
+    try:
+        sts = get_boto3_client("sts", region_name, role_arn=role_arn)
+        sts.get_caller_identity()
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+
+
+def build_org_summary_dataframe(account_summaries: list[dict[str, Any]]):
+    """
+    Roll up per-account audit outcomes into one org-level summary DataFrame —
+    one row per account, the top-level index over the per-account run reports.
+
+    Args:
+        account_summaries: list of dicts with keys ``account_id``,
+            ``account_name``, ``status`` (ACCOUNT_STATUS_*), ``exporters``,
+            ``ok``, ``empty``, ``no_output``, ``failed``, ``total_assets``,
+            ``report`` (delivered location or ""), and optional ``detail``.
+
+    Returns:
+        pandas.DataFrame sorted by account name.
+    """
+    import pandas as pd
+
+    rows = []
+    for s in account_summaries:
+        rows.append({
+            "Account ID": s.get("account_id", ""),
+            "Account": s.get("account_name", ""),
+            "Status": s.get("status", ""),
+            "Exporters": s.get("exporters", 0),
+            "With Data": s.get("ok", 0),
+            "Empty": s.get("empty", 0),
+            "No Output": s.get("no_output", 0),
+            "Failed": s.get("failed", 0),
+            "Total Assets": s.get("total_assets", 0),
+            "Report": s.get("report", ""),
+            "Detail": s.get("detail", ""),
+        })
+
+    columns = ["Account ID", "Account", "Status", "Exporters", "With Data",
+               "Empty", "No Output", "Failed", "Total Assets", "Report", "Detail"]
+    df = pd.DataFrame(rows, columns=columns)
+    if not df.empty:
+        df = df.sort_values("Account").reset_index(drop=True)
+    return df
+
 
 def detect_default_format() -> str:
     """
@@ -1189,7 +1996,7 @@ def aws_error_handler(
 
     Example:
         @aws_error_handler("Collecting IAM users", default_return=[])
-        def collect_iam_users() -> List[Dict[str, Any]]:
+        def collect_iam_users() -> list[dict[str, Any]]:
             iam = get_boto3_client('iam')
             users = []
             for user in iam.list_users()['Users']:
@@ -1900,9 +2707,13 @@ class ProgressCheckpoint:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
 
-        # Checkpoint file path
+        # Checkpoint file path — operation_name is caller-supplied, so sanitize
+        # the component and confirm containment in checkpoint_dir (CWE-73).
         timestamp = datetime.datetime.now().strftime("%Y%m%d")
-        self.checkpoint_file = self.checkpoint_dir / f"{operation_name}_{timestamp}.json"
+        safe_operation = sanitize_filename_component(operation_name)
+        self.checkpoint_file = contained_path(
+            self.checkpoint_dir, f"{safe_operation}_{timestamp}.json"
+        )
 
         # Load existing checkpoint if available
         self.checkpoint_data = self._load()

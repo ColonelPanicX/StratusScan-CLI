@@ -72,8 +72,8 @@ class ScriptExecutor:
             regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS.
                      If None, subprocesses use their own configured defaults.
             show_output: When True, stream script stdout to console (prefixed with
-                         two spaces). When False, capture silently — for future TUI
-                         use where the TUI will consume the stream directly.
+                         two spaces). When False, capture silently for a caller
+                         that consumes the stream directly.
         """
         self.scripts = sorted(set(scripts))  # Deduplicate and sort for consistent ordering
 
@@ -411,8 +411,8 @@ class ScriptExecutor:
 
         # Overall statistics
         print(f"Total Scripts:     {self.total_scripts}")
-        print(f"Successful:        {len(successful)} ✓")
-        print(f"Failed:            {len(failed)} ✗")
+        print(f"Successful:        {len(successful)} {utils.GLYPH_OK}")
+        print(f"Failed:            {len(failed)} {utils.GLYPH_FAIL}")
         print(f"Success Rate:      {(len(successful)/self.total_scripts*100):.1f}%")
         print(f"Total Time:        {total_minutes}m {total_seconds}s")
         print()
@@ -423,7 +423,7 @@ class ScriptExecutor:
             print("-" * 80)
             for result in successful:
                 output_info = f" → {result.output_file}" if result.output_file else ""
-                print(f"  ✓ {result.script:<45} {result.duration_formatted:>8}{output_info}")
+                print(f"  {utils.GLYPH_OK} {result.script:<45} {result.duration_formatted:>8}{output_info}")
             print()
 
         # Show failed scripts with error details
@@ -431,7 +431,7 @@ class ScriptExecutor:
             print("FAILED SCRIPTS:")
             print("-" * 80)
             for result in failed:
-                print(f"  ✗ {result.script:<45} {result.duration_formatted:>8}")
+                print(f"  {utils.GLYPH_FAIL} {result.script:<45} {result.duration_formatted:>8}")
                 if result.error_message:
                     # error_message is already truncated to 100 chars for console;
                     # full text is available in result.full_error_message
@@ -498,7 +498,7 @@ class ScriptExecutor:
                 self.results.append(result)
                 if show_progress:
                     self._show_progress(script_name)
-                    print(f"✗ Script not found: {script_name}")
+                    print(f"{utils.GLYPH_FAIL} Script not found: {script_name}")
                     print()
                 if session is not None:
                     utils.record_scan_result(
@@ -569,8 +569,8 @@ class ScriptExecutor:
             timestamp = datetime.now().strftime("%m.%d.%Y-%H%M")
             filename = f"smart-scan-execution-log-{timestamp}.txt"
 
-        log_path = utils.get_output_dir() / filename
         try:
+            log_path = utils.get_output_filepath(filename)
             with open(log_path, "w", encoding='utf-8') as f:
                 f.write("=" * 80 + "\n")
                 f.write(" " * 26 + "SMART SCAN EXECUTION LOG\n")
@@ -613,7 +613,7 @@ class ScriptExecutor:
             return True
 
         except Exception as e:
-            utils.log_error(f"Error saving execution log to {log_path}", e)
+            utils.log_error(f"Error saving execution log to {filename}", e)
             return False
 
 
@@ -635,7 +635,7 @@ def execute_scripts(
         save_log: Whether to save execution log to file
         regions: Regions to pass to subprocesses via STRATUSSCAN_REGIONS
         show_output: When True, stream script stdout to console in real time.
-                     When False, capture silently (for future TUI use).
+                     When False, capture silently for a caller that consumes it.
         session: Optional scan session dict from utils.start_scan_session().
                  When provided, results are persisted to disk after each script.
         skip_scripts: Optional set of script filenames to skip (already

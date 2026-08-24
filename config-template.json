@@ -9,8 +9,14 @@
   "agency_name": "YOUR-AGENCY",
   "default_regions": ["us-east-1", "us-west-2"],
   "output_settings": {
-    "__comment": "Export format: xlsx (requires openpyxl) or csv. Set automatically by Config Wizard.",
-    "format": "xlsx"
+    "__comment": "format: xlsx (requires openpyxl) or csv. destination: 'local' (saves to output/) or 's3' (uploads to the bucket below, then deletes the local copy on success). skip_empty_exports: when true, an exporter that finds no resources writes no spreadsheet (the run report still records it as 'ran, 0 assets'). Set via 'python configure.py' -> Output Settings.",
+    "format": "xlsx",
+    "destination": "local",
+    "skip_empty_exports": true,
+    "s3": {
+      "bucket": "",
+      "prefix": "stratusscan/"
+    }
   },
   "resource_preferences": {
     "ec2": {

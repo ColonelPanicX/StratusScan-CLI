@@ -274,19 +274,36 @@ class TestExecutionFlow:
             assert isinstance(summary, dict)
             assert "total" in summary
 
-    def test_save_execution_log(self):
-        """Test saving execution log to file."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            executor = ScriptExecutor({"test.py"})
+    def test_save_execution_log(self, tmp_path, monkeypatch):
+        """The execution log is written into the output directory, never to a
+        caller-supplied location outside it (CWE-73)."""
+        import utils
 
-            log_file = Path(tmpdir) / "test-execution.log"
-            result = executor.save_execution_log(str(log_file))
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        executor = ScriptExecutor({"test.py"})
 
-            # Should return True even if no results (empty log)
-            assert isinstance(result, bool)
+        assert executor.save_execution_log("test-execution.log") is True
+        assert (tmp_path / "test-execution.log").exists()
 
-            if result:
-                assert log_file.exists()
+    def test_save_execution_log_contains_traversal(self, tmp_path, monkeypatch):
+        """A traversing filename is reduced to a bare name inside output/."""
+        import utils
+
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        executor = ScriptExecutor({"test.py"})
+
+        assert executor.save_execution_log("../../escaped.log") is True
+        assert (tmp_path / "escaped.log").exists()
+        assert not (tmp_path.parent.parent / "escaped.log").exists()
+
+    def test_save_execution_log_rejects_unusable_name(self, tmp_path, monkeypatch):
+        """A name with no usable component returns False rather than raising."""
+        import utils
+
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        executor = ScriptExecutor({"test.py"})
+
+        assert executor.save_execution_log("..") is False
 
 
 class TestProgressDisplay:

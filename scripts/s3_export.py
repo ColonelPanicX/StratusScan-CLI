@@ -662,71 +662,37 @@ def main():
         region_input = os.environ.get('AWS_REGION', 'all')
         target_region = None if region_input.lower() == 'all' else region_input
     else:
-        # Interactive mode: Display standardized region selection menu
-        print("\n" + "=" * 68)
-        print("REGION SELECTION")
-        print("=" * 68)
-        print()
-        print("Please select which AWS regions to scan:")
-        print()
-        print("1. Default Regions (recommended for most use cases)")
-        print(f"   └─ {example_regions}")
-        print()
-        print("2. All Available Regions")
-        print("   └─ Scans all regions (slower, more comprehensive)")
-        print()
-        print("3. Specific Region")
-        print("   └─ Choose a single region to scan")
-        print()
-
-        # Get user selection with validation
-        while True:
-            try:
-                selection = input("Enter your selection (1-3): ").strip()
-                selection_int = int(selection)
-                if 1 <= selection_int <= 3:
-                    break
-                else:
-                    print("Please enter a number between 1 and 3.")
-            except ValueError:
-                print("Please enter a valid number (1-3).")
-
-        # Get regions based on selection
+        # Interactive: single-voice region selection. S3 is global, so this is a
+        # single-region FILTER (or all regions) — not the multi-region
+        # utils.prompt_region_selection. prompt_menu gives consistent b/x/q nav.
         all_available_regions = utils.get_partition_regions(partition, all_regions=True)
+        try:
+            region_choice = utils.prompt_menu(
+                "REGION SELECTION",
+                [
+                    "Default Regions   (scan all regions for S3 buckets)",
+                    "All Available Regions",
+                    "Specific Region   (filter to a single region)",
+                ],
+            )
+        except utils.BackSignal:
+            sys.exit(10)
+        except (utils.ExitToMainSignal, utils.QuitSignal):
+            sys.exit(11)
 
-        # Process selection
-        if selection_int == 1:
-            # Default regions - for S3, scan all regions by default
+        if region_choice in (1, 2):
+            # S3 is global — both Default and All scan every region.
             target_region = None
-            utils.log_info("Scanning all regions for S3 buckets")
-        elif selection_int == 2:
-            # All regions
-            target_region = None
-            utils.log_info(f"Scanning all {len(all_available_regions)} AWS regions")
-        else:  # selection_int == 3
-            # Display numbered list of regions
-            print("\n" + "=" * 68)
-            print("AVAILABLE AWS REGIONS")
-            print("=" * 68)
-            print()
-            for idx, region in enumerate(all_available_regions, 1):
-                print(f"{idx:2}. {region}")
-            print()
-
-            # Get region selection with validation
-            while True:
-                try:
-                    region_num = input(f"Enter region number (1-{len(all_available_regions)}): ").strip()
-                    region_idx = int(region_num) - 1
-                    if 0 <= region_idx < len(all_available_regions):
-                        selected_region = all_available_regions[region_idx]
-                        target_region = selected_region
-                        utils.log_info(f"Scanning region: {selected_region}")
-                        break
-                    else:
-                        print(f"Please enter a number between 1 and {len(all_available_regions)}.")
-                except ValueError:
-                    print(f"Please enter a valid number (1-{len(all_available_regions)}).")
+            utils.log_info(f"Scanning all {len(all_available_regions)} AWS regions for S3 buckets")
+        else:
+            try:
+                region_idx = utils.prompt_menu("AVAILABLE AWS REGIONS", all_available_regions)
+            except utils.BackSignal:
+                sys.exit(10)
+            except (utils.ExitToMainSignal, utils.QuitSignal):
+                sys.exit(11)
+            target_region = all_available_regions[region_idx - 1]
+            utils.log_info(f"Scanning region: {target_region}")
 
     # Validate region if a specific one was provided
     if target_region and not is_valid_aws_region(target_region):

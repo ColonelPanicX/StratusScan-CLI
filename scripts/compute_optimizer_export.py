@@ -763,15 +763,19 @@ def main():
             print("  - IAM role (if running on EC2)")
             return
 
-        # Check if Compute Optimizer is enabled
-        print("\n" + "="*70)
-        print("IMPORTANT: AWS Compute Optimizer must be opted-in to get recommendations.")
-        print("Visit the AWS Compute Optimizer console to enable it if not already enabled.")
-        print("="*70)
+        # Check if Compute Optimizer is enabled. This is a courtesy pre-flight
+        # gate for interactive users only — under AUTO_RUN (bundle / --run-all /
+        # --org-scan) we proceed and let the API surface a real failure via the
+        # fail-loud collection path, rather than silently skipping the export.
+        if not utils.is_auto_run():
+            print("\n" + "="*70)
+            print("IMPORTANT: AWS Compute Optimizer must be opted-in to get recommendations.")
+            print("Visit the AWS Compute Optimizer console to enable it if not already enabled.")
+            print("="*70)
 
-        if not utils.prompt_for_confirmation("Have you enabled Compute Optimizer?", default=False):
-            print("Please enable Compute Optimizer first, then run this script again.")
-            return
+            if not utils.prompt_for_confirmation("Have you enabled Compute Optimizer?", default=False):
+                print("Please enable Compute Optimizer first, then run this script again.")
+                return
 
         # Get recommendations for all regions. Region failures across any of
         # the five recommendation scopes are collected into failed_regions
