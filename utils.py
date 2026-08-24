@@ -586,7 +586,7 @@ def log_error(error_message: str, error_obj: Optional[Exception] = None) -> None
     if error_obj:
         current_logger.error(_scrub_log(f"{error_message}: {str(error_obj)}"))
         # Log stack trace for debugging
-        current_logger.debug(f"Exception details: {error_obj}", exc_info=True)
+        current_logger.debug(_scrub_log(f"Exception details: {error_obj}"), exc_info=True)
     else:
         current_logger.error(_scrub_log(error_message))
 
@@ -977,6 +977,60 @@ def get_output_dir() -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
+# Characters that can redirect a path or corrupt a filename: path separators,
+# Windows-reserved punctuation, and control characters (including NUL).
+_UNSAFE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def sanitize_filename_component(value: object) -> str:
+    """
+    Reduce an untrusted value to a safe single filename component (CWE-73).
+
+    Strips — rather than substitutes — path separators, control characters, and
+    parent-directory markers, so ordinary names (letters, digits, spaces, dots,
+    hyphens, underscores) are returned byte-identical and existing export
+    filenames are unaffected.
+
+    Args:
+        value: The untrusted value (e.g. an account name from config.json)
+
+    Returns:
+        str: The value with path-altering characters removed
+    """
+    text = _UNSAFE_NAME_CHARS.sub("", str(value))
+    # Remove parent-directory markers, repeating until stable so that crafted
+    # sequences like '....' cannot reconstitute a '..' after a single pass.
+    while ".." in text:
+        text = text.replace("..", "")
+    # A leading dot would hide the file; a trailing dot/space is stripped by
+    # some filesystems and would let two distinct names collide.
+    return text.strip(" .")
+
+def contained_path(base_dir: "str | Path", filename: str) -> Path:
+    """
+    Resolve ``filename`` to a direct child of ``base_dir``, refusing escapes.
+
+    Containment (CWE-73): reduce to a bare filename and confirm it resolves to a
+    direct child of the base directory, so a crafted name containing path
+    separators or '..' cannot escape it. Ordinary bare filenames pass through
+    unchanged.
+
+    Args:
+        base_dir: The directory the file must live directly inside
+        filename: The candidate filename
+
+    Returns:
+        Path: ``base_dir`` joined with the validated bare filename
+
+    Raises:
+        ValueError: If the name would resolve outside ``base_dir``.
+    """
+    base = Path(base_dir).resolve()
+    safe_name = os.path.basename(str(filename))
+    resolved = (base / safe_name).resolve()
+    if safe_name in ("", ".", "..") or resolved.parent != base:
+        raise ValueError(f"Refusing path outside {base}: {filename!r}")
+    return base / safe_name
+
 def get_output_filepath(filename: str) -> Path:
     """
     Get the full path for a file in the output directory.
@@ -990,16 +1044,7 @@ def get_output_filepath(filename: str) -> Path:
     Raises:
         ValueError: If the name would resolve outside the output directory.
     """
-    output_dir = get_output_dir().resolve()
-    # Containment (CWE-73): reduce to a bare filename and confirm it resolves to
-    # a direct child of the output directory, so a crafted name containing path
-    # separators or '..' cannot escape it. Standard export filenames are already
-    # bare and pass through unchanged.
-    safe_name = os.path.basename(filename)
-    resolved = (output_dir / safe_name).resolve()
-    if safe_name in ("", ".", "..") or resolved.parent != output_dir:
-        raise ValueError(f"Refusing output path outside output directory: {filename!r}")
-    return output_dir / safe_name
+    return contained_path(get_output_dir(), filename)
 
 def create_export_filename(
     account_name: str,
@@ -1030,6 +1075,13 @@ def create_export_filename(
     # Get current date if not provided
     if not current_date:
         current_date = datetime.datetime.now().strftime("%m.%d.%Y")
+
+    # Sanitize caller-supplied components (CWE-73): account_name comes from the
+    # account_mappings in config.json, so a crafted entry must not be able to
+    # steer the export out of the output directory. Ordinary names are unchanged.
+    account_name = sanitize_filename_component(account_name)
+    resource_type = sanitize_filename_component(resource_type)
+    suffix = sanitize_filename_component(suffix)
 
     # Build the base filename
     if suffix:
@@ -2655,9 +2707,13 @@ class ProgressCheckpoint:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
 
-        # Checkpoint file path
+        # Checkpoint file path — operation_name is caller-supplied, so sanitize
+        # the component and confirm containment in checkpoint_dir (CWE-73).
         timestamp = datetime.datetime.now().strftime("%Y%m%d")
-        self.checkpoint_file = self.checkpoint_dir / f"{operation_name}_{timestamp}.json"
+        safe_operation = sanitize_filename_component(operation_name)
+        self.checkpoint_file = contained_path(
+            self.checkpoint_dir, f"{safe_operation}_{timestamp}.json"
+        )
 
         # Load existing checkpoint if available
         self.checkpoint_data = self._load()

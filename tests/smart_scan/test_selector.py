@@ -122,3 +122,66 @@ class TestPlainTextFallback:
         with patch.object(selector, "QUESTIONARY_AVAILABLE", False):
             result = selector.interactive_select({"all_scripts": set()})
         assert result is None
+
+
+@pytest.fixture
+def make_selector():
+    """Build a SmartScanSelector without requiring questionary to be installed.
+
+    The constructor guards on QUESTIONARY_AVAILABLE, but save_checklist() is a
+    plain file writer that never touches questionary.
+    """
+    from smart_scan import selector as selector_module
+
+    def _make(recommendations=MOCK_RECOMMENDATIONS):
+        with patch.object(selector_module, "QUESTIONARY_AVAILABLE", True):
+            return SmartScanSelector(recommendations)
+
+    return _make
+
+
+class TestSaveChecklistContainment:
+    """save_checklist() writes into output/ — previously it wrote to a bare
+    relative path, dropping the checklist in the caller's CWD (CWE-73)."""
+
+    def test_checklist_written_to_output_dir(self, tmp_path, monkeypatch, make_selector):
+        import utils
+
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        selector = make_selector()
+
+        assert selector.save_checklist("checklist.txt") is True
+        assert (tmp_path / "checklist.txt").exists()
+
+    def test_checklist_not_written_to_cwd(self, tmp_path, monkeypatch, make_selector):
+        """Regression: the file must not land in the current working directory."""
+        import utils
+
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        out = tmp_path / "out"
+        out.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.setattr(utils, "get_output_dir", lambda: out)
+        selector = make_selector()
+
+        assert selector.save_checklist("checklist.txt") is True
+        assert (out / "checklist.txt").exists()
+        assert not (cwd / "checklist.txt").exists()
+
+    def test_traversing_name_stays_contained(self, tmp_path, monkeypatch, make_selector):
+        import utils
+
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        selector = make_selector()
+
+        assert selector.save_checklist("../../escaped.txt") is True
+        assert (tmp_path / "escaped.txt").exists()
+
+    def test_unusable_name_returns_false(self, tmp_path, monkeypatch, make_selector):
+        import utils
+
+        monkeypatch.setattr(utils, "get_output_dir", lambda: tmp_path)
+        selector = make_selector()
+
+        assert selector.save_checklist("..") is False

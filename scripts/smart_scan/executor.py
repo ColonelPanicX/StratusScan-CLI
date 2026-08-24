@@ -569,8 +569,8 @@ class ScriptExecutor:
             timestamp = datetime.now().strftime("%m.%d.%Y-%H%M")
             filename = f"smart-scan-execution-log-{timestamp}.txt"
 
-        log_path = utils.get_output_dir() / filename
         try:
+            log_path = utils.get_output_filepath(filename)
             with open(log_path, "w", encoding='utf-8') as f:
                 f.write("=" * 80 + "\n")
                 f.write(" " * 26 + "SMART SCAN EXECUTION LOG\n")
@@ -613,7 +613,7 @@ class ScriptExecutor:
             return True
 
         except Exception as e:
-            utils.log_error(f"Error saving execution log to {log_path}", e)
+            utils.log_error(f"Error saving execution log to {filename}", e)
             return False
 
 
