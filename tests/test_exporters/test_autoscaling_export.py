@@ -585,3 +585,335 @@ class TestMixedInstancesPolicy:
         assert asg_row["Launch Source"] == "Mixed: mix-lt (1)"
         assert asg_row["Instance Type"] == "m5.large"
         assert asg_row["vCPU (Desired)"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Scaling policy enrichment (Issue #260)
+#
+# The sheet handled target tracking well and degraded poorly on everything
+# else: step boundaries were dropped, the CloudWatch alarms that actually
+# trigger scaling were never joined, and predictive policies fell through to
+# the simple-scaling branch and exported as "Adjustment: N/A, Type: N/A".
+# ---------------------------------------------------------------------------
+
+
+class TestStepAdjustmentFormatting:
+    def test_bounded_and_unbounded_intervals(self):
+        rendered = autoscaling_export._format_step_adjustments([
+            {"MetricIntervalUpperBound": 0, "ScalingAdjustment": -1},
+            {"MetricIntervalLowerBound": 0, "MetricIntervalUpperBound": 10,
+             "ScalingAdjustment": 1},
+            {"MetricIntervalLowerBound": 10, "ScalingAdjustment": 3},
+        ])
+
+        assert rendered == "< 0: -1; 0 to 10: +1; >= 10: +3"
+
+    def test_no_steps_reads_na(self):
+        assert autoscaling_export._format_step_adjustments([]) == "N/A"
+
+
+class TestPolicyRowBranching:
+    def test_step_policy_exports_its_boundaries(self):
+        """The step boundaries are the policy's entire content."""
+        row = autoscaling_export._build_policy_row(
+            {
+                "PolicyName": "step-up",
+                "AutoScalingGroupName": "web-asg",
+                "PolicyType": "StepScaling",
+                "AdjustmentType": "ChangeInCapacity",
+                "StepAdjustments": [
+                    {"MetricIntervalLowerBound": 0, "MetricIntervalUpperBound": 10,
+                     "ScalingAdjustment": 1},
+                    {"MetricIntervalLowerBound": 10, "ScalingAdjustment": 2},
+                ],
+            },
+            REGION,
+            {},
+        )
+
+        assert row["Step Adjustments"] == "0 to 10: +1; >= 10: +2"
+        assert "Steps:" in row["Policy Detail"]
+        assert row["Policy Detail"] != "Adjustment: N/A, Type: ChangeInCapacity"
+
+    def test_predictive_policy_is_not_reported_as_a_malformed_simple_policy(self):
+        """
+        Predictive scaling has neither TargetTrackingConfiguration nor
+        ScalingAdjustment; it used to land in the else branch and export as
+        "Adjustment: N/A, Type: N/A".
+        """
+        row = autoscaling_export._build_policy_row(
+            {
+                "PolicyName": "predictive",
+                "AutoScalingGroupName": "web-asg",
+                "PolicyType": "PredictiveScaling",
+                "PredictiveScalingConfiguration": {
+                    "MetricSpecifications": [{
+                        "TargetValue": 50.0,
+                        "PredefinedMetricPairSpecification": {
+                            "PredefinedMetricType": "ASGCPUUtilization"
+                        },
+                    }],
+                    "Mode": "ForecastAndScale",
+                    "SchedulingBufferTime": 300,
+                    "MaxCapacityBreachBehavior": "IncreaseMaxCapacity",
+                    "MaxCapacityBuffer": 10,
+                },
+            },
+            REGION,
+            {},
+        )
+
+        assert row["Predictive Mode"] == "ForecastAndScale"
+        assert row["Target Value"] == 50.0
+        assert row["Predictive Scheduling Buffer (s)"] == 300
+        assert row["Max Capacity Breach Behavior"] == "IncreaseMaxCapacity"
+        assert row["Max Capacity Buffer (%)"] == 10
+        assert "ASGCPUUtilization" in row["Policy Detail"]
+        assert row["Policy Detail"] != "Adjustment: N/A, Type: N/A"
+
+    def test_target_tracking_detail_is_preserved(self):
+        row = autoscaling_export._build_policy_row(
+            {
+                "PolicyName": "tt",
+                "AutoScalingGroupName": "web-asg",
+                "PolicyType": "TargetTrackingScaling",
+                "TargetTrackingConfiguration": {
+                    "TargetValue": 70.0,
+                    "PredefinedMetricSpecification": {
+                        "PredefinedMetricType": "ASGAverageCPUUtilization"
+                    },
+                    "DisableScaleIn": True,
+                },
+            },
+            REGION,
+            {},
+        )
+
+        assert row["Policy Detail"] == "Target: 70.0, Metric: ASGAverageCPUUtilization"
+        assert row["Target Value"] == 70.0
+        assert row["Disable Scale In"] is True
+
+    def test_simple_policy_still_reports_its_adjustment(self):
+        row = autoscaling_export._build_policy_row(
+            {
+                "PolicyName": "simple",
+                "AutoScalingGroupName": "web-asg",
+                "PolicyType": "SimpleScaling",
+                "AdjustmentType": "ChangeInCapacity",
+                "ScalingAdjustment": 2,
+            },
+            REGION,
+            {},
+        )
+
+        assert row["Policy Detail"] == "Adjustment: 2, Type: ChangeInCapacity"
+
+
+class TestAlarmJoin:
+    def test_alarm_metric_and_threshold_are_surfaced(self):
+        summary = autoscaling_export._summarize_alarms(
+            [{"AlarmName": "cpu-high"}],
+            {
+                "cpu-high": {
+                    "AlarmName": "cpu-high",
+                    "Namespace": "AWS/EC2",
+                    "MetricName": "CPUUtilization",
+                    "Statistic": "Average",
+                    "ComparisonOperator": "GreaterThanThreshold",
+                    "Threshold": 80.0,
+                    "EvaluationPeriods": 2,
+                    "Period": 300,
+                }
+            },
+        )
+
+        assert summary["Alarm Names"] == "cpu-high"
+        assert summary["Alarm Metric"] == "AWS/EC2/CPUUtilization"
+        assert summary["Alarm Statistic"] == "Average"
+        assert summary["Alarm Condition"] == "GreaterThanThreshold 80.0 for 2 period(s)"
+        assert summary["Alarm Period (s)"] == "300"
+
+    def test_policy_without_alarms_reads_na(self):
+        assert autoscaling_export._summarize_alarms([], {})["Alarm Names"] == "N/A"
+
+    def test_unresolved_alarm_still_reports_its_name(self):
+        """
+        The alarm name is known from describe_policies even when the CloudWatch
+        join fails; the name is more useful than dropping the row's alarm data.
+        """
+        summary = autoscaling_export._summarize_alarms([{"AlarmName": "cpu-high"}], {})
+
+        assert summary["Alarm Names"] == "cpu-high"
+        assert summary["Alarm Metric"] == "N/A"
+
+    @mock_aws
+    def test_fetch_policy_alarms_reads_cloudwatch(self):
+        cw_client = boto3.client("cloudwatch", region_name=REGION)
+        cw_client.put_metric_alarm(
+            AlarmName="cpu-high",
+            Namespace="AWS/EC2",
+            MetricName="CPUUtilization",
+            Statistic="Average",
+            ComparisonOperator="GreaterThanThreshold",
+            Threshold=80.0,
+            EvaluationPeriods=2,
+            Period=300,
+        )
+
+        alarms = autoscaling_export._fetch_policy_alarms(REGION, {"cpu-high"})
+
+        assert alarms["cpu-high"]["MetricName"] == "CPUUtilization"
+
+    def test_cloudwatch_failure_degrades_without_raising(self, monkeypatch):
+        """
+        The alarm join is enrichment. A CloudWatch permission gap must not fail
+        a region whose policies were collected successfully.
+        """
+
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "DescribeAlarms",
+            )
+
+        monkeypatch.setattr(autoscaling_export.utils, "get_boto3_client", boom)
+
+        assert autoscaling_export._fetch_policy_alarms(REGION, {"cpu-high"}) == {}
+
+    def test_no_alarm_names_makes_no_api_call(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise AssertionError("no CloudWatch client should be created")
+
+        monkeypatch.setattr(autoscaling_export.utils, "get_boto3_client", boom)
+
+        assert autoscaling_export._fetch_policy_alarms(REGION, set()) == {}
+
+
+class TestScalingPolicyCollection:
+    @mock_aws
+    def test_step_policy_round_trips_through_the_region_scan(self):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+        client.put_scaling_policy(
+            AutoScalingGroupName="web-asg",
+            PolicyName="step-up",
+            PolicyType="StepScaling",
+            AdjustmentType="ChangeInCapacity",
+            MetricAggregationType="Average",
+            StepAdjustments=[
+                {"MetricIntervalLowerBound": 0, "MetricIntervalUpperBound": 10,
+                 "ScalingAdjustment": 1},
+                {"MetricIntervalLowerBound": 10, "ScalingAdjustment": 2},
+            ],
+        )
+
+        rows = autoscaling_export._scan_scaling_policies_region(REGION)
+
+        assert len(rows) == 1
+        assert rows[0]["Policy Name"] == "step-up"
+        assert rows[0]["Step Adjustments"] == "0.0 to 10.0: +1; >= 10.0: +2"
+
+    @mock_aws
+    def test_predictive_policy_round_trips_through_the_region_scan(self):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+        client.put_scaling_policy(
+            AutoScalingGroupName="web-asg",
+            PolicyName="predictive",
+            PolicyType="PredictiveScaling",
+            PredictiveScalingConfiguration={
+                "MetricSpecifications": [{
+                    "TargetValue": 50.0,
+                    "PredefinedMetricPairSpecification": {
+                        "PredefinedMetricType": "ASGCPUUtilization"
+                    },
+                }],
+                "Mode": "ForecastAndScale",
+                "SchedulingBufferTime": 300,
+            },
+        )
+
+        rows = autoscaling_export._scan_scaling_policies_region(REGION)
+
+        assert rows[0]["Predictive Mode"] == "ForecastAndScale"
+        assert "ASGCPUUtilization" in rows[0]["Policy Detail"]
+
+    @mock_aws
+    def test_region_api_failure_raises_not_empty(self, monkeypatch):
+        """
+        This collector previously swallowed per-region errors into an empty
+        list — the Tier-3 PARTIAL pattern. It must now fail loud.
+        """
+
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "DescribePolicies",
+            )
+
+        monkeypatch.setattr(autoscaling_export.utils, "get_boto3_client", boom)
+
+        with pytest.raises(botocore.exceptions.ClientError):
+            autoscaling_export._scan_scaling_policies_region(REGION)
+
+    @mock_aws
+    def test_collect_scaling_policies_surfaces_failed_regions(self):
+        def boom(region):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "DescribePolicies",
+            )
+
+        original = autoscaling_export._scan_scaling_policies_region
+        autoscaling_export._scan_scaling_policies_region = boom
+        try:
+            policies, failed_regions = autoscaling_export.collect_scaling_policies([REGION])
+        finally:
+            autoscaling_export._scan_scaling_policies_region = original
+
+        assert policies == []
+        assert [r for r, _ in failed_regions] == [REGION]
+
+    @mock_aws
+    def test_malformed_policy_is_skipped_not_fatal(self, monkeypatch):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+        for name in ("good-policy", "bad-policy"):
+            client.put_scaling_policy(
+                AutoScalingGroupName="web-asg",
+                PolicyName=name,
+                PolicyType="SimpleScaling",
+                AdjustmentType="ChangeInCapacity",
+                ScalingAdjustment=1,
+            )
+
+        original = autoscaling_export._build_policy_row
+
+        def raise_for_bad(policy, region, alarms):
+            if policy.get("PolicyName") == "bad-policy":
+                raise KeyError("SomeUnexpectedField")
+            return original(policy, region, alarms)
+
+        monkeypatch.setattr(autoscaling_export, "_build_policy_row", raise_for_bad)
+
+        rows = autoscaling_export._scan_scaling_policies_region(REGION)
+
+        names = {row["Policy Name"] for row in rows}
+        assert "good-policy" in names, "healthy policy was lost when a sibling failed"
+        assert "bad-policy" not in names
+
+
+class TestMergeFailedRegions:
+    def test_regions_failing_multiple_scopes_are_reported_once(self):
+        merged = autoscaling_export._merge_failed_regions(
+            [("us-east-1", "asg scope failed")],
+            [("us-east-1", "policy scope failed"), ("us-west-2", "policy scope failed")],
+        )
+
+        assert dict(merged) == {
+            "us-east-1": "asg scope failed",
+            "us-west-2": "policy scope failed",
+        }
+
+    def test_empty_and_none_inputs_are_tolerated(self):
+        assert autoscaling_export._merge_failed_regions([], None) == []
