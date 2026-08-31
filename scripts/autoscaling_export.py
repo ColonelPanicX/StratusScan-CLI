@@ -19,7 +19,9 @@ Features:
 - Instance information with health status and lifecycle state
 - Launch Templates referenced by a group, resolved to the version in use
 - Launch Configurations referenced by a group
-- Scaling policies (target tracking, step scaling, simple scaling)
+- Scaling policies (target tracking, step scaling, simple scaling, predictive),
+  with step boundaries and the CloudWatch alarm metric and threshold that
+  trigger them
 - Scheduled actions
 - Lifecycle hooks
 - Tags and metadata
@@ -938,78 +940,304 @@ def collect_asg_instances(regions: list[str]) -> list[dict[str, Any]]:
     return all_instances
 
 
-@utils.aws_error_handler("Collecting scaling policies", default_return=[])
-def collect_scaling_policies(regions: list[str]) -> list[dict[str, Any]]:
+def _format_step_adjustments(steps: list[dict]) -> str:
     """
-    Collect scaling policy information from Auto Scaling Groups.
+    Render a step policy's adjustments as readable interval → adjustment pairs.
 
-    Args:
-        regions: List of AWS regions to scan
+    The step boundaries are the policy's entire content; a step policy exported
+    without them says nothing about what the policy does (Issue #260). Bounds
+    are offsets from the alarm threshold, and an absent bound means unbounded
+    in that direction.
+    """
+    if not steps:
+        return 'N/A'
+
+    parts = []
+    for step in steps:
+        lower = step.get('MetricIntervalLowerBound')
+        upper = step.get('MetricIntervalUpperBound')
+        adjustment = step.get('ScalingAdjustment')
+
+        if lower is None and upper is None:
+            interval = 'any'
+        elif lower is None:
+            interval = f"< {upper}"
+        elif upper is None:
+            interval = f">= {lower}"
+        else:
+            interval = f"{lower} to {upper}"
+
+        if isinstance(adjustment, (int, float)) and adjustment > 0:
+            rendered = f"+{adjustment}"
+        else:
+            rendered = str(adjustment) if adjustment is not None else 'N/A'
+
+        parts.append(f"{interval}: {rendered}")
+
+    return '; '.join(parts)
+
+
+def _fetch_policy_alarms(region: str, alarm_names: set) -> dict[str, dict[str, Any]]:
+    """
+    Fetch the CloudWatch alarms bound to step and simple scaling policies.
+
+    ``describe_policies`` returns only alarm names and ARNs, so without this
+    join the metric and threshold that actually trigger scaling are invisible
+    in the export.
+
+    This is enrichment, not primary scope: a CloudWatch permission gap yields
+    'N/A' alarm columns rather than failing the region, since the policies
+    themselves were collected successfully.
+    """
+    alarms: dict[str, dict[str, Any]] = {}
+    names = sorted(n for n in alarm_names if n)
+    if not names:
+        return alarms
+
+    try:
+        cw_client = utils.get_boto3_client('cloudwatch', region_name=region)
+        for index in range(0, len(names), 100):
+            chunk = names[index:index + 100]
+            response = cw_client.describe_alarms(AlarmNames=chunk)
+            for alarm in response.get('MetricAlarms', []):
+                alarms[alarm.get('AlarmName', '')] = alarm
+    except Exception as e:
+        utils.log_warning(
+            f"Could not resolve scaling policy alarms in {region} "
+            f"(metric and threshold will read N/A): {e}"
+        )
+
+    return alarms
+
+
+def _summarize_alarms(policy_alarms: list[dict], alarms_by_name: dict) -> dict[str, Any]:
+    """Flatten the alarms bound to one policy into export columns."""
+    summary = {
+        'Alarm Names': 'N/A',
+        'Alarm Metric': 'N/A',
+        'Alarm Statistic': 'N/A',
+        'Alarm Condition': 'N/A',
+        'Alarm Period (s)': 'N/A',
+    }
+    names = [a.get('AlarmName') for a in policy_alarms or [] if a.get('AlarmName')]
+    if not names:
+        return summary
+
+    summary['Alarm Names'] = ', '.join(names)
+
+    metrics, statistics, conditions, periods = [], [], [], []
+    for name in names:
+        alarm = alarms_by_name.get(name)
+        if not alarm:
+            continue
+        namespace = alarm.get('Namespace', '')
+        metric_name = alarm.get('MetricName', '')
+        if namespace or metric_name:
+            metrics.append(f"{namespace}/{metric_name}" if namespace else metric_name)
+
+        statistic = alarm.get('Statistic') or alarm.get('ExtendedStatistic')
+        if statistic:
+            statistics.append(statistic)
+
+        operator = alarm.get('ComparisonOperator')
+        threshold = alarm.get('Threshold')
+        if operator is not None and threshold is not None:
+            conditions.append(
+                f"{operator} {threshold} for {alarm.get('EvaluationPeriods', '?')} period(s)"
+            )
+
+        if alarm.get('Period') is not None:
+            periods.append(str(alarm['Period']))
+
+    if metrics:
+        summary['Alarm Metric'] = ', '.join(metrics)
+    if statistics:
+        summary['Alarm Statistic'] = ', '.join(statistics)
+    if conditions:
+        summary['Alarm Condition'] = '; '.join(conditions)
+    if periods:
+        summary['Alarm Period (s)'] = ', '.join(periods)
+
+    return summary
+
+
+def _describe_predictive_metric(spec: dict) -> str:
+    """Name the metric a predictive scaling specification is built on."""
+    if spec.get('PredefinedMetricPairSpecification'):
+        return spec['PredefinedMetricPairSpecification'].get('PredefinedMetricType', 'Predefined pair')
+    if spec.get('PredefinedScalingMetricSpecification'):
+        return spec['PredefinedScalingMetricSpecification'].get('PredefinedMetricType', 'Predefined scaling')
+    if spec.get('PredefinedLoadMetricSpecification'):
+        return spec['PredefinedLoadMetricSpecification'].get('PredefinedMetricType', 'Predefined load')
+    if spec.get('CustomizedScalingMetricSpecification'):
+        return 'Customized scaling metric'
+    if spec.get('CustomizedLoadMetricSpecification'):
+        return 'Customized load metric'
+    if spec.get('CustomizedCapacityMetricSpecification'):
+        return 'Customized capacity metric'
+    return 'N/A'
+
+
+def _build_policy_row(
+    policy: dict,
+    region: str,
+    alarms_by_name: dict,
+) -> dict[str, Any]:
+    """
+    Build one scaling policy export row.
+
+    Each policy type gets its own branch. Predictive scaling previously fell
+    through to the simple-scaling branch and exported as
+    ``Adjustment: N/A, Type: N/A`` — a row that read as a malformed simple
+    policy rather than what it was (Issue #260).
+    """
+    policy_type = policy.get('PolicyType', '')
+    adjustment_type = policy.get('AdjustmentType', 'N/A')
+    scaling_adjustment = policy.get('ScalingAdjustment')
+    step_adjustments = policy.get('StepAdjustments', []) or []
+    target_tracking = policy.get('TargetTrackingConfiguration', {}) or {}
+    predictive = policy.get('PredictiveScalingConfiguration', {}) or {}
+
+    row: dict[str, Any] = {
+        'Region': region,
+        'ASG Name': policy.get('AutoScalingGroupName', ''),
+        'Policy Name': policy.get('PolicyName', ''),
+        'Policy Type': policy_type or 'N/A',
+        'Policy Detail': 'N/A',
+        'Adjustment Type': adjustment_type,
+        'Scaling Adjustment': (
+            scaling_adjustment if scaling_adjustment is not None else 'N/A'
+        ),
+        'Step Adjustments': 'N/A',
+        'Target Value': 'N/A',
+        'Predictive Mode': 'N/A',
+        'Predictive Scheduling Buffer (s)': 'N/A',
+        'Max Capacity Breach Behavior': 'N/A',
+        'Max Capacity Buffer (%)': 'N/A',
+        'Metric Aggregation': policy.get('MetricAggregationType', 'N/A'),
+        'Cooldown (s)': policy.get('Cooldown', 'N/A'),
+        'Estimated Instance Warmup (s)': policy.get('EstimatedInstanceWarmup', 'N/A'),
+        'Min Adjustment Magnitude': policy.get('MinAdjustmentMagnitude', 'N/A'),
+        'Enabled': policy.get('Enabled', True),
+        'Policy ARN': policy.get('PolicyARN', 'N/A'),
+    }
+
+    if target_tracking:
+        target_value = target_tracking.get('TargetValue', 'N/A')
+        predefined_metric = target_tracking.get('PredefinedMetricSpecification', {}) or {}
+        custom_metric = target_tracking.get('CustomizedMetricSpecification', {}) or {}
+
+        row['Target Value'] = target_value
+        if predefined_metric:
+            metric_type = predefined_metric.get('PredefinedMetricType', 'N/A')
+            row['Policy Detail'] = f"Target: {target_value}, Metric: {metric_type}"
+        elif custom_metric:
+            metric_name = custom_metric.get('MetricName', 'N/A')
+            namespace = custom_metric.get('Namespace', 'N/A')
+            row['Policy Detail'] = f"Target: {target_value}, Custom: {namespace}/{metric_name}"
+        else:
+            row['Policy Detail'] = f"Target: {target_value}"
+        row['Disable Scale In'] = target_tracking.get('DisableScaleIn', 'N/A')
+    else:
+        row['Disable Scale In'] = 'N/A'
+
+    if predictive:
+        specs = predictive.get('MetricSpecifications', []) or []
+        first_spec = specs[0] if specs else {}
+        metric_label = _describe_predictive_metric(first_spec)
+        target_value = first_spec.get('TargetValue', 'N/A')
+
+        row['Target Value'] = target_value
+        row['Predictive Mode'] = predictive.get('Mode', 'ForecastOnly')
+        row['Predictive Scheduling Buffer (s)'] = predictive.get('SchedulingBufferTime', 'N/A')
+        row['Max Capacity Breach Behavior'] = predictive.get(
+            'MaxCapacityBreachBehavior', 'HonorMaxCapacity'
+        )
+        row['Max Capacity Buffer (%)'] = predictive.get('MaxCapacityBuffer', 'N/A')
+        row['Policy Detail'] = (
+            f"Predictive ({row['Predictive Mode']}): target {target_value}, "
+            f"metric {metric_label}"
+        )
+
+    if step_adjustments:
+        row['Step Adjustments'] = _format_step_adjustments(step_adjustments)
+        row['Policy Detail'] = (
+            f"Steps: {row['Step Adjustments']}, Type: {adjustment_type}"
+        )
+
+    if row['Policy Detail'] == 'N/A':
+        # Simple scaling, or a shape with nothing more specific to say.
+        row['Policy Detail'] = (
+            f"Adjustment: {row['Scaling Adjustment']}, Type: {adjustment_type}"
+        )
+
+    row.update(_summarize_alarms(policy.get('Alarms', []), alarms_by_name))
+    return row
+
+
+def _scan_scaling_policies_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect scaling policies from a single region.
+
+    Errors propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records a failed region rather than reporting "no scaling policies" — this
+    collector previously swallowed per-region errors into an empty list, the
+    Tier-3 PARTIAL pattern from the silent-collection-failure sweep.
+
+    The CloudWatch alarm join is enrichment and degrades to 'N/A' rather than
+    failing the region.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    paginator = asg_client.get_paginator('describe_policies')
+
+    policies = []
+    for page in paginator.paginate():
+        policies.extend(page.get('ScalingPolicies', []))
+
+    alarm_names = {
+        alarm.get('AlarmName')
+        for policy in policies
+        for alarm in policy.get('Alarms', []) or []
+    }
+    alarms_by_name = _fetch_policy_alarms(region, alarm_names)
+
+    rows = []
+    for policy in policies:
+        try:
+            rows.append(_build_policy_row(policy, region, alarms_by_name))
+        except Exception as e:
+            # One malformed policy is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed scaling policy in {region}: "
+                f"{policy.get('PolicyName', '<unknown>')}",
+                e,
+            )
+
+    print(f"  Found {len(rows)} scaling policies")
+    return rows
+
+
+def collect_scaling_policies(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect scaling policy information across regions, surfacing failures.
 
     Returns:
-        list: List of dictionaries with scaling policy information
+        tuple: ``(policies, failed_regions)`` where ``failed_regions`` is a list
+        of ``(region, error_message)`` tuples.
     """
-    all_policies = []
-
-    for region in regions:
-        if not utils.is_aws_region(region):
-            continue
-
-        print(f"\nProcessing region: {region}")
-
-        try:
-            asg_client = utils.get_boto3_client('autoscaling', region_name=region)
-            paginator = asg_client.get_paginator('describe_policies')
-
-            for page in paginator.paginate():
-                policies = page.get('ScalingPolicies', [])
-
-                for policy in policies:
-                    policy_name = policy.get('PolicyName', '')
-                    asg_name = policy.get('AutoScalingGroupName', '')
-                    policy_type = policy.get('PolicyType', '')
-                    adjustment_type = policy.get('AdjustmentType', 'N/A')
-                    scaling_adjustment = policy.get('ScalingAdjustment', 'N/A')
-                    cooldown = policy.get('Cooldown', 'N/A')
-                    metric_aggregation_type = policy.get('MetricAggregationType', 'N/A')
-
-                    # Target tracking configuration
-                    target_tracking_config = policy.get('TargetTrackingConfiguration', {})
-                    if target_tracking_config:
-                        target_value = target_tracking_config.get('TargetValue', 'N/A')
-                        predefined_metric = target_tracking_config.get('PredefinedMetricSpecification', {})
-                        custom_metric = target_tracking_config.get('CustomizedMetricSpecification', {})
-
-                        if predefined_metric:
-                            metric_type = predefined_metric.get('PredefinedMetricType', 'N/A')
-                            policy_detail = f"Target: {target_value}, Metric: {metric_type}"
-                        elif custom_metric:
-                            metric_name = custom_metric.get('MetricName', 'N/A')
-                            namespace = custom_metric.get('Namespace', 'N/A')
-                            policy_detail = f"Target: {target_value}, Custom: {namespace}/{metric_name}"
-                        else:
-                            policy_detail = f"Target: {target_value}"
-                    else:
-                        policy_detail = f"Adjustment: {scaling_adjustment}, Type: {adjustment_type}"
-
-                    # Enabled status
-                    enabled = policy.get('Enabled', True)
-
-                    all_policies.append({
-                        'Region': region,
-                        'ASG Name': asg_name,
-                        'Policy Name': policy_name,
-                        'Policy Type': policy_type,
-                        'Policy Detail': policy_detail,
-                        'Metric Aggregation': metric_aggregation_type,
-                        'Cooldown (s)': cooldown,
-                        'Enabled': enabled
-                    })
-
-        except Exception as e:
-            utils.log_error(f"Error collecting scaling policies in region {region}", e)
-
-    return all_policies
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_scaling_policies_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    return [policy for result in region_results for policy in result], failed_regions
 
 
 def _scan_lifecycle_hooks_region(region: str) -> list[dict[str, Any]]:
@@ -1071,6 +1299,20 @@ def collect_lifecycle_hooks(regions: list[str]) -> list[dict[str, Any]]:
     return all_hooks
 
 
+def _merge_failed_regions(*failure_lists) -> list:
+    """
+    Combine ``(region, error)`` failure lists, keeping the first error per region.
+
+    Several scopes are collected independently; a region that fails more than
+    one of them should still be reported once.
+    """
+    merged: dict[str, str] = {}
+    for failures in failure_lists:
+        for region, error in failures or []:
+            merged.setdefault(region, error)
+    return list(merged.items())
+
+
 def export_autoscaling_data(account_id: str, account_name: str):
     """
     Export Auto Scaling Group information to an Excel file.
@@ -1116,19 +1358,15 @@ def export_autoscaling_data(account_id: str, account_name: str):
     if instances:
         data_frames['Instances'] = pd.DataFrame(instances)
 
-    # STEP 3: Collect scaling policies (Phase 4B: concurrent)
+    # STEP 3: Collect scaling policies (Issue #260 — enriched and fail-loud).
+    # Policy collection is a tracked scope: a region that fails here is
+    # reported as failed rather than exporting a sheet that reads as complete.
     print("\n=== COLLECTING SCALING POLICIES ===")
-    policy_results = utils.scan_regions_concurrent(
-        regions=regions,
-        scan_function=lambda r: collect_scaling_policies([r]),
-        show_progress=True
-    )
-    policies = []
-    for result in policy_results:
-        policies.extend(result)
+    policies, policy_failures = collect_scaling_policies(regions)
     utils.log_success(f"Total scaling policies collected: {len(policies)}")
     if policies:
         data_frames['Scaling Policies'] = pd.DataFrame(policies)
+    failed_regions = _merge_failed_regions(failed_regions, policy_failures)
 
     # STEP 4: Collect scheduled actions (Issue #258)
     print("\n=== COLLECTING SCHEDULED ACTIONS ===")
