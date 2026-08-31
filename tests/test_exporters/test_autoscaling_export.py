@@ -149,12 +149,21 @@ class TestSilentCollectionFailureRegression:
 
 
 def _create_launch_template(ec2_client, name, **overrides):
-    """Create a launch template with a realistic data block."""
+    """
+    Create a launch template with a realistic data block.
+
+    The security group is created for real rather than hardcoded: newer moto
+    releases validate that an ASG's launch template references an existing
+    group, so a literal sg-xxxx id fails at create_auto_scaling_group time.
+    """
+    security_group_id = ec2_client.create_security_group(
+        GroupName=f"{name}-sg", Description=f"test group for {name}"
+    )["GroupId"]
     data = {
         "ImageId": "ami-0abcdef1234567890",
         "InstanceType": "m5.xlarge",
         "KeyName": "prod-key",
-        "SecurityGroupIds": ["sg-11111111"],
+        "SecurityGroupIds": [security_group_id],
         "MetadataOptions": {"HttpTokens": "required", "HttpPutResponseHopLimit": 1},
         "BlockDeviceMappings": [
             {
@@ -280,6 +289,7 @@ class TestLaunchTemplateResolution:
         assert row["Instance Type"] == "m5.xlarge"
         assert row["AMI ID"] == "ami-0abcdef1234567890"
         assert row["IMDSv2 Required"] == "required"
+        assert row["Security Groups"].startswith("sg-")
         assert row["Root Volume Size (GiB)"] == 50
         assert row["Total EBS Size (GiB)"] == 150
         assert row["EBS Encrypted"] is True
