@@ -4559,6 +4559,65 @@ def _load_pricing_json(filename: str, default: dict[str, float]) -> dict[str, fl
     return default
 
 
+_INSTANCE_SPECS_LOCK = threading.Lock()
+_INSTANCE_SPECS_CACHE: Optional[dict[str, dict[str, Any]]] = None
+
+
+def load_instance_type_specs() -> dict[str, dict[str, Any]]:
+    """
+    Load static per-instance-type hardware specs from reference/ec2-pricing.json.
+
+    Returns a ``{instance_type: {'vcpu': int|None, 'memory_gib': float|None,
+    'architecture': str|None}}`` map. These values are partition-independent —
+    an ``m5.xlarge`` has the same vCPU and memory count in GovCloud as in
+    commercial — so unlike the pricing blocks this map needs no region argument.
+
+    ``vcpu`` here is the true vCPU count (threads), not physical cores. Callers
+    must prefer this over ``CpuOptions.CoreCount`` from a describe-instances
+    response, which reports physical cores and under-reports by the SMT factor
+    on most instance families (see Issue #259).
+
+    The result is cached; the reference file does not change at runtime. Any
+    I/O or parse error yields an empty map, leaving callers to fall back to
+    ``ec2:DescribeInstanceTypes``.
+
+    Returns:
+        Dict mapping instance type → spec dict. Empty on error.
+    """
+    global _INSTANCE_SPECS_CACHE
+
+    with _INSTANCE_SPECS_LOCK:
+        if _INSTANCE_SPECS_CACHE is not None:
+            return _INSTANCE_SPECS_CACHE
+
+        specs: dict[str, dict[str, Any]] = {}
+        json_path = _REFERENCE_DIR / "ec2-pricing.json"
+        try:
+            with json_path.open(encoding="utf-8") as fh:
+                data = json.load(fh)
+            for instance_type, record in data.get("records", {}).items():
+                specs[instance_type] = {
+                    "vcpu": record.get("vcpu"),
+                    "memory_gib": record.get("memory_gib"),
+                    "architecture": record.get("architecture"),
+                }
+        except FileNotFoundError:
+            logging.getLogger(__name__).warning(
+                "Instance spec reference not found: %s — falling back to describe_instance_types",
+                json_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "Error reading instance spec reference %s: %s — falling back to "
+                "describe_instance_types",
+                json_path,
+                exc,
+            )
+
+        _INSTANCE_SPECS_CACHE = specs
+        return specs
+
+
 def _load_rds_instance_pricing() -> dict[str, float]:
     """
     Build an ``{instance_class: hourly_rate_usd}`` map from rds-pricing.json.

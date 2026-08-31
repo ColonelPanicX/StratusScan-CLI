@@ -10,16 +10,22 @@ Date: NOV-15-2025
 Description:
 This script exports AWS Auto Scaling Group information from all regions into an Excel file with
 multiple worksheets. The output includes Auto Scaling Group configurations, instances,
-launch configurations/templates, scaling policies, and scheduled actions.
+launch configurations/templates, scaling policies, scheduled actions, and lifecycle hooks.
 
 Features:
 - Auto Scaling Group overview with desired/min/max capacity
+- Resolved per-instance specs (instance type, AMI, volumes) and capacity totals
+  at minimum, desired, and maximum size
 - Instance information with health status and lifecycle state
-- Launch Configurations and Launch Templates
+- Launch Templates referenced by a group, resolved to the version in use
+- Launch Configurations referenced by a group
 - Scaling policies (target tracking, step scaling, simple scaling)
 - Scheduled actions
 - Lifecycle hooks
 - Tags and metadata
+
+Launch template and launch configuration coverage is deliberately
+referenced-only: objects no Auto Scaling Group uses are out of scope here.
 
 Phase 4B Update:
 - Concurrent region scanning (4x-10x performance improvement)
@@ -50,49 +56,27 @@ except ImportError:
 args = utils.parse_script_args("Export Auto Scaling Groups to Excel")
 
 
+def _format_timestamp(value: Any) -> str:
+    """Render an AWS timestamp as ``YYYY-MM-DD HH:MM:SS``, or ``'N/A'`` if absent."""
+    if not value:
+        return 'N/A'
+    if isinstance(value, datetime.datetime):
+        return value.strftime('%Y-%m-%d %H:%M:%S')
+    return str(value)
+
+
 def _scan_asgs_region(region: str) -> list[dict[str, Any]]:
     """
     Collect Auto Scaling Groups from a single region.
 
-    This is the primary scope collector. It deliberately does NOT swallow
-    errors: an API/permission failure here must propagate so
-    ``scan_regions_concurrent(..., collect_failures=True)`` records the region
-    as failed instead of silently reporting "no Auto Scaling Groups" (the
-    silent-collection-loss bug — see
-    ``.collab/audit/07.16.2026-silent-collection-failure-blast-radius.md``).
+    Thin wrapper over :func:`_scan_launch_data_region`, which does the actual
+    scan and additionally resolves the launch templates and launch
+    configurations the groups reference. Retained because ASG rows are the
+    primary scope and several callers and tests want them on their own.
 
-    Individual malformed ASGs are skipped (logged) rather than aborting the
-    whole region.
+    Region-level failures propagate; individual malformed ASGs are skipped.
     """
-    if not utils.is_aws_region(region):
-        utils.log_error(f"Skipping invalid AWS region: {region}")
-        return []
-
-    print(f"\nProcessing region: {region}")
-
-    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
-    paginator = asg_client.get_paginator('describe_auto_scaling_groups')
-    region_asgs = []
-    asg_count = 0
-
-    for page in paginator.paginate():
-        asgs = page.get('AutoScalingGroups', [])
-        asg_count += len(asgs)
-
-        for asg in asgs:
-            try:
-                region_asgs.append(_build_asg_row(asg, region))
-            except Exception as e:
-                # One malformed ASG is skipped, not fatal to the region.
-                utils.log_error(
-                    f"Skipping malformed Auto Scaling Group in {region}: "
-                    f"{asg.get('AutoScalingGroupName', '<unknown>')}",
-                    e,
-                )
-                continue
-
-    print(f"  Found {asg_count} Auto Scaling Groups")
-    return region_asgs
+    return _scan_launch_data_region(region)['asgs']
 
 
 def _build_asg_row(asg: dict, region: str) -> dict[str, Any]:
@@ -109,18 +93,10 @@ def _build_asg_row(asg: dict, region: str) -> dict[str, Any]:
     health_check_type = asg.get('HealthCheckType', 'N/A')
     health_check_grace_period = asg.get('HealthCheckGracePeriod', 0)
 
-    # Launch configuration or template
-    launch_config_name = asg.get('LaunchConfigurationName', 'N/A')
-    launch_template = asg.get('LaunchTemplate', {})
-    mixed_instances_policy = asg.get('MixedInstancesPolicy', {})
-
-    if launch_template:
-        launch_source = f"LT: {launch_template.get('LaunchTemplateName', '')} ({launch_template.get('Version', '')})"
-    elif mixed_instances_policy:
-        lt_spec = mixed_instances_policy.get('LaunchTemplate', {}).get('LaunchTemplateSpecification', {})
-        launch_source = f"Mixed: {lt_spec.get('LaunchTemplateName', '')} ({lt_spec.get('Version', '')})"
-    else:
-        launch_source = f"LC: {launch_config_name}"
+    # Launch configuration or template. The referenced object itself is
+    # resolved separately (see _collect_launch_templates /
+    # _collect_launch_configurations); this is the display string only.
+    launch_source = _format_launch_source(_launch_source_ref(asg))
 
     # VPC and subnets
     vpc_zone_identifier = asg.get('VPCZoneIdentifier', '')
@@ -150,9 +126,7 @@ def _build_asg_row(asg: dict, region: str) -> dict[str, Any]:
     capacity_rebalance = asg.get('CapacityRebalance', False)
 
     # Creation time
-    created_time = asg.get('CreatedTime', '')
-    if created_time:
-        created_time = created_time.strftime('%Y-%m-%d %H:%M:%S') if isinstance(created_time, datetime.datetime) else str(created_time)
+    created_time = _format_timestamp(asg.get('CreatedTime'))
 
     # Tags
     tags = asg.get('Tags', [])
@@ -184,26 +158,722 @@ def _build_asg_row(asg: dict, region: str) -> dict[str, Any]:
     }
 
 
-def collect_autoscaling_groups(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+# ---------------------------------------------------------------------------
+# Launch source resolution (Issue #257)
+#
+# An Auto Scaling Group's launch template or launch configuration *is* the
+# group in every sense that matters downstream: it defines what every instance
+# the group ever creates will be. The exporter historically recorded only the
+# name and version string and never fetched the referenced object, so instance
+# type, AMI, volumes, and IMDS posture were absent from the export while the
+# module docstring claimed to cover them.
+#
+# Scope is deliberately *referenced-only*: a launch template that no ASG uses
+# is an EC2-side concern, not an auto-scaling one.
+# ---------------------------------------------------------------------------
+
+# Device names AWS uses for the root volume, in preference order.
+_ROOT_DEVICE_NAMES = ('/dev/xvda', '/dev/sda1', 'xvda', 'sda1')
+
+
+def _launch_source_ref(asg: dict) -> dict[str, Any]:
     """
-    Collect Auto Scaling Group information across regions, surfacing failures.
+    Describe what an Auto Scaling Group launches from, as structured data.
+
+    Returns a dict with ``kind`` (``'lt'``, ``'mixed'``, or ``'lc'``) plus the
+    identifiers needed to resolve the referenced object. ``version_raw`` is
+    what the ASG literally records (possibly empty); ``version_query`` is what
+    to ask the API for — an omitted version means ``$Default``.
+    """
+    launch_template = asg.get('LaunchTemplate') or {}
+    mixed_instances_policy = asg.get('MixedInstancesPolicy') or {}
+    launch_config_name = asg.get('LaunchConfigurationName') or ''
+
+    if launch_template:
+        version = launch_template.get('Version') or ''
+        return {
+            'kind': 'lt',
+            'lt_id': launch_template.get('LaunchTemplateId', ''),
+            'lt_name': launch_template.get('LaunchTemplateName', ''),
+            'version_raw': version,
+            'version_query': version or '$Default',
+            'lc_name': '',
+            'overrides': [],
+            'distribution': {},
+        }
+
+    if mixed_instances_policy:
+        mip_lt = mixed_instances_policy.get('LaunchTemplate', {}) or {}
+        spec = mip_lt.get('LaunchTemplateSpecification', {}) or {}
+        version = spec.get('Version') or ''
+        overrides = [
+            override.get('InstanceType')
+            for override in mip_lt.get('Overrides', []) or []
+            if override.get('InstanceType')
+        ]
+        return {
+            'kind': 'mixed',
+            'lt_id': spec.get('LaunchTemplateId', ''),
+            'lt_name': spec.get('LaunchTemplateName', ''),
+            'version_raw': version,
+            'version_query': version or '$Default',
+            'lc_name': '',
+            'overrides': overrides,
+            'distribution': mixed_instances_policy.get('InstancesDistribution', {}) or {},
+        }
+
+    return {
+        'kind': 'lc',
+        'lt_id': '',
+        'lt_name': '',
+        'version_raw': '',
+        'version_query': '',
+        'lc_name': launch_config_name or 'N/A',
+        'overrides': [],
+        'distribution': {},
+    }
+
+
+def _format_launch_source(ref: dict[str, Any]) -> str:
+    """Render the human-readable ``Launch Source`` column from a launch ref."""
+    if ref['kind'] == 'lt':
+        return f"LT: {ref['lt_name']} ({ref['version_raw']})"
+    if ref['kind'] == 'mixed':
+        return f"Mixed: {ref['lt_name']} ({ref['version_raw']})"
+    return f"LC: {ref['lc_name']}"
+
+
+def _summarize_block_devices(mappings: list[dict]) -> dict[str, Any]:
+    """
+    Summarize launch-template / launch-configuration block device mappings.
+
+    Returns root volume size and type, total EBS size across all mappings, and
+    whether every EBS mapping is encrypted. Values are ``None`` when the
+    mapping list is absent — which is common, since a template that omits
+    block devices inherits the AMI's. ``None`` is reported as ``'N/A'`` rather
+    than guessed at.
+    """
+    summary: dict[str, Any] = {
+        'root_size': None,
+        'root_type': None,
+        'total_size': None,
+        'encrypted': None,
+    }
+    if not mappings:
+        return summary
+
+    ebs_mappings = [m for m in mappings if (m.get('Ebs') or {}).get('VolumeSize')]
+    if not ebs_mappings:
+        return summary
+
+    total = 0
+    encrypted_flags = []
+    for mapping in ebs_mappings:
+        ebs = mapping.get('Ebs') or {}
+        total += int(ebs.get('VolumeSize') or 0)
+        encrypted_flags.append(bool(ebs.get('Encrypted')))
+
+    root = None
+    for candidate in _ROOT_DEVICE_NAMES:
+        root = next((m for m in ebs_mappings if m.get('DeviceName') == candidate), None)
+        if root:
+            break
+    if root is None:
+        root = ebs_mappings[0]
+
+    root_ebs = root.get('Ebs') or {}
+    summary['root_size'] = int(root_ebs.get('VolumeSize') or 0)
+    summary['root_type'] = root_ebs.get('VolumeType') or 'N/A'
+    summary['total_size'] = total
+    summary['encrypted'] = all(encrypted_flags)
+    return summary
+
+
+def _resolve_instance_specs(region: str, instance_types: set) -> dict[str, dict[str, Any]]:
+    """
+    Resolve vCPU and memory for a set of instance types.
+
+    Reads the static reference data first (``utils.load_instance_type_specs``,
+    which covers ~1,200 types) and falls back to ``ec2:DescribeInstanceTypes``
+    in chunks for anything absent — the same two-tier approach ec2_export.py
+    uses for memory, extended to carry vCPU.
+
+    vCPU comes from ``VCpuInfo.DefaultVCpus``, never ``CpuOptions.CoreCount``:
+    the latter is physical cores and under-reports by the SMT factor.
+    """
+    specs: dict[str, dict[str, Any]] = {}
+    wanted = sorted({t for t in instance_types if t})
+    if not wanted:
+        return specs
+
+    reference = utils.load_instance_type_specs()
+    unknown = []
+    for instance_type in wanted:
+        record = reference.get(instance_type) or {}
+        if record.get('vcpu') is not None and record.get('memory_gib') is not None:
+            specs[instance_type] = {
+                'vcpu': record['vcpu'],
+                'memory_gib': float(record['memory_gib']),
+            }
+        else:
+            unknown.append(instance_type)
+
+    if unknown:
+        try:
+            ec2_client = utils.get_boto3_client('ec2', region_name=region)
+            for index in range(0, len(unknown), 100):
+                chunk = unknown[index:index + 100]
+                response = ec2_client.describe_instance_types(InstanceTypes=chunk)
+                for entry in response.get('InstanceTypes', []):
+                    memory_mib = (entry.get('MemoryInfo') or {}).get('SizeInMiB')
+                    specs[entry['InstanceType']] = {
+                        'vcpu': (entry.get('VCpuInfo') or {}).get('DefaultVCpus'),
+                        'memory_gib': round(memory_mib / 1024, 2) if memory_mib else None,
+                    }
+        except Exception as e:
+            # Spec resolution is enrichment, not primary scope: an unresolved
+            # type yields 'N/A' columns rather than failing the region.
+            utils.log_warning(f"Could not resolve instance type specs in {region}: {e}")
+
+    return specs
+
+
+def _collect_launch_templates(
+    region: str,
+    refs_by_asg: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """
+    Resolve every launch template referenced by an ASG in this region.
+
+    Returns ``(rows, details_by_asg)`` where ``rows`` is one record per
+    referenced (template, version) pair and ``details_by_asg`` maps ASG name →
+    resolved template data for enriching the primary sheet.
+
+    Raises when there are referenced templates but *none* could be resolved —
+    that shape means a permission or API failure, not an empty account, and
+    must surface as a failed region rather than an empty sheet.
+    """
+    referenced = {
+        name: ref for name, ref in refs_by_asg.items()
+        if ref['kind'] in ('lt', 'mixed') and (ref['lt_id'] or ref['lt_name'])
+    }
+    if not referenced:
+        return [], {}
+
+    ec2_client = utils.get_boto3_client('ec2', region_name=region)
+
+    # Group ASGs by the (template, version) pair they reference.
+    by_pair: dict[tuple, list[str]] = {}
+    for asg_name, ref in referenced.items():
+        key = (ref['lt_id'], ref['lt_name'], ref['version_query'])
+        by_pair.setdefault(key, []).append(asg_name)
+
+    # Resolve template metadata once per template (not per pair) so $Default
+    # and $Latest can be turned into concrete version numbers.
+    template_meta: dict[tuple, dict] = {}
+    for lt_id, lt_name, _version in by_pair:
+        meta_key = (lt_id, lt_name)
+        if meta_key in template_meta:
+            continue
+        try:
+            if lt_id:
+                response = ec2_client.describe_launch_templates(LaunchTemplateIds=[lt_id])
+            else:
+                response = ec2_client.describe_launch_templates(LaunchTemplateNames=[lt_name])
+            templates = response.get('LaunchTemplates', [])
+            template_meta[meta_key] = templates[0] if templates else {}
+        except Exception as e:
+            # A template deleted out from under a live ASG is a real state we
+            # must report, not crash on.
+            utils.log_warning(
+                f"Could not describe launch template {lt_name or lt_id} in {region}: {e}"
+            )
+            template_meta[meta_key] = {}
+
+    rows = []
+    details_by_asg: dict[str, dict[str, Any]] = {}
+    resolved_pairs = 0
+
+    for (lt_id, lt_name, version_query), asg_names in by_pair.items():
+        meta = template_meta.get((lt_id, lt_name), {})
+        latest_version = meta.get('LatestVersionNumber')
+        default_version = meta.get('DefaultVersionNumber')
+
+        # Resolve the alias to a concrete version number where possible;
+        # describe_launch_template_versions accepts the aliases on real AWS but
+        # numeric versions work everywhere including moto.
+        if version_query == '$Default' and default_version is not None:
+            version_lookup = str(default_version)
+        elif version_query == '$Latest' and latest_version is not None:
+            version_lookup = str(latest_version)
+        else:
+            version_lookup = version_query
+
+        version_data = {}
+        resolved_version = version_lookup
+        try:
+            kwargs: dict[str, Any] = {'Versions': [version_lookup]}
+            if lt_id:
+                kwargs['LaunchTemplateId'] = lt_id
+            else:
+                kwargs['LaunchTemplateName'] = lt_name
+            response = ec2_client.describe_launch_template_versions(**kwargs)
+            versions = response.get('LaunchTemplateVersions', [])
+            if versions:
+                version_entry = versions[0]
+                version_data = version_entry.get('LaunchTemplateData', {}) or {}
+                resolved_version = str(version_entry.get('VersionNumber', version_lookup))
+                resolved_pairs += 1
+        except Exception as e:
+            utils.log_warning(
+                f"Could not describe launch template version "
+                f"{lt_name or lt_id} ({version_lookup}) in {region}: {e}"
+            )
+
+        block_devices = _summarize_block_devices(version_data.get('BlockDeviceMappings', []))
+        metadata_options = version_data.get('MetadataOptions', {}) or {}
+        iam_profile = version_data.get('IamInstanceProfile', {}) or {}
+
+        security_groups = list(version_data.get('SecurityGroupIds', []) or [])
+        security_groups += list(version_data.get('SecurityGroups', []) or [])
+        for interface in version_data.get('NetworkInterfaces', []) or []:
+            security_groups += list(interface.get('Groups', []) or [])
+
+        # A mixed-instances policy carries its own type list and spot/on-demand
+        # split; both live on the ASG, not the template.
+        overrides = []
+        distribution = {}
+        for asg_name in asg_names:
+            ref = referenced[asg_name]
+            if ref['overrides']:
+                overrides = ref['overrides']
+            if ref['distribution']:
+                distribution = ref['distribution']
+
+        detail = {
+            'instance_type': version_data.get('InstanceType'),
+            'overrides': overrides,
+            'ami_id': version_data.get('ImageId'),
+            'root_size': block_devices['root_size'],
+            'total_size': block_devices['total_size'],
+            'source': 'Launch Template',
+            'source_name': lt_name or lt_id,
+        }
+        for asg_name in asg_names:
+            details_by_asg[asg_name] = detail
+
+        rows.append({
+            'Region': region,
+            'Used By ASGs': ', '.join(sorted(asg_names)),
+            'Launch Template Name': lt_name or 'N/A',
+            'Launch Template ID': lt_id or meta.get('LaunchTemplateId', 'N/A'),
+            'Version In Use': version_query,
+            'Resolved Version': resolved_version,
+            'Default Version': default_version if default_version is not None else 'N/A',
+            'Latest Version': latest_version if latest_version is not None else 'N/A',
+            'Version Is Latest': (
+                str(resolved_version) == str(latest_version)
+                if latest_version is not None else 'N/A'
+            ),
+            'Instance Type': version_data.get('InstanceType', 'N/A'),
+            'Instance Type Overrides': ', '.join(overrides) if overrides else 'N/A',
+            'On-Demand Base Capacity': distribution.get('OnDemandBaseCapacity', 'N/A'),
+            'On-Demand % Above Base': distribution.get('OnDemandPercentageAboveBaseCapacity', 'N/A'),
+            'Spot Allocation Strategy': distribution.get('SpotAllocationStrategy', 'N/A'),
+            'AMI ID': version_data.get('ImageId', 'N/A'),
+            'Key Pair': version_data.get('KeyName', 'N/A'),
+            'IAM Instance Profile': iam_profile.get('Arn') or iam_profile.get('Name') or 'N/A',
+            'Security Groups': ', '.join(security_groups) if security_groups else 'N/A',
+            'IMDSv2 Required': metadata_options.get('HttpTokens', 'N/A'),
+            'Metadata Hop Limit': metadata_options.get('HttpPutResponseHopLimit', 'N/A'),
+            'Root Volume Size (GiB)': (
+                block_devices['root_size'] if block_devices['root_size'] is not None else 'N/A'
+            ),
+            'Root Volume Type': block_devices['root_type'] or 'N/A',
+            'Total EBS Size (GiB)': (
+                block_devices['total_size'] if block_devices['total_size'] is not None else 'N/A'
+            ),
+            'EBS Encrypted': (
+                block_devices['encrypted'] if block_devices['encrypted'] is not None else 'N/A'
+            ),
+            'EBS Optimized': version_data.get('EbsOptimized', 'N/A'),
+            'Detailed Monitoring': (version_data.get('Monitoring', {}) or {}).get('Enabled', 'N/A'),
+            'User Data Present': bool(version_data.get('UserData')),
+            'Created By': meta.get('CreatedBy', 'N/A'),
+            'Created Time': _format_timestamp(meta.get('CreateTime')),
+        })
+
+    if by_pair and resolved_pairs == 0:
+        # Every referenced template failed to resolve — a permission or API
+        # problem, not an empty account. Fail loud so the region is recorded
+        # as failed instead of exporting an empty sheet that reads as complete.
+        raise RuntimeError(
+            f"Referenced {len(by_pair)} launch template version(s) in {region} but resolved "
+            f"none — check ec2:DescribeLaunchTemplates / ec2:DescribeLaunchTemplateVersions"
+        )
+
+    return rows, details_by_asg
+
+
+def _collect_launch_configurations(
+    region: str,
+    refs_by_asg: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """
+    Resolve every launch configuration referenced by an ASG in this region.
+
+    Launch configurations are deprecated and closed to new AWS customers, but
+    they remain the majority launch path in long-lived estates (a sampled
+    commercial org showed 123 of 178 groups on LCs), so this path is not
+    optional.
+
+    Raises when there are referenced configurations but none resolved, for the
+    same fail-loud reason as ``_collect_launch_templates``.
+    """
+    referenced = {
+        name: ref for name, ref in refs_by_asg.items()
+        if ref['kind'] == 'lc' and ref['lc_name'] and ref['lc_name'] != 'N/A'
+    }
+    if not referenced:
+        return [], {}
+
+    wanted_names = {ref['lc_name'] for ref in referenced.values()}
+    asgs_by_lc: dict[str, list[str]] = {}
+    for asg_name, ref in referenced.items():
+        asgs_by_lc.setdefault(ref['lc_name'], []).append(asg_name)
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    paginator = asg_client.get_paginator('describe_launch_configurations')
+
+    rows = []
+    details_by_asg: dict[str, dict[str, Any]] = {}
+    resolved = 0
+
+    for page in paginator.paginate():
+        for config in page.get('LaunchConfigurations', []):
+            config_name = config.get('LaunchConfigurationName', '')
+            if config_name not in wanted_names:
+                continue
+
+            resolved += 1
+            block_devices = _summarize_block_devices(config.get('BlockDeviceMappings', []))
+            metadata_options = config.get('MetadataOptions', {}) or {}
+            asg_names = asgs_by_lc.get(config_name, [])
+
+            detail = {
+                'instance_type': config.get('InstanceType'),
+                'overrides': [],
+                'ami_id': config.get('ImageId'),
+                'root_size': block_devices['root_size'],
+                'total_size': block_devices['total_size'],
+                'source': 'Launch Configuration',
+                'source_name': config_name,
+            }
+            for asg_name in asg_names:
+                details_by_asg[asg_name] = detail
+
+            rows.append({
+                'Region': region,
+                'Used By ASGs': ', '.join(sorted(asg_names)),
+                'Launch Configuration Name': config_name,
+                'Instance Type': config.get('InstanceType', 'N/A'),
+                'AMI ID': config.get('ImageId', 'N/A'),
+                'Key Pair': config.get('KeyName', 'N/A'),
+                'IAM Instance Profile': config.get('IamInstanceProfile', 'N/A'),
+                'Security Groups': ', '.join(config.get('SecurityGroups', []) or []) or 'N/A',
+                'IMDSv2 Required': metadata_options.get('HttpTokens', 'N/A'),
+                'Metadata Hop Limit': metadata_options.get('HttpPutResponseHopLimit', 'N/A'),
+                'Root Volume Size (GiB)': (
+                    block_devices['root_size'] if block_devices['root_size'] is not None else 'N/A'
+                ),
+                'Root Volume Type': block_devices['root_type'] or 'N/A',
+                'Total EBS Size (GiB)': (
+                    block_devices['total_size'] if block_devices['total_size'] is not None else 'N/A'
+                ),
+                'EBS Encrypted': (
+                    block_devices['encrypted'] if block_devices['encrypted'] is not None else 'N/A'
+                ),
+                'EBS Optimized': config.get('EbsOptimized', 'N/A'),
+                'Detailed Monitoring': (config.get('InstanceMonitoring', {}) or {}).get('Enabled', 'N/A'),
+                'Associate Public IP': config.get('AssociatePublicIpAddress', 'N/A'),
+                'Spot Price': config.get('SpotPrice', 'N/A'),
+                'User Data Present': bool(config.get('UserData')),
+                'Created Time': _format_timestamp(config.get('CreatedTime')),
+                'Launch Configuration ARN': config.get('LaunchConfigurationARN', 'N/A'),
+            })
+
+    if wanted_names and resolved == 0:
+        raise RuntimeError(
+            f"Referenced {len(wanted_names)} launch configuration(s) in {region} but resolved "
+            f"none — check autoscaling:DescribeLaunchConfigurations"
+        )
+
+    return rows, details_by_asg
+
+
+def _launch_enrichment(
+    detail: dict[str, Any],
+    specs: dict[str, dict[str, Any]],
+    min_size: int,
+    desired_capacity: int,
+    max_size: int,
+) -> dict[str, Any]:
+    """
+    Build the resolved-launch and capacity-envelope columns for the ASG sheet.
+
+    Capacity is reported as an envelope rather than a scalar: an ASG's total
+    CPU, memory, and storage is per-instance spec x a capacity range, so a
+    single number is wrong the moment the group scales.
+
+    A mixed-instances policy with no single template-level instance type has no
+    determinable per-instance spec; those columns report ``'N/A'`` rather than
+    picking an override arbitrarily.
+    """
+    detail = detail or {}
+    instance_type = detail.get('instance_type')
+    overrides = detail.get('overrides') or []
+    spec = specs.get(instance_type, {}) if instance_type else {}
+
+    vcpu = spec.get('vcpu')
+    memory_gib = spec.get('memory_gib')
+    storage_gib = detail.get('total_size')
+
+    def envelope(per_instance):
+        if per_instance is None:
+            return 'N/A', 'N/A', 'N/A'
+        return (
+            round(per_instance * min_size, 2),
+            round(per_instance * desired_capacity, 2),
+            round(per_instance * max_size, 2),
+        )
+
+    vcpu_min, vcpu_desired, vcpu_max = envelope(vcpu)
+    mem_min, mem_desired, mem_max = envelope(memory_gib)
+    storage_min, storage_desired, storage_max = envelope(storage_gib)
+
+    if instance_type:
+        instance_type_display = instance_type
+    elif overrides:
+        instance_type_display = f"Mixed: {', '.join(overrides)}"
+    else:
+        instance_type_display = 'N/A'
+
+    return {
+        'Launch Source Type': detail.get('source', 'N/A'),
+        'Launch Source Name': detail.get('source_name', 'N/A'),
+        'Instance Type': instance_type_display,
+        'AMI ID': detail.get('ami_id') or 'N/A',
+        'Root Volume Size (GiB)': (
+            detail.get('root_size') if detail.get('root_size') is not None else 'N/A'
+        ),
+        'vCPU per Instance': vcpu if vcpu is not None else 'N/A',
+        'Memory GiB per Instance': memory_gib if memory_gib is not None else 'N/A',
+        'Storage GiB per Instance': storage_gib if storage_gib is not None else 'N/A',
+        'vCPU (Min)': vcpu_min,
+        'vCPU (Desired)': vcpu_desired,
+        'vCPU (Max)': vcpu_max,
+        'Memory GiB (Min)': mem_min,
+        'Memory GiB (Desired)': mem_desired,
+        'Memory GiB (Max)': mem_max,
+        'Storage GiB (Min)': storage_min,
+        'Storage GiB (Desired)': storage_desired,
+        'Storage GiB (Max)': storage_max,
+    }
+
+
+def _scan_launch_data_region(region: str) -> dict[str, list[dict[str, Any]]]:
+    """
+    Collect Auto Scaling Groups and their resolved launch sources for a region.
+
+    This is the primary scope collector. Like ``_scan_asgs_region`` before it,
+    it deliberately does NOT swallow region-level errors: an API or permission
+    failure must propagate so ``scan_regions_concurrent(..., collect_failures=True)``
+    records the region as failed instead of silently reporting "no Auto Scaling
+    Groups" (see .collab/audit/07.16.2026-silent-collection-failure-blast-radius.md).
+
+    Individual malformed ASGs are skipped (logged) rather than aborting the
+    whole region.
+
+    Returns:
+        dict with keys ``asgs``, ``launch_templates``, ``launch_configurations``.
+    """
+    empty: dict[str, list[dict[str, Any]]] = {
+        'asgs': [], 'launch_templates': [], 'launch_configurations': []
+    }
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return empty
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    paginator = asg_client.get_paginator('describe_auto_scaling_groups')
+
+    raw_asgs = []
+    for page in paginator.paginate():
+        raw_asgs.extend(page.get('AutoScalingGroups', []))
+
+    print(f"  Found {len(raw_asgs)} Auto Scaling Groups")
+    if not raw_asgs:
+        return empty
+
+    # Resolve what each group launches from before building rows, so the
+    # primary sheet can carry instance type, AMI, and capacity forward.
+    refs_by_asg: dict[str, dict[str, Any]] = {}
+    skipped: set = set()
+    for asg in raw_asgs:
+        asg_name = asg.get('AutoScalingGroupName', '')
+        try:
+            refs_by_asg[asg_name] = _launch_source_ref(asg)
+        except Exception as e:
+            utils.log_error(
+                f"Skipping Auto Scaling Group with unreadable launch source in "
+                f"{region}: {asg_name or '<unknown>'}",
+                e,
+            )
+            skipped.add(asg_name)
+
+    lt_rows, lt_details = _collect_launch_templates(region, refs_by_asg)
+    lc_rows, lc_details = _collect_launch_configurations(region, refs_by_asg)
+
+    details_by_asg = {**lc_details, **lt_details}
+    specs = _resolve_instance_specs(
+        region,
+        {detail.get('instance_type') for detail in details_by_asg.values()},
+    )
+
+    asg_rows = []
+    for asg in raw_asgs:
+        asg_name = asg.get('AutoScalingGroupName', '')
+        if asg_name in skipped:
+            continue
+        try:
+            row = _build_asg_row(asg, region)
+        except Exception as e:
+            # One malformed ASG is skipped, not fatal to the region.
+            utils.log_error(
+                f"Skipping malformed Auto Scaling Group in {region}: "
+                f"{asg_name or '<unknown>'}",
+                e,
+            )
+            continue
+
+        row.update(_launch_enrichment(
+            details_by_asg.get(asg_name, {}),
+            specs,
+            int(asg.get('MinSize') or 0),
+            int(asg.get('DesiredCapacity') or 0),
+            int(asg.get('MaxSize') or 0),
+        ))
+        asg_rows.append(row)
+
+    return {
+        'asgs': asg_rows,
+        'launch_templates': lt_rows,
+        'launch_configurations': lc_rows,
+    }
+
+
+def _scan_scheduled_actions_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect scheduled scaling actions from a single region.
+
+    Scheduled scaling is one of the two mechanisms by which an ASG changes
+    capacity; without it the export can say how a group reacts but not when it
+    is configured to scale. Errors propagate so a failed region is recorded as
+    failed rather than reported as "no scheduled actions" (Issue #258).
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    paginator = asg_client.get_paginator('describe_scheduled_actions')
+
+    rows = []
+    for page in paginator.paginate():
+        for action in page.get('ScheduledUpdateGroupActions', []):
+            min_size = action.get('MinSize')
+            max_size = action.get('MaxSize')
+            desired = action.get('DesiredCapacity')
+            rows.append({
+                'Region': region,
+                'ASG Name': action.get('AutoScalingGroupName', 'N/A'),
+                'Action Name': action.get('ScheduledActionName', 'N/A'),
+                'Recurrence': action.get('Recurrence', 'N/A'),
+                'Time Zone': action.get('TimeZone', 'N/A'),
+                'Start Time': _format_timestamp(action.get('StartTime')),
+                'End Time': _format_timestamp(action.get('EndTime')),
+                'Min Size': min_size if min_size is not None else 'N/A',
+                'Max Size': max_size if max_size is not None else 'N/A',
+                'Desired Capacity': desired if desired is not None else 'N/A',
+                'Action ARN': action.get('ScheduledActionARN', 'N/A'),
+            })
+
+    print(f"  Found {len(rows)} scheduled actions")
+    return rows
+
+
+def collect_scheduled_actions(regions: list[str]) -> list[dict[str, Any]]:
+    """
+    Collect scheduled scaling actions across regions.
+
+    Returns:
+        list: One dictionary per scheduled action.
+    """
+    region_results = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_scheduled_actions_region,
+        show_progress=True,
+    )
+    return [action for result in region_results for action in result]
+
+
+def collect_launch_data(
+    regions: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list]:
+    """
+    Collect Auto Scaling Groups plus their resolved launch templates/configs.
 
     Uses ``collect_failures=True`` so a region whose collection errors is
     reported as a failed scope rather than silently collapsed into an empty
     result.
 
     Returns:
-        tuple: ``(asgs, failed_regions)`` where ``failed_regions`` is a list of
-        ``(region, error_message)`` tuples.
+        tuple: ``(asgs, launch_templates, launch_configurations, failed_regions)``
+        where ``failed_regions`` is a list of ``(region, error_message)`` tuples.
     """
     region_results, failed_regions = utils.scan_regions_concurrent(
         regions=regions,
-        scan_function=_scan_asgs_region,
+        scan_function=_scan_launch_data_region,
         show_progress=True,
         collect_failures=True,
     )
-    all_asgs = [asg for result in region_results for asg in result]
-    return all_asgs, failed_regions
+    asgs, launch_templates, launch_configurations = [], [], []
+    for result in region_results:
+        asgs.extend(result.get('asgs', []))
+        launch_templates.extend(result.get('launch_templates', []))
+        launch_configurations.extend(result.get('launch_configurations', []))
+    return asgs, launch_templates, launch_configurations, failed_regions
+
+
+def collect_autoscaling_groups(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect Auto Scaling Group information across regions, surfacing failures.
+
+    Thin wrapper over :func:`collect_launch_data` for callers that want only
+    the ASG rows. Failure semantics are unchanged: a region whose collection
+    errors is reported in ``failed_regions`` rather than silently collapsed
+    into an empty result.
+
+    Returns:
+        tuple: ``(asgs, failed_regions)`` where ``failed_regions`` is a list of
+        ``(region, error_message)`` tuples.
+    """
+    asgs, _launch_templates, _launch_configs, failed_regions = collect_launch_data(regions)
+    return asgs, failed_regions
 
 
 @utils.aws_error_handler("Collecting ASG instances", default_return=[])
@@ -420,11 +1090,17 @@ def export_autoscaling_data(account_id: str, account_name: str):
 
     # STEP 1: Collect Auto Scaling Groups (primary scope — region failures must
     # propagate as failed_regions, never collapse into "empty").
-    print("\n=== COLLECTING AUTO SCALING GROUPS ===")
-    asgs, failed_regions = collect_autoscaling_groups(regions)
+    print("\n=== COLLECTING AUTO SCALING GROUPS AND LAUNCH SOURCES ===")
+    asgs, launch_templates, launch_configs, failed_regions = collect_launch_data(regions)
     utils.log_success(f"Total Auto Scaling Groups collected: {len(asgs)}")
+    utils.log_success(f"Total launch templates resolved: {len(launch_templates)}")
+    utils.log_success(f"Total launch configurations resolved: {len(launch_configs)}")
     if asgs:
         data_frames['Auto Scaling Groups'] = pd.DataFrame(asgs)
+    if launch_templates:
+        data_frames['Launch Templates'] = pd.DataFrame(launch_templates)
+    if launch_configs:
+        data_frames['Launch Configurations'] = pd.DataFrame(launch_configs)
 
     # STEP 2: Collect instances (Phase 4B: concurrent)
     print("\n=== COLLECTING AUTO SCALING GROUP INSTANCES ===")
@@ -454,7 +1130,14 @@ def export_autoscaling_data(account_id: str, account_name: str):
     if policies:
         data_frames['Scaling Policies'] = pd.DataFrame(policies)
 
-    # STEP 4: Collect lifecycle hooks (Phase F: API coverage fix)
+    # STEP 4: Collect scheduled actions (Issue #258)
+    print("\n=== COLLECTING SCHEDULED ACTIONS ===")
+    scheduled_actions = collect_scheduled_actions(regions)
+    utils.log_success(f"Total scheduled actions collected: {len(scheduled_actions)}")
+    if scheduled_actions:
+        data_frames['Scheduled Actions'] = pd.DataFrame(scheduled_actions)
+
+    # STEP 5: Collect lifecycle hooks (Phase F: API coverage fix)
     hooks = collect_lifecycle_hooks(regions)
     if hooks:
         data_frames['Lifecycle Hooks'] = pd.DataFrame(hooks)
