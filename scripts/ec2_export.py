@@ -441,7 +441,8 @@ def _build_instance_row(instance, region, ec2_client, pricing_data, storage_pric
         pricing_data (dict): EC2 instance pricing data.
         storage_pricing (dict): EBS/storage pricing data.
         cost_note (str): Partition-aware cost estimate note.
-        instance_types_map (dict): Prefetched {instance_type: memory_mib}.
+        instance_types_map (dict): Prefetched
+            {instance_type: {'memory_mib': int, 'vcpu': int}}.
         volumes_map (dict): Prefetched {volume_id: volume_dict}.
 
     Returns:
@@ -462,9 +463,15 @@ def _build_instance_row(instance, region, ec2_client, pricing_data, storage_pric
         instance.get('Platform', '')
     )
 
-    # Get RAM info from the prefetched instance types map
+    # Get vCPU and RAM from the prefetched instance types map
     instance_type = instance.get('InstanceType', 'N/A')
-    ram_mib = instance_types_map.get(instance_type, 'N/A')
+    type_spec = instance_types_map.get(instance_type) or {}
+    ram_mib = type_spec.get('memory_mib', 'N/A')
+    vcpu = type_spec.get('vcpu', 'N/A')
+
+    # CoreCount and ThreadsPerCore are legitimate data in their own right —
+    # they are just not vCPU. vCPU = cores x threads per core.
+    cpu_options = instance.get('CpuOptions', {}) or {}
 
     # For root device size and type, we need to ensure we're fetching it correctly
     root_device_size = 'N/A'
@@ -556,7 +563,9 @@ def _build_instance_row(instance, region, ec2_client, pricing_data, storage_pric
         'Key Pair': instance.get('KeyName', 'N/A'),
         'Region': region,
         'Owner ID': utils.get_account_name_formatted(instance.get('OwnerId', 'N/A')),
-        'vCPU': instance.get('CpuOptions', {}).get('CoreCount', 'N/A'),
+        'vCPU': vcpu,
+        'CPU Cores': cpu_options.get('CoreCount', 'N/A'),
+        'Threads per Core': cpu_options.get('ThreadsPerCore', 'N/A'),
         'RAM (MiB)': ram_mib,
         'Root Device Volume ID': root_volume_id,
         'Root Device Size (GiB)': root_device_size,
@@ -644,8 +653,12 @@ def get_instance_data(region, instance_filter=None):
             except Exception as e:
                 utils.log_warning(f"Error prefetching volumes in {region}: {e}")
 
-    # Build RAM map from pricing JSON (memory_gib -> MiB); fall back to
-    # describe_instance_types for any types absent from the JSON.
+    # Build the per-type spec map (vCPU + RAM) from the static reference data,
+    # falling back to describe_instance_types for any type absent from it.
+    #
+    # vCPU must come from here, not from the instance's CpuOptions.CoreCount:
+    # CoreCount is *physical cores* and under-reports by the threads-per-core
+    # factor — 2x on most families (Issue #259).
     instance_types_map = {}
     if total_instances > 0:
         unique_types = list({
@@ -654,11 +667,17 @@ def get_instance_data(region, instance_filter=None):
             for inst in reservation.get('Instances', [])
             if inst.get('InstanceType')
         })
+        reference_specs = utils.load_instance_type_specs()
         unknown_types = []
         for it in unique_types:
-            memory_gib = pricing_data.get(it, {}).get('memory_gib')
-            if memory_gib is not None:
-                instance_types_map[it] = int(memory_gib * 1024)
+            record = reference_specs.get(it) or {}
+            memory_gib = record.get('memory_gib')
+            vcpu = record.get('vcpu')
+            if memory_gib is not None and vcpu is not None:
+                instance_types_map[it] = {
+                    'memory_mib': int(memory_gib * 1024),
+                    'vcpu': vcpu,
+                }
             else:
                 unknown_types.append(it)
         for i in range(0, len(unknown_types), 100):
@@ -666,7 +685,10 @@ def get_instance_data(region, instance_filter=None):
             try:
                 resp = ec2.describe_instance_types(InstanceTypes=chunk)
                 for it in resp.get('InstanceTypes', []):
-                    instance_types_map[it['InstanceType']] = it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A')
+                    instance_types_map[it['InstanceType']] = {
+                        'memory_mib': it.get('MemoryInfo', {}).get('SizeInMiB', 'N/A'),
+                        'vcpu': it.get('VCpuInfo', {}).get('DefaultVCpus', 'N/A'),
+                    }
             except Exception as e:
                 utils.log_warning(f"Error fetching instance types in {region}: {e}")
 
