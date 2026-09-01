@@ -1000,11 +1000,16 @@ def _fetch_policy_alarms(region: str, alarm_names: set) -> dict[str, dict[str, A
 
     try:
         cw_client = utils.get_boto3_client('cloudwatch', region_name=region)
+        # describe_alarms returns at most MaxRecords per response (default 50)
+        # and pages via NextToken. Reading only the first response silently
+        # drops every alarm past that page — a 100-name chunk resolved 50
+        # (Issue #268). Chunk the names AND paginate each chunk.
+        paginator = cw_client.get_paginator('describe_alarms')
         for index in range(0, len(names), 100):
             chunk = names[index:index + 100]
-            response = cw_client.describe_alarms(AlarmNames=chunk)
-            for alarm in response.get('MetricAlarms', []):
-                alarms[alarm.get('AlarmName', '')] = alarm
+            for page in paginator.paginate(AlarmNames=chunk):
+                for alarm in page.get('MetricAlarms', []):
+                    alarms[alarm.get('AlarmName', '')] = alarm
     except Exception as e:
         utils.log_warning(
             f"Could not resolve scaling policy alarms in {region} "
