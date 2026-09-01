@@ -917,3 +917,266 @@ class TestMergeFailedRegions:
 
     def test_empty_and_none_inputs_are_tolerated(self):
         assert autoscaling_export._merge_failed_regions([], None) == []
+
+
+# ---------------------------------------------------------------------------
+# Warm pools, scaling activity, instance refreshes (Issue #261)
+# ---------------------------------------------------------------------------
+
+
+class TestWarmPools:
+    @mock_aws
+    def test_warm_pool_is_collected(self):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+        client.put_warm_pool(AutoScalingGroupName="web-asg", MinSize=2)
+
+        rows = autoscaling_export._scan_warm_pools_region(REGION)
+
+        assert len(rows) == 1
+        assert rows[0]["ASG Name"] == "web-asg"
+        assert rows[0]["Min Size"] == 2
+
+    @mock_aws
+    def test_group_without_a_warm_pool_yields_no_row(self):
+        """No warm pool is a normal state, not a failure."""
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+
+        assert autoscaling_export._scan_warm_pools_region(REGION) == []
+
+    @mock_aws
+    def test_one_group_failing_does_not_discard_the_region(self, monkeypatch):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "good-asg")
+        _create_asg(client, "bad-asg")
+        client.put_warm_pool(AutoScalingGroupName="good-asg", MinSize=1)
+
+        real_get_client = autoscaling_export.utils.get_boto3_client
+
+        class FailBadGroup:
+            def __init__(self, wrapped):
+                self._wrapped = wrapped
+
+            def describe_warm_pool(self, **kwargs):
+                if kwargs.get("AutoScalingGroupName") == "bad-asg":
+                    raise botocore.exceptions.ClientError(
+                        {"Error": {"Code": "ValidationError", "Message": "nope"}},
+                        "DescribeWarmPool",
+                    )
+                return self._wrapped.describe_warm_pool(**kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._wrapped, name)
+
+        monkeypatch.setattr(
+            autoscaling_export.utils,
+            "get_boto3_client",
+            lambda *a, **k: FailBadGroup(real_get_client(*a, **k)),
+        )
+
+        rows = autoscaling_export._scan_warm_pools_region(REGION)
+
+        assert {row["ASG Name"] for row in rows} == {"good-asg"}
+
+    @mock_aws
+    def test_region_api_failure_raises_not_empty(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "DescribeAutoScalingGroups",
+            )
+
+        monkeypatch.setattr(autoscaling_export.utils, "get_boto3_client", boom)
+
+        with pytest.raises(botocore.exceptions.ClientError):
+            autoscaling_export._scan_warm_pools_region(REGION)
+
+
+class TestScalingActivity:
+    def test_activity_row_is_built_from_the_api_shape(self):
+        """
+        moto returns an empty activity list for every operation, so the
+        collector cannot be exercised end to end under mocking — the row
+        builder is unit tested instead.
+        """
+        row = autoscaling_export._build_activity_row(
+            {
+                "ActivityId": "activity-123",
+                "AutoScalingGroupName": "web-asg",
+                "StatusCode": "Successful",
+                "StatusMessage": "instance launched",
+                "Description": "Launching a new EC2 instance: i-abc",
+                "Cause": "an instance was started in response to a difference "
+                         "between desired and actual capacity",
+                "Progress": 100,
+                "Details": '{"Availability Zone":"us-east-1a"}',
+            },
+            REGION,
+            "web-asg",
+        )
+
+        assert row["Activity ID"] == "activity-123"
+        assert row["Status"] == "Successful"
+        assert row["Progress (%)"] == 100
+        assert row["Cause"].startswith("an instance was started")
+        assert row["Start Time"] == "N/A"
+
+    @mock_aws
+    def test_group_with_no_recorded_activity_yields_no_rows(self):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+
+        assert autoscaling_export._scan_scaling_activities_region(REGION) == []
+
+    @mock_aws
+    def test_empty_region_returns_empty_list(self):
+        boto3.client("autoscaling", region_name=REGION)
+
+        assert autoscaling_export._scan_scaling_activities_region(REGION) == []
+
+    @mock_aws
+    def test_region_api_failure_raises_not_empty(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise botocore.exceptions.ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "DescribeAutoScalingGroups",
+            )
+
+        monkeypatch.setattr(autoscaling_export.utils, "get_boto3_client", boom)
+
+        with pytest.raises(botocore.exceptions.ClientError):
+            autoscaling_export._scan_scaling_activities_region(REGION)
+
+
+class TestScalingActivityLimit:
+    """
+    Activity history is unbounded and is the only collector here with a real
+    runtime cost, so the cap must actually be read from configuration.
+    """
+
+    def test_default_when_unset(self, monkeypatch):
+        monkeypatch.setattr(
+            autoscaling_export.utils, "get_config", lambda: (None, {})
+        )
+
+        assert autoscaling_export._scaling_activity_limit() == 100
+
+    def test_configured_value_is_used(self, monkeypatch):
+        monkeypatch.setattr(
+            autoscaling_export.utils,
+            "get_config",
+            lambda: (None, {"advanced_settings": {"performance": {"scaling_activity_limit": 25}}}),
+        )
+
+        assert autoscaling_export._scaling_activity_limit() == 25
+
+    @pytest.mark.parametrize("bad_value", ["not-a-number", None, 0, -5])
+    def test_malformed_or_nonpositive_value_falls_back(self, monkeypatch, bad_value):
+        """A bad config value must not become an unbounded pull."""
+        monkeypatch.setattr(
+            autoscaling_export.utils,
+            "get_config",
+            lambda: (
+                None,
+                {"advanced_settings": {"performance": {"scaling_activity_limit": bad_value}}},
+            ),
+        )
+
+        assert autoscaling_export._scaling_activity_limit() == 100
+
+    @mock_aws
+    def test_limit_is_passed_to_the_paginator(self, monkeypatch):
+        client = boto3.client("autoscaling", region_name=REGION)
+        _create_asg(client, "web-asg")
+        monkeypatch.setattr(autoscaling_export, "_scaling_activity_limit", lambda: 7)
+
+        seen = {}
+        real_get_client = autoscaling_export.utils.get_boto3_client
+
+        class CapturePagination:
+            def __init__(self, wrapped):
+                self._wrapped = wrapped
+
+            def get_paginator(self, name):
+                paginator = self._wrapped.get_paginator(name)
+                if name != "describe_scaling_activities":
+                    return paginator
+
+                real_paginate = paginator.paginate
+
+                def capturing(**kwargs):
+                    seen.update(kwargs.get("PaginationConfig", {}))
+                    return real_paginate(**kwargs)
+
+                paginator.paginate = capturing
+                return paginator
+
+            def __getattr__(self, name):
+                return getattr(self._wrapped, name)
+
+        monkeypatch.setattr(
+            autoscaling_export.utils,
+            "get_boto3_client",
+            lambda *a, **k: CapturePagination(real_get_client(*a, **k)),
+        )
+
+        autoscaling_export._scan_scaling_activities_region(REGION)
+
+        assert seen.get("MaxItems") == 7
+
+
+class TestInstanceRefreshes:
+    """
+    moto does not implement describe_instance_refreshes, so the collector
+    cannot be exercised end to end under mocking — the row builder is unit
+    tested instead, and the per-group loop means an empty account never
+    reaches the call.
+    """
+
+    def test_refresh_row_is_built_from_the_api_shape(self):
+        row = autoscaling_export._build_instance_refresh_row(
+            {
+                "InstanceRefreshId": "refresh-123",
+                "AutoScalingGroupName": "web-asg",
+                "Status": "InProgress",
+                "StatusReason": "Replacing instances",
+                "PercentageComplete": 40,
+                "InstancesToUpdate": 3,
+                "Preferences": {
+                    "MinHealthyPercentage": 90,
+                    "InstanceWarmup": 300,
+                    "CheckpointPercentages": [20, 50, 100],
+                    "SkipMatching": True,
+                },
+            },
+            REGION,
+            "web-asg",
+        )
+
+        assert row["Instance Refresh ID"] == "refresh-123"
+        assert row["Status"] == "InProgress"
+        assert row["Percentage Complete"] == 40
+        assert row["Min Healthy Percentage"] == 90
+        assert row["Checkpoint Percentages"] == "20, 50, 100"
+        assert row["Skip Matching"] is True
+
+    def test_absent_preferences_report_na(self):
+        row = autoscaling_export._build_instance_refresh_row(
+            {"InstanceRefreshId": "refresh-123", "Status": "Successful"},
+            REGION,
+            "web-asg",
+        )
+
+        assert row["Min Healthy Percentage"] == "N/A"
+        assert row["Checkpoint Percentages"] == "N/A"
+
+    @mock_aws
+    def test_empty_region_never_calls_the_unmocked_api(self):
+        """
+        With no Auto Scaling Groups the per-group loop makes no call at all,
+        which is what keeps the smoke test passing despite the moto gap.
+        """
+        boto3.client("autoscaling", region_name=REGION)
+
+        assert autoscaling_export._scan_instance_refreshes_region(REGION) == []

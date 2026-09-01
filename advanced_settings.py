@@ -52,6 +52,10 @@ def get_default_settings():
             'batch_dataframe_size': 1000,
             'api_retry_attempts': 3,
             'api_retry_delay_seconds': 2,
+            # Auto Scaling activity history is unbounded; cap what we pull per
+            # group so a busy account cannot turn one export into thousands of
+            # API calls (Issue #261).
+            'scaling_activity_limit': 100,
         }
     }
 
@@ -299,10 +303,33 @@ def configure_performance():
         except ValueError:
             print("   ERROR: Please enter a valid number.")
 
+    # Scaling activity history limit
+    print("\n4. Scaling Activity History Limit")
+    print("   Maximum scaling activities to export per Auto Scaling Group.")
+    print("   AWS returns activity history newest-first and unbounded; this caps it.")
+    print("   Higher values = deeper history but more API calls on busy groups")
+
+    while True:
+        activity_input = input(
+            f"   Activities per group (10-1000) "
+            f"[Current: {current['scaling_activity_limit']}]: "
+        ).strip()
+        if not activity_input:
+            activity_limit = current['scaling_activity_limit']
+            break
+        try:
+            activity_limit = int(activity_input)
+            if 10 <= activity_limit <= 1000:
+                break
+            print("   ERROR: Please enter a number between 10 and 1000.")
+        except ValueError:
+            print("   ERROR: Please enter a valid number.")
+
     return {
         'batch_dataframe_size': batch_size,
         'api_retry_attempts': retry_attempts,
         'api_retry_delay_seconds': retry_delay,
+        'scaling_activity_limit': activity_limit,
     }
 
 
@@ -349,6 +376,7 @@ def display_current_settings():
     print(f"  Batch DataFrame Size: {settings['performance']['batch_dataframe_size']}")
     print(f"  API Retry Attempts: {settings['performance']['api_retry_attempts']}")
     print(f"  API Retry Delay: {settings['performance']['api_retry_delay_seconds']}s")
+    print(f"  Scaling Activity Limit: {settings['performance']['scaling_activity_limit']} per group")
 
     print("="*70)
 

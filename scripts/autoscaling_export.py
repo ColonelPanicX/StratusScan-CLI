@@ -24,6 +24,10 @@ Features:
   trigger them
 - Scheduled actions
 - Lifecycle hooks
+- Warm pools
+- Recent scaling activity (what the group actually did, bounded per group by
+  the scaling_activity_limit advanced setting)
+- Instance refresh history
 - Tags and metadata
 
 Launch template and launch configuration coverage is deliberately
@@ -1299,6 +1303,283 @@ def collect_lifecycle_hooks(regions: list[str]) -> list[dict[str, Any]]:
     return all_hooks
 
 
+# ---------------------------------------------------------------------------
+# Warm pools, scaling activity, and instance refreshes (Issue #261)
+#
+# Every other sheet in this workbook describes an Auto Scaling Group's
+# *intent* — how it is configured to react and when it is configured to scale.
+# Scaling activity is the only source for when a group actually scaled.
+# ---------------------------------------------------------------------------
+
+# Fallback when the config carries no limit. AWS returns activity history
+# newest-first and unbounded, so an unbounded pull would turn one export into
+# thousands of calls on a busy group.
+_DEFAULT_SCALING_ACTIVITY_LIMIT = 100
+
+
+def _scaling_activity_limit() -> int:
+    """
+    Read the per-group scaling activity cap from advanced settings.
+
+    Configured via ``python advanced_settings.py`` → Performance. A missing,
+    malformed, or non-positive value falls back to the default rather than
+    pulling unbounded history.
+    """
+    _, config = utils.get_config()
+    performance = (config.get('advanced_settings', {}) or {}).get('performance', {}) or {}
+    limit = performance.get('scaling_activity_limit', _DEFAULT_SCALING_ACTIVITY_LIMIT)
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        return _DEFAULT_SCALING_ACTIVITY_LIMIT
+    return limit if limit > 0 else _DEFAULT_SCALING_ACTIVITY_LIMIT
+
+
+def _list_asg_names(asg_client) -> list[str]:
+    """
+    List every Auto Scaling Group name in the client's region.
+
+    Warm pools, scaling activities, and instance refreshes are all per-group
+    APIs, so each collector needs the group list first. Errors propagate — an
+    unreadable group list is a failed region, not an empty one.
+    """
+    paginator = asg_client.get_paginator('describe_auto_scaling_groups')
+    names = []
+    for page in paginator.paginate():
+        for asg in page.get('AutoScalingGroups', []):
+            name = asg.get('AutoScalingGroupName')
+            if name:
+                names.append(name)
+    return names
+
+
+def _scan_warm_pools_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect warm pool configuration and instances for a single region.
+
+    A group with no warm pool returns an empty configuration; that is a normal
+    state, not a failure, and yields no row.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    rows = []
+
+    for asg_name in _list_asg_names(asg_client):
+        try:
+            response = asg_client.describe_warm_pool(AutoScalingGroupName=asg_name)
+        except Exception as e:
+            # One group's warm pool failing must not discard the region.
+            utils.log_warning(f"Could not describe warm pool for {asg_name} in {region}: {e}")
+            continue
+
+        configuration = response.get('WarmPoolConfiguration') or {}
+        if not configuration:
+            continue
+
+        instances = response.get('Instances', []) or []
+        reuse_policy = configuration.get('InstanceReusePolicy') or {}
+
+        rows.append({
+            'Region': region,
+            'ASG Name': asg_name,
+            'Pool State': configuration.get('PoolState', 'N/A'),
+            'Min Size': configuration.get('MinSize', 'N/A'),
+            'Max Group Prepared Capacity': configuration.get(
+                'MaxGroupPreparedCapacity', 'N/A'
+            ),
+            'Reuse On Scale In': reuse_policy.get('ReuseOnScaleIn', 'N/A'),
+            'Status': configuration.get('Status', 'N/A'),
+            'Warm Instances': len(instances),
+        })
+
+    print(f"  Found {len(rows)} warm pools")
+    return rows
+
+
+def _build_activity_row(activity: dict, region: str, asg_name: str) -> dict[str, Any]:
+    """
+    Build a single scaling activity export row.
+
+    Extracted for testability: moto returns an empty activity list for every
+    operation, so this is the only part of the activity path that can be
+    exercised without live credentials.
+    """
+    return {
+        'Region': region,
+        'ASG Name': activity.get('AutoScalingGroupName', asg_name),
+        'Activity ID': activity.get('ActivityId', 'N/A'),
+        'Status': activity.get('StatusCode', 'N/A'),
+        'Status Message': activity.get('StatusMessage', 'N/A'),
+        'Description': activity.get('Description', 'N/A'),
+        'Cause': activity.get('Cause', 'N/A'),
+        'Start Time': _format_timestamp(activity.get('StartTime')),
+        'End Time': _format_timestamp(activity.get('EndTime')),
+        'Progress (%)': activity.get('Progress', 'N/A'),
+        'Details': activity.get('Details', 'N/A'),
+    }
+
+
+def _scan_scaling_activities_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect recent scaling activity for a single region.
+
+    Bounded per group by the ``scaling_activity_limit`` advanced setting: AWS
+    returns activities newest-first with no upper bound, and this is the only
+    collector in this exporter with a real runtime cost.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    limit = _scaling_activity_limit()
+    paginator = asg_client.get_paginator('describe_scaling_activities')
+    rows = []
+
+    for asg_name in _list_asg_names(asg_client):
+        try:
+            pages = paginator.paginate(
+                AutoScalingGroupName=asg_name,
+                PaginationConfig={'MaxItems': limit},
+            )
+            for page in pages:
+                for activity in page.get('Activities', []):
+                    rows.append(_build_activity_row(activity, region, asg_name))
+        except Exception as e:
+            utils.log_warning(
+                f"Could not describe scaling activities for {asg_name} in {region}: {e}"
+            )
+            continue
+
+    print(f"  Found {len(rows)} scaling activities (limit {limit} per group)")
+    return rows
+
+
+def _build_instance_refresh_row(refresh: dict, region: str, asg_name: str) -> dict[str, Any]:
+    """Build a single instance refresh export row."""
+    preferences = refresh.get('Preferences') or {}
+    return {
+        'Region': region,
+        'ASG Name': refresh.get('AutoScalingGroupName', asg_name),
+        'Instance Refresh ID': refresh.get('InstanceRefreshId', 'N/A'),
+        'Status': refresh.get('Status', 'N/A'),
+        'Status Reason': refresh.get('StatusReason', 'N/A'),
+        'Percentage Complete': refresh.get('PercentageComplete', 'N/A'),
+        'Instances To Update': refresh.get('InstancesToUpdate', 'N/A'),
+        'Start Time': _format_timestamp(refresh.get('StartTime')),
+        'End Time': _format_timestamp(refresh.get('EndTime')),
+        'Min Healthy Percentage': preferences.get('MinHealthyPercentage', 'N/A'),
+        'Instance Warmup (s)': preferences.get('InstanceWarmup', 'N/A'),
+        'Checkpoint Percentages': ', '.join(
+            str(p) for p in preferences.get('CheckpointPercentages', []) or []
+        ) or 'N/A',
+        'Skip Matching': preferences.get('SkipMatching', 'N/A'),
+    }
+
+
+def _scan_instance_refreshes_region(region: str) -> list[dict[str, Any]]:
+    """
+    Collect instance refresh history for a single region.
+
+    ``describe_instance_refreshes`` has no boto3 paginator and pages via a
+    native NextToken; calling ``get_paginator`` on it raises before any AWS
+    call (Issues #223 / #214).
+
+    Note: moto does not implement this operation, so the collector cannot be
+    exercised end to end under mocking — only :func:`_build_instance_refresh_row`
+    is unit-tested. The per-group loop means an empty account never reaches the
+    call, which keeps the smoke test meaningful.
+    """
+    if not utils.is_aws_region(region):
+        utils.log_error(f"Skipping invalid AWS region: {region}")
+        return []
+
+    print(f"\nProcessing region: {region}")
+
+    asg_client = utils.get_boto3_client('autoscaling', region_name=region)
+    rows = []
+
+    for asg_name in _list_asg_names(asg_client):
+        try:
+            # describe_instance_refreshes has NO boto3 paginator — get_paginator
+            # raises OperationNotPageableError before any AWS call. It pages via
+            # a native NextToken instead. See Issues #223 / #214.
+            next_token = None
+            while True:
+                params = {'AutoScalingGroupName': asg_name}
+                if next_token:
+                    params['NextToken'] = next_token
+                response = asg_client.describe_instance_refreshes(**params)
+                for refresh in response.get('InstanceRefreshes', []):
+                    rows.append(_build_instance_refresh_row(refresh, region, asg_name))
+                next_token = response.get('NextToken')
+                if not next_token:
+                    break
+        except Exception as e:
+            utils.log_warning(
+                f"Could not describe instance refreshes for {asg_name} in {region}: {e}"
+            )
+            continue
+
+    print(f"  Found {len(rows)} instance refreshes")
+    return rows
+
+
+def collect_warm_pools(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect warm pool information across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(warm_pools, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_warm_pools_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    return [pool for result in region_results for pool in result], failed_regions
+
+
+def collect_scaling_activities(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect recent scaling activity across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(activities, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_scaling_activities_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    return [activity for result in region_results for activity in result], failed_regions
+
+
+def collect_instance_refreshes(regions: list[str]) -> tuple[list[dict[str, Any]], list]:
+    """
+    Collect instance refresh history across regions, surfacing failures.
+
+    Returns:
+        tuple: ``(refreshes, failed_regions)``.
+    """
+    region_results, failed_regions = utils.scan_regions_concurrent(
+        regions=regions,
+        scan_function=_scan_instance_refreshes_region,
+        show_progress=True,
+        collect_failures=True,
+    )
+    return [refresh for result in region_results for refresh in result], failed_regions
+
+
 def _merge_failed_regions(*failure_lists) -> list:
     """
     Combine ``(region, error)`` failure lists, keeping the first error per region.
@@ -1379,6 +1660,31 @@ def export_autoscaling_data(account_id: str, account_name: str):
     hooks = collect_lifecycle_hooks(regions)
     if hooks:
         data_frames['Lifecycle Hooks'] = pd.DataFrame(hooks)
+
+    # STEP 6: Warm pools, scaling activity, instance refreshes (Issue #261).
+    # Scaling activity is the only source for when a group *actually* scaled,
+    # as distinct from when it is configured to.
+    print("\n=== COLLECTING WARM POOLS ===")
+    warm_pools, warm_pool_failures = collect_warm_pools(regions)
+    utils.log_success(f"Total warm pools collected: {len(warm_pools)}")
+    if warm_pools:
+        data_frames['Warm Pools'] = pd.DataFrame(warm_pools)
+
+    print("\n=== COLLECTING SCALING ACTIVITY ===")
+    activities, activity_failures = collect_scaling_activities(regions)
+    utils.log_success(f"Total scaling activities collected: {len(activities)}")
+    if activities:
+        data_frames['Scaling Activity'] = pd.DataFrame(activities)
+
+    print("\n=== COLLECTING INSTANCE REFRESHES ===")
+    refreshes, refresh_failures = collect_instance_refreshes(regions)
+    utils.log_success(f"Total instance refreshes collected: {len(refreshes)}")
+    if refreshes:
+        data_frames['Instance Refreshes'] = pd.DataFrame(refreshes)
+
+    failed_regions = _merge_failed_regions(
+        failed_regions, warm_pool_failures, activity_failures, refresh_failures
+    )
 
     # Export whatever succeeded first — a partial export is required even when
     # some regions failed (see the silent-collection-failure blast-radius audit).
