@@ -1180,3 +1180,102 @@ class TestInstanceRefreshes:
         boto3.client("autoscaling", region_name=REGION)
 
         assert autoscaling_export._scan_instance_refreshes_region(REGION) == []
+
+
+class TestAlarmJoinPagination:
+    """
+    Regression tests for Issue #268.
+
+    ``describe_alarms`` returns at most MaxRecords per response (default 50)
+    and pages via NextToken. Reading only the first response silently dropped
+    every alarm past that page — in a live account, a 100-name chunk resolved
+    50 of 100, leaving 50 policies with an alarm name but no metric.
+
+    moto does NOT emulate the MaxRecords page limit — it returns every matching
+    alarm in a single response — so a moto-only test passes with the bug
+    present. These tests emulate the real paging contract instead.
+    """
+
+    @staticmethod
+    def _paging_client(real_client, page_size=50):
+        """
+        Wrap a client so describe_alarms pages the way AWS actually does.
+
+        The real botocore Paginator is driven on top of the wrapper, so this
+        exercises the same machinery production uses. Patching happens before
+        get_paginator() so the paginator binds the emulating method.
+        """
+        all_alarms = real_client.describe_alarms()["MetricAlarms"]
+        by_name = {a["AlarmName"]: a for a in all_alarms}
+
+        def describe_alarms(**kwargs):
+            requested = kwargs.get("AlarmNames") or sorted(by_name)
+            matched = [by_name[n] for n in requested if n in by_name]
+            start = int(kwargs.get("NextToken") or 0)
+            window = matched[start:start + page_size]
+            response = {"MetricAlarms": window, "CompositeAlarms": []}
+            if start + page_size < len(matched):
+                response["NextToken"] = str(start + page_size)
+            return response
+
+        real_client.describe_alarms = describe_alarms
+        return real_client
+
+    @mock_aws
+    def test_alarms_beyond_the_first_page_are_resolved(self, monkeypatch):
+        """139 alarms across a 50-per-page API must all resolve."""
+        cw_client = boto3.client("cloudwatch", region_name=REGION)
+        names = [f"alarm-{i:03d}" for i in range(139)]
+        for name in names:
+            cw_client.put_metric_alarm(
+                AlarmName=name,
+                Namespace="AWS/EC2",
+                MetricName="CPUUtilization",
+                Statistic="Average",
+                ComparisonOperator="GreaterThanThreshold",
+                Threshold=80.0,
+                EvaluationPeriods=2,
+                Period=300,
+            )
+
+        paging_client = self._paging_client(cw_client)
+        monkeypatch.setattr(
+            autoscaling_export.utils, "get_boto3_client", lambda *a, **k: paging_client
+        )
+
+        alarms = autoscaling_export._fetch_policy_alarms(REGION, set(names))
+
+        assert len(alarms) == 139, (
+            f"resolved {len(alarms)} of 139 — alarms past the first response "
+            "page were dropped"
+        )
+        assert alarms["alarm-138"]["MetricName"] == "CPUUtilization"
+
+    @mock_aws
+    def test_more_names_than_one_chunk_still_resolve_completely(self, monkeypatch):
+        """
+        Name chunking (100) and response paging (50) are independent limits;
+        both have to be handled for a large account to resolve fully.
+        """
+        cw_client = boto3.client("cloudwatch", region_name=REGION)
+        names = [f"alarm-{i:03d}" for i in range(250)]
+        for name in names:
+            cw_client.put_metric_alarm(
+                AlarmName=name,
+                Namespace="AWS/EC2",
+                MetricName="CPUUtilization",
+                Statistic="Average",
+                ComparisonOperator="GreaterThanThreshold",
+                Threshold=80.0,
+                EvaluationPeriods=2,
+                Period=300,
+            )
+
+        paging_client = self._paging_client(cw_client)
+        monkeypatch.setattr(
+            autoscaling_export.utils, "get_boto3_client", lambda *a, **k: paging_client
+        )
+
+        alarms = autoscaling_export._fetch_policy_alarms(REGION, set(names))
+
+        assert len(alarms) == 250
