@@ -138,30 +138,17 @@ class TestSilentCollectionFailureRegression:
         assert [r for r, _ in failed_regions] == [REGION]
 
 
+
 # ---------------------------------------------------------------------------
-# AMI ancestry (Issue #270)
+# AMI ancestry (Issues #270, #272)
 #
-# Contractual fields and the value parsed from a snapshot description are kept
-# in separate columns, and "AWS reported nothing" stays distinguishable from
-# "this client could not ask" — the distinction that made Issue #268 findable.
+# Ancestry comes from contractual DescribeImages fields only. A snapshot
+# description parse was tried in #270 and removed in #272: AWS writes
+# "Created by CreateImage(i-xxx) for ami-yyy" where ami-yyy is the AMI *being
+# created*, so the parsed value was the row's own ID — a tautology. The tests
+# that covered it asserted the misreading as correct and were deleted rather
+# than adapted.
 # ---------------------------------------------------------------------------
-
-
-class TestCreateImageDescriptionParsing:
-    def test_matches_the_aws_convention(self):
-        match = ami_export._CREATE_IMAGE_DESCRIPTION.search(
-            "Created by CreateImage(i-0abc123def456789a) for ami-0f1e2d3c4b5a69788"
-        )
-
-        assert match.group(1) == "i-0abc123def456789a"
-        assert match.group(2) == "ami-0f1e2d3c4b5a69788"
-
-    def test_user_edited_description_does_not_match(self):
-        """
-        The parse is a convention, not a contract. A snapshot whose description
-        someone rewrote yields no ancestry rather than a wrong answer.
-        """
-        assert ami_export._CREATE_IMAGE_DESCRIPTION.search("nightly backup before patching") is None
 
 
 class TestCopySourceSupportDetection:
@@ -187,135 +174,59 @@ class TestAncestryColumns:
     def test_contractual_fields_are_reported_when_present(self):
         columns = ami_export._ancestry_columns(
             {
+                "ImageId": "ami-0self1111111111111",
                 "SourceInstanceId": "i-0abc123def456789a",
-                "SourceImageId": "ami-0aaa1111bbbb2222c",
+                "SourceImageId": "ami-0parent22222222222",
                 "SourceImageRegion": "us-west-2",
-                "BlockDeviceMappings": [],
             },
-            {},
             copy_source_supported=True,
         )
 
         assert columns["Source Instance ID"] == "i-0abc123def456789a"
-        assert columns["Source Image ID"] == "ami-0aaa1111bbbb2222c"
+        assert columns["Source Image ID"] == "ami-0parent22222222222"
         assert columns["Source Image Region"] == "us-west-2"
 
-    def test_old_botocore_is_distinguishable_from_a_non_copied_ami(self):
+    def test_reported_parent_is_not_the_amis_own_id(self):
         """
-        'This AMI was not copied' and 'this client cannot report copies' are
-        different facts. Collapsing them into one blank is what hid #268.
+        Regression guard for Issue #272. The removed column reported the AMI's
+        own ID in 2,320 of 2,322 live rows; a populated ancestry column that
+        merely echoes the row's identity carries no information.
         """
-        supported = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": []}, {}, copy_source_supported=True
+        ami = {
+            "ImageId": "ami-0self1111111111111",
+            "SourceImageId": "ami-0parent22222222222",
+        }
+
+        columns = ami_export._ancestry_columns(ami, copy_source_supported=True)
+
+        assert columns["Source Image ID"] != ami["ImageId"]
+        assert "Parent AMI (inferred)" not in columns, (
+            "the tautological inferred-parent column must not come back"
         )
-        unsupported = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": []}, {}, copy_source_supported=False
-        )
+
+    def test_old_botocore_is_distinguishable_from_no_source(self):
+        """
+        'AWS reported no source' and 'this client cannot report one' are
+        different facts. The distinction matters more since #272 made
+        SourceImageId the only ancestry source — on an old boto3 there is now
+        no fallback at all.
+        """
+        supported = ami_export._ancestry_columns({}, copy_source_supported=True)
+        unsupported = ami_export._ancestry_columns({}, copy_source_supported=False)
 
         assert supported["Source Image ID"] == "N/A"
         assert unsupported["Source Image ID"] == "Unavailable (boto3 too old)"
         assert unsupported["Source Image Region"] == "Unavailable (boto3 too old)"
-
-    def test_parent_ami_comes_from_the_snapshot_map(self):
-        columns = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": [{"Ebs": {"SnapshotId": "snap-111"}}]},
-            {"snap-111": {"source_instance": "i-222", "parent_ami": "ami-333"}},
-            copy_source_supported=True,
-        )
-
-        assert columns["Parent AMI (inferred)"] == "ami-333"
 
     def test_no_resolvable_ancestor_reports_na(self):
         """
         An imported or third-party AMI has no ancestor. That is a correct
         result, not a failure.
         """
-        columns = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": [{"Ebs": {"SnapshotId": "snap-111"}}]},
-            {},
-            copy_source_supported=True,
-        )
+        columns = ami_export._ancestry_columns({}, copy_source_supported=True)
 
-        assert columns["Parent AMI (inferred)"] == "N/A"
         assert columns["Source Instance ID"] == "N/A"
-
-    def test_failed_lookup_is_distinguishable_from_no_ancestor(self):
-        columns = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": [{"Ebs": {"SnapshotId": "snap-111"}}]},
-            {},
-            copy_source_supported=True,
-            lookup_failed=True,
-        )
-
-        assert columns["Parent AMI (inferred)"] == "Unresolved (snapshot lookup failed)"
-
-    def test_failed_lookup_with_no_snapshots_still_reports_na(self):
-        """Nothing was there to resolve, so the failure is irrelevant."""
-        columns = ami_export._ancestry_columns(
-            {"BlockDeviceMappings": []}, {}, copy_source_supported=True, lookup_failed=True
-        )
-
-        assert columns["Parent AMI (inferred)"] == "N/A"
-
-
-class TestResolveSnapshotAncestry:
-    @mock_aws
-    def test_parses_ancestry_from_real_snapshot_descriptions(self):
-        ec2_client = boto3.client("ec2", region_name=REGION)
-        base = ec2_client.describe_images()["Images"][0]["ImageId"]
-        instance_id = ec2_client.run_instances(
-            ImageId=base, MinCount=1, MaxCount=1, InstanceType="t3.micro"
-        )["Instances"][0]["InstanceId"]
-        image_id = ec2_client.create_image(
-            InstanceId=instance_id, Name="built-from-instance"
-        )["ImageId"]
-        image = ec2_client.describe_images(ImageIds=[image_id])["Images"][0]
-        snapshot_ids = [
-            bdm["Ebs"]["SnapshotId"]
-            for bdm in image["BlockDeviceMappings"]
-            if bdm.get("Ebs", {}).get("SnapshotId")
-        ]
-
-        ancestry = ami_export._resolve_snapshot_ancestry(ec2_client, snapshot_ids)
-
-        assert ancestry
-        resolved = ancestry[snapshot_ids[0]]
-        assert resolved["source_instance"] == instance_id
-        assert resolved["parent_ami"] == image_id
-
-    @mock_aws
-    def test_empty_input_makes_no_api_call(self):
-        class ExplodingClient:
-            def get_paginator(self, name):
-                raise AssertionError("no API call should be made for an empty set")
-
-        assert ami_export._resolve_snapshot_ancestry(ExplodingClient(), []) == {}
-
-    @mock_aws
-    def test_more_snapshots_than_one_chunk_all_resolve(self):
-        """
-        SnapshotIds bounds the request (chunked at 100) while the response pages
-        independently. Handling only one of the two silently drops results —
-        the shape of Issue #268.
-        """
-        ec2_client = boto3.client("ec2", region_name=REGION)
-        volume = ec2_client.create_volume(AvailabilityZone=f"{REGION}a", Size=1)
-        snapshot_ids = []
-        for index in range(150):
-            snapshot = ec2_client.create_snapshot(
-                VolumeId=volume["VolumeId"],
-                Description=(
-                    f"Created by CreateImage(i-{index:017x}) for ami-{index:017x}"
-                ),
-            )
-            snapshot_ids.append(snapshot["SnapshotId"])
-
-        ancestry = ami_export._resolve_snapshot_ancestry(ec2_client, snapshot_ids)
-
-        assert len(ancestry) == 150, (
-            f"resolved {len(ancestry)} of 150 — snapshots past the first chunk "
-            "or response page were dropped"
-        )
+        assert columns["Source Image ID"] == "N/A"
 
 
 class TestAncestryInRegionScan:
@@ -332,13 +243,13 @@ class TestAncestryInRegionScan:
 
         row = next(r for r in rows if r["AMI Name"] == "built-from-instance")
         assert row["Source Instance ID"] == instance_id
-        assert row["Parent AMI (inferred)"].startswith("ami-")
 
     @mock_aws
-    def test_ancestry_failure_does_not_fail_the_region(self, monkeypatch):
+    def test_ancestry_costs_no_extra_api_calls(self, monkeypatch):
         """
-        Ancestry is enrichment. A snapshot-lookup failure must not discard AMIs
-        that were collected successfully.
+        #272 removed the describe_snapshots round trip along with the parse it
+        fed. Ancestry now comes from fields already in the describe_images
+        response, so the scan must not reach for snapshots at all.
         """
         ec2_client = boto3.client("ec2", region_name=REGION)
         base = ec2_client.describe_images()["Images"][0]["ImageId"]
@@ -347,16 +258,28 @@ class TestAncestryInRegionScan:
         )["Instances"][0]["InstanceId"]
         ec2_client.create_image(InstanceId=instance_id, Name="built-from-instance")
 
-        def boom(*args, **kwargs):
-            raise botocore.exceptions.ClientError(
-                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
-                "DescribeSnapshots",
-            )
+        real_get_client = ami_export.utils.get_boto3_client
 
-        monkeypatch.setattr(ami_export, "_resolve_snapshot_ancestry", boom)
+        class NoSnapshotCalls:
+            def __init__(self, wrapped):
+                self._wrapped = wrapped
+
+            def get_paginator(self, name):
+                if name == "describe_snapshots":
+                    raise AssertionError("ancestry must not call describe_snapshots")
+                return self._wrapped.get_paginator(name)
+
+            def __getattr__(self, name):
+                if name == "describe_snapshots":
+                    raise AssertionError("ancestry must not call describe_snapshots")
+                return getattr(self._wrapped, name)
+
+        monkeypatch.setattr(
+            ami_export.utils,
+            "get_boto3_client",
+            lambda *a, **k: NoSnapshotCalls(real_get_client(*a, **k)),
+        )
 
         rows = ami_export.collect_amis_in_region(REGION, "123456789012")
 
-        row = next(r for r in rows if r["AMI Name"] == "built-from-instance")
-        assert row["Parent AMI (inferred)"] == "Unresolved (snapshot lookup failed)"
-        assert row["Source Instance ID"] == instance_id, "contractual field still reported"
+        assert any(r["AMI Name"] == "built-from-instance" for r in rows)

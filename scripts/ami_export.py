@@ -18,8 +18,8 @@ Features:
 - Creation date and architecture (x86_64, arm64)
 - Virtualization type and root device type
 - EBS snapshot IDs for backup tracking
-- Ancestry: source instance, copy source, and the parent AMI inferred from
-  snapshot descriptions (one hop — join the sheet to itself to walk lineage)
+- Ancestry: source instance and parent AMI, from contractual DescribeImages
+  fields (one hop — join the sheet to itself to walk lineage)
 - Public/Private status
 - Platform details (Linux, Windows)
 - Block device mappings
@@ -31,7 +31,6 @@ Phase 4B Update:
 """
 
 import datetime
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,10 +58,14 @@ args = utils.parse_script_args("Export Amazon Machine Images (AMIs) to Excel")
 # AMI ancestry (Issue #270)
 #
 # The export described what an AMI *is* and nothing about where it came from.
-# AWS exposes provenance through channels of differing reliability, and they
-# are kept in separate columns rather than merged: a contractual field and a
-# parsed description must never be indistinguishable to a reader who is filing
-# the workbook as evidence.
+# Ancestry now comes only from contractual DescribeImages fields.
+#
+# A snapshot-description parse was tried first and removed in Issue #272: AWS
+# writes "Created by CreateImage(i-xxx) for ami-yyy", where ami-yyy is the AMI
+# *being created*, not its parent. Across five live accounts the parsed value
+# equalled the row's own AMI ID in 2,320 of 2,322 cases — a tautology, not
+# lineage. SourceImageId already carries the real parent, for CreateImage-
+# derived images as well as copies.
 #
 # One hop, not a chain. Each row names its immediate ancestor; a consumer
 # self-joins the sheet to walk lineage. Recursive resolution would mean
@@ -70,29 +73,23 @@ args = utils.parse_script_args("Export Amazon Machine Images (AMIs) to Excel")
 # wherever an ancestor was deregistered.
 # ---------------------------------------------------------------------------
 
-# AWS writes this description when CreateImage snapshots a volume. It names
-# both the source instance and the AMI the snapshot was taken for — the only
-# route to a parent AMI for a locally built image. It is a *description
-# string*, not a contractual field: AWS could reword it, and a user who edits
-# the description breaks the parse for that AMI. Hence "(inferred)".
-_CREATE_IMAGE_DESCRIPTION = re.compile(
-    r"Created by CreateImage\((i-[0-9a-fA-F]+)\)\s+for\s+(ami-[0-9a-fA-F]+)"
-)
-
 # Distinct from 'N/A': the field is absent from this botocore's model, so AWS
 # was never asked. Collapsing the two would repeat the mistake that made the
 # scaling-policy alarm gap invisible (Issue #268).
+#
+# This state matters more since Issue #272 removed the snapshot-description
+# fallback: SourceImageId is now the ONLY ancestry source, so an old botocore
+# means no parent can be reported at all, not merely a less precise one.
 _COPY_SOURCE_UNSUPPORTED = 'Unavailable (boto3 too old)'
-_ANCESTRY_UNRESOLVED = 'Unresolved (snapshot lookup failed)'
 
 
 def _copy_source_supported(ec2_client) -> bool:
     """
     Whether this botocore models ``SourceImageId`` on DescribeImages.
 
-    The copy-source fields postdate the project's pinned boto3 floor (absent in
-    1.34.46, present in 1.43.83), so the column has to distinguish "this AMI
-    was not copied" from "this client cannot report copies at all" — see
+    The source-image fields postdate the project's pinned boto3 floor (absent
+    in 1.34.46, present in 1.43.83), so the column has to distinguish "AWS
+    reported no source" from "this client cannot report a source at all" — see
     Issue #213 for the wider version-floor problem.
     """
     try:
@@ -106,53 +103,13 @@ def _copy_source_supported(ec2_client) -> bool:
         return False
 
 
-def _resolve_snapshot_ancestry(ec2_client, snapshot_ids: list[str]) -> dict[str, dict[str, str]]:
+def _ancestry_columns(ami: dict, copy_source_supported: bool) -> dict[str, Any]:
     """
-    Parse CreateImage provenance out of EBS snapshot descriptions.
+    Build the ancestry columns for one AMI, from contractual fields only.
 
-    Returns ``{snapshot_id: {'source_instance': ..., 'parent_ami': ...}}`` for
-    every snapshot whose description matches the CreateImage convention.
-
-    Chunked **and** paginated: ``SnapshotIds`` bounds the request size while the
-    response pages independently, and handling only one of the two silently
-    drops results (Issue #268).
-
-    Enrichment, not scope: a failure here yields unresolved columns rather than
-    failing the region, since the AMIs themselves were collected successfully.
-    """
-    ancestry: dict[str, dict[str, str]] = {}
-    ids = sorted({s for s in snapshot_ids if s})
-    if not ids:
-        return ancestry
-
-    paginator = ec2_client.get_paginator('describe_snapshots')
-    for index in range(0, len(ids), 100):
-        chunk = ids[index:index + 100]
-        for page in paginator.paginate(SnapshotIds=chunk):
-            for snapshot in page.get('Snapshots', []):
-                match = _CREATE_IMAGE_DESCRIPTION.search(snapshot.get('Description', '') or '')
-                if not match:
-                    continue
-                ancestry[snapshot.get('SnapshotId', '')] = {
-                    'source_instance': match.group(1),
-                    'parent_ami': match.group(2),
-                }
-    return ancestry
-
-
-def _ancestry_columns(
-    ami: dict,
-    snapshot_ancestry: dict[str, dict[str, str]],
-    copy_source_supported: bool,
-    lookup_failed: bool = False,
-) -> dict[str, Any]:
-    """
-    Build the ancestry columns for one AMI.
-
-    Contractual fields (``SourceInstanceId``, ``SourceImageId``) and the value
-    inferred from snapshot descriptions are kept in separate columns. Nobody
-    should be able to build a compliance claim on a parsed string without
-    knowing that is what it is.
+    ``SourceImageId`` is the **parent AMI** — the image this one was derived
+    from. It is populated for ``CreateImage``-derived AMIs as well as copies,
+    which is the common case; #270 wrongly described it as copy-only.
 
     Ancestry is partial by nature: an AMI imported via VM Import, built by a
     third party, or whose parent was deregistered has no resolvable ancestor.
@@ -165,27 +122,10 @@ def _ancestry_columns(
         source_image_id = _COPY_SOURCE_UNSUPPORTED
         source_image_region = _COPY_SOURCE_UNSUPPORTED
 
-    snapshot_ids = [
-        (bdm.get('Ebs') or {}).get('SnapshotId')
-        for bdm in ami.get('BlockDeviceMappings', [])
-        if (bdm.get('Ebs') or {}).get('SnapshotId')
-    ]
-
-    parent_ami = 'N/A'
-    if lookup_failed and snapshot_ids:
-        parent_ami = _ANCESTRY_UNRESOLVED
-    else:
-        for snapshot_id in snapshot_ids:
-            resolved = snapshot_ancestry.get(snapshot_id)
-            if resolved:
-                parent_ami = resolved['parent_ami']
-                break
-
     return {
         'Source Instance ID': ami.get('SourceInstanceId') or 'N/A',
         'Source Image ID': source_image_id,
         'Source Image Region': source_image_region,
-        'Parent AMI (inferred)': parent_ami,
     }
 
 
@@ -315,34 +255,16 @@ def collect_amis_in_region(region: str, account_id: str) -> list[dict[str, Any]]
 
     print(f"  Found {len(amis)} account-owned AMIs")
 
-    # Resolve provenance before building rows (Issue #270). This is enrichment,
-    # not scope: a failure yields unresolved columns rather than failing a
-    # region whose AMIs were collected successfully.
+    # Ancestry comes from fields already present in the describe_images
+    # response above — no additional API calls (Issue #272 removed the
+    # describe_snapshots round trip along with the parse it fed).
     copy_source_supported = _copy_source_supported(ec2_client)
-    snapshot_ids = [
-        (bdm.get('Ebs') or {}).get('SnapshotId')
-        for ami in amis
-        for bdm in ami.get('BlockDeviceMappings', [])
-        if (bdm.get('Ebs') or {}).get('SnapshotId')
-    ]
-    snapshot_ancestry = {}
-    ancestry_lookup_failed = False
-    try:
-        snapshot_ancestry = _resolve_snapshot_ancestry(ec2_client, snapshot_ids)
-    except Exception as e:
-        ancestry_lookup_failed = True
-        utils.log_warning(
-            f"Could not resolve AMI ancestry from snapshots in {region} "
-            f"(parent AMI will read unresolved): {e}"
-        )
 
     region_amis = []
     for ami in amis:
         try:
             row = _build_ami_row(ami, region)
-            row.update(_ancestry_columns(
-                ami, snapshot_ancestry, copy_source_supported, ancestry_lookup_failed
-            ))
+            row.update(_ancestry_columns(ami, copy_source_supported))
             region_amis.append(row)
         except Exception as e:
             # One malformed AMI is skipped, not fatal to the region.
